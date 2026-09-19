@@ -195,88 +195,69 @@ Candidate approaches:
   Worth showing Simon once the IFC frontend exists; the validation battery and
   simplifier are the components most likely to interest him.
 
----
+## Research tracks (near-term)
 
-# Part II — Future directions
+These sit alongside the numbered items above: time-boxed research spikes whose
+outcomes decide which detection technology we productionize. They are labelled
+R1/R2 (not numbered) so they merge cleanly next to the numbered roadmap items.
 
-A categorized backlog from an eight-persona review (legal, marketing, product
-design, project management, software architecture, MEP engineering, energy
-modeling, incumbent vendor) on 2026-09-19. These are *not* sequenced or
-numbered: they are directions to pull into the numbered roadmap as priorities
-crystallize. Items marked with multiple-persona support independently came up
-in more than one review.
+### R1. Vector-native geometry parsing: read drawings as vectors, not pixels
 
-## Trust, legal, professional
+Context (2026-09-19): Kamai (kamai.io) is an Israeli startup doing exactly
+this — proprietary in-house "geometric models" that read vector geometry
+directly from PDF/CAD drawings (no rasterization, claimed sub-mm measurement),
+return typed structured output (rooms, wall polygons, openings with
+widths/relations/tags like "D-01"), and expose it as a public REST API. Their
+approach validates the direction; this track is to build our own reproducible,
+auditable version and know when it beats the raster path.
 
-- Professional-use disclaimer and E&O framing ★
-- Stampable, dated sign-off report with source/revision traceability ★
-- Versioned data-contribution agreement for the flywheel ★
-- Training-data license ledger and quarantine for noncommercial data/weights ★
-- CLA or DCO for code contributions
-- Privacy/security-sensitive-building policy and guaranteed local-only mode
-- GUI/service terms governing liability and data retention/deletion
-- Defensive publication of novel methods
-- Legal review of professional-licensure / "practicing engineering" risk
+Candidate approaches:
+- **Know the input alphabet first.** Survey what a plan sheet actually exposes
+  as vector primitives (lines, arcs, polylines, hatches, positioned text) via
+  parsing libraries (pdfplumber/pypdf for PDFs, ezdxf for DXF/DWG). Decide the
+  model only after the primitive inventory is understood.
+- **VecFormer as the leading learned candidate.** VecFormer (NeurIPS 2025) is
+  a transformer over *vector line primitives* rather than pixels — potentially
+  both more accurate and more auditable than raster detectors on vector PDFs.
+  Evaluate it as the vector-native counterpart to YOLOv11+SAHI.
+- **Spike prototype.** Parse vector line primitives from one real PDF plan
+  sheet; extract entities (walls as parallel-line pairs, openings as gaps in
+  runs, rooms as closed loops); compare extraction accuracy head-to-head
+  against the raster YOLO+SAHI path on the same sheet. Time-boxed.
+- **Benchmark target.** Replicate Kamai's AEC-Geometric-Bench protocol:
+  object F1 at IoU 0.50 across doors/windows/fixtures, 8 classes. Accuracy
+  target: **meet or beat Kamai's published 0.929** with a reproducible,
+  auditable vector-native pipeline.
+- **Licensing caveat.** The bench data is CC BY-NC 4.0 — usable for
+  *evaluation* but **not for training weights that will be commercially
+  distributed**; NC-trained weights stay quarantined per the legal gating
+  already flagged. Also, Kamai's number is vendor-published on vendor-owned
+  data (bias openly disclosed); reproduce with their public 15-sheet scorer,
+  and report our numbers on the same protocol plus our own drawing-set
+  results.
 
-## Product/UX and drawing-set reality
+### R2. Modular detection-provider interface
 
-- Drawing-set ingestion via cover-sheet index/title-block parsing
-- Revision/addenda tracking and takeoff diffs
-- Match lines, split sheets, and enlarged-plan deduplication
-- Per-project legend/tag/convention learning ★
-- SD/DD/CD design-phase awareness
-- Explicit area definitions: GSF, BOMA rentable, program/assignable
-- Worst-first, keyboard-first review queue with bulk actions
-- Correction history, undo, and revert-to-automatic output
-- Loud, specific failure modes for bad inputs
-- Progressive takeoff mode vs full-BEM mode
-- Export package: model + one-page trust report + editable decisions file + share-back preview ★
+Context: detection backends are currently hard-wired (YOLOv11+SAHI). If R1
+shows a vector-native path wins, or a third-party API becomes worth paying
+for, swapping backends must be a config change, not a rewrite.
 
-## BEM last mile
-
-- ASHRAE 90.1 Appendix G perimeter/core thermal zoning
-- Below-grade detection and correct ground/outdoor boundaries
-- Space-use classification to cited load/schedule templates
-- Versioned construction library with cited U-values; never fabricate missing values
-- Blocking OpenStudio importer round-trip gate
-- Inter-story surface matching and atrium/shaft consistency
-
-## MEP
-
-- Mechanical schedule parsing and system-type classification
-- Engineering reconciliation gates and discipline-specific accuracy bars
-- Lighting controls and control zones
-- Riser/one-line topology parsing
-- First-class system entities linked to rooms
-- Plumbing fixture takeoffs and service-water-heating inputs
-- Architect-facing plan-vs-schedule coordination QA
-
-## Go-to-market
-
-- Positioning: "auditable extraction, not AI magic"; feed incumbents rather than replace them
-- Real-building benchmark on 3–5 commercial buildings ★
-- Five-minute demo, bundled sample project, results gallery ★
-- Quiet beta with friendly firms before public launch
-- Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
-- Visible monthly flywheel/model changelog
-- Rename before public launch because WiSARD is not the production detector
-
-## Strategy
-
-- Revit/AutoCAD plugin
-- Enterprise trust package: SSO, audit logs, isolation, SOC 2 story, air-gapped/on-prem mode
-- Standalone BIM import health score
-- Platform-risk hedge: keep IFC and web GUI first-class
-- Deliberate open-core commercial model
-- Publish validation checks as an industry benchmark
-
-## Process
-
-- Define Monday validation exit criteria before fine-tuning
-- Define v0.1.0 scope and release cadence
-- Maintain an in-repo risk register
-- Add a dependency/sequencing map
-- Add explicit non-goals and parked ideas
-- Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
-
-★ = raised independently by multiple personas — highest signal.
+Candidate approaches:
+- **Define the provider contract.** A `DetectionProvider` interface that takes
+  a sheet (raster and/or vector) and returns typed entities with geometry,
+  class, confidence, and provenance — the same schema the canonical model
+  already expects — so simplify → validate → export stay backend-agnostic.
+- **Backends behind the contract:** (1) the current YOLOv11+SAHI raster
+  detector; (2) the R1 vector-native prototype; (3) third-party APIs (Kamai,
+  etc.).
+- **Kamai evaluation is cost-blocked for now.** Self-serve API access starts at
+  the Contractor tier ($800/mo, ~800 sheets, ~$1–2/sheet) — too expensive for
+  a quick evaluation. Evaluate Kamai integration **only if a free trial or
+  partner evaluation access is obtained** (their stated go-to-market is
+  B2B2B/partner sales; a sales conversation is the realistic path to eval
+  access). In the meantime, the R1 track doubles as our own research into
+  what their geometric models do.
+- **Provider-agnostic conformance.** Run the same AEC sheets through each
+  backend under the same F1-at-IoU-0.50 protocol; report per-backend deltas in
+  the audit artifact. Backend disagreement becomes a cross-check, not just a
+  number.
