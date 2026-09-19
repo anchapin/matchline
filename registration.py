@@ -23,23 +23,24 @@ y-down). Every other sheet is registered into it:
   After registration, fixtures/sensors/diffusers land in spaces by
   point-in-polygon in canonical meters (assign_points_to_spaces).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import math
 
 import numpy as np
 
 from building_model import Provenance
 
-
 # ---------------------------------------------------------------------------
 # 2D affine: sheet px -> canonical meters
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Affine2D:
     """x_m = a*px + b*py + tx ; y_m = c*px + d*py + ty."""
+
     a: float = 1.0
     b: float = 0.0
     c: float = 0.0
@@ -48,8 +49,7 @@ class Affine2D:
     ty: float = 0.0
 
     def apply(self, px: float, py: float) -> tuple:
-        return (self.a * px + self.b * py + self.tx,
-                self.c * px + self.d * py + self.ty)
+        return (self.a * px + self.b * py + self.tx, self.c * px + self.d * py + self.ty)
 
     @staticmethod
     def from_scale_translate(px_per_m: float, ox_px: float, oy_px: float):
@@ -77,7 +77,7 @@ class Affine2D:
 class PlanRegistration:
     sheet_id: str
     discipline: str
-    method: str            # "title_block" | "tie_points"
+    method: str  # "title_block" | "tie_points"
     confidence: float
     affine: Affine2D
     provenance: Provenance = None
@@ -90,15 +90,17 @@ class PlanRegistration:
 # Facades (plan side)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Facade:
     """One exterior wall run, in canonical meters (y-down)."""
-    name: str              # "south" | "north" | "east" | "west"
-    ref_corner_m: tuple    # reference corner (west end for south/north,
-                           # north end for east/west)
+
+    name: str  # "south" | "north" | "east" | "west"
+    ref_corner_m: tuple  # reference corner (west end for south/north,
+    # north end for east/west)
     length_m: float
-    fixed_coord_m: float   # the constant plan coordinate (y=D for south)
-    axis: str = "x"        # facade runs along x (south/north) or y (east/west)
+    fixed_coord_m: float  # the constant plan coordinate (y=D for south)
+    axis: str = "x"  # facade runs along x (south/north) or y (east/west)
 
     def plan_point(self, s_m: float) -> tuple:
         """Canonical (x, y) of facade distance s_m from the ref corner."""
@@ -111,20 +113,20 @@ class Facade:
 # ---------------------------------------------------------------------------
 
 GRID_CONFIDENCE = 0.95
-GEOMETRIC_CONFIDENCE = 0.65   # penalized: no independent check on the
-                              # drawing origin; links built on it go to
-                              # the review queue (REVIEW_CONFIDENCE = 0.80)
+GEOMETRIC_CONFIDENCE = 0.65  # penalized: no independent check on the
+# drawing origin; links built on it go to
+# the review queue (REVIEW_CONFIDENCE = 0.80)
 
 
 @dataclass
 class FacadeRegistration:
     sheet_id: str
     facade: str
-    method: str            # "grid" | "geometric"
+    method: str  # "grid" | "geometric"
     confidence: float
-    a_s: float             # s_m = a_s * u_px + b_s
+    a_s: float  # s_m = a_s * u_px + b_s
     b_s: float
-    a_z: float             # z_m = a_z * v_px + b_z  (z up from grade)
+    a_z: float  # z_m = a_z * v_px + b_z  (z up from grade)
     b_z: float
     grid_labels_used: list = field(default_factory=list)
     provenance: Provenance = None
@@ -133,11 +135,15 @@ class FacadeRegistration:
         return (self.a_s * u_px + self.b_s, self.a_z * v_px + self.b_z)
 
 
-def register_elevation_grid(sheet_id: str, facade: Facade,
-                            plan_grid_m: dict,
-                            elev_bubbles: list,
-                            v_ground_px: float, elev_px_per_m: float,
-                            revision: int) -> FacadeRegistration:
+def register_elevation_grid(
+    sheet_id: str,
+    facade: Facade,
+    plan_grid_m: dict,
+    elev_bubbles: list,
+    v_ground_px: float,
+    elev_px_per_m: float,
+    revision: int,
+) -> FacadeRegistration:
     """Grid path: shared column-grid labels tie plan <-> elevation.
 
     plan_grid_m: {label: plan coordinate along the facade axis} (meters).
@@ -153,8 +159,7 @@ def register_elevation_grid(sheet_id: str, facade: Facade,
             us.append(bub["u_px"])
             used.append(lab)
     if len(used) < 2:
-        raise ValueError(
-            f"grid path needs >= 2 shared grid labels, got {used}")
+        raise ValueError(f"grid path needs >= 2 shared grid labels, got {used}")
     # 1D affine fit: s_m = a*u_px + b
     U = np.array(us)
     X = np.array(xs)
@@ -162,20 +167,35 @@ def register_elevation_grid(sheet_id: str, facade: Facade,
     (a_s, b_s), *_ = np.linalg.lstsq(A, X, rcond=None)
     resid = float(np.abs((a_s * U + b_s) - X).max())
     conf = GRID_CONFIDENCE if resid < 0.05 else GRID_CONFIDENCE - 0.10
-    prov = Provenance(sheet_id=sheet_id, revision=revision,
-                      method="grid_registration", confidence=conf,
-                      note=f"grid labels {used}, max residual {resid:.3f} m")
+    prov = Provenance(
+        sheet_id=sheet_id,
+        revision=revision,
+        method="grid_registration",
+        confidence=conf,
+        note=f"grid labels {used}, max residual {resid:.3f} m",
+    )
     return FacadeRegistration(
-        sheet_id=sheet_id, facade=facade.name, method="grid",
-        confidence=conf, a_s=float(a_s), b_s=float(b_s),
-        a_z=-1.0 / elev_px_per_m, b_z=v_ground_px / elev_px_per_m,
-        grid_labels_used=used, provenance=prov)
+        sheet_id=sheet_id,
+        facade=facade.name,
+        method="grid",
+        confidence=conf,
+        a_s=float(a_s),
+        b_s=float(b_s),
+        a_z=-1.0 / elev_px_per_m,
+        b_z=v_ground_px / elev_px_per_m,
+        grid_labels_used=used,
+        provenance=prov,
+    )
 
 
-def register_elevation_geometric(sheet_id: str, facade: Facade,
-                                wall_u0_px: float, elev_px_per_m: float,
-                                v_ground_px: float,
-                                revision: int) -> FacadeRegistration:
+def register_elevation_geometric(
+    sheet_id: str,
+    facade: Facade,
+    wall_u0_px: float,
+    elev_px_per_m: float,
+    v_ground_px: float,
+    revision: int,
+) -> FacadeRegistration:
     """Geometric fallback: no grids on the elevation.
 
     The facade reference corner maps to the elevation drawing's wall
@@ -186,23 +206,35 @@ def register_elevation_geometric(sheet_id: str, facade: Facade,
     is flagged for review.
     """
     a_s = 1.0 / elev_px_per_m
-    b_s = -wall_u0_px / elev_px_per_m   # s=0 at the wall origin
+    b_s = -wall_u0_px / elev_px_per_m  # s=0 at the wall origin
     prov = Provenance(
-        sheet_id=sheet_id, revision=revision, method="geometric_fallback",
+        sheet_id=sheet_id,
+        revision=revision,
+        method="geometric_fallback",
         confidence=GEOMETRIC_CONFIDENCE,
-        note=(f"facade '{facade.name}' ref corner assumed at wall drawing "
-              f"origin u0={wall_u0_px:.0f}px; scale {elev_px_per_m:.1f} px/m "
-              f"from title block"))
+        note=(
+            f"facade '{facade.name}' ref corner assumed at wall drawing "
+            f"origin u0={wall_u0_px:.0f}px; scale {elev_px_per_m:.1f} px/m "
+            f"from title block"
+        ),
+    )
     return FacadeRegistration(
-        sheet_id=sheet_id, facade=facade.name, method="geometric",
-        confidence=GEOMETRIC_CONFIDENCE, a_s=a_s, b_s=b_s,
-        a_z=-1.0 / elev_px_per_m, b_z=v_ground_px / elev_px_per_m,
-        provenance=prov)
+        sheet_id=sheet_id,
+        facade=facade.name,
+        method="geometric",
+        confidence=GEOMETRIC_CONFIDENCE,
+        a_s=a_s,
+        b_s=b_s,
+        a_z=-1.0 / elev_px_per_m,
+        b_z=v_ground_px / elev_px_per_m,
+        provenance=prov,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Point-in-polygon assignment (canonical meters)
 # ---------------------------------------------------------------------------
+
 
 def point_in_polygon(pt, poly) -> bool:
     x, y = pt
@@ -245,8 +277,7 @@ def interval_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
-def match_interval_to_segments(s0: float, s1: float,
-                               segments: list) -> tuple:
+def match_interval_to_segments(s0: float, s1: float, segments: list) -> tuple:
     """Match a facade interval [s0,s1] to wall segments [{id, s0, s1, ...}].
 
     Returns (best_segment, overlap_fraction, ambiguous). Ambiguous when the
@@ -254,8 +285,7 @@ def match_interval_to_segments(s0: float, s1: float,
     the review queue.
     """
     w = max(s1 - s0, 1e-9)
-    scored = [(interval_overlap(s0, s1, g["s0"], g["s1"]) / w, g)
-              for g in segments]
+    scored = [(interval_overlap(s0, s1, g["s0"], g["s1"]) / w, g) for g in segments]
     scored.sort(key=lambda t: -t[0])
     if not scored or scored[0][0] <= 0:
         return None, 0.0, True

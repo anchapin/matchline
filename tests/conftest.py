@@ -4,26 +4,19 @@ Uses synth.multidiscipline.generate_building + link.build_model -- the same
 builder API the pipeline uses. Seeds are FIXED here; the property-style
 invariant test varies them.
 
-NOTE: elevation_windows is intentionally NOT imported at module scope --
-another worker is extending it concurrently. Tests that need exact window
-placement build Space objects by hand instead.
 """
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from synth.multidiscipline import generate_building  # noqa: E402
-from link import build_model  # noqa: E402
+from link import build_model
+from synth.multidiscipline import generate_building
 
 
-def _linked(seed: int, open_office_span: bool = False,
-            elevation_key: str = "elev_grid"):
+def _linked(seed: int, open_office_span: bool = False, elevation_key: str = "elev_grid"):
     bldg = generate_building(seed, open_office_span=open_office_span)
-    model, report = build_model(bldg, elevation_key=elevation_key,
-                                building_name=bldg["building_id"])
+    model, report = build_model(
+        bldg, elevation_key=elevation_key, building_name=bldg["building_id"]
+    )
     return bldg, model, report
 
 

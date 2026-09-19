@@ -3,9 +3,11 @@
 import numpy as np
 import pytest
 
-from facade_takeoff import (CLASS_NAMES, GLAZING, WALL_PLANE, FacadeTakeoff,
-                            dataset_priors, facade_takeoff, parse_xml_boxes,
-                            rasterize_boxes, xml_agreement)
+from facade_takeoff import (
+    dataset_priors,
+    facade_takeoff,
+    xml_agreement,
+)
 
 
 def _mask():
@@ -78,7 +80,7 @@ def test_xml_boxes_coarse_but_countable():
     boxes = [(3, 0.0, 0.0, 1.0, 0.35)]
     ag = xml_agreement(m, boxes)
     w = ag["per_class"][3]
-    assert w["ratio_xml_over_mask"] > 1.0          # coarse -> overestimates
+    assert w["ratio_xml_over_mask"] > 1.0  # coarse -> overestimates
     assert w["coverage_mask_in_xml"] == pytest.approx(1.0, abs=1e-9)
 
 

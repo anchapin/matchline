@@ -39,16 +39,16 @@ from room_labels import point_in_polygon as _pip
 GBXML_NS = "http://www.gbxml.org/schema"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver6.01.xsd"
 
-WINDOW_SILL_M = 0.9   # placement assumption, documented
+WINDOW_SILL_M = 0.9  # placement assumption, documented
 DOOR_SILL_M = 0.0
 
 
 @dataclass
 class BEMSpace:
     sid: str
-    name: str            # e.g. "OPEN OFFICE 101"
+    name: str  # e.g. "OPEN OFFICE 101"
     number: str
-    polygon_m: list      # [(x, y), ...] CCW, x=east, y=north
+    polygon_m: list  # [(x, y), ...] CCW, x=east, y=north
     area_m2: float
     volume_m3: float
 
@@ -56,8 +56,9 @@ class BEMSpace:
 @dataclass
 class BEMOpeningUnit:
     """One physical opening instance (expanded from count x schedule)."""
-    category: str        # "window" | "door"
-    tag: str             # schedule tag, e.g. "A"
+
+    category: str  # "window" | "door"
+    tag: str  # schedule tag, e.g. "A"
     width_m: float
     height_m: float
 
@@ -65,11 +66,11 @@ class BEMOpeningUnit:
 @dataclass
 class BEMModel:
     building_name: str
-    spaces: list         # BEMSpace
-    openings: list       # BEMOpeningUnit, one per physical opening
-    ring_m: list         # simplified envelope ring, CCW, x=east/y=north
+    spaces: list  # BEMSpace
+    openings: list  # BEMOpeningUnit, one per physical opening
+    ring_m: list  # simplified envelope ring, CCW, x=east/y=north
     wall_height_m: float
-    area_delta_pct: float      # envelope area preservation, from simplifier
+    area_delta_pct: float  # envelope area preservation, from simplifier
     simplify_tol_pct: float
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
@@ -78,6 +79,7 @@ class BEMModel:
 # ---------------------------------------------------------------------------
 # Geometry helpers
 # ---------------------------------------------------------------------------
+
 
 def _shoelace(poly) -> float:
     s = 0.0
@@ -101,14 +103,17 @@ def _fmt(v: float) -> str:
 # model_from_takeoff
 # ---------------------------------------------------------------------------
 
-def model_from_takeoff(takeoff, labeled, sres, wall_height_m: float = 3.0,
-                       building_name: str = "Jesse Building") -> BEMModel:
+
+def model_from_takeoff(
+    takeoff, labeled, sres, wall_height_m: float = 3.0, building_name: str = "Jesse Building"
+) -> BEMModel:
     """Assemble a unit-clean BEMModel from the pipeline output contracts."""
     s = takeoff.scale.m_per_px
     if not s:
         raise ValueError(
             "BEM export needs a drawing scale (m/px) for spaces and envelope; "
-            "takeoff.scale.m_per_px is None.")
+            "takeoff.scale.m_per_px is None."
+        )
     notes = []
 
     # --- spaces -----------------------------------------------------------
@@ -118,9 +123,16 @@ def model_from_takeoff(takeoff, labeled, sres, wall_height_m: float = 3.0,
         poly_m = _ensure_ccw(poly_m)
         area = abs(_shoelace(poly_m))
         name = f"{sp.name} {sp.number}".strip() or f"SPACE-{i + 1:02d}"
-        spaces.append(BEMSpace(
-            sid=f"sp-{i + 1:03d}", name=name, number=sp.number,
-            polygon_m=poly_m, area_m2=area, volume_m3=area * wall_height_m))
+        spaces.append(
+            BEMSpace(
+                sid=f"sp-{i + 1:03d}",
+                name=name,
+                number=sp.number,
+                polygon_m=poly_m,
+                area_m2=area,
+                volume_m3=area * wall_height_m,
+            )
+        )
     if not spaces:
         raise ValueError("no labeled spaces to export")
 
@@ -133,36 +145,54 @@ def model_from_takeoff(takeoff, labeled, sres, wall_height_m: float = 3.0,
     openings, skipped = [], []
     for line in takeoff.lines:
         if line.width_m is None or line.height_m is None:
-            skipped.append({"tag": line.tag, "category": line.category,
-                            "count": line.count,
-                            "reason": "schedule dimensions missing"})
+            skipped.append(
+                {
+                    "tag": line.tag,
+                    "category": line.category,
+                    "count": line.count,
+                    "reason": "schedule dimensions missing",
+                }
+            )
             continue
         cat = line.category.lower()
         if cat not in ("window", "door"):
-            skipped.append({"tag": line.tag, "category": line.category,
-                            "count": line.count,
-                            "reason": f"category '{line.category}' not "
-                                      "window/door; not placed as opening"})
+            skipped.append(
+                {
+                    "tag": line.tag,
+                    "category": line.category,
+                    "count": line.count,
+                    "reason": f"category '{line.category}' not window/door; not placed as opening",
+                }
+            )
             continue
-        openings.extend(BEMOpeningUnit(cat, line.tag, line.width_m,
-                                       line.height_m)
-                        for _ in range(line.count))
+        openings.extend(
+            BEMOpeningUnit(cat, line.tag, line.width_m, line.height_m) for _ in range(line.count)
+        )
     # deterministic order: windows then doors, sorted by tag
     openings.sort(key=lambda o: (o.category, o.tag))
-    notes.append(f"{len(openings)} openings expanded from "
-                 f"{len(takeoff.lines)} schedule lines; "
-                 f"{len(skipped)} tags skipped (see skipped_openings).")
+    notes.append(
+        f"{len(openings)} openings expanded from "
+        f"{len(takeoff.lines)} schedule lines; "
+        f"{len(skipped)} tags skipped (see skipped_openings)."
+    )
 
     return BEMModel(
-        building_name=building_name, spaces=spaces, openings=openings,
-        ring_m=ring_m, wall_height_m=wall_height_m,
+        building_name=building_name,
+        spaces=spaces,
+        openings=openings,
+        ring_m=ring_m,
+        wall_height_m=wall_height_m,
         area_delta_pct=sres.area_delta_pct,
         simplify_tol_pct=sres.tol * 100.0,
-        skipped_openings=skipped, notes=notes)
+        skipped_openings=skipped,
+        notes=notes,
+    )
+
 
 # ---------------------------------------------------------------------------
 # gbXML 6.01 writer
 # ---------------------------------------------------------------------------
+
 
 def _el(parent, tag, text=None, **attrib):
     el = ET.SubElement(parent, f"{{{GBXML_NS}}}{tag}", attrib)
@@ -200,14 +230,13 @@ def _assign_wall_to_space(p0, p1, spaces):
     for sp in spaces:
         if _pip((ix, iy), sp.polygon_m):
             return sp
+
     # fallback: nearest centroid
     def centroid(sp):
         n = len(sp.polygon_m)
-        return (sum(p[0] for p in sp.polygon_m) / n,
-                sum(p[1] for p in sp.polygon_m) / n)
-    return min(spaces,
-               key=lambda sp: math.hypot(centroid(sp)[0] - ix,
-                                         centroid(sp)[1] - iy))
+        return (sum(p[0] for p in sp.polygon_m) / n, sum(p[1] for p in sp.polygon_m) / n)
+
+    return min(spaces, key=lambda sp: math.hypot(centroid(sp)[0] - ix, centroid(sp)[1] - iy))
 
 
 def _distribute_openings(openings, edges):
@@ -227,14 +256,14 @@ def _distribute_openings(openings, edges):
         shares = [n * L / total_L for L in lengths]
         base = [int(math.floor(sh)) for sh in shares]
         rem = n - sum(base)
-        order = sorted(range(len(edges)),
-                       key=lambda i: (shares[i] - base[i], -lengths[i]),
-                       reverse=True)
+        order = sorted(
+            range(len(edges)), key=lambda i: (shares[i] - base[i], -lengths[i]), reverse=True
+        )
         for i in order[:rem]:
             base[i] += 1
         k = 0
         for i, cnt in enumerate(base):
-            assign[i].extend(units[k:k + cnt])
+            assign[i].extend(units[k : k + cnt])
             k += cnt
     for i in assign:
         assign[i].sort(key=lambda u: (u.category, u.tag))
@@ -262,17 +291,15 @@ def _place_openings_on_wall(units, L: float, h: float):
         oh = u.height_m
         if sill + oh > h:
             oh = h - sill
-            notes.append(f"{u.tag}: height clamped to {oh:.2f} m "
-                         f"(wall {h:.2f} m)")
+            notes.append(f"{u.tag}: height clamped to {oh:.2f} m (wall {h:.2f} m)")
         c = (j + 0.5) * L / k
         s0 = max(0.05, c - u.width_m / 2)
         s1 = min(L - 0.05, c + u.width_m / 2)
         if s1 - s0 < u.width_m * 0.5:
-            notes.append(f"{u.tag}: width clamped "
-                         f"({u.width_m:.2f} -> {s1 - s0:.2f} m, wall "
-                         f"{L:.2f} m)")
-        placements.append({"unit": u, "s0": s0, "s1": s1,
-                           "sill": sill, "height": oh})
+            notes.append(
+                f"{u.tag}: width clamped ({u.width_m:.2f} -> {s1 - s0:.2f} m, wall {L:.2f} m)"
+            )
+        placements.append({"unit": u, "s0": s0, "s1": s1, "sill": sill, "height": oh})
     return placements, notes
 
 
@@ -282,15 +309,24 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     h = model.wall_height_m
     root = ET.Element(
         f"{{{GBXML_NS}}}gbXML",
-        {"temperatureUnit": "C", "lengthUnit": "Meters",
-         "areaUnit": "SquareMeters", "volumeUnit": "CubicMeters",
-         "version": "6.01", "useSIUnitsForResults": "true"})
+        {
+            "temperatureUnit": "C",
+            "lengthUnit": "Meters",
+            "areaUnit": "SquareMeters",
+            "volumeUnit": "CubicMeters",
+            "version": "6.01",
+            "useSIUnitsForResults": "true",
+        },
+    )
     campus = _el(root, "Campus", id="campus-1")
     _el(campus, "Name", model.building_name)
-    _el(campus, "Description",
+    _el(
+        campus,
+        "Description",
         f"Exported by Jesse-Vision prototype. Envelope simplified "
         f"{model.area_delta_pct:+.3f}% area delta (tolerance "
-        f"{model.simplify_tol_pct:.1f}%).")
+        f"{model.simplify_tol_pct:.1f}%).",
+    )
     loc = _el(campus, "Location")
     _el(loc, "Name", "Unknown")
     _el(loc, "ZipcodeOrPostalCode", "00000")
@@ -310,18 +346,18 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     # Placeholder constructions (v1): drawings carry no assembly data, so
     # every surface references a generic construction. Real U-values /
     # layered assemblies are a v2 enrichment from the spec or user input.
-    for cid, cname, uval in (("const-wall", "Generic exterior wall", "0.50"),
-                             ("const-roof", "Generic roof", "0.30"),
-                             ("const-slab", "Generic slab on grade",
-                              "0.40")):
+    for cid, cname, uval in (
+        ("const-wall", "Generic exterior wall", "0.50"),
+        ("const-roof", "Generic roof", "0.30"),
+        ("const-slab", "Generic slab on grade", "0.40"),
+    ):
         co = _el(root, "Construction", id=cid)
         _el(co, "Name", cname)
         _el(co, "U-value", uval, unit="WPerSquareMeterK")
 
     # --- spaces (children of Building in gbXML) ------------------------------
     for sp in model.spaces:
-        se = _el(bldg, "Space", id=sp.sid,
-                 buildingStoreyIdRef="storey-1", zoneIdRef="zone-1")
+        se = _el(bldg, "Space", id=sp.sid, buildingStoreyIdRef="storey-1", zoneIdRef="zone-1")
         _el(se, "Name", sp.name)
         if sp.number:
             _el(se, "CADObjectId", sp.number)
@@ -361,7 +397,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         L = math.hypot(dx, dy)
         if L < 1e-6:
             continue
-        nx, ny = dy / L, -dx / L          # outward (CCW ring)
+        nx, ny = dy / L, -dx / L  # outward (CCW ring)
         az = math.degrees(math.atan2(nx, ny)) % 360.0
         # screen-right when facing from outside: r = (-ny, nx)... (v x u)
         rx, ry = -ny, nx
@@ -372,8 +408,13 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             bl, br = p1, p0
         sp = _assign_wall_to_space(p0, p1, model.spaces)
         surf_count += 1
-        su = _el(campus, "Surface", id=f"wall-{i + 1:03d}",
-                 surfaceType="ExteriorWall", constructionIdRef="const-wall")
+        su = _el(
+            campus,
+            "Surface",
+            id=f"wall-{i + 1:03d}",
+            surfaceType="ExteriorWall",
+            constructionIdRef="const-wall",
+        )
         _el(su, "Name", f"Wall {i + 1}")
         _el(su, "AdjacentSpaceId", spaceIdRef=sp.sid)
         rg = _el(su, "RectangularGeometry")
@@ -385,7 +426,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         _cartesian(rg, bl[0], bl[1], h)
         # openings on this wall (local coords from parent bottom-left)
         units = opening_assign[i]
-        bl_is_p0 = (bl == p0)
+        bl_is_p0 = bl == p0
         placements, notes = _place_openings_on_wall(units, L, h)
         for n in notes:
             placement_notes.append(f"wall-{i + 1:03d}: {n}")
@@ -396,8 +437,9 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
                 # mirror into the bottom-left frame (BL == p1 here)
                 s0, s1 = L - s1, L - s0
             open_count += 1
-            op = _el(su, "Opening", id=f"op-{open_count:04d}",
-                     openingType=_opening_type(u.category))
+            op = _el(
+                su, "Opening", id=f"op-{open_count:04d}", openingType=_opening_type(u.category)
+            )
             _el(op, "Name", f"{u.tag} ({u.category})")
             org = _el(op, "RectangularGeometry")
             # 2-D local coords per schema doc; no Azimuth/Tilt on openings
@@ -408,11 +450,9 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     # roof (outward +z): CCW from above
     surf_count += 1
-    su = _el(campus, "Surface", id="roof-001", surfaceType="Roof",
-             constructionIdRef="const-roof")
+    su = _el(campus, "Surface", id="roof-001", surfaceType="Roof", constructionIdRef="const-roof")
     _el(su, "Name", "Roof")
-    _el(su, "AdjacentSpaceId",
-        spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
+    _el(su, "AdjacentSpaceId", spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
     pg = _el(su, "PlanarGeometry")
     pl = _el(pg, "PolyLoop")
     for x, y in model.ring_m:
@@ -420,11 +460,11 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     # ground floor (outward -z): clockwise from above
     surf_count += 1
-    su = _el(campus, "Surface", id="floor-001", surfaceType="SlabOnGrade",
-             constructionIdRef="const-slab")
+    su = _el(
+        campus, "Surface", id="floor-001", surfaceType="SlabOnGrade", constructionIdRef="const-slab"
+    )
     _el(su, "Name", "Ground Floor")
-    _el(su, "AdjacentSpaceId",
-        spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
+    _el(su, "AdjacentSpaceId", spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
     pg = _el(su, "PlanarGeometry")
     pl = _el(pg, "PolyLoop")
     for x, y in reversed(model.ring_m):
@@ -438,21 +478,25 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         f"length, evenly spaced per wall; window sill {WINDOW_SILL_M} m, "
         f"door sill {DOOR_SILL_M} m. Interior partitions omitted (v1 gap). "
         + (" ".join(model.notes) + " " if model.notes else "")
-        + ("Placement notes: " + "; ".join(placement_notes)
-           if placement_notes else "No placement clamps."))
+        + (
+            "Placement notes: " + "; ".join(placement_notes)
+            if placement_notes
+            else "No placement clamps."
+        )
+    )
     path = Path(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(f"<!-- {comment} -->\n")
         f.write(ET.tostring(root, encoding="unicode"))
         f.write("\n")
-    model.notes.append(f"gbXML: {len(model.spaces)} spaces, "
-                       f"{surf_count} surfaces, {open_count} openings.")
+    model.notes.append(
+        f"gbXML: {len(model.spaces)} spaces, {surf_count} surfaces, {open_count} openings."
+    )
     return path
 
 
-def validate_gbxml(path: str | Path,
-                   xsd_path: str | Path = SCHEMA_PATH) -> tuple[bool, list]:
+def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tuple[bool, list]:
     """Validate a gbXML file against the 6.01 XSD with lxml.
 
     Returns (ok, [error strings]). Falls back to well-formedness + key
@@ -496,7 +540,6 @@ def _gbxml_smoke_check(path: str, errors: list) -> tuple[bool, list]:
 
 def _gbxml_semantic_checks(doc) -> list:
     """Checks the XSD cannot express: id uniqueness, ref integrity."""
-    ns = {"g": GBXML_NS}
     errs = []
     ids = {}
     for el in doc.getroot().iter():
@@ -509,17 +552,19 @@ def _gbxml_semantic_checks(doc) -> list:
         for attr in ("spaceIdRef", "buildingStoreyIdRef", "zoneIdRef"):
             ref = el.get(attr)
             if ref and ref not in ids:
-                errs.append(f"{el.tag} references unknown id '{ref}' "
-                            f"({attr})")
+                errs.append(f"{el.tag} references unknown id '{ref}' ({attr})")
     return errs
+
 
 # ---------------------------------------------------------------------------
 # IFC4 writer (via IfcOpenShell)
 # ---------------------------------------------------------------------------
 
+
 def _ensure_ifc():
     """Import IfcOpenShell, falling back to the workspace-vendored copy."""
     import sys as _sys
+
     _vendor = str(Path.home() / "workspace" / "vendor" / "pylibs")
     if _vendor not in _sys.path:
         _sys.path.insert(0, _vendor)
@@ -527,12 +572,11 @@ def _ensure_ifc():
         import ifcopenshell  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
-            "IfcOpenShell is not installed; install with "
-            "`pip install ifcopenshell`") from e
+            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
+        ) from e
 
 
-def write_ifc4(model: BEMModel, path: str | Path,
-               wall_thickness_m: float = 0.2) -> Path:
+def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:
     """Write a minimal but structurally valid IFC4 file.
 
     Contents: IfcProject/Site/Building/BuildingStorey hierarchy, one IfcWall
@@ -546,45 +590,41 @@ def write_ifc4(model: BEMModel, path: str | Path,
     """
     _ensure_ifc()
     import ifcopenshell
-    import ifcopenshell.api.project as _P
-    import ifcopenshell.api.unit as _U
+    import ifcopenshell.api.aggregate as _Ag
     import ifcopenshell.api.context as _C
+    import ifcopenshell.api.geometry as _Gm
+    import ifcopenshell.api.project as _P
     import ifcopenshell.api.root as _R
     import ifcopenshell.api.spatial as _Sp
-    import ifcopenshell.api.aggregate as _Ag
-    import ifcopenshell.api.geometry as _Gm
+    import ifcopenshell.api.unit as _U
 
     h = model.wall_height_m
     f = _P.create_file("IFC4")
     proj = _R.create_entity(f, ifc_class="IfcProject", name=model.building_name)
-    length = _U.add_si_unit(f, unit_type="LENGTHUNIT")          # metre
+    length = _U.add_si_unit(f, unit_type="LENGTHUNIT")  # metre
     area = _U.add_si_unit(f, unit_type="AREAUNIT")
     volume = _U.add_si_unit(f, unit_type="VOLUMEUNIT")
     _U.assign_unit(f, units=[length, area, volume])
 
     ctx = _C.add_context(f, context_type="Model")
-    body = _C.add_context(f, context_type="Model", context_identifier="Body",
-                          target_view="MODEL_VIEW", parent=ctx)
+    body = _C.add_context(
+        f, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=ctx
+    )
 
     def placement(xyz, ref_dir=None, parent=None):
-        pt = f.create_entity("IfcCartesianPoint",
-                             Coordinates=tuple(float(v) for v in xyz))
+        pt = f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in xyz))
         kw = {"Location": pt}
         if ref_dir is not None:
-            kw["Axis"] = f.create_entity(
-                "IfcDirection", DirectionRatios=(0.0, 0.0, 1.0))
+            kw["Axis"] = f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0))
             kw["RefDirection"] = f.create_entity(
-                "IfcDirection",
-                DirectionRatios=tuple(float(v) for v in ref_dir))
+                "IfcDirection", DirectionRatios=tuple(float(v) for v in ref_dir)
+            )
         ax = f.create_entity("IfcAxis2Placement3D", **kw)
-        return f.create_entity("IfcLocalPlacement", PlacementRelTo=parent,
-                               RelativePlacement=ax)
+        return f.create_entity("IfcLocalPlacement", PlacementRelTo=parent, RelativePlacement=ax)
 
     site = _R.create_entity(f, ifc_class="IfcSite", name="Site")
-    bldg = _R.create_entity(f, ifc_class="IfcBuilding",
-                            name=model.building_name)
-    storey = _R.create_entity(f, ifc_class="IfcBuildingStorey",
-                              name="Level 1")
+    bldg = _R.create_entity(f, ifc_class="IfcBuilding", name=model.building_name)
+    storey = _R.create_entity(f, ifc_class="IfcBuildingStorey", name="Level 1")
     storey.Elevation = 0.0
     _Ag.assign_object(f, products=[site], relating_object=proj)
     _Ag.assign_object(f, products=[bldg], relating_object=site)
@@ -603,10 +643,11 @@ def write_ifc4(model: BEMModel, path: str | Path,
             continue
         wall = _R.create_entity(f, ifc_class="IfcWall", name=f"Wall-{i + 1}")
         wall.ObjectPlacement = placement(
-            (p0[0], p0[1], 0.0), ref_dir=(dx / L, dy / L, 0.0),
-            parent=storey_pl)
+            (p0[0], p0[1], 0.0), ref_dir=(dx / L, dy / L, 0.0), parent=storey_pl
+        )
         rep = _Gm.add_wall_representation(
-            f, context=body, length=L, height=h, thickness=wall_thickness_m)
+            f, context=body, length=L, height=h, thickness=wall_thickness_m
+        )
         _Gm.assign_representation(f, product=wall, representation=rep)
         _Sp.assign_container(f, products=[wall], relating_structure=storey)
         walls.append((wall, p0, p1, L))
@@ -616,28 +657,31 @@ def write_ifc4(model: BEMModel, path: str | Path,
         for pl_ in placements:
             u = pl_["unit"]
             s_mid = (pl_["s0"] + pl_["s1"]) / 2.0
-            opening = _R.create_entity(
-                f, ifc_class="IfcOpeningElement",
-                name=f"{u.tag} opening")
+            opening = _R.create_entity(f, ifc_class="IfcOpeningElement", name=f"{u.tag} opening")
             # opening local frame: wall frame translated along the wall
             opening.ObjectPlacement = placement(
-                (s_mid, 0.0, pl_["sill"]), parent=wall.ObjectPlacement)
+                (s_mid, 0.0, pl_["sill"]), parent=wall.ObjectPlacement
+            )
             f.create_entity(
-                "IfcRelVoidsElement", GlobalId=ifcopenshell.guid.new(),
-                RelatingBuildingElement=wall, RelatedOpeningElement=opening)
-            fill_class = ("IfcWindow" if u.category == "window"
-                          else "IfcDoor")
+                "IfcRelVoidsElement",
+                GlobalId=ifcopenshell.guid.new(),
+                RelatingBuildingElement=wall,
+                RelatedOpeningElement=opening,
+            )
+            fill_class = "IfcWindow" if u.category == "window" else "IfcDoor"
             fill = _R.create_entity(
-                f, ifc_class=fill_class,
-                name=f"{u.tag} ({u.category} "
-                     f"{u.width_m:.2f}x{u.height_m:.2f} m)")
-            fill.ObjectPlacement = placement(
-                (0.0, 0.0, 0.0), parent=opening.ObjectPlacement)
+                f,
+                ifc_class=fill_class,
+                name=f"{u.tag} ({u.category} {u.width_m:.2f}x{u.height_m:.2f} m)",
+            )
+            fill.ObjectPlacement = placement((0.0, 0.0, 0.0), parent=opening.ObjectPlacement)
             f.create_entity(
-                "IfcRelFillsElement", GlobalId=ifcopenshell.guid.new(),
-                RelatingOpeningElement=opening, RelatedBuildingElement=fill)
-            _Sp.assign_container(f, products=[fill],
-                                 relating_structure=storey)
+                "IfcRelFillsElement",
+                GlobalId=ifcopenshell.guid.new(),
+                RelatingOpeningElement=opening,
+                RelatedBuildingElement=fill,
+            )
+            _Sp.assign_container(f, products=[fill], relating_structure=storey)
 
     # --- spaces -----------------------------------------------------------
     for sp in model.spaces:
@@ -656,17 +700,18 @@ def write_ifc4(model: BEMModel, path: str | Path,
         # gross floor area as a quantity set (best effort)
         try:
             import ifcopenshell.api.pset as _Ps
-            qto = _Ps.add_qto(f, product=space,
-                              name="Qto_SpaceBaseQuantities")
-            _Ps.edit_qto(f, qto=qto,
-                         properties={"GrossFloorArea": sp.area_m2})
+
+            qto = _Ps.add_qto(f, product=space, name="Qto_SpaceBaseQuantities")
+            _Ps.edit_qto(f, qto=qto, properties={"GrossFloorArea": sp.area_m2})
         except Exception:
             pass  # quantities are enrichment, not core validity
 
     path = Path(path)
     f.write(str(path))
-    model.notes.append(f"IFC4: {len(walls)} walls, {len(model.spaces)} "
-                       f"spaces, {len(model.openings)} openings hosted.")
+    model.notes.append(
+        f"IFC4: {len(walls)} walls, {len(model.spaces)} "
+        f"spaces, {len(model.openings)} openings hosted."
+    )
     return path
 
 
@@ -678,6 +723,7 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
     """
     _ensure_ifc()
     import ifcopenshell
+
     errors: list[str] = []
     try:
         f = ifcopenshell.open(str(path))
@@ -700,8 +746,7 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
         errors.append("no IfcBuildingStorey entities")
 
     for w in walls:
-        reps = (w.Representation.Representations
-                if w.Representation else [])
+        reps = w.Representation.Representations if w.Representation else []
         if not any(r.RepresentationType == "SweptSolid" for r in reps):
             errors.append(f"{w.Name or w.id()}: wall has no SweptSolid body")
 
@@ -717,10 +762,11 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
         if sp.id() not in aggregated:
             errors.append(f"space '{sp.Name}' not aggregated under a storey")
 
-    voided = {r.RelatedOpeningElement.id(): r.RelatingBuildingElement.id()
-              for r in f.by_type("IfcRelVoidsElement")}
-    filled = {r.RelatingOpeningElement.id()
-              for r in f.by_type("IfcRelFillsElement")}
+    voided = {
+        r.RelatedOpeningElement.id(): r.RelatingBuildingElement.id()
+        for r in f.by_type("IfcRelVoidsElement")
+    }
+    filled = {r.RelatingOpeningElement.id() for r in f.by_type("IfcRelFillsElement")}
     for o in openings:
         if o.id() not in voided:
             errors.append(f"opening '{o.Name}' voids no wall")
@@ -728,7 +774,6 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
             errors.append(f"opening '{o.Name}' has no filling element")
     for el in list(windows) + list(doors):
         if not el.ContainedInStructure:
-            errors.append(f"{el.is_a()} '{el.Name}' not in a spatial "
-                          f"container")
+            errors.append(f"{el.is_a()} '{el.Name}' not in a spatial container")
 
     return not errors, errors

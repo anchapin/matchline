@@ -18,6 +18,7 @@ distribution matches the classifier training distribution.
 Coordinate frames: layout in meters, y growing downward (matches image
 coords). PX_PER_M converts to sheet pixels.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from .symbols import (glyph_single_door, glyph_double_door,
-                      glyph_window_plan)
 from . import symbols as sym_mod
+from .symbols import glyph_double_door, glyph_single_door, glyph_window_plan
 
 PX_PER_M = 50.0
 WALL_T_M = 0.30
@@ -38,9 +38,20 @@ MIN_ROOM_M = 3.2
 
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-ROOM_NAMES = ["OPEN OFFICE", "CONF", "LOBBY", "RESTROOM", "KITCHEN",
-              "STORAGE", "CORRIDOR", "MECH", "ELEC", "BREAK ROOM",
-              "RECEPTION", "FILE"]
+ROOM_NAMES = [
+    "OPEN OFFICE",
+    "CONF",
+    "LOBBY",
+    "RESTROOM",
+    "KITCHEN",
+    "STORAGE",
+    "CORRIDOR",
+    "MECH",
+    "ELEC",
+    "BREAK ROOM",
+    "RECEPTION",
+    "FILE",
+]
 
 # Fixed schedule for every synthetic sheet (realistic commercial dims).
 SCHEDULE = [
@@ -60,14 +71,14 @@ def _font(size: int):
 # Layout: footprint + guillotine room subdivision (meters, y-down)
 # ---------------------------------------------------------------------------
 
+
 def _subdivide(rect, target: int, rng, min_size: float = MIN_ROOM_M):
     """Guillotine-split rect (x0,y0,x1,y1) into ~target room rects."""
     rooms = [rect]
     guard = 0
     while len(rooms) < target and guard < 60:
         guard += 1
-        cands = [r for r in rooms
-                 if max(r[2] - r[0], r[3] - r[1]) >= 2 * min_size]
+        cands = [r for r in rooms if max(r[2] - r[0], r[3] - r[1]) >= 2 * min_size]
         if not cands:
             break
         r = cands[rng.integers(len(cands))]
@@ -85,11 +96,11 @@ def _subdivide(rect, target: int, rng, min_size: float = MIN_ROOM_M):
 
 def _layout_footprint(rng):
     """Return (footprint_rects, rooms) in meters."""
-    if rng.random() < 0.65:                      # rectangular
+    if rng.random() < 0.65:  # rectangular
         W = rng.uniform(18, 26)
         D = rng.uniform(12, 18)
         rects = [(0, 0, W, D)]
-    else:                                       # L-shape: main + leg
+    else:  # L-shape: main + leg
         W = rng.uniform(18, 24)
         D = rng.uniform(10, 14)
         W2 = rng.uniform(6, 9)
@@ -108,14 +119,16 @@ def _layout_footprint(rng):
 
 def _rect_edges(r):
     x0, y0, x1, y1 = r
-    return [((x0, y0), (x1, y0)),   # top
-            ((x1, y0), (x1, y1)),   # right
-            ((x1, y1), (x0, y1)),   # bottom
-            ((x0, y1), (x0, y0))]   # left
+    return [
+        ((x0, y0), (x1, y0)),  # top
+        ((x1, y0), (x1, y1)),  # right
+        ((x1, y1), (x0, y1)),  # bottom
+        ((x0, y1), (x0, y0)),
+    ]  # left
 
 
 def _point_in_rooms(px, py, rooms, eps=1e-6):
-    for (x0, y0, x1, y1) in rooms:
+    for x0, y0, x1, y1 in rooms:
         if x0 - eps <= px <= x1 + eps and y0 - eps <= py <= y1 + eps:
             return True
     return False
@@ -131,17 +144,25 @@ def _classify_edges(rooms):
             # bottom(0,1) left(-1,0)
             n = [(0, -1), (1, 0), (0, 1), (-1, 0)][ei]
             tx, ty = mx + n[0] * 0.05, my + n[1] * 0.05
-            kind = ("exterior" if not _point_in_rooms(tx, ty, rooms)
-                    else "interior")
+            kind = "exterior" if not _point_in_rooms(tx, ty, rooms) else "interior"
             if abs(ay - by) < 1e-9:
                 key = ("h", round(ay, 6))
                 s_range = (min(ax, bx), max(ax, bx))
             else:
                 key = ("v", round(ax, 6))
                 s_range = (min(ay, by), max(ay, by))
-            out.append({"room": ri, "edge": ei, "kind": kind, "key": key,
-                        "s_range": s_range, "a": (ax, ay), "b": (bx, by),
-                        "normal": n})
+            out.append(
+                {
+                    "room": ri,
+                    "edge": ei,
+                    "kind": kind,
+                    "key": key,
+                    "s_range": s_range,
+                    "a": (ax, ay),
+                    "b": (bx, by),
+                    "normal": n,
+                }
+            )
     return out
 
 
@@ -149,11 +170,12 @@ def _classify_edges(rooms):
 # Opening placement (doors/windows) with conflict tracking on wall lines
 # ---------------------------------------------------------------------------
 
+
 class OpeningPlacer:
     """Tracks occupied intervals per wall line ("h"/"v", offset) in meters."""
 
     def __init__(self):
-        self.used: dict = {}   # key -> list of (s0, s1)
+        self.used: dict = {}  # key -> list of (s0, s1)
 
     def try_place_rng(self, key, s_lo, s_hi, w, rng, margin=0.4):
         lo = s_lo + w / 2 + margin
@@ -163,8 +185,7 @@ class OpeningPlacer:
         occ = self.used.get(key, [])
         for _ in range(40):
             c = float(rng.uniform(lo, hi))
-            if all(c + w / 2 + margin <= o0 or c - w / 2 - margin >= o1
-                   for (o0, o1) in occ):
+            if all(c + w / 2 + margin <= o0 or c - w / 2 - margin >= o1 for (o0, o1) in occ):
                 occ.append((c - w / 2, c + w / 2))
                 self.used[key] = occ
                 return c
@@ -174,6 +195,7 @@ class OpeningPlacer:
 # ---------------------------------------------------------------------------
 # Sheet rendering
 # ---------------------------------------------------------------------------
+
 
 def _draw_double_door_glyph(d, cpx, cpy, w_px, orient, side, lw):
     """Double door: two leaves swinging outward, mirroring the training
@@ -189,8 +211,7 @@ def _draw_double_door_glyph(d, cpx, cpy, w_px, orient, side, lw):
                 start, end = (0, 58) if sgn > 0 else (122, 180)
             else:
                 start, end = (302, 360) if sgn > 0 else (180, 238)
-            d.arc([hx - L, cpy - L, hx + L, cpy + L],
-                  start=start, end=end, fill=0, width=lw)
+            d.arc([hx - L, cpy - L, hx + L, cpy + L], start=start, end=end, fill=0, width=lw)
     else:
         for sgn, hy in ((-1, cpy - w_px / 2), (1, cpy + w_px / 2)):
             ex, ey = cpx + side * L * math.sin(a), hy + sgn * L * math.cos(a)
@@ -199,8 +220,7 @@ def _draw_double_door_glyph(d, cpx, cpy, w_px, orient, side, lw):
                 start, end = (270, 328) if sgn < 0 else (32, 90)
             else:
                 start, end = (212, 270) if sgn < 0 else (90, 148)
-            d.arc([cpx - L, hy - L, cpx + L, hy + L],
-                  start=start, end=end, fill=0, width=lw)
+            d.arc([cpx - L, hy - L, cpx + L, hy + L], start=start, end=end, fill=0, width=lw)
 
 
 def _draw_door_glyph(d, hinge_px, orient, side, L_px, lw):
@@ -212,14 +232,12 @@ def _draw_door_glyph(d, hinge_px, orient, side, L_px, lw):
         ex, ey = hx + L_px * math.cos(a), hy + side * L_px * math.sin(a)
         d.line([hx, hy, ex, ey], fill=0, width=lw)
         start, end = (0, 58) if side > 0 else (302, 360)
-        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px],
-              start=start, end=end, fill=0, width=lw)
+        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px], start=start, end=end, fill=0, width=lw)
     else:
         ex, ey = hx + side * L_px * math.sin(a), hy + L_px * math.cos(a)
         d.line([hx, hy, ex, ey], fill=0, width=lw)
         start, end = (32, 90) if side > 0 else (90, 148)
-        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px],
-              start=start, end=end, fill=0, width=lw)
+        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px], start=start, end=end, fill=0, width=lw)
     return (ex, ey)
 
 
@@ -242,8 +260,6 @@ def generate_sheet(seed: int):
     rng = np.random.default_rng(seed)
     S = PX_PER_M
     wt_px = int(round(WALL_T_M * S))
-    lw = 4
-
     rects, rooms = _layout_footprint(rng)
     edges = _classify_edges(rooms)
     placer = OpeningPlacer()
@@ -253,10 +269,13 @@ def generate_sheet(seed: int):
     fy1 = max(r[3] for r in rects)
     plan_w_px = int(round((fx1 + 2 * MARGIN_M) * S))
     plan_h_px = int(round((fy1 + 2 * MARGIN_M) * S))
-    ox, oy = int(MARGIN_M * S) + 40, 150          # plan origin in sheet
+    ox, oy = int(MARGIN_M * S) + 40, 150  # plan origin in sheet
 
-    def X(m): return ox + m * S
-    def Y(m): return oy + m * S
+    def X(m):
+        return ox + m * S
+
+    def Y(m):
+        return oy + m * S
 
     sheet_w = plan_w_px + 80 + 720
     sheet_h = oy + plan_h_px + 80
@@ -267,17 +286,18 @@ def generate_sheet(seed: int):
     for r in rooms:
         for (ax, ay), (bx, by) in _rect_edges(r):
             x0, y0, x1, y1 = X(ax), Y(ay), X(bx), Y(by)
-            if abs(y0 - y1) < 1e-9:               # horizontal
-                d.rectangle([min(x0, x1), y0 - wt_px / 2,
-                             max(x0, x1), y0 + wt_px / 2], fill=0)
-            else:                                # vertical
-                d.rectangle([x0 - wt_px / 2, min(y0, y1),
-                             x0 + wt_px / 2, max(y0, y1)], fill=0)
+            if abs(y0 - y1) < 1e-9:  # horizontal
+                d.rectangle([min(x0, x1), y0 - wt_px / 2, max(x0, x1), y0 + wt_px / 2], fill=0)
+            else:  # vertical
+                d.rectangle([x0 - wt_px / 2, min(y0, y1), x0 + wt_px / 2, max(y0, y1)], fill=0)
 
     symbols = []
     int_edges = [e for e in edges if e["kind"] == "interior"]
-    ext_edges = [e for e in edges if e["kind"] == "exterior"
-                 and abs(e["s_range"][1] - e["s_range"][0]) >= 2.0]
+    ext_edges = [
+        e
+        for e in edges
+        if e["kind"] == "exterior" and abs(e["s_range"][1] - e["s_range"][0]) >= 2.0
+    ]
     rng.shuffle(int_edges)
     rng.shuffle(ext_edges)
 
@@ -306,7 +326,7 @@ def generate_sheet(seed: int):
                 tmp = tmp.transpose(Image.ROTATE_90)
             else:
                 tmp = tmp.transpose(Image.ROTATE_270)
-        elif orient == "v":          # double door / window: symmetric
+        elif orient == "v":  # double door / window: symmetric
             tmp = tmp.transpose(Image.ROTATE_90)
         Wp, Hp = img.size
         x0, y0 = int(round(cpx - T / 2)), int(round(cpy - T / 2))
@@ -319,26 +339,24 @@ def generate_sheet(seed: int):
     def draw_door_symbol(e, c_m, tag, rng, swing_side):
         w_px = SCHED_BY_TAG[tag]["width_m"] * S
         orient = "h" if e["key"][0] == "h" else "v"
-        cpx, cpy = ((X(c_m), Y(e["a"][1])) if orient == "h"
-                    else (X(e["a"][0]), Y(c_m)))
-        double = (tag == "D2")
+        cpx, cpy = (X(c_m), Y(e["a"][1])) if orient == "h" else (X(e["a"][0]), Y(c_m))
+        double = tag == "D2"
         glyph = glyph_double_door if double else glyph_single_door
         kind = "door_double" if double else "door_single"
-        bbox = render_and_paste(glyph, w_px, 4, cpx, cpy, orient,
-                                swing_side, kind)
-        return {"type": ("Double Swing Door" if double
-                         else "Single Swing Door"),
-                "tag": tag, "bbox_px": bbox, "drawing": "floor_plan"}
+        bbox = render_and_paste(glyph, w_px, 4, cpx, cpy, orient, swing_side, kind)
+        return {
+            "type": ("Double Swing Door" if double else "Single Swing Door"),
+            "tag": tag,
+            "bbox_px": bbox,
+            "drawing": "floor_plan",
+        }
 
     def draw_window_symbol(e, c_m, tag, rng):
         w_px = SCHED_BY_TAG[tag]["width_m"] * S
         orient = "h" if e["key"][0] == "h" else "v"
-        cpx, cpy = ((X(c_m), Y(e["a"][1])) if orient == "h"
-                    else (X(e["a"][0]), Y(c_m)))
-        bbox = render_and_paste(glyph_window_plan, w_px, 4, cpx, cpy,
-                                orient, 1, "window")
-        return {"type": "Window", "tag": tag, "bbox_px": bbox,
-                "drawing": "floor_plan"}
+        cpx, cpy = (X(c_m), Y(e["a"][1])) if orient == "h" else (X(e["a"][0]), Y(c_m))
+        bbox = render_and_paste(glyph_window_plan, w_px, 4, cpx, cpy, orient, 1, "window")
+        return {"type": "Window", "tag": tag, "bbox_px": bbox, "drawing": "floor_plan"}
 
     # ---- doors ---------------------------------------------------------------
     n_doors = int(rng.integers(3, 7))
@@ -351,7 +369,7 @@ def generate_sheet(seed: int):
         c = placer.try_place_rng(e["key"], *e["s_range"], w_m * 1.6, rng)
         if c is None:
             continue
-        side = 1 if rng.random() < 0.5 else -1     # swing into either room
+        side = 1 if rng.random() < 0.5 else -1  # swing into either room
         symbols.append(draw_door_symbol(e, c, tag, rng, side))
         placed_doors += 1
     # one exterior entrance door
@@ -363,7 +381,7 @@ def generate_sheet(seed: int):
             continue
         orient = "h" if e["key"][0] == "h" else "v"
         nx, ny = e["normal"]
-        side = -ny if orient == "h" else -nx     # swing inward
+        side = -ny if orient == "h" else -nx  # swing inward
         side = 1 if side > 0 else -1
         symbols.append(draw_door_symbol(e, c, tag, rng, side))
         break
@@ -376,8 +394,7 @@ def generate_sheet(seed: int):
             break
         tag = "A" if rng.random() < 0.6 else "B"
         w_m = SCHED_BY_TAG[tag]["width_m"]
-        c = placer.try_place_rng(e["key"], *e["s_range"], w_m * 1.6, rng,
-                                 margin=0.6)
+        c = placer.try_place_rng(e["key"], *e["s_range"], w_m * 1.6, rng, margin=0.6)
         if c is None:
             continue
         symbols.append(draw_window_symbol(e, c, tag, rng))
@@ -404,21 +421,22 @@ def generate_sheet(seed: int):
         cxp = X((x0 + x1) / 2) - tw / 2
         cyp = Y((y0 + y1) / 2) - th / 2
         d.text((cxp, cyp), text, fill=0, font=fnt)
-        labels.append({"text": text, "bbox_px": [cxp, cyp, cxp + tw, cyp + th],
-                       "room_idx": i})
+        labels.append({"text": text, "bbox_px": [cxp, cyp, cxp + tw, cyp + th], "room_idx": i})
         poly_m = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-        gt_rooms.append({
-            "name": name, "number": number,
-            "polygon_m": poly_m,
-            "polygon_px": [[X(px), Y(py)] for px, py in poly_m],
-            "area_m2": (x1 - x0) * (y1 - y0),
-        })
+        gt_rooms.append(
+            {
+                "name": name,
+                "number": number,
+                "polygon_m": poly_m,
+                "polygon_px": [[X(px), Y(py)] for px, py in poly_m],
+                "area_m2": (x1 - x0) * (y1 - y0),
+            }
+        )
 
     # ---- schedule table -----------------------------------------------------------
     tx = ox + plan_w_px + 70
     ty = 150
-    d.text((tx, 60), f"SYNTHETIC PLAN -- sheet_{seed:03d}", fill=0,
-           font=_font(30))
+    d.text((tx, 60), f"SYNTHETIC PLAN -- sheet_{seed:03d}", fill=0, font=_font(30))
 
     def draw_table(x, y, title, rows):
         cw = [90, 150, 150]
@@ -433,7 +451,7 @@ def generate_sheet(seed: int):
             d.text((x0 + 10, y + 6), htxt, fill=0, font=fnt)
         y += rh
         for tag, wm, hm in rows:
-            cells = [tag, f"{int(wm*1000)}", f"{int(hm*1000)}"]
+            cells = [tag, f"{int(wm * 1000)}", f"{int(hm * 1000)}"]
             for ci, txt in enumerate(cells):
                 x0 = x + sum(cw[:ci])
                 d.rectangle([x0, y, x0 + cw[ci], y + rh], outline=0, width=2)
@@ -441,15 +459,16 @@ def generate_sheet(seed: int):
             y += rh
         return y
 
-    y = draw_table(tx, ty, "WINDOW SCHEDULE",
-                   [("A", 1.2, 1.5), ("B", 1.8, 1.5)])
-    draw_table(tx, y + 40, "DOOR SCHEDULE",
-               [("D1", 0.9, 2.1), ("D2", 1.6, 2.1)])
+    y = draw_table(tx, ty, "WINDOW SCHEDULE", [("A", 1.2, 1.5), ("B", 1.8, 1.5)])
+    draw_table(tx, y + 40, "DOOR SCHEDULE", [("D1", 0.9, 2.1), ("D2", 1.6, 2.1)])
 
     # ---- expected takeoff ----------------------------------------------------------
-    exp = {"floor_area_m2": sum(r["area_m2"] for r in gt_rooms),
-           "window_area_m2": 0.0, "door_area_m2": 0.0,
-           "counts": {}}
+    exp = {
+        "floor_area_m2": sum(r["area_m2"] for r in gt_rooms),
+        "window_area_m2": 0.0,
+        "door_area_m2": 0.0,
+        "counts": {},
+    }
     for s in symbols:
         se = SCHED_BY_TAG[s["tag"]]
         a = se["width_m"] * se["height_m"]

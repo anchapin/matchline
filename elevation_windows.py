@@ -30,41 +30,41 @@ z_m height above grade) via registration.FacadeRegistration. The
 facade origin is the reference corner (west end for south/north,
 north end for east/west); see registration.py.
 """
+
 from __future__ import annotations
 
 import math
-import sys
 from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from building_model import (  # noqa: E402
-    BuildingModel, Provenance, SpaceOpening, DaylitZone, REVIEW_CONFIDENCE)
-from registration import (  # noqa: E402
-    Facade, FacadeRegistration, register_elevation_grid,
-    register_elevation_geometric, match_interval_to_segments,
-    interval_overlap)
-from datasets_adapter import ScheduleEntry  # noqa: E402
-import link  # noqa: E402
-
+import link
+from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
+from registration import (
+    Facade,
+    FacadeRegistration,
+    interval_overlap,
+    match_interval_to_segments,
+    register_elevation_geometric,
+    register_elevation_grid,
+)
 
 # ---------------------------------------------------------------------------
 # Detection: sheet-px observations
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ElevationWindowObs:
     """One detected window rectangle on an elevation raster (sheet px)."""
+
     id: str
     u0_px: float
     u1_px: float
-    v_head_px: float     # smaller v (v grows downward)
-    v_sill_px: float     # larger v
+    v_head_px: float  # smaller v (v grows downward)
+    v_sill_px: float  # larger v
     confidence: float
     method: str
     bbox_px: list = field(default_factory=list)  # [u0, v_head, u1, v_sill]
@@ -74,8 +74,7 @@ class WindowDetectorBackend:
     """Interface for detection backends. detect() returns observations
     in sheet px; everything downstream is backend-agnostic."""
 
-    def detect(self, image, px_per_m: float, sheet_id: str,
-               revision: int) -> list:
+    def detect(self, image, px_per_m: float, sheet_id: str, revision: int) -> list:
         raise NotImplementedError
 
 
@@ -97,11 +96,14 @@ class ContourWindowDetector(WindowDetectorBackend):
     mullion lines (interior -> merged into the window component).
     """
 
-    def __init__(self, min_area_m2: float = 0.4,
-                 max_area_m2: float = 12.0,
-                 aspect_range: tuple = (0.3, 4.0),
-                 min_fill_ratio: float = 0.85,
-                 confidence: float = 0.9):
+    def __init__(
+        self,
+        min_area_m2: float = 0.4,
+        max_area_m2: float = 12.0,
+        aspect_range: tuple = (0.3, 4.0),
+        min_fill_ratio: float = 0.85,
+        confidence: float = 0.9,
+    ):
         self.min_area_m2 = min_area_m2
         self.max_area_m2 = max_area_m2
         self.aspect_range = aspect_range
@@ -123,15 +125,13 @@ class ContourWindowDetector(WindowDetectorBackend):
             d(i)
         return depth
 
-    def detect(self, image, px_per_m: float, sheet_id: str,
-               revision: int) -> list:
+    def detect(self, image, px_per_m: float, sheet_id: str, revision: int) -> list:
         cv2 = _require_cv2()
         ink = np.ascontiguousarray((image < 128).astype("uint8") * 255)
-        contours, hier = cv2.findContours(
-            ink, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hier = cv2.findContours(ink, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         depths = self._depths(hier[0]) if hier is not None else {}
-        min_area = self.min_area_m2 * px_per_m ** 2
-        max_area = self.max_area_m2 * px_per_m ** 2
+        min_area = self.min_area_m2 * px_per_m**2
+        max_area = self.max_area_m2 * px_per_m**2
         obs = []
         for i, c in enumerate(contours):
             if depths.get(i, 0) % 2 == 1:
@@ -153,11 +153,18 @@ class ContourWindowDetector(WindowDetectorBackend):
                 continue
             if area / (w * h) < self.min_fill_ratio:
                 continue
-            obs.append(ElevationWindowObs(
-                id="", u0_px=float(x), u1_px=float(x + w),
-                v_head_px=float(y), v_sill_px=float(y + h),
-                confidence=self.confidence, method="contour_rect",
-                bbox_px=[float(x), float(y), float(x + w), float(y + h)]))
+            obs.append(
+                ElevationWindowObs(
+                    id="",
+                    u0_px=float(x),
+                    u1_px=float(x + w),
+                    v_head_px=float(y),
+                    v_sill_px=float(y + h),
+                    confidence=self.confidence,
+                    method="contour_rect",
+                    bbox_px=[float(x), float(y), float(x + w), float(y + h)],
+                )
+            )
         obs.sort(key=lambda o: o.u0_px)
         for i, o in enumerate(obs):
             o.id = f"EW-{i + 1}"
@@ -172,33 +179,38 @@ def register_backend(name: str, backend: WindowDetectorBackend) -> None:
     _BACKENDS[name] = backend
 
 
-def detect_windows(image, px_per_m: float, sheet_id: str, revision: int,
-                   backend: str = "contour") -> list:
+def detect_windows(
+    image, px_per_m: float, sheet_id: str, revision: int, backend: str = "contour"
+) -> list:
     """Run a named detector backend on an elevation raster."""
     if backend not in _BACKENDS:
-        raise ValueError(f"unknown window detector backend {backend!r}; "
-                         f"registered: {sorted(_BACKENDS)}")
+        raise ValueError(
+            f"unknown window detector backend {backend!r}; registered: {sorted(_BACKENDS)}"
+        )
     return _BACKENDS[backend].detect(image, px_per_m, sheet_id, revision)
 
 
 def _require_cv2():
     try:
         import cv2
+
         return cv2
     except ImportError as e:
         raise RuntimeError(
-            "window detection needs OpenCV (cv2); e.g. run with "
-            "~/workspace/.venv-ocr/bin/python") from e
+            "window detection needs OpenCV (cv2); e.g. run with ~/workspace/.venv-ocr/bin/python"
+        ) from e
 
 
 # ---------------------------------------------------------------------------
 # Facade-meter mapping
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FacadeWindow:
     """One window instance located on a facade, in facade meters."""
-    id: str                  # f"{sheet_id}:{obs_id}"
+
+    id: str  # f"{sheet_id}:{obs_id}"
     sheet_id: str
     facade: str
     s0_m: float
@@ -208,13 +220,12 @@ class FacadeWindow:
     sill_m: float
     head_m: float
     height_m: float
-    category_hint: str       # "window" | "door" (sill ~ 0 -> door)
+    category_hint: str  # "window" | "door" (sill ~ 0 -> door)
     confidence: float
     provenance: Provenance = None
 
 
-def observations_to_facade(obs_list: list, reg: FacadeRegistration,
-                           facade: str) -> list:
+def observations_to_facade(obs_list: list, reg: FacadeRegistration, facade: str) -> list:
     """Map sheet-px observations to facade meters via a registration."""
     out = []
     for o in obs_list:
@@ -226,19 +237,34 @@ def observations_to_facade(obs_list: list, reg: FacadeRegistration,
         s0, s1 = min(s0, s1), max(s0, s1)
         sill, head = min(sill, head), max(sill, head)
         prov = Provenance(
-            sheet_id=reg.sheet_id, revision=reg.provenance.revision,
-            method=reg.method + "_registration", confidence=reg.confidence,
+            sheet_id=reg.sheet_id,
+            revision=reg.provenance.revision,
+            method=reg.method + "_registration",
+            confidence=reg.confidence,
             bbox=o.bbox_px,
-            note=(f"detected {o.method} {o.id}: facade interval "
-                  f"[{s0:.2f}, {s1:.2f}] m, sill {sill:.2f} m, "
-                  f"head {head:.2f} m"))
-        out.append(FacadeWindow(
-            id=f"{reg.sheet_id}:{o.id}", sheet_id=reg.sheet_id,
-            facade=facade, s0_m=s0, s1_m=s1,
-            s_center_m=(s0 + s1) / 2, width_m=s1 - s0,
-            sill_m=sill, head_m=head, height_m=head - sill,
-            category_hint="door" if sill < 0.15 else "window",
-            confidence=reg.confidence * o.confidence, provenance=prov))
+            note=(
+                f"detected {o.method} {o.id}: facade interval "
+                f"[{s0:.2f}, {s1:.2f}] m, sill {sill:.2f} m, "
+                f"head {head:.2f} m"
+            ),
+        )
+        out.append(
+            FacadeWindow(
+                id=f"{reg.sheet_id}:{o.id}",
+                sheet_id=reg.sheet_id,
+                facade=facade,
+                s0_m=s0,
+                s1_m=s1,
+                s_center_m=(s0 + s1) / 2,
+                width_m=s1 - s0,
+                sill_m=sill,
+                head_m=head,
+                height_m=head - sill,
+                category_hint="door" if sill < 0.15 else "window",
+                confidence=reg.confidence * o.confidence,
+                provenance=prov,
+            )
+        )
     return out
 
 
@@ -246,8 +272,10 @@ def observations_to_facade(obs_list: list, reg: FacadeRegistration,
 # Schedule tag association by measured size
 # ---------------------------------------------------------------------------
 
-def assign_window_tag(width_m: float, height_m: float, win_sched: dict,
-                      tol_m: float = 0.15) -> Optional[str]:
+
+def assign_window_tag(
+    width_m: float, height_m: float, win_sched: dict, tol_m: float = 0.15
+) -> Optional[str]:
     """Associate a measured instance with a schedule tag by size.
 
     Returns the tag whose (width, height) is nearest within tol_m, else
@@ -268,9 +296,11 @@ def assign_window_tag(width_m: float, height_m: float, win_sched: dict,
 # Dedup: merge observations of one facade across elevations
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MergedWindow:
     """One physical window merged from >= 1 elevation observations."""
+
     id: str
     facade: str
     s0_m: float
@@ -293,8 +323,9 @@ def _overlap_frac(a: FacadeWindow, b: FacadeWindow) -> float:
     return ov / max(min(a.width_m, b.width_m), 1e-9)
 
 
-def merge_elevation_observations(fw_lists: list, tol_m: float = 0.30,
-                                 min_overlap_frac: float = 0.5) -> tuple:
+def merge_elevation_observations(
+    fw_lists: list, tol_m: float = 0.30, min_overlap_frac: float = 0.5
+) -> tuple:
     """Merge per-elevation FacadeWindow lists into physical windows.
 
     Two observations merge when their along-wall intervals overlap by
@@ -327,11 +358,14 @@ def merge_elevation_observations(fw_lists: list, tol_m: float = 0.30,
                 continue
             dc = abs(v.s_center_m - w.s_center_m)
             if dc > tol_m:
-                conflicts.append({
-                    "a": w.id, "b": v.id,
-                    "delta_center_m": round(dc, 3),
-                    "note": ("same facade interval, centers disagree "
-                             f"beyond {tol_m} m")})
+                conflicts.append(
+                    {
+                        "a": w.id,
+                        "b": v.id,
+                        "delta_center_m": round(dc, 3),
+                        "note": (f"same facade interval, centers disagree beyond {tol_m} m"),
+                    }
+                )
                 continue
             group.append(v)
             used.add(j)
@@ -343,22 +377,35 @@ def merge_elevation_observations(fw_lists: list, tol_m: float = 0.30,
         head = sum(g.head_m * g.confidence for g in group) / cw
         sheets = sorted({g.sheet_id for g in group})
         prov = Provenance(
-            sheet_id="+".join(sheets), revision=0,
+            sheet_id="+".join(sheets),
+            revision=0,
             method="elevation_dedup",
-            confidence=round(sum(g.confidence for g in group)
-                             / len(group), 3),
-            note=(f"merged {len(group)} observation(s) from "
-                  f"{sheets}; center spread "
-                  f"{max(g.s_center_m for g in group) - min(g.s_center_m for g in group):.3f} m"))
-        merged.append(MergedWindow(
-            id=f"MW-{mid}", facade=w.facade, s0_m=s0, s1_m=s1,
-            s_center_m=(s0 + s1) / 2, width_m=s1 - s0,
-            sill_m=sill, head_m=head, height_m=head - sill,
-            tag=None, category_hint=w.category_hint,
-            sources=[(g.sheet_id, g.id) for g in group],
-            confidence=round(sum(g.confidence for g in group)
-                             / len(group), 3),
-            single_source=len(group) == 1, provenance=prov))
+            confidence=round(sum(g.confidence for g in group) / len(group), 3),
+            note=(
+                f"merged {len(group)} observation(s) from "
+                f"{sheets}; center spread "
+                f"{max(g.s_center_m for g in group) - min(g.s_center_m for g in group):.3f} m"
+            ),
+        )
+        merged.append(
+            MergedWindow(
+                id=f"MW-{mid}",
+                facade=w.facade,
+                s0_m=s0,
+                s1_m=s1,
+                s_center_m=(s0 + s1) / 2,
+                width_m=s1 - s0,
+                sill_m=sill,
+                head_m=head,
+                height_m=head - sill,
+                tag=None,
+                category_hint=w.category_hint,
+                sources=[(g.sheet_id, g.id) for g in group],
+                confidence=round(sum(g.confidence for g in group) / len(group), 3),
+                single_source=len(group) == 1,
+                provenance=prov,
+            )
+        )
     merged.sort(key=lambda m: m.s_center_m)
     for k, m in enumerate(merged, 1):
         m.id = f"MW-{k}"
@@ -368,6 +415,7 @@ def merge_elevation_observations(fw_lists: list, tol_m: float = 0.30,
 # ---------------------------------------------------------------------------
 # Attach merged windows to spaces (with exact placement)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ElevationLinkReport:
@@ -384,15 +432,18 @@ class ElevationLinkReport:
 def _facade_from_meta(meta: dict, D: float, W: float) -> Facade:
     name = meta.get("facade", "south")
     ref = tuple(meta.get("facade_ref_corner_m", [0.0, D]))
-    return Facade(name=name, ref_corner_m=ref,
-                  length_m=meta.get("facade_length_m", W),
-                  fixed_coord_m=D if name in ("south", "north") else W,
-                  axis="x" if name in ("south", "north") else "y")
+    return Facade(
+        name=name,
+        ref_corner_m=ref,
+        length_m=meta.get("facade_length_m", W),
+        fixed_coord_m=D if name in ("south", "north") else W,
+        axis="x" if name in ("south", "north") else "y",
+    )
 
 
-def attach_merged_windows(model: BuildingModel, spaces: list, bldg: dict,
-                          merged: list, win_sched: dict,
-                          facade: str) -> tuple:
+def attach_merged_windows(
+    model: BuildingModel, spaces: list, bldg: dict, merged: list, win_sched: dict, facade: str
+) -> tuple:
     """Attach merged windows to rooms; exact placement on every opening.
 
     Returns (attached, unlinked). Unlinked windows are flagged for
@@ -403,45 +454,57 @@ def attach_merged_windows(model: BuildingModel, spaces: list, bldg: dict,
     attached, unlinked = [], []
     for m in merged:
         m.tag = assign_window_tag(m.width_m, m.height_m, win_sched)
-        seg, frac, ambiguous = match_interval_to_segments(
-            m.s0_m, m.s1_m, segments)
+        seg, frac, ambiguous = match_interval_to_segments(m.s0_m, m.s1_m, segments)
         conf = m.confidence * (0.5 + 0.5 * frac)
         if m.tag is None:
             conf *= 0.8  # untagged: measured dims only
         prov = Provenance(
-            sheet_id=m.provenance.sheet_id, revision=1,
+            sheet_id=m.provenance.sheet_id,
+            revision=1,
             method="elevation_instance_detection",
             confidence=round(conf, 3),
-            note=(f"merged {m.id} {m.sources}: interval "
-                  f"[{m.s0_m:.2f}, {m.s1_m:.2f}] m center "
-                  f"{m.s_center_m:.2f} m, sill {m.sill_m:.2f} m, head "
-                  f"{m.head_m:.2f} m; tag "
-                  f"{m.tag or 'UNTAGGED (measured dims)'}; segment "
-                  f"{seg['id'] if seg else None} overlap {frac:.0%}"
-                  + (" AMBIGUOUS" if ambiguous else "")
-                  + (" SINGLE-SOURCE" if m.single_source else "")))
+            note=(
+                f"merged {m.id} {m.sources}: interval "
+                f"[{m.s0_m:.2f}, {m.s1_m:.2f}] m center "
+                f"{m.s_center_m:.2f} m, sill {m.sill_m:.2f} m, head "
+                f"{m.head_m:.2f} m; tag "
+                f"{m.tag or 'UNTAGGED (measured dims)'}; segment "
+                f"{seg['id'] if seg else None} overlap {frac:.0%}"
+                + (" AMBIGUOUS" if ambiguous else "")
+                + (" SINGLE-SOURCE" if m.single_source else "")
+            ),
+        )
         if seg is None:
             unlinked.append(m)
             model.flag_for_review(
                 "window_room_link",
-                f"window {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m "
-                f"matches no wall segment", conf, prov)
+                f"window {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m matches no wall segment",
+                conf,
+                prov,
+            )
             continue
         sp = space_of_num[seg["room_number"]]
         entry = win_sched.get(m.tag) if m.tag else None
         width_m = entry.width_m if entry else round(m.width_m, 3)
         height_m = entry.height_m if entry else round(m.height_m, 3)
-        needs_review = (ambiguous or conf < REVIEW_CONFIDENCE
-                        or m.tag is None)
-        sp.openings.append(SpaceOpening(
-            id=f"{facade}-{m.id}", tag=m.tag or "", category="window",
-            width_m=width_m, height_m=height_m,
-            sill_m=round(m.sill_m, 3), head_m=round(m.head_m, 3),
-            host_facade=facade,
-            host_interval_m=[round(m.s0_m, 3), round(m.s1_m, 3)],
-            s_center_m=round(m.s_center_m, 3),
-            area_m2=round(width_m * height_m, 4),
-            provenance=prov, needs_review=needs_review))
+        needs_review = ambiguous or conf < REVIEW_CONFIDENCE or m.tag is None
+        sp.openings.append(
+            SpaceOpening(
+                id=f"{facade}-{m.id}",
+                tag=m.tag or "",
+                category="window",
+                width_m=width_m,
+                height_m=height_m,
+                sill_m=round(m.sill_m, 3),
+                head_m=round(m.head_m, 3),
+                host_facade=facade,
+                host_interval_m=[round(m.s0_m, 3), round(m.s1_m, 3)],
+                s_center_m=round(m.s_center_m, 3),
+                area_m2=round(width_m * height_m, 4),
+                provenance=prov,
+                needs_review=needs_review,
+            )
+        )
         attached.append((m, sp.number))
         if needs_review:
             model.flag_for_review(
@@ -449,7 +512,10 @@ def attach_merged_windows(model: BuildingModel, spaces: list, bldg: dict,
                 f"window {m.id} -> room {sp.number}: "
                 f"{'ambiguous span; ' if ambiguous else ''}"
                 f"{'untagged; ' if m.tag is None else ''}"
-                f"confidence {conf:.2f}", conf, prov)
+                f"confidence {conf:.2f}",
+                conf,
+                prov,
+            )
     return attached, unlinked
 
 
@@ -457,9 +523,10 @@ def attach_merged_windows(model: BuildingModel, spaces: list, bldg: dict,
 # Reconciliation: elevation instances vs arch-plan tag counts
 # ---------------------------------------------------------------------------
 
-def reconcile_window_counts(model: BuildingModel, plan_counts: dict,
-                            merged: list, facade: str,
-                            plan_sheet_id: str) -> list:
+
+def reconcile_window_counts(
+    model: BuildingModel, plan_counts: dict, merged: list, facade: str, plan_sheet_id: str
+) -> list:
     """Elevation instances should agree with arch-plan tag counts.
 
     plan_counts: {tag: n} from the arch plan (per facade).
@@ -473,25 +540,33 @@ def reconcile_window_counts(model: BuildingModel, plan_counts: dict,
         if ec == pc:
             continue
         if ec > pc:
-            desc = (f"{facade} facade: {ec - pc} '{tag}' window instance(s) "
-                    f"on elevation(s) with no matching arch-plan tag "
-                    f"(elev {ec} vs plan {pc})")
+            desc = (
+                f"{facade} facade: {ec - pc} '{tag}' window instance(s) "
+                f"on elevation(s) with no matching arch-plan tag "
+                f"(elev {ec} vs plan {pc})"
+            )
         else:
-            desc = (f"{facade} facade: {pc - ec} '{tag}' arch-plan tag(s) "
-                    f"with no elevation instance "
-                    f"(plan {pc} vs elev {ec})")
+            desc = (
+                f"{facade} facade: {pc - ec} '{tag}' arch-plan tag(s) "
+                f"with no elevation instance "
+                f"(plan {pc} vs elev {ec})"
+            )
         prov = Provenance(
-            sheet_id=plan_sheet_id, revision=1,
-            method="window_reconciliation", confidence=0.7, note=desc)
+            sheet_id=plan_sheet_id,
+            revision=1,
+            method="window_reconciliation",
+            confidence=0.7,
+            note=desc,
+        )
         model.flag_for_review("window_reconciliation", desc, 0.7, prov)
-        flags.append({"tag": tag, "plan": pc, "elevation": ec,
-                      "description": desc})
+        flags.append({"tag": tag, "plan": pc, "elevation": ec, "description": desc})
     return flags
 
 
 # ---------------------------------------------------------------------------
 # Daylighting: ASHRAE 90.1 sidelighted zones from exact window placement
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class DaylightParams:
@@ -508,11 +583,11 @@ class DaylightParams:
     are NOT modeled in v1 -- zones may be optimistic in partitioned
     rooms. Toplighting (skylights) is out of scope.
     """
-    standard: str = ("ASHRAE 90.1-2019 sidelighted-area geometry "
-                     "(approx, partitions not modeled)")
-    primary_depth_factor: float = 1.0    # x window head height
+
+    standard: str = "ASHRAE 90.1-2019 sidelighted-area geometry (approx, partitions not modeled)"
+    primary_depth_factor: float = 1.0  # x window head height
     secondary_depth_factor: float = 2.0  # x window head height
-    lateral_factor: float = 1.0          # x head height, each side
+    lateral_factor: float = 1.0  # x head height, each side
 
 
 def _facade_frame(facade: str, W: float, D: float):
@@ -535,14 +610,14 @@ def _clip_polygon(subject: list, clip: list) -> list:
     edge is determined from the clip polygon's signed shoelace area
     (area > 0 in y-down = visually clockwise = interior right of edge).
     """
-    area = sum(clip[i][0] * clip[(i + 1) % len(clip)][1]
-               - clip[(i + 1) % len(clip)][0] * clip[i][1]
-               for i in range(len(clip)))
+    area = sum(
+        clip[i][0] * clip[(i + 1) % len(clip)][1] - clip[(i + 1) % len(clip)][0] * clip[i][1]
+        for i in range(len(clip))
+    )
     cw = area > 0
 
     def inside(p, a, b):
-        cross = ((b[0] - a[0]) * (p[1] - a[1])
-                 - (b[1] - a[1]) * (p[0] - a[0]))
+        cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
         return cross >= -1e-9 if cw else cross <= 1e-9
 
     def intersect(p1, p2, a, b):
@@ -578,13 +653,19 @@ def _clip_polygon(subject: list, clip: list) -> list:
 def _poly_area(poly: list) -> float:
     if len(poly) < 3:
         return 0.0
-    return abs(sum(poly[i][0] * poly[(i + 1) % len(poly)][1]
-                     - poly[(i + 1) % len(poly)][0] * poly[i][1]
-                     for i in range(len(poly)))) / 2
+    return (
+        abs(
+            sum(
+                poly[i][0] * poly[(i + 1) % len(poly)][1]
+                - poly[(i + 1) % len(poly)][0] * poly[i][1]
+                for i in range(len(poly))
+            )
+        )
+        / 2
+    )
 
 
-def compute_daylit_zones(space, W: float, D: float,
-                         params: DaylightParams = None) -> None:
+def compute_daylit_zones(space, W: float, D: float, params: DaylightParams = None) -> None:
     """Compute primary/secondary sidelighted polygons for one space.
 
     Uses each window opening's exact placement (host_interval_m,
@@ -592,20 +673,27 @@ def compute_daylit_zones(space, W: float, D: float,
     so they never leak into neighboring rooms.
     """
     from building_model import SpaceDaylight  # local: avoids circulars
+
     params = params or DaylightParams()
     dl = SpaceDaylight(
-        params_note=(f"{params.standard}: primary "
-                     f"{params.primary_depth_factor}xH, secondary "
-                     f"{params.secondary_depth_factor}xH, lateral "
-                     f"{params.lateral_factor}xH/side"),
+        params_note=(
+            f"{params.standard}: primary "
+            f"{params.primary_depth_factor}xH, secondary "
+            f"{params.secondary_depth_factor}xH, lateral "
+            f"{params.lateral_factor}xH/side"
+        ),
         provenance=Provenance(
-            sheet_id=",".join(sorted(
-                {o.provenance.sheet_id for o in space.openings
-                 if o.provenance})),
-            revision=1, method="daylit_zone_calc", confidence=min(
-                [o.provenance.confidence for o in space.openings
-                 if o.provenance] or [1.0]),
-            note=f"{len(space.openings)} window(s)"))
+            sheet_id=",".join(
+                sorted({o.provenance.sheet_id for o in space.openings if o.provenance})
+            ),
+            revision=1,
+            method="daylit_zone_calc",
+            confidence=min(
+                [o.provenance.confidence for o in space.openings if o.provenance] or [1.0]
+            ),
+            note=f"{len(space.openings)} window(s)",
+        ),
+    )
     poly = [list(p) for p in space.polygon_m]
     if len(poly) < 3:
         space.daylight = dl
@@ -619,8 +707,7 @@ def compute_daylit_zones(space, W: float, D: float,
         ref, lat, inw = _facade_frame(o.host_facade, W, D)
 
         def wall_pt(s, t):
-            return [ref[0] + lat[0] * s + inw[0] * t,
-                    ref[1] + lat[1] * s + inw[1] * t]
+            return [ref[0] + lat[0] * s + inw[0] * t, ref[1] + lat[1] * s + inw[1] * t]
 
         # room lateral extent + inward depth along this facade
         s_vals, depths = [], []
@@ -642,24 +729,29 @@ def compute_daylit_zones(space, W: float, D: float,
         if ds > dp + 1e-9:
             bands.append(("secondary", dp, ds))
         for zc, t0, t1 in bands:
-            pre = [wall_pt(lat0, t0), wall_pt(lat1, t0),
-                   wall_pt(lat1, t1), wall_pt(lat0, t1)]
+            pre = [wall_pt(lat0, t0), wall_pt(lat1, t0), wall_pt(lat1, t1), wall_pt(lat0, t1)]
             clipped = _clip_polygon(pre, poly)
             area = _poly_area(clipped)
             if area <= 1e-9:
                 continue
             zone = DaylitZone(
                 id=f"{space.id}-DL-{o.id}-{zc[0].upper()}",
-                zone_class=zc, window_id=o.id,
+                zone_class=zc,
+                window_id=o.id,
                 polygon_m=[[round(x, 3), round(y, 3)] for x, y in clipped],
-                area_m2=round(area, 4), head_height_m=round(H, 3),
+                area_m2=round(area, 4),
+                head_height_m=round(H, 3),
                 provenance=Provenance(
                     sheet_id=o.provenance.sheet_id if o.provenance else "",
-                    revision=1, method="daylit_zone_calc",
-                    confidence=(o.provenance.confidence
-                                if o.provenance else 1.0),
-                    note=(f"{zc} sidelighted: {t0:.2f}-{t1:.2f} m from "
-                          f"{o.host_facade} wall, H={H:.2f} m")))
+                    revision=1,
+                    method="daylit_zone_calc",
+                    confidence=(o.provenance.confidence if o.provenance else 1.0),
+                    note=(
+                        f"{zc} sidelighted: {t0:.2f}-{t1:.2f} m from "
+                        f"{o.host_facade} wall, H={H:.2f} m"
+                    ),
+                ),
+            )
             (dl.primary if zc == "primary" else dl.secondary).append(zone)
     space.daylight = dl
 
@@ -668,11 +760,17 @@ def compute_daylit_zones(space, W: float, D: float,
 # Top-level: multi-elevation linking with dedup
 # ---------------------------------------------------------------------------
 
-def link_elevations(model: BuildingModel, bldg: dict, spaces: list,
-                    elevation_keys: tuple, win_sched: dict,
-                    detector_backend: str = "contour",
-                    daylight_params: DaylightParams = None,
-                    dedup_tol_m: float = 0.30) -> ElevationLinkReport:
+
+def link_elevations(
+    model: BuildingModel,
+    bldg: dict,
+    spaces: list,
+    elevation_keys: tuple,
+    win_sched: dict,
+    detector_backend: str = "contour",
+    daylight_params: DaylightParams = None,
+    dedup_tol_m: float = 0.30,
+) -> ElevationLinkReport:
     """Detect -> register -> dedup -> attach -> reconcile -> daylight.
 
     elevation_keys: e.g. ("elev_grid", "elev_nogrid"). All elevations
@@ -686,90 +784,112 @@ def link_elevations(model: BuildingModel, bldg: dict, spaces: list,
         meta, data = sh["meta"], sh["data"]
         facade = _facade_from_meta(meta, D, W)
         facades.append(facade.name)
-        obs = detect_windows(sh["image"], data["px_per_m"],
-                             meta["sheet_id"], meta["revision"],
-                             backend=detector_backend)
+        obs = detect_windows(
+            sh["image"],
+            data["px_per_m"],
+            meta["sheet_id"],
+            meta["revision"],
+            backend=detector_backend,
+        )
         if data.get("bubbles"):
             reg = register_elevation_grid(
-                meta["sheet_id"], facade, plan_grid_m=bldg["grids_v"],
+                meta["sheet_id"],
+                facade,
+                plan_grid_m=bldg["grids_v"],
                 elev_bubbles=data["bubbles"],
                 v_ground_px=data["v_ground_px"],
                 elev_px_per_m=data["px_per_m"],
-                revision=meta["revision"])
+                revision=meta["revision"],
+            )
             method = "grid"
         else:
             reg = register_elevation_geometric(
-                meta["sheet_id"], facade, wall_u0_px=data["wall_u0_px"],
+                meta["sheet_id"],
+                facade,
+                wall_u0_px=data["wall_u0_px"],
                 elev_px_per_m=data["px_per_m"],
                 v_ground_px=data["v_ground_px"],
-                revision=meta["revision"])
+                revision=meta["revision"],
+            )
             method = "geometric"
         fw = observations_to_facade(obs, reg, facade.name)
         fw_lists.append(fw)
         report.per_elevation[key] = {
-            "sheet_id": meta["sheet_id"], "method": method,
-            "detected": len(obs)}
-        model.log_revision(meta["sheet_id"], meta["revision"], "ingest",
-                           f"{len(obs)} window instances detected "
-                           f"({detector_backend}) via {method} path")
+            "sheet_id": meta["sheet_id"],
+            "method": method,
+            "detected": len(obs),
+        }
+        model.log_revision(
+            meta["sheet_id"],
+            meta["revision"],
+            "ingest",
+            f"{len(obs)} window instances detected ({detector_backend}) via {method} path",
+        )
     if len(set(facades)) != 1:
-        raise ValueError(f"v1 needs one facade across elevations, "
-                         f"got {facades}")
+        raise ValueError(f"v1 needs one facade across elevations, got {facades}")
     facade_name = facades[0]
 
-    merged, conflicts = merge_elevation_observations(fw_lists,
-                                                     tol_m=dedup_tol_m)
+    merged, conflicts = merge_elevation_observations(fw_lists, tol_m=dedup_tol_m)
     report.n_merged = len(merged)
     report.n_conflicts = len(conflicts)
     for c in conflicts:
         model.flag_for_review(
             "elevation_conflict",
             f"facade {facade_name}: observations {c['a']} vs {c['b']} "
-            f"overlap but centers disagree ({c['note']})", 0.5,
-            Provenance(sheet_id=",".join(elevation_keys), revision=1,
-                       method="elevation_dedup", confidence=0.5,
-                       note=c["note"]))
+            f"overlap but centers disagree ({c['note']})",
+            0.5,
+            Provenance(
+                sheet_id=",".join(elevation_keys),
+                revision=1,
+                method="elevation_dedup",
+                confidence=0.5,
+                note=c["note"],
+            ),
+        )
 
-    attached, unlinked = attach_merged_windows(
-        model, spaces, bldg, merged, win_sched, facade_name)
+    attached, unlinked = attach_merged_windows(model, spaces, bldg, merged, win_sched, facade_name)
     report.n_attached = len(attached)
     report.n_unlinked = len(unlinked)
 
     plan_counts = Counter(w["tag"] for w in bldg.get("south_windows", []))
     flags = reconcile_window_counts(
-        model, dict(plan_counts), merged, facade_name,
-        bldg["sheets"]["arch"]["meta"]["sheet_id"])
+        model, dict(plan_counts), merged, facade_name, bldg["sheets"]["arch"]["meta"]["sheet_id"]
+    )
     report.n_reconcile_flags = len(flags)
 
     for sp in spaces:
         compute_daylit_zones(sp, W, D, daylight_params)
 
-    model.log_revision("link_elevations", 1, "relink",
-                       f"{len(merged)} merged windows -> "
-                       f"{len(attached)} attached, {len(unlinked)} "
-                       f"unlinked, {len(conflicts)} conflicts, "
-                       f"{len(flags)} reconciliation flags")
+    model.log_revision(
+        "link_elevations",
+        1,
+        "relink",
+        f"{len(merged)} merged windows -> "
+        f"{len(attached)} attached, {len(unlinked)} "
+        f"unlinked, {len(conflicts)} conflicts, "
+        f"{len(flags)} reconciliation flags",
+    )
     report.review_items = len(model.review_queue)
     return report
 
 
-def build_model_with_elevations(bldg: dict,
-                               elevation_keys: tuple = ("elev_grid",
-                                                        "elev_nogrid"),
-                               building_name: str = "",
-                               detector_backend: str = "contour",
-                               daylight_params: DaylightParams = None
-                               ) -> tuple:
+def build_model_with_elevations(
+    bldg: dict,
+    elevation_keys: tuple = ("elev_grid", "elev_nogrid"),
+    building_name: str = "",
+    detector_backend: str = "contour",
+    daylight_params: DaylightParams = None,
+) -> tuple:
     """Canonical model with exact window placement from elevations.
 
     Arch/lighting/mech link exactly as link.build_model; elevations go
     through detect -> dedup -> attach -> reconcile -> daylighting
     (link_elevations) instead of the single-elevation GT path.
     """
-    model, _ = link.build_model(bldg, elevation_key=None,
-                                building_name=building_name)
+    model, _ = link.build_model(bldg, elevation_key=None, building_name=building_name)
     spaces = list(model.spaces.values())
     win_sched, _ = link._schedules(bldg)
-    report = link_elevations(model, bldg, spaces, elevation_keys,
-                             win_sched, detector_backend, daylight_params)
+    report = link_elevations(
+        model, bldg, spaces, elevation_keys, win_sched, detector_backend, daylight_params
+    )
     return model, report

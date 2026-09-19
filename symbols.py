@@ -3,6 +3,7 @@
 Approximates the architectural-drawing use case: geometric/GD&T-like glyphs
 drawn as crisp vector strokes with jitter (rotation/translation/scale/stroke).
 """
+
 import numpy as np
 
 CANVAS = 112
@@ -16,7 +17,7 @@ def _line(img, x0, y0, x1, y1, thick):
     rr = int(np.ceil(thick / 2))
     for x, y in zip(xs, ys):
         xi, yi = int(round(x)), int(round(y))
-        img[max(0, yi - rr):yi + rr + 1, max(0, xi - rr):xi + rr + 1] = 1.0
+        img[max(0, yi - rr) : yi + rr + 1, max(0, xi - rr) : xi + rr + 1] = 1.0
 
 
 def _circle(img, cx, cy, r, thick):
@@ -40,34 +41,32 @@ def draw(cls: int, thick: float = 7.0) -> np.ndarray:
     """Draw symbol class 0..9 centered on a 112x112 canvas."""
     img = np.zeros((CANVAS, CANVAS))
     c, R = CANVAS / 2, 34
-    if cls == 0:      # circle
+    if cls == 0:  # circle
         _circle(img, c, c, R, thick)
-    elif cls == 1:    # square
-        _poly(img, [c - R, c + R, c + R, c - R, c - R],
-              [c - R, c - R, c + R, c + R, c - R], thick)
-    elif cls == 2:    # triangle
+    elif cls == 1:  # square
+        _poly(img, [c - R, c + R, c + R, c - R, c - R], [c - R, c - R, c + R, c + R, c - R], thick)
+    elif cls == 2:  # triangle
         _poly(img, [c, c + R, c - R, c], [c - R, c + R * 0.8, c + R * 0.8, c - R], thick)
-    elif cls == 3:    # cross (plus)
+    elif cls == 3:  # cross (plus)
         _line(img, c - R, c, c + R, c, thick)
         _line(img, c, c - R, c, c + R, thick)
-    elif cls == 4:    # perpendicularity (T)
+    elif cls == 4:  # perpendicularity (T)
         _line(img, c - R, c + R * 0.6, c + R, c + R * 0.6, thick)
         _line(img, c, c + R * 0.6, c, c - R, thick)
-    elif cls == 5:    # parallelism (two bars)
+    elif cls == 5:  # parallelism (two bars)
         _line(img, c - R * 0.5, c - R, c - R * 0.5, c + R, thick)
         _line(img, c + R * 0.5, c - R, c + R * 0.5, c + R, thick)
-    elif cls == 6:    # angularity (angle)
+    elif cls == 6:  # angularity (angle)
         _line(img, c - R, c + R * 0.5, c + R, c + R * 0.5, thick)
         _line(img, c - R, c + R * 0.5, c + R * 0.4, c - R * 0.7, thick)
-    elif cls == 7:    # position (circle + crosshair)
+    elif cls == 7:  # position (circle + crosshair)
         _circle(img, c, c, R, thick)
         _line(img, c - R, c, c + R, c, thick)
         _line(img, c, c - R, c, c + R, thick)
-    elif cls == 8:    # door (rect + quarter swing arc)
-        _poly(img, [c - R, c + R, c + R, c - R, c - R],
-              [c - R, c - R, c + R, c + R, c - R], thick)
+    elif cls == 8:  # door (rect + quarter swing arc)
+        _poly(img, [c - R, c + R, c + R, c - R, c - R], [c - R, c - R, c + R, c + R, c - R], thick)
         _arc(img, c - R, c + R, 2 * R, -np.pi / 2, 0, thick)
-    elif cls == 9:    # window (double line + mullions)
+    elif cls == 9:  # window (double line + mullions)
         _line(img, c - R, c - R * 0.4, c + R, c - R * 0.4, thick)
         _line(img, c - R, c + R * 0.4, c + R, c + R * 0.4, thick)
         for fx in (-0.5, 0.0, 0.5):
@@ -101,8 +100,18 @@ def to28(img: np.ndarray) -> np.ndarray:
     return np.clip(b * 255, 0, 255)
 
 
-NAMES = ["circle", "square", "triangle", "cross", "perpendicularity",
-         "parallelism", "angularity", "position", "door", "window"]
+NAMES = [
+    "circle",
+    "square",
+    "triangle",
+    "cross",
+    "perpendicularity",
+    "parallelism",
+    "angularity",
+    "position",
+    "door",
+    "window",
+]
 
 
 def make_dataset(n_train: int, n_test: int, seed: int):
@@ -111,9 +120,15 @@ def make_dataset(n_train: int, n_test: int, seed: int):
     for cls in range(10):
         for _ in range(n_train):
             th = rng.uniform(5, 9)
-            Xtr.append(to28(jitter(draw(cls, th), rng))); ytr.append(cls)
+            Xtr.append(to28(jitter(draw(cls, th), rng)))
+            ytr.append(cls)
         for _ in range(n_test):
             th = rng.uniform(5, 9)
-            Xte.append(to28(jitter(draw(cls, th), rng))); yte.append(cls)
-    return (np.array(Xtr), np.array(ytr, dtype=np.int64),
-            np.array(Xte), np.array(yte, dtype=np.int64))
+            Xte.append(to28(jitter(draw(cls, th), rng)))
+            yte.append(cls)
+    return (
+        np.array(Xtr),
+        np.array(ytr, dtype=np.int64),
+        np.array(Xte),
+        np.array(yte, dtype=np.int64),
+    )

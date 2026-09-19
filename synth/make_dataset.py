@@ -10,18 +10,14 @@ Writes:
   out/crops_manifest.csv   (path,label,source)
   out/README.txt
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-import sys as _sys
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in _sys.path:
-    _sys.path.insert(0, sys_path)
-
-from synth.symbols import make_symbol_dataset, save_crops, AEC_CLASSES
 from synth.sheets import save_sheet
+from synth.symbols import AEC_CLASSES, make_symbol_dataset, save_crops
 
 
 def main():
@@ -42,10 +38,11 @@ def main():
         png, js = save_sheet(args.seed + i, sheet_dir)
         print(f"  {png.name} + {js.name}", flush=True)
 
-    print(f"generating {args.crops_per_class}/class x {len(args.classes)} "
-          f"crops -> {crop_dir}", flush=True)
-    X, y = make_symbol_dataset(args.classes, args.crops_per_class,
-                               seed=args.seed + 1000)
+    print(
+        f"generating {args.crops_per_class}/class x {len(args.classes)} crops -> {crop_dir}",
+        flush=True,
+    )
+    X, y = make_symbol_dataset(args.classes, args.crops_per_class, seed=args.seed + 1000)
     manifest = save_crops(X, y, args.classes, crop_dir)
     print(f"  {len(y)} crops, manifest {manifest}", flush=True)
 
@@ -53,7 +50,8 @@ def main():
         "Tier-1 synthetic CAD data.\n"
         f"sheets/: {args.sheets} floor plans (PNG + .gt.json ground truth)\n"
         f"crops/: {len(y)} symbol crops, manifest crops_manifest.csv\n"
-        f"seed={args.seed} classes={','.join(args.classes)}\n")
+        f"seed={args.seed} classes={','.join(args.classes)}\n"
+    )
     print("done", flush=True)
 
 

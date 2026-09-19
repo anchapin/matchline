@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -21,40 +21,41 @@ import numpy as np
 # Output contract
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TextBox:
-    text: str                       # raw OCR string
-    bbox: tuple                     # (xtl, ytl, xbr, ybr) in source px
-    confidence: float               # OCR confidence 0..1
+    text: str  # raw OCR string
+    bbox: tuple  # (xtl, ytl, xbr, ybr) in source px
+    confidence: float  # OCR confidence 0..1
 
 
 @dataclass
 class RoomLabel:
-    name: str                       # e.g. "OPEN OFFICE" ("" if number-only)
-    number: str                     # e.g. "201"       ("" if name-only)
-    raw_text: str                   # OCR string before parsing
+    name: str  # e.g. "OPEN OFFICE" ("" if number-only)
+    number: str  # e.g. "201"       ("" if name-only)
+    raw_text: str  # OCR string before parsing
     bbox: tuple
-    centroid: tuple                 # (cx, cy)
+    centroid: tuple  # (cx, cy)
     ocr_confidence: float
-    parse_confidence: float = 1.0   # lowered when regexes fall back
+    parse_confidence: float = 1.0  # lowered when regexes fall back
 
 
 @dataclass
 class LabeledSpace:
-    polygon_px: list                # [(x, y), ...] room boundary
+    polygon_px: list  # [(x, y), ...] room boundary
     source: str = ""
-    name: str = ""                  # assigned room name
-    number: str = ""                # assigned room number
-    label_confidence: float = 0.0   # 0.0 -> unlabeled
-    label_source: str = ""          # "enclosed" | "nearest" | ""
+    name: str = ""  # assigned room name
+    number: str = ""  # assigned room number
+    label_confidence: float = 0.0  # 0.0 -> unlabeled
+    label_source: str = ""  # "enclosed" | "nearest" | ""
     label_bbox: tuple | None = None
 
 
 @dataclass
 class LabeledTakeoff:
-    spaces: list                    # LabeledSpace, one per input polygon
-    labels: list                    # RoomLabel, every OCR label found
-    unmatched_labels: list          # RoomLabel with no polygon assigned
+    spaces: list  # LabeledSpace, one per input polygon
+    labels: list  # RoomLabel, every OCR label found
+    unmatched_labels: list  # RoomLabel with no polygon assigned
     n_labeled: int = 0
     n_total: int = 0
 
@@ -121,9 +122,7 @@ def detect_text(image: np.ndarray, min_conf: float = 0.30) -> list[TextBox]:
         text = (text or "").strip()
         if not text or float(score) < min_conf:
             continue
-        boxes.append(TextBox(text=text,
-                             bbox=(xtl, ytl, xbr, ybr),
-                             confidence=float(score)))
+        boxes.append(TextBox(text=text, bbox=(xtl, ytl, xbr, ybr), confidence=float(score)))
     boxes.sort(key=lambda b: (b.bbox[1] // 20, b.bbox[0]))
     return boxes
 
@@ -136,13 +135,13 @@ def detect_text(image: np.ndarray, min_conf: float = 0.30) -> list[TextBox]:
 # ---------------------------------------------------------------------------
 
 _DIMENSION_RES = [
-    re.compile(r"\d\s*['\u2032]"),        # 17'  (feet)
-    re.compile(r"\d\s*[\"\u2033]"),       # 10"  (inches)
-    re.compile(r"\d\s*/\s*\d"),           # 1/2  (fractions)
-    re.compile(r"\d\s*[xX\u00d7]\s*\d"),      # 5X5 / W12X72 (sizes, steel tags)
-    re.compile(r"\b[O0]\.?C\.?\b"),          # 19 O.C. (also OCR-mangled 0.C.)
-    re.compile(r"@"),                     # @ 16
-    re.compile(r"[°\u00b0]"),              # angles
+    re.compile(r"\d\s*['\u2032]"),  # 17'  (feet)
+    re.compile(r"\d\s*[\"\u2033]"),  # 10"  (inches)
+    re.compile(r"\d\s*/\s*\d"),  # 1/2  (fractions)
+    re.compile(r"\d\s*[xX\u00d7]\s*\d"),  # 5X5 / W12X72 (sizes, steel tags)
+    re.compile(r"\b[O0]\.?C\.?\b"),  # 19 O.C. (also OCR-mangled 0.C.)
+    re.compile(r"@"),  # @ 16
+    re.compile(r"[°\u00b0]"),  # angles
     re.compile(r"\b\d+\s*(?:SF|SQ\.?\s*FT)\b", re.IGNORECASE),  # area tags
 ]
 
@@ -156,8 +155,7 @@ def looks_like_dimension(text: str) -> bool:
 # Label parsing: "OPEN OFFICE 201" -> ("OPEN OFFICE", "201")
 # ---------------------------------------------------------------------------
 
-_NUM = (r"[A-Z]?\d{1,4}[A-Z]?(?:[-/][A-Z]?\d{1,3}[A-Z]?)?"
-        )  # 201, 201A, 201-A, C1, B-102
+_NUM = r"[A-Z]?\d{1,4}[A-Z]?(?:[-/][A-Z]?\d{1,3}[A-Z]?)?"  # 201, 201A, 201-A, C1, B-102
 _NAME = r"[A-Z][A-Z0-9 .&'/\-]*"
 
 _PATTERNS = [
@@ -166,11 +164,12 @@ _PATTERNS = [
     # number only: "201", "201A"
     (re.compile(rf"^({_NUM})$"), lambda m: ("", m.group(1), 1.0)),
     # name + number: "OPEN OFFICE 201", "CONF-202"
-    (re.compile(rf"^({_NAME}?)\s*[.\-]?\s*({_NUM})$"),
-     lambda m: (m.group(1).strip(" .-"), m.group(2), 0.95)),
+    (
+        re.compile(rf"^({_NAME}?)\s*[.\-]?\s*({_NUM})$"),
+        lambda m: (m.group(1).strip(" .-"), m.group(2), 0.95),
+    ),
     # number + name: "201 OPEN OFFICE"
-    (re.compile(rf"^({_NUM})\s+({_NAME})$"),
-     lambda m: (m.group(2), m.group(1), 0.95)),
+    (re.compile(rf"^({_NUM})\s+({_NAME})$"), lambda m: (m.group(2), m.group(1), 0.95)),
     # name only: "LOBBY", "OPEN OFFICE"
     (re.compile(rf"^({_NAME})$"), lambda m: (m.group(1), "", 0.9)),
 ]
@@ -198,21 +197,27 @@ def parse_room_label(text: str) -> tuple[str, str, float]:
         if m:
             name, number, conf = build(m)
             return name.strip(), number.strip(), conf
-    return t, "", 0.5   # fallback: treat whole string as a name
+    return t, "", 0.5  # fallback: treat whole string as a name
 
 
 def to_room_label(tb: TextBox) -> RoomLabel:
     name, number, pconf = parse_room_label(tb.text)
     xtl, ytl, xbr, ybr = tb.bbox
-    return RoomLabel(name=name, number=number, raw_text=tb.text,
-                     bbox=tb.bbox, centroid=((xtl + xbr) / 2, (ytl + ybr) / 2),
-                     ocr_confidence=tb.confidence,
-                     parse_confidence=pconf)
+    return RoomLabel(
+        name=name,
+        number=number,
+        raw_text=tb.text,
+        bbox=tb.bbox,
+        centroid=((xtl + xbr) / 2, (ytl + ybr) / 2),
+        ocr_confidence=tb.confidence,
+        parse_confidence=pconf,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Geometry: point-in-polygon + nearest-polygon association
 # ---------------------------------------------------------------------------
+
 
 def point_in_polygon(pt, poly) -> bool:
     """Ray-casting point-in-polygon. poly: [(x, y), ...]."""
@@ -256,13 +261,12 @@ def polygon_area_px2(poly) -> float:
     p = np.asarray(poly, dtype=np.float64)
     if len(p) < 3:
         return 0.0
-    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1))
-                     - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
+    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
 
 
-def assign_labels(spaces: list[LabeledSpace],
-                  labels: list[RoomLabel],
-                  max_nearest_px: float = 150.0) -> LabeledTakeoff:
+def assign_labels(
+    spaces: list[LabeledSpace], labels: list[RoomLabel], max_nearest_px: float = 150.0
+) -> LabeledTakeoff:
     """Associate each label with a room polygon.
 
     1. Text-centroid strictly inside a polygon -> "enclosed" (pick smallest
@@ -271,13 +275,15 @@ def assign_labels(spaces: list[LabeledSpace],
        confidence scaled by 0.6 and distance falloff (doorway/hallway labels).
     3. Anything else -> unmatched (reported, never dropped).
     """
-    out = LabeledTakeoff(spaces=list(spaces), labels=list(labels),
-                         unmatched_labels=[], n_total=len(spaces))
+    out = LabeledTakeoff(
+        spaces=list(spaces), labels=list(labels), unmatched_labels=[], n_total=len(spaces)
+    )
     claimed = set()  # space idx already given an enclosed label
     for lab in labels:
         # 1. enclosed candidates
-        cands = [i for i, s in enumerate(out.spaces)
-                 if point_in_polygon(lab.centroid, s.polygon_px)]
+        cands = [
+            i for i, s in enumerate(out.spaces) if point_in_polygon(lab.centroid, s.polygon_px)
+        ]
         if cands:
             # smallest area wins on nesting; prefer unclaimed
             free = [i for i in cands if i not in claimed] or cands
@@ -292,12 +298,15 @@ def assign_labels(spaces: list[LabeledSpace],
             claimed.add(i)
             continue
         # 2. nearest fallback
-        dists = [(point_to_polygon_dist(lab.centroid, s.polygon_px), i)
-                 for i, s in enumerate(out.spaces)]
+        dists = [
+            (point_to_polygon_dist(lab.centroid, s.polygon_px), i) for i, s in enumerate(out.spaces)
+        ]
         d, i = min(dists, key=lambda t: t[0]) if dists else (float("inf"), -1)
         if i >= 0 and d <= max_nearest_px:
             s = out.spaces[i]
-            conf = lab.ocr_confidence * lab.parse_confidence * 0.6 * max(0.0, 1.0 - d / max_nearest_px)
+            conf = (
+                lab.ocr_confidence * lab.parse_confidence * 0.6 * max(0.0, 1.0 - d / max_nearest_px)
+            )
             if conf > s.label_confidence:
                 s.name, s.number = lab.name, lab.number
                 s.label_confidence = conf
@@ -309,11 +318,13 @@ def assign_labels(spaces: list[LabeledSpace],
     return out
 
 
-def label_spaces_from_sheet(sheet_image: np.ndarray,
-                            spaces: list[LabeledSpace] | None,
-                            min_conf: float = 0.30,
-                            max_nearest_px: float = 150.0,
-                            pre_detected: list[TextBox] | None = None) -> LabeledTakeoff:
+def label_spaces_from_sheet(
+    sheet_image: np.ndarray,
+    spaces: list[LabeledSpace] | None,
+    min_conf: float = 0.30,
+    max_nearest_px: float = 150.0,
+    pre_detected: list[TextBox] | None = None,
+) -> LabeledTakeoff:
     """Full pipeline: OCR a sheet image and label the given room polygons."""
     boxes = pre_detected if pre_detected is not None else detect_text(sheet_image, min_conf)
     boxes = [b for b in boxes if not looks_like_dimension(b.text)]
@@ -323,17 +334,19 @@ def label_spaces_from_sheet(sheet_image: np.ndarray,
     return assign_labels(spaces or [], labels, max_nearest_px)
 
 
-def attach_room_labels(takeoff_result, sheet_image: np.ndarray,
-                       min_conf: float = 0.30,
-                       max_nearest_px: float = 150.0) -> LabeledTakeoff:
+def attach_room_labels(
+    takeoff_result, sheet_image: np.ndarray, min_conf: float = 0.30, max_nearest_px: float = 150.0
+) -> LabeledTakeoff:
     """Label the 'room'-category regions of an existing TakeoffResult in place.
 
     Extends takeoff_result with `.spaces` (LabeledSpace list),
     `.unmatched_labels`, and returns the LabeledTakeoff.
     """
-    spaces = [LabeledSpace(polygon_px=r.polygon_px, source=r.source)
-              for r in takeoff_result.regions
-              if getattr(r, "category", "") == "room"]
+    spaces = [
+        LabeledSpace(polygon_px=r.polygon_px, source=r.source)
+        for r in takeoff_result.regions
+        if getattr(r, "category", "") == "room"
+    ]
     labeled = label_spaces_from_sheet(sheet_image, spaces, min_conf, max_nearest_px)
     takeoff_result.spaces = labeled.spaces
     takeoff_result.unmatched_labels = labeled.unmatched_labels
@@ -345,6 +358,7 @@ def attach_room_labels(takeoff_result, sheet_image: np.ndarray,
 # the open corpora: AEC-geometric-bench redacts annotations).
 # ---------------------------------------------------------------------------
 
+
 def synthesize_test_plan(seed: int = 7):
     """Draw a labeled floor plan with PIL.
 
@@ -353,7 +367,7 @@ def synthesize_test_plan(seed: int = 7):
     text, label outside all rooms, one unlabeled room.
     """
     from PIL import Image, ImageDraw, ImageFont
-    rng = np.random.RandomState(seed)
+
     W, H = 1600, 1200
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)
@@ -370,12 +384,12 @@ def synthesize_test_plan(seed: int = 7):
         (500, 60, 300, 300, "CONF", "202", "center"),
         (820, 60, 380, 300, "LOBBY", "100", "center"),
         (60, 380, 340, 320, "RESTROOM", "205A", "center"),
-        (420, 380, 380, 320, "", "206", "center"),          # number-only
-        (820, 380, 380, 320, "ELEC", "", "center"),         # name-only
+        (420, 380, 380, 320, "", "206", "center"),  # number-only
+        (820, 380, 380, 320, "ELEC", "", "center"),  # name-only
         (60, 720, 500, 380, "KITCHEN", "207", "center"),
-        (580, 720, 300, 380, "STORAGE", "208", "tiny"),     # small text
-        (900, 720, 300, 380, "CORRIDOR", "C1", "edge"),    # near shared wall
-        (1220, 720, 320, 380, "MECH", "209", "none"),       # unlabeled room
+        (580, 720, 300, 380, "STORAGE", "208", "tiny"),  # small text
+        (900, 720, 300, 380, "CORRIDOR", "C1", "edge"),  # near shared wall
+        (1220, 720, 320, 380, "MECH", "209", "none"),  # unlabeled room
     ]
     wall = 10
     spaces, expected = [], {}

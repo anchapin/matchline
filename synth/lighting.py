@@ -10,20 +10,16 @@ Also provides a realistic synthetic lighting schedule (tag -> fixture
 description, lamp type, watts per fixture) matching the columns that
 ``datasets_adapter.parse_lighting_schedule_csv`` expects.
 """
+
 from __future__ import annotations
 
 import csv
 import io
-from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 
-import sys as _sys
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in _sys.path:
-    _sys.path.insert(0, sys_path)
-from synth.symbols import render_symbol, CANVAS  # noqa: E402
+from synth.symbols import CANVAS, render_symbol
 
 FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -44,23 +40,23 @@ LIGHTING_CLASSES = [
 # render_symbol cover wall orientations.
 # ---------------------------------------------------------------------------
 
+
 def glyph_troffer_2x4(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     """Recessed 2x4 troffer: outer rect, inner lens rect, louver dividers."""
     hw, hh = w / 2, w * 0.25
     d.rectangle([cx - hw, cy - hh, cx + hw, cy + hh], outline=0, width=lw)
-    d.rectangle([cx - hw + 6, cy - hh + 6, cx + hw - 6, cy + hh - 6],
-                outline=0, width=max(2, lw - 1))
-    for fx in (-0.25, 0.0, 0.25):          # louver cells
+    d.rectangle(
+        [cx - hw + 6, cy - hh + 6, cx + hw - 6, cy + hh - 6], outline=0, width=max(2, lw - 1)
+    )
+    for fx in (-0.25, 0.0, 0.25):  # louver cells
         x = cx + fx * w
-        d.line([x, cy - hh + 6, x, cy + hh - 6], fill=0,
-               width=max(2, lw - 1))
+        d.line([x, cy - hh + 6, x, cy + hh - 6], fill=0, width=max(2, lw - 1))
 
 
 def glyph_troffer_2x2(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     h = w * 0.36
     d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
-    d.rectangle([cx - h + 6, cy - h + 6, cx + h - 6, cy + h - 6],
-                outline=0, width=max(2, lw - 1))
+    d.rectangle([cx - h + 6, cy - h + 6, cx + h - 6, cy + h - 6], outline=0, width=max(2, lw - 1))
     d.line([cx, cy - h + 6, cx, cy + h - 6], fill=0, width=max(2, lw - 1))
     d.line([cx - h + 6, cy, cx + h - 6, cy], fill=0, width=max(2, lw - 1))
 
@@ -88,14 +84,12 @@ def glyph_wall_sconce(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     circle+cross -- real sconce symbols are drawn on walls, so this matches
     drafting convention as well as helping the classifier."""
     wt = max(6, int(w * 0.22))
-    d.line([0, cy, CANVAS, cy], fill=0, width=wt)   # wall
-    d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2],
-                fill=255)                            # carve gap
+    d.line([0, cy, CANVAS, cy], fill=0, width=wt)  # wall
+    d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)  # carve gap
     r = w * 0.30
-    d.pieslice([cx - r, cy - r, cx + r, cy + r], start=270, end=90,
-               outline=0, width=lw)
-    d.line([cx, cy - r, cx, cy + r], fill=0, width=lw)   # mounting chord
-    if rng is not None and rng.random() < 0.5:           # shade tick
+    d.pieslice([cx - r, cy - r, cx + r, cy + r], start=270, end=90, outline=0, width=lw)
+    d.line([cx, cy - r, cx, cy + r], fill=0, width=lw)  # mounting chord
+    if rng is not None and rng.random() < 0.5:  # shade tick
         d.line([cx, cy, cx + r * 0.7, cy], fill=0, width=max(2, lw - 1))
 
 
@@ -126,8 +120,7 @@ LIGHTING_GLYPHS = {
 }
 
 
-def render_lighting_symbol(label: str, rng: np.random.Generator,
-                           out_size: int = 28) -> np.ndarray:
+def render_lighting_symbol(label: str, rng: np.random.Generator, out_size: int = 28) -> np.ndarray:
     """One labeled fixture crop, same contract as symbols.render_symbol."""
     return render_symbol(label, rng, out_size=out_size, glyphs=LIGHTING_GLYPHS)
 
@@ -138,18 +131,22 @@ def render_lighting_symbol(label: str, rng: np.random.Generator,
 
 # tag, description, lamp_type, watts per fixture
 LIGHTING_SCHEDULE = [
-    {"tag": "A", "description": "2x4 recessed LED troffer, 4000K",
-     "lamp_type": "LED", "watts": 45.0},
-    {"tag": "B", "description": "2x2 recessed LED troffer, 4000K",
-     "lamp_type": "LED", "watts": 30.0},
-    {"tag": "C", "description": '6" LED downlight, 3000K',
-     "lamp_type": "LED", "watts": 12.0},
-    {"tag": "D", "description": "LED pendant, direct/indirect",
-     "lamp_type": "LED", "watts": 24.0},
-    {"tag": "E", "description": "LED wall sconce",
-     "lamp_type": "LED", "watts": 15.0},
-    {"tag": "X", "description": "LED exit sign, battery backup",
-     "lamp_type": "LED", "watts": 5.0},
+    {
+        "tag": "A",
+        "description": "2x4 recessed LED troffer, 4000K",
+        "lamp_type": "LED",
+        "watts": 45.0,
+    },
+    {
+        "tag": "B",
+        "description": "2x2 recessed LED troffer, 4000K",
+        "lamp_type": "LED",
+        "watts": 30.0,
+    },
+    {"tag": "C", "description": '6" LED downlight, 3000K', "lamp_type": "LED", "watts": 12.0},
+    {"tag": "D", "description": "LED pendant, direct/indirect", "lamp_type": "LED", "watts": 24.0},
+    {"tag": "E", "description": "LED wall sconce", "lamp_type": "LED", "watts": 15.0},
+    {"tag": "X", "description": "LED exit sign, battery backup", "lamp_type": "LED", "watts": 5.0},
 ]
 LIGHTING_SCHED_BY_TAG = {s["tag"]: s for s in LIGHTING_SCHEDULE}
 

@@ -17,26 +17,20 @@ Detection tags come from GT (v1: no tag-OCR yet -- documented gap).
 
 Exit 0 iff every sheet passes every check.
 """
+
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import numpy as np
 
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in sys.path:
-    sys.path.insert(0, sys_path)
-
+from datasets_adapter import Detection, DrawingScale, normalize_crop, parse_lighting_schedule_csv
 from jesse import WisardClassifier, make_tuple_indices
-from datasets_adapter import (Detection, DrawingScale,
-                              parse_lighting_schedule_csv, normalize_crop)
-from room_labels import LabeledSpace
 from lighting import lighting_takeoff, summarize_lighting
-from synth.symbols import make_symbol_dataset, render_symbol
-from synth.lighting import (LIGHTING_CLASSES, LIGHTING_GLYPHS,
-                            lighting_schedule_csv)
-from synth.lighting_sheets import generate_lighting_sheet, PX_PER_M
+from room_labels import LabeledSpace
+from synth.lighting import LIGHTING_CLASSES, LIGHTING_GLYPHS, lighting_schedule_csv
+from synth.lighting_sheets import PX_PER_M, generate_lighting_sheet
+from synth.symbols import render_symbol
 
 SEEDS = [201, 202]
 
@@ -50,8 +44,7 @@ def train_lighting_classifier():
             y.append(i)
     X = np.stack(X)
     y = np.asarray(y, dtype=np.int64)
-    clf = WisardClassifier(len(LIGHTING_CLASSES),
-                           tuple_idx=make_tuple_indices(28, 28, seed=42))
+    clf = WisardClassifier(len(LIGHTING_CLASSES), tuple_idx=make_tuple_indices(28, 28, seed=42))
     clf.fit(X, y)
     return clf
 
@@ -72,11 +65,17 @@ def run_sheet(seed: int, clf) -> tuple[bool, dict]:
         crop = normalize_crop(img[ytl:ybr, xtl:xbr], size=28)
         pred = clf.predict_logodds(crop[None], alpha=0.1)[0]
         label = LIGHTING_CLASSES[pred]
-        correct += (label == f["type"])
-        dets.append(Detection(label=label, tag=f["tag"], score=1.0,
-                              bbox=tuple(f["bbox_px"]),
-                              source=f"synth:{gt['sheet_id']}",
-                              drawing_type="floor_plan"))
+        correct += label == f["type"]
+        dets.append(
+            Detection(
+                label=label,
+                tag=f["tag"],
+                score=1.0,
+                bbox=tuple(f["bbox_px"]),
+                source=f"synth:{gt['sheet_id']}",
+                drawing_type="floor_plan",
+            )
+        )
     acc = correct / len(dets)
     report["checks"]["classification_acc"] = round(acc, 4)
     # Bar is 90%, not 100%: at 28px, downlight-vs-pendant and troffer-vs-exit
@@ -91,10 +90,16 @@ def run_sheet(seed: int, clf) -> tuple[bool, dict]:
     sched = parse_lighting_schedule_csv(lighting_schedule_csv())
     assert len(sched) == 6 and sched["A"].watts == 45.0, "schedule parse"
 
-    spaces = [LabeledSpace(polygon_px=r["polygon_px"], name=r["name"],
-                           number=r["number"], label_confidence=1.0,
-                           label_source="enclosed")
-              for r in gt["rooms"]]
+    spaces = [
+        LabeledSpace(
+            polygon_px=r["polygon_px"],
+            name=r["name"],
+            number=r["number"],
+            label_confidence=1.0,
+            label_source="enclosed",
+        )
+        for r in gt["rooms"]
+    ]
     areas = [r["area_m2"] for r in gt["rooms"]]
     scale = DrawingScale(1.0 / PX_PER_M, "synthetic sheet")
     res = lighting_takeoff(dets, sched, spaces, scale, space_areas_m2=areas)
@@ -106,30 +111,36 @@ def run_sheet(seed: int, clf) -> tuple[bool, dict]:
         report["checks"]["total_w_FAIL"] = "mismatch"
 
     for rl, pr in zip(res.rooms, gt["expected"]["per_room"]):
-        if (rl.name != pr["name"] or rl.number != pr["number"]
-                or abs(rl.watts - pr["watts"]) > 1e-9
-                or abs(rl.lpd_w_m2 - pr["lpd_w_m2"]) > 1e-12):
+        if (
+            rl.name != pr["name"]
+            or rl.number != pr["number"]
+            or abs(rl.watts - pr["watts"]) > 1e-9
+            or abs(rl.lpd_w_m2 - pr["lpd_w_m2"]) > 1e-12
+        ):
             ok = False
-            report["checks"][f"room_{pr['number']}_FAIL"] = (
-                rl.watts, pr["watts"])
+            report["checks"][f"room_{pr['number']}_FAIL"] = (rl.watts, pr["watts"])
     # fixture counts per room from GT
     for i, pr in enumerate(gt["expected"]["per_room"]):
         n_gt = sum(1 for f in gt["fixtures"] if f["room_idx"] == i)
         if res.rooms[i].fixture_count != n_gt:
             ok = False
-            report["checks"][f"room_{pr['number']}_count_FAIL"] = (
-                res.rooms[i].fixture_count, n_gt)
+            report["checks"][f"room_{pr['number']}_count_FAIL"] = (res.rooms[i].fixture_count, n_gt)
     report["checks"]["rooms_ok"] = all(
-        "FAIL" not in k for k in report["checks"] if k.startswith("room_"))
+        "FAIL" not in k for k in report["checks"] if k.startswith("room_")
+    )
 
     # -- 4: unmatched + unassigned handling --------------------------------------
-    bad = Detection(label="Troffer 2x4", tag="ZZ", score=1.0,
-                    bbox=(10, 10, 40, 40), source="synth:test")
-    off = Detection(label="Downlight", tag="C", score=1.0,
-                    bbox=(W - 60, 10, W - 10, 60),  # schedule-table area
-                    source="synth:test")
-    res2 = lighting_takeoff(dets + [bad, off], sched, spaces, scale,
-                            space_areas_m2=areas)
+    bad = Detection(
+        label="Troffer 2x4", tag="ZZ", score=1.0, bbox=(10, 10, 40, 40), source="synth:test"
+    )
+    off = Detection(
+        label="Downlight",
+        tag="C",
+        score=1.0,
+        bbox=(W - 60, 10, W - 10, 60),  # schedule-table area
+        source="synth:test",
+    )
+    res2 = lighting_takeoff(dets + [bad, off], sched, spaces, scale, space_areas_m2=areas)
     if not (len(res2.unmatched) == 1 and res2.unmatched[0].tag == "ZZ"):
         ok = False
         report["checks"]["unmatched_FAIL"] = len(res2.unmatched)

@@ -11,6 +11,7 @@ Paper spec (Section 2):
   160 * 1024 = 163,840 integer slots per class; training = one streaming pass
   incrementing counters (no gradients, no floats).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -63,7 +64,6 @@ def make_tuple_indices(h: int, w: int, seed: int = 42) -> np.ndarray:
     Returns int array of shape (K, n) indexing into the flat thermometer vector.
     """
     rng = np.random.default_rng(seed)
-    n_chan = 2
     rows = np.linspace(NEIGHBORHOOD_RADIUS // 2 + 1, h - 2, 10)
     cols = np.linspace(NEIGHBORHOOD_RADIUS // 2 + 1, w - 2, 16)
     centers = [(r, c) for r in rows for c in cols]
@@ -78,8 +78,8 @@ def make_tuple_indices(h: int, w: int, seed: int = 42) -> np.ndarray:
         for r in range(r0, r1 + 1):
             for c in range(c0, c1 + 1):
                 base = r * w + c
-                cand.append(base)            # low-threshold channel bit
-                cand.append(base + h * w)    # high-threshold channel bit
+                cand.append(base)  # low-threshold channel bit
+                cand.append(base + h * w)  # high-threshold channel bit
         cand = np.asarray(cand, dtype=np.int64)
         idx[k] = rng.choice(cand, size=N_BITS, replace=False)
     return idx
@@ -105,8 +105,14 @@ class WisardClassifier:
     predict(): argmax over class response scores.
     """
 
-    def __init__(self, n_classes: int, tuple_idx: np.ndarray | None = None,
-                 h: int = 28, w: int = 28, seed: int = 42):
+    def __init__(
+        self,
+        n_classes: int,
+        tuple_idx: np.ndarray | None = None,
+        h: int = 28,
+        w: int = 28,
+        seed: int = 42,
+    ):
         self.n_classes = n_classes
         self.h, self.w = h, w
         self.tuple_idx = tuple_idx if tuple_idx is not None else make_tuple_indices(h, w, seed)
@@ -188,8 +194,8 @@ class WisardClassifier:
         k = self.tuple_idx.shape[0]
         c = self.n_classes
         kk = np.arange(k)
-        log_ram = np.zeros((c, n))   # [c, n] = sum_k log(ram_c[k,a]+alpha)
-        sum_ram = np.zeros((n, k))   # [n, k] = sum_c ram_c[k,a]
+        log_ram = np.zeros((c, n))  # [c, n] = sum_k log(ram_c[k,a]+alpha)
+        sum_ram = np.zeros((n, k))  # [n, k] = sum_c ram_c[k,a]
         for cc in range(c):
             # (N, K) orientation: contiguous reduction axis for the log-sum
             g = self.ram[cc][kk[:, None], addrs.T].T
@@ -207,8 +213,8 @@ class WisardClassifier:
         out = np.full(n, -1)
         pending = np.arange(n)
         while len(pending):
-            v = vals[:, pending, :]                      # (C, P, K)
-            scores = (v > b).sum(axis=2)                 # (C, P)
+            v = vals[:, pending, :]  # (C, P, K)
+            scores = (v > b).sum(axis=2)  # (C, P)
             best = scores.argmax(axis=0)
             top = scores.max(axis=0)
             # unique winner?
@@ -218,8 +224,11 @@ class WisardClassifier:
             pending = pending[nunique > 1]
             b += 1
             if b > vals.max():
-                out[pending] = best[(scores == top[None, :]).argmax(axis=0)][nunique > 1] \
-                    if len(pending) else out[pending]
+                out[pending] = (
+                    best[(scores == top[None, :]).argmax(axis=0)][nunique > 1]
+                    if len(pending)
+                    else out[pending]
+                )
                 break
         return out
 
@@ -236,7 +245,7 @@ def com_normalize(img: np.ndarray, size: int = 28) -> np.ndarray:
     total = img.sum()
     if total == 0:
         return img
-    yy, xx = np.mgrid[0:img.shape[0], 0:img.shape[1]]
+    yy, xx = np.mgrid[0 : img.shape[0], 0 : img.shape[1]]
     cx = (xx * img).sum() / total
     cy = (yy * img).sum() / total
     dx = int(round(size / 2 - cx))
@@ -289,22 +298,29 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
     cross d>=4; holes b_1 via background flood fill; chi = 1 - b_1 for a
     single connected foreground component."""
     from collections import deque
+
     sk = (np.asarray(skel) > 0).astype(np.uint8)
     h, w = sk.shape
     padded = np.pad(sk, 1)
     # 8-connectivity degree keeps digital curves (e.g. Bresenham circles)
     # continuous; diagonal-only contacts would read as endpoints under
     # 4-connectivity.
-    deg = (padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:] +
-           padded[1:-1, :-2] + padded[1:-1, 2:] +
-           padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:])
+    deg = (
+        padded[:-2, :-2]
+        + padded[:-2, 1:-1]
+        + padded[:-2, 2:]
+        + padded[1:-1, :-2]
+        + padded[1:-1, 2:]
+        + padded[2:, :-2]
+        + padded[2:, 1:-1]
+        + padded[2:, 2:]
+    )
     deg = deg * sk
     endpoints = int(((deg == 1) & (sk == 1)).sum())
     # Merge 8-connected clusters of junction pixels (deg>=3) into single
     # junction nodes; classify by number of curve branches leaving the
     # cluster. [UNSPECIFIED in paper: no junction-counting convention given;
     # this is the convention that reproduces Table 9.4 for simple glyphs.]
-    from collections import deque
     is_j = (deg >= 3) & (sk == 1)
     seen = np.zeros_like(is_j, bool)
     t_junctions = x_junctions = 0
@@ -325,7 +341,7 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                                 q.append((ny, nx))
                 cset = set(cluster)
                 branches = 0
-                for (y, x) in cluster:
+                for y, x in cluster:
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dy == 0 and dx == 0:
@@ -337,7 +353,7 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                 # by 2 cluster pixels double-counts -> use distinct directions
                 # per cluster instead
                 dirs = set()
-                for (y, x) in cluster:
+                for y, x in cluster:
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dy == 0 and dx == 0:
@@ -373,5 +389,10 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                             q.append((ny, nx))
                 if not touches_border:
                     holes += 1
-    return {"endpoints": endpoints, "t_junctions": t_junctions, "x_junctions": x_junctions,
-            "holes": holes, "chi": 1 - holes}
+    return {
+        "endpoints": endpoints,
+        "t_junctions": t_junctions,
+        "x_junctions": x_junctions,
+        "holes": holes,
+        "chi": 1 - holes,
+    }

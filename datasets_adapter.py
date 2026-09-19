@@ -39,13 +39,14 @@ Drawing scale: polygon areas need ``DrawingScale`` (m/px). The count x dims
 path does NOT need drawing scale at all -- dimensions come from the
 schedule, which is why it is more robust than pixel measurement.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 import csv
 import math
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -54,33 +55,35 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 TAKEOFF_CATEGORIES = (
-    "floor_area",   # enclosed areas: rooms, shafts, balconies, elevators, stairs
+    "floor_area",  # enclosed areas: rooms, shafts, balconies, elevators, stairs
     "wall",
     "window",
     "door",
-    "fixture",      # sinks, toilets, tubs, showers, cooktops (counted, area ~0)
-    "lighting",     # light fixtures: counted per schedule tag, watts summed
-    "opening",      # generic openings when the set does not distinguish
+    "fixture",  # sinks, toilets, tubs, showers, cooktops (counted, area ~0)
+    "lighting",  # light fixtures: counted per schedule tag, watts summed
+    "opening",  # generic openings when the set does not distinguish
 )
 
 
 @dataclass
 class SymbolSample:
     """One cropped symbol instance for classifier training."""
-    image: np.ndarray   # (H, W) float64 grayscale, 0..255, dark ink on light bg
+
+    image: np.ndarray  # (H, W) float64 grayscale, 0..255, dark ink on light bg
     label: str
-    source: str         # e.g. "aec-bench:sheet_01"
-    bbox: tuple         # (xtl, ytl, xbr, ybr) in source pixel coords
+    source: str  # e.g. "aec-bench:sheet_01"
+    bbox: tuple  # (xtl, ytl, xbr, ybr) in source pixel coords
 
 
 @dataclass
 class Region:
     """One measured polygon with a takeoff category."""
-    category: str                 # one of TAKEOFF_CATEGORIES
-    polygon_px: list              # [(x, y), ...] in source pixel coords
+
+    category: str  # one of TAKEOFF_CATEGORIES
+    polygon_px: list  # [(x, y), ...] in source pixel coords
     source: str
     drawing_type: str = "floor_plan"  # or "elevation"
-    label: str = ""               # original dataset label, e.g. "Single Swing Door"
+    label: str = ""  # original dataset label, e.g. "Single Swing Door"
 
 
 @dataclass
@@ -94,22 +97,23 @@ class TakeoffResult:
     drawing_type: str
     scale: DrawingScale
     regions: list = field(default_factory=list)
-    area_px2: dict = field(default_factory=dict)   # category -> px^2
-    area_m2: dict = field(default_factory=dict)     # category -> m^2 (if scale)
-    counts: dict = field(default_factory=dict)     # category -> region count
+    area_px2: dict = field(default_factory=dict)  # category -> px^2
+    area_m2: dict = field(default_factory=dict)  # category -> m^2 (if scale)
+    counts: dict = field(default_factory=dict)  # category -> region count
     # --- three-stage pipeline (detections -> schedule -> rollup) ---
-    lines: list = field(default_factory=list)       # TakeoffLine per tag
-    unmatched: list = field(default_factory=list)   # Detections w/o schedule entry
+    lines: list = field(default_factory=list)  # TakeoffLine per tag
+    unmatched: list = field(default_factory=list)  # Detections w/o schedule entry
 
 
 @dataclass
 class Detection:
     """Stage-1 output: one spotted + classified symbol instance."""
-    label: str          # classifier label, e.g. "Window"
-    tag: str            # schedule tag, e.g. "A" / "W-1" ("" if not extracted)
-    score: float        # classifier margin/confidence
-    bbox: tuple         # (xtl, ytl, xbr, ybr) in source pixel coords
-    source: str         # e.g. "aec-bench:sheet_01"
+
+    label: str  # classifier label, e.g. "Window"
+    tag: str  # schedule tag, e.g. "A" / "W-1" ("" if not extracted)
+    score: float  # classifier margin/confidence
+    bbox: tuple  # (xtl, ytl, xbr, ybr) in source pixel coords
+    source: str  # e.g. "aec-bench:sheet_01"
     drawing_type: str = "floor_plan"
 
 
@@ -121,25 +125,27 @@ class ScheduleEntry:
     per fixture (width/height None). ``description``/``lamp_type`` are the
     human-readable schedule text (e.g. "2x4 recessed LED troffer" / "LED").
     """
+
     tag: str
-    category: str       # "door" / "window" / "lighting"
+    category: str  # "door" / "window" / "lighting"
     width_m: float | None
     height_m: float | None
     note: str = ""
-    watts: float | None = None        # lighting: W per fixture
-    description: str = ""             # lighting: fixture description
-    lamp_type: str = ""               # lighting: lamp/technology
+    watts: float | None = None  # lighting: W per fixture
+    description: str = ""  # lighting: fixture description
+    lamp_type: str = ""  # lighting: lamp/technology
 
 
 @dataclass
 class TakeoffLine:
     """Stage-3 output: count x scheduled dims for one tag."""
+
     tag: str
     category: str
     count: int
     width_m: float | None
     height_m: float | None
-    area_m2: float | None   # count * width * height (None if dims unknown)
+    area_m2: float | None  # count * width * height (None if dims unknown)
 
 
 def polygon_area_px2(poly) -> float:
@@ -147,32 +153,30 @@ def polygon_area_px2(poly) -> float:
     p = np.asarray(poly, dtype=np.float64)
     if len(p) < 3:
         return 0.0
-    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1))
-                     - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
+    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
 
 
 def box_to_polygon(xtl, ytl, xbr, ybr):
     return [(xtl, ytl), (xbr, ytl), (xbr, ybr), (xtl, ybr)]
 
 
-def measure_takeoff(regions: list[Region], drawing_type: str,
-                    scale: DrawingScale) -> TakeoffResult:
+def measure_takeoff(regions: list[Region], drawing_type: str, scale: DrawingScale) -> TakeoffResult:
     """Sum region polygon areas per takeoff category."""
-    res = TakeoffResult(drawing_type=drawing_type, scale=scale,
-                        regions=list(regions))
+    res = TakeoffResult(drawing_type=drawing_type, scale=scale, regions=list(regions))
     for r in regions:
         a = polygon_area_px2(r.polygon_px)
         res.area_px2[r.category] = res.area_px2.get(r.category, 0.0) + a
         res.counts[r.category] = res.counts.get(r.category, 0) + 1
     if scale.m_per_px:
-        k = scale.m_per_px ** 2
+        k = scale.m_per_px**2
         for cat, a in res.area_px2.items():
             res.area_m2[cat] = a * k
     return res
 
 
-def scale_from_reference(regions: list[Region], category: str,
-                         known_m: float, agg=np.median) -> DrawingScale:
+def scale_from_reference(
+    regions: list[Region], category: str, known_m: float, agg=np.median
+) -> DrawingScale:
     """Estimate m/px from a known real-world dimension.
 
     E.g. a single swing door leaf is typically 0.9 m wide: measure the
@@ -187,17 +191,19 @@ def scale_from_reference(regions: list[Region], category: str,
     if not widths:
         return DrawingScale(None, f"no {category} regions for reference scale")
     m_per_px = known_m / float(agg(widths))
-    return DrawingScale(m_per_px,
-                        f"estimated from {category} width={known_m} m "
-                        f"(median {float(agg(widths)):.1f} px, n={len(widths)})")
+    return DrawingScale(
+        m_per_px,
+        f"estimated from {category} width={known_m} m "
+        f"(median {float(agg(widths)):.1f} px, n={len(widths)})",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Three-stage takeoff pipeline: detections -> schedule -> rollup
 # ---------------------------------------------------------------------------
 
-def detections_from_regions(regions: list[Region],
-                            score: float = 1.0) -> list[Detection]:
+
+def detections_from_regions(regions: list[Region], score: float = 1.0) -> list[Detection]:
     """Stage 1 (v1): ground-truth regions -> Detections.
 
     Boxes become detections with the region label; polygons (floor_area,
@@ -215,9 +221,16 @@ def detections_from_regions(regions: list[Region],
             continue
         xs = [p[0] for p in r.polygon_px]
         ys = [p[1] for p in r.polygon_px]
-        out.append(Detection(label=r.label, tag="", score=score,
-                             bbox=(min(xs), min(ys), max(xs), max(ys)),
-                             source=r.source, drawing_type=r.drawing_type))
+        out.append(
+            Detection(
+                label=r.label,
+                tag="",
+                score=score,
+                bbox=(min(xs), min(ys), max(xs), max(ys)),
+                source=r.source,
+                drawing_type=r.drawing_type,
+            )
+        )
     return out
 
 
@@ -242,7 +255,8 @@ def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
                 category=row.get("category", "").strip().lower() or "window",
                 width_m=float(row["width_m"]) if row.get("width_m") else None,
                 height_m=float(row["height_m"]) if row.get("height_m") else None,
-                note=row.get("note", "").strip())
+                note=row.get("note", "").strip(),
+            )
     finally:
         if close:
             f.close()
@@ -275,7 +289,8 @@ def parse_lighting_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
                 note=row.get("note", "").strip(),
                 watts=float(watts) if watts else None,
                 description=row.get("description", "").strip(),
-                lamp_type=row.get("lamp_type", "").strip())
+                lamp_type=row.get("lamp_type", "").strip(),
+            )
     finally:
         if close:
             f.close()
@@ -293,12 +308,15 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
     """
     raise NotImplementedError(
         "Schedule table detection/parsing not yet implemented. "
-        "Provide the schedule as CSV to parse_schedule_csv().")
+        "Provide the schedule as CSV to parse_schedule_csv()."
+    )
 
 
-def rollup_takeoff(detections: list[Detection],
-                   schedule: dict[str, ScheduleEntry],
-                   drawing_type: str = "floor_plan") -> TakeoffResult:
+def rollup_takeoff(
+    detections: list[Detection],
+    schedule: dict[str, ScheduleEntry],
+    drawing_type: str = "floor_plan",
+) -> TakeoffResult:
     """Stage 3: join detections to the schedule; count x dims per tag.
 
     Areas need NO drawing scale: dimensions come from the schedule table.
@@ -309,8 +327,9 @@ def rollup_takeoff(detections: list[Detection],
     for d in detections:
         by_tag.setdefault(d.tag, []).append(d)
 
-    res = TakeoffResult(drawing_type=drawing_type,
-                        scale=DrawingScale(None, "not needed: count x schedule dims"))
+    res = TakeoffResult(
+        drawing_type=drawing_type, scale=DrawingScale(None, "not needed: count x schedule dims")
+    )
     for tag in sorted(by_tag):
         ds = by_tag[tag]
         entry = schedule.get(tag)
@@ -318,11 +337,17 @@ def rollup_takeoff(detections: list[Detection],
             res.unmatched.extend(ds)
             continue
         n = len(ds)
-        area = (n * entry.width_m * entry.height_m
-                if entry.width_m and entry.height_m else None)
-        res.lines.append(TakeoffLine(tag=tag, category=entry.category, count=n,
-                                     width_m=entry.width_m,
-                                     height_m=entry.height_m, area_m2=area))
+        area = n * entry.width_m * entry.height_m if entry.width_m and entry.height_m else None
+        res.lines.append(
+            TakeoffLine(
+                tag=tag,
+                category=entry.category,
+                count=n,
+                width_m=entry.width_m,
+                height_m=entry.height_m,
+                area_m2=area,
+            )
+        )
         if area is not None:
             res.area_m2[entry.category] = res.area_m2.get(entry.category, 0.0) + area
         res.counts[entry.category] = res.counts.get(entry.category, 0) + n
@@ -333,6 +358,7 @@ def rollup_takeoff(detections: list[Detection],
 # Shared crop / normalize helpers (classifier path)
 # ---------------------------------------------------------------------------
 
+
 def normalize_crop(crop: np.ndarray, size: int = 28, pad_frac: float = 0.15) -> np.ndarray:
     """Crop -> padded square -> (size, size) float64 0..255, dark ink on light.
 
@@ -340,10 +366,11 @@ def normalize_crop(crop: np.ndarray, size: int = 28, pad_frac: float = 0.15) -> 
     35/120 assume dark strokes on a light background).
     """
     from PIL import Image
+
     arr = np.asarray(crop)
     if arr.ndim == 3:
         # luminance; drawings are near-grayscale anyway
-        arr = (0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2])
+        arr = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
     arr = arr.astype(np.float64)
     # invert if the crop is dark-on-light already? No: keep as-is; ensure
     # ink is dark: if mean < 128 the background is dark -> invert.
@@ -354,7 +381,7 @@ def normalize_crop(crop: np.ndarray, size: int = 28, pad_frac: float = 0.15) -> 
     canvas = np.full((side, side), 255.0)
     y0 = (side - h) // 2
     x0 = (side - w) // 2
-    canvas[y0:y0 + h, x0:x0 + w] = arr
+    canvas[y0 : y0 + h, x0 : x0 + w] = arr
     img = Image.fromarray(canvas.astype(np.uint8)).resize((size, size), Image.LANCZOS)
     return np.asarray(img, dtype=np.float64)
 
@@ -379,21 +406,24 @@ AEC_OBJECT_TO_TAKEOFF = {
     "Cooktops": "fixture",
 }
 AEC_AREA_LABELS = {"Room", "Shaft", "Balcony", "Elevator", "Stairs"}  # -> floor_area
-AEC_WALL_LABELS = {"Wall", "Railing"}                                 # -> wall
+AEC_WALL_LABELS = {"Wall", "Railing"}  # -> wall
 
 
 def _rasterize_pdf(pdf_path: Path, dpi: int):
     import pymupdf
+
     doc = pymupdf.open(str(pdf_path))
     pix = doc[0].get_pixmap(dpi=dpi)
-    return np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-        pix.height, pix.width, pix.n)
+    return np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
 
 
-def load_aec_bench(root: str | Path, dpi: int = 200, size: int = 28,
-                   scale_m_per_px: float | None = None,
-                   drawing_type: str = "floor_plan"
-                   ) -> tuple[list[SymbolSample], TakeoffResult]:
+def load_aec_bench(
+    root: str | Path,
+    dpi: int = 200,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    drawing_type: str = "floor_plan",
+) -> tuple[list[SymbolSample], TakeoffResult]:
     """Load AEC-geometric-bench sheets.
 
     Returns (symbol_samples, takeoff). Takeoff areas are in px^2 unless
@@ -410,7 +440,7 @@ def load_aec_bench(root: str | Path, dpi: int = 200, size: int = 28,
     regions: list[Region] = []
 
     for img_el in tree.getroot().findall(".//image"):
-        name = img_el.attrib["name"]              # sheet_01.png
+        name = img_el.attrib["name"]  # sheet_01.png
         stem = Path(name).stem
         W, H = int(img_el.attrib["width"]), int(img_el.attrib["height"])
         pdf = root / "pdf" / f"{stem}.pdf"
@@ -429,32 +459,41 @@ def load_aec_bench(root: str | Path, dpi: int = 200, size: int = 28,
             if label in AEC_OBJECT_TO_TAKEOFF:
                 cat = AEC_OBJECT_TO_TAKEOFF[label]
                 regions.append(Region(cat, poly, src, drawing_type, label))
-                x0, y0, x1, y1 = (max(0, int(xtl)), max(0, int(ytl)),
-                                  min(page.shape[1], int(math.ceil(xbr))),
-                                  min(page.shape[0], int(math.ceil(ybr))))
+                x0, y0, x1, y1 = (
+                    max(0, int(xtl)),
+                    max(0, int(ytl)),
+                    min(page.shape[1], int(math.ceil(xbr))),
+                    min(page.shape[0], int(math.ceil(ybr))),
+                )
                 if x1 > x0 and y1 > y0:
-                    samples.append(SymbolSample(
-                        normalize_crop(page[y0:y1, x0:x1], size), label, src,
-                        (xtl, ytl, xbr, ybr)))
+                    samples.append(
+                        SymbolSample(
+                            normalize_crop(page[y0:y1, x0:x1], size),
+                            label,
+                            src,
+                            (xtl, ytl, xbr, ybr),
+                        )
+                    )
             elif label in AEC_WALL_LABELS:
                 regions.append(Region("wall", poly, src, drawing_type, label))
 
         for poly_el in img_el.findall("polygon"):
             label = poly_el.attrib["label"]
-            pts = [(float(x) * sx, float(y) * sy)
-                   for x, y in (p.split(",")
-                                for p in poly_el.attrib["points"].split(";") if p)]
+            pts = [
+                (float(x) * sx, float(y) * sy)
+                for x, y in (p.split(",") for p in poly_el.attrib["points"].split(";") if p)
+            ]
             if label in AEC_AREA_LABELS:
                 regions.append(Region("floor_area", pts, src, drawing_type, label))
             elif label in AEC_WALL_LABELS:
                 regions.append(Region("wall", pts, src, drawing_type, label))
             # other polygon labels (fixtures drawn as polygons) -> fixture count
             elif label in AEC_OBJECT_TO_TAKEOFF:
-                regions.append(Region(AEC_OBJECT_TO_TAKEOFF[label], pts,
-                                      src, drawing_type, label))
+                regions.append(Region(AEC_OBJECT_TO_TAKEOFF[label], pts, src, drawing_type, label))
 
-    scale = DrawingScale(scale_m_per_px,
-                         "explicit" if scale_m_per_px else "unknown (title block redacted)")
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (title block redacted)"
+    )
     return samples, measure_takeoff(regions, drawing_type, scale)
 
 
@@ -472,9 +511,10 @@ def load_aec_bench(root: str | Path, dpi: int = 200, size: int = 28,
 # TODO(validate): inspect the parquet schema once the download completes and
 # confirm column names / annotation encoding; then wire the branches below.
 
-def load_floorplancad(root: str | Path, size: int = 28,
-                      scale_m_per_px: float | None = None
-                      ) -> tuple[list[SymbolSample], TakeoffResult]:
+
+def load_floorplancad(
+    root: str | Path, size: int = 28, scale_m_per_px: float | None = None
+) -> tuple[list[SymbolSample], TakeoffResult]:
     """Load FloorPlanCAD symbols + takeoff regions.
 
     Tries, in order: (1) HuggingFace parquet export train-*.parquet in root;
@@ -490,12 +530,13 @@ def load_floorplancad(root: str | Path, size: int = 28,
         return _floorplancad_from_svg(svg_dirs[0].parent, size, scale_m_per_px)
     raise FileNotFoundError(
         f"No FloorPlanCAD data found under {root}: expected train-*.parquet "
-        f"or a */svg_gt directory (download still in progress?)")
+        f"or a */svg_gt directory (download still in progress?)"
+    )
 
 
-def _floorplancad_from_parquet(path: Path, size: int,
-                               scale_m_per_px: float | None):
+def _floorplancad_from_parquet(path: Path, size: int, scale_m_per_px: float | None):
     import pyarrow.parquet as pq
+
     table = pq.read_table(str(path))
     names = table.schema.names
     # TODO(validate): confirm these column names against the real export.
@@ -503,15 +544,16 @@ def _floorplancad_from_parquet(path: Path, size: int,
     # per-symbol {label, bbox|polygon} records.
     raise NotImplementedError(
         f"FloorPlanCAD parquet columns are {names}; annotation decoding not "
-        f"yet validated against the completed download. See TODO above.")
+        f"yet validated against the completed download. See TODO above."
+    )
 
 
-def _floorplancad_from_svg(split_dir: Path, size: int,
-                           scale_m_per_px: float | None):
+def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | None):
     # TODO(validate): confirm against the original FloorPlanCAD release layout
     # (svg_gt/*.svg + JSON annotations as produced by parse_FpCAD_svg.py).
     raise NotImplementedError(
-        "FloorPlanCAD SVG+JSON branch not yet validated (no SVG data on disk).")
+        "FloorPlanCAD SVG+JSON branch not yet validated (no SVG data on disk)."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -526,18 +568,19 @@ def _floorplancad_from_svg(split_dir: Path, size: int,
 # record layout (expected: drawing chunk + symbol list with class + geometry),
 # then implement decoding below.
 
-def load_archcad(root: str | Path, size: int = 28,
-                 scale_m_per_px: float | None = None
-                 ) -> tuple[list[SymbolSample], TakeoffResult]:
+
+def load_archcad(
+    root: str | Path, size: int = 28, scale_m_per_px: float | None = None
+) -> tuple[list[SymbolSample], TakeoffResult]:
     """Load ArchCAD-400K samples.
 
     Auto-detects the local export layout (parquet / image dir + metadata).
     """
     root = Path(root)
     if not any(root.iterdir()):
-        raise FileNotFoundError(
-            f"{root} is empty: ArchCAD-400K HF export not yet downloaded.")
+        raise FileNotFoundError(f"{root} is empty: ArchCAD-400K HF export not yet downloaded.")
     # TODO(validate): implement once the HF export layout is known.
     raise NotImplementedError(
         "ArchCAD-400K loader pending: HF export layout not yet inspected. "
-        "Contents: " + ", ".join(sorted(p.name for p in root.iterdir())[:10]))
+        "Contents: " + ", ".join(sorted(p.name for p in root.iterdir())[:10])
+    )

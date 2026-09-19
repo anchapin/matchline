@@ -10,6 +10,7 @@ load_aec_bench needs pymupdf.
 
 Writes synth/out/gap_results.json and prints the comparison table.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,14 +19,9 @@ from pathlib import Path
 
 import numpy as np
 
-import sys as _sys
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in _sys.path:
-    _sys.path.insert(0, sys_path)
-
-from jesse import WisardClassifier, make_tuple_indices
 from datasets_adapter import load_aec_bench
-from synth.symbols import make_symbol_dataset, AEC_CLASSES
+from jesse import WisardClassifier, make_tuple_indices
+from synth.symbols import AEC_CLASSES, make_symbol_dataset
 
 AEC_ROOT = Path.home() / "workspace" / "datasets" / "aec-geometric-bench" / "dataset"
 OUT = Path(__file__).resolve().parent / "out"
@@ -65,11 +61,12 @@ def main():
     print("loading real AEC crops ...", flush=True)
     samples, _takeoff = load_aec_bench(AEC_ROOT, dpi=200, size=28)
     X_real = np.stack([s.image for s in samples])
-    y_real = np.array([AEC_CLASSES.index(s.label) for s in samples],
-                      dtype=np.int64)
-    print(f"real: {X_real.shape}, class counts: "
-          f"{dict(zip(AEC_CLASSES, np.bincount(y_real, minlength=8)))}",
-          flush=True)
+    y_real = np.array([AEC_CLASSES.index(s.label) for s in samples], dtype=np.int64)
+    print(
+        f"real: {X_real.shape}, class counts: "
+        f"{dict(zip(AEC_CLASSES, np.bincount(y_real, minlength=8)))}",
+        flush=True,
+    )
 
     tidx = make_tuple_indices(28, 28, seed=42)
 
@@ -80,8 +77,11 @@ def main():
     pred = clf.predict_logodds(X_real[te], alpha=0.1)
     acc_real = float((pred == y_real[te]).mean())
     dw_acc_real, dw_n = door_window_acc(y_real[te], pred, AEC_CLASSES)
-    print(f"baseline real->real: acc={acc_real*100:.2f}% "
-          f"door-vs-window={dw_acc_real*100:.2f}% (n={dw_n})", flush=True)
+    print(
+        f"baseline real->real: acc={acc_real * 100:.2f}% "
+        f"door-vs-window={dw_acc_real * 100:.2f}% (n={dw_n})",
+        flush=True,
+    )
 
     # --- gap: train on synthetic, test on ALL real ----------------------------
     print("rendering synthetic training crops ...", flush=True)
@@ -91,8 +91,11 @@ def main():
     pred2 = clf2.predict_logodds(X_real, alpha=0.1)
     acc_syn = float((pred2 == y_real).mean())
     dw_acc_syn, dw_n2 = door_window_acc(y_real, pred2, AEC_CLASSES)
-    print(f"gap synth->real:     acc={acc_syn*100:.2f}% "
-          f"door-vs-window={dw_acc_syn*100:.2f}% (n={dw_n2})", flush=True)
+    print(
+        f"gap synth->real:     acc={acc_syn * 100:.2f}% "
+        f"door-vs-window={dw_acc_syn * 100:.2f}% (n={dw_n2})",
+        flush=True,
+    )
 
     # per-class accuracy, synthetic-trained
     per_class = {}

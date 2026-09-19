@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wisard-bem"
+version = "0.1.0"
+description = "Deterministic, auditable extraction of building energy modeling (BEM) inputs from architectural drawings and BIM"
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+requires-python = ">=3.10"
+authors = [{ name = "Alex Chapin" }]
+keywords = ["bem", "bim", "ifc", "gbxml", "floor-plan", "energy-modeling"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "numpy",
+    "shapely",
+    "Pillow",
+    "scipy",
+    "lxml",
+    "ifcopenshell",
+]
+
+[project.optional-dependencies]
+# OCR for room labels (lazy import; helpful error if missing)
+ocr = ["rapidocr_onnxruntime"]
+test = ["pytest"]
+# Detector track: heavy. detector/ keeps its own venv on dev machines
+# (see detector/README.md); this extra is for real hardware / CI images.
+detector = ["torch", "ultralytics"]
+
+[project.scripts]
+wisard-bem = "cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "bem_export",
+    "building_model",
+    "cli",
+    "datasets_adapter",
+    "elevation_windows",
+    "facade_takeoff",
+    "geometry_simplify",
+    "hvac_trace",
+    "ifc_import",
+    "jesse",
+    "lighting",
+    "link",
+    "registration",
+    "room_labels",
+    "run_bem_export",
+    "run_elevation_windows",
+    "run_facade_takeoff",
+    "run_mnist",
+    "run_multidiscipline",
+    "run_room_labels",
+    "run_symbols",
+    "run_validation",
+    "symbols",
+    "validate",
+]
+packages = ["synth"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# detector/ is a separate track with its own venv (see detector/README.md)
+exclude = ["detector"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501", # long lines: geometry literals read better unbroken
+    "E701", # pre-existing style: `if x: return y` one-liners used throughout
+    "E702", # pre-existing style: semicolon one-liners used throughout
+    "E741", # pre-existing style: `l` as a loop variable in comprehensions
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["synth"]

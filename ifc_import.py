@@ -34,18 +34,24 @@ import re
 from pathlib import Path
 
 from building_model import (
-    MODEL_VERSION, REVIEW_CONFIDENCE,
-    BuildingModel, Level, Space, Zone, EnvelopeWall,
-    BimElement, BimOpening, Provenance,
+    BimElement,
+    BimOpening,
+    BuildingModel,
+    EnvelopeWall,
+    Level,
+    Provenance,
+    Space,
+    Zone,
 )
-
 
 # ---------------------------------------------------------------------------
 # IfcOpenShell bootstrap (same vendored fallback as bem_export)
 # ---------------------------------------------------------------------------
 
+
 def _ensure_ifc():
     import sys as _sys
+
     _vendor = str(Path.home() / "workspace" / "vendor" / "pylibs")
     if _vendor not in _sys.path:
         _sys.path.insert(0, _vendor)
@@ -53,8 +59,8 @@ def _ensure_ifc():
         import ifcopenshell  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
-            "IfcOpenShell is not installed; install with "
-            "`pip install ifcopenshell`") from e
+            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
+        ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -62,11 +68,27 @@ def _ensure_ifc():
 # ---------------------------------------------------------------------------
 
 _SI_PREFIX = {
-    "": 1.0, "YOTTA": 1e24, "ZETTA": 1e21, "EXA": 1e18, "PETA": 1e15,
-    "TERA": 1e12, "GIGA": 1e9, "MEGA": 1e6, "KILO": 1e3, "HECTO": 1e2,
-    "DECA": 1e1, "DECI": 1e-1, "CENTI": 1e-2, "MILLI": 1e-3,
-    "MICRO": 1e-6, "NANO": 1e-9, "PICO": 1e-12, "FEMTO": 1e-15,
-    "ATTO": 1e-18, "ZEPTO": 1e-21, "YOCTO": 1e-24,
+    "": 1.0,
+    "YOTTA": 1e24,
+    "ZETTA": 1e21,
+    "EXA": 1e18,
+    "PETA": 1e15,
+    "TERA": 1e12,
+    "GIGA": 1e9,
+    "MEGA": 1e6,
+    "KILO": 1e3,
+    "HECTO": 1e2,
+    "DECA": 1e1,
+    "DECI": 1e-1,
+    "CENTI": 1e-2,
+    "MILLI": 1e-3,
+    "MICRO": 1e-6,
+    "NANO": 1e-9,
+    "PICO": 1e-12,
+    "FEMTO": 1e-15,
+    "ATTO": 1e-18,
+    "ZEPTO": 1e-21,
+    "YOCTO": 1e-24,
 }
 
 
@@ -103,6 +125,7 @@ def _length_scale(f) -> float:
 # Placements: compose IfcLocalPlacement chains -> (angle, tx, ty, tz)
 # ---------------------------------------------------------------------------
 
+
 def _axis2placement_2d(ax):
     """IfcAxis2Placement3D -> (angle rad about Z, x, y, z).
 
@@ -137,8 +160,7 @@ def _placement_transform(el, scale):
     for ax in reversed(chain):
         a2, x2, y2, z2 = _axis2placement_2d(ax)
         ca, sa = math.cos(ang), math.sin(ang)
-        tx, ty = (tx + (ca * x2 - sa * y2) * scale,
-                  ty + (sa * x2 + ca * y2) * scale)
+        tx, ty = (tx + (ca * x2 - sa * y2) * scale, ty + (sa * x2 + ca * y2) * scale)
         tz += z2 * scale
         ang += a2
     return ang, tx, ty, tz
@@ -154,10 +176,7 @@ def _compose(t1, t2):
     a1, x1, y1, z1 = t1
     a2, x2, y2, z2 = t2
     ca, sa = math.cos(a2), math.sin(a2)
-    return (a1 + a2,
-            x2 + ca * x1 - sa * y1,
-            y2 + sa * x1 + ca * y1,
-            z1 + z2)
+    return (a1 + a2, x2 + ca * x1 - sa * y1, y2 + sa * x1 + ca * y1, z1 + z2)
 
 
 def _invert(t):
@@ -183,6 +202,7 @@ def _to_canonical(wx, wy):
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
+
 def _body_extrusions(el):
     """Body-representation IfcExtrudedAreaSolid items, if any."""
     rep = getattr(el, "Representation", None)
@@ -202,8 +222,7 @@ def _rect_profile_dims(solid, scale):
     """(xdim, ydim, depth) in meters, or None."""
     p = solid.SweptArea
     if p.is_a("IfcRectangleProfileDef"):
-        return (float(p.XDim) * scale, float(p.YDim) * scale,
-                float(solid.Depth) * scale)
+        return (float(p.XDim) * scale, float(p.YDim) * scale, float(solid.Depth) * scale)
     return None
 
 
@@ -213,8 +232,7 @@ def _polyline_footprint(solid, scale):
     if not p.is_a("IfcArbitraryClosedProfileDef"):
         return None
     oc = p.OuterCurve
-    pts = [(float(c.Coordinates[0]) * scale, float(c.Coordinates[1]) * scale)
-           for c in oc.Points]
+    pts = [(float(c.Coordinates[0]) * scale, float(c.Coordinates[1]) * scale) for c in oc.Points]
     # drop a duplicated closing point if present
     if len(pts) > 1 and pts[0] == pts[-1]:
         pts = pts[:-1]
@@ -231,6 +249,7 @@ def _geom_verts(el):
     """
     try:
         import ifcopenshell.geom as _g
+
         shape = _g.create_shape(_g.settings(), el)
         v = shape.geometry.verts
         return [float(x) for x in v]
@@ -267,6 +286,7 @@ def _shoelace(poly):
 # Materials
 # ---------------------------------------------------------------------------
 
+
 def _material_layers(el, scale):
     """([(material, thickness_m)], total_m or None) from associations."""
     layers = []
@@ -282,8 +302,9 @@ def _material_layers(el, scale):
             continue  # IfcMaterialList etc: out of scope for v1
         for lay in rm.MaterialLayers or []:
             mname = lay.Material.Name if lay.Material is not None else ""
-            layers.append({"material": mname or "(unnamed)",
-                           "thickness_m": float(lay.LayerThickness) * scale})
+            layers.append(
+                {"material": mname or "(unnamed)", "thickness_m": float(lay.LayerThickness) * scale}
+            )
     total = sum(l["thickness_m"] for l in layers) or None
     return layers, total
 
@@ -291,6 +312,7 @@ def _material_layers(el, scale):
 # ---------------------------------------------------------------------------
 # Quantities (fallback when geometry is absent)
 # ---------------------------------------------------------------------------
+
 
 def _quantities(el, qset_name, scale):
     """{quantity_name: value} in meters/m^2/m^3 for an IfcElementQuantity."""
@@ -305,9 +327,9 @@ def _quantities(el, qset_name, scale):
             continue
         for q in psd.Quantities or []:
             if q.is_a("IfcQuantityArea"):
-                out[q.Name] = float(q.AreaValue) * scale ** 2
+                out[q.Name] = float(q.AreaValue) * scale**2
             elif q.is_a("IfcQuantityVolume"):
-                out[q.Name] = float(q.VolumeValue) * scale ** 3
+                out[q.Name] = float(q.VolumeValue) * scale**3
             elif q.is_a("IfcQuantityLength"):
                 out[q.Name] = float(q.LengthValue) * scale
     return out
@@ -316,6 +338,7 @@ def _quantities(el, qset_name, scale):
 # ---------------------------------------------------------------------------
 # Relationship helpers
 # ---------------------------------------------------------------------------
+
 
 def _aggregated(obj, want=None):
     out = []
@@ -367,6 +390,7 @@ def _parse_fill_tag(name):
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -387,8 +411,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     def prov(method, conf, note="", gid=""):
         n = f"GlobalId={gid} {note}".strip() if gid else note
-        return Provenance(sheet_id=sheet, revision=revision, method=method,
-                          confidence=conf, note=n)
+        return Provenance(sheet_id=sheet, revision=revision, method=method, confidence=conf, note=n)
 
     projects = f.by_type("IfcProject")
     project = projects[0] if projects else None
@@ -397,8 +420,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         for site in _aggregated(project, "IfcSite"):
             for bldg in _aggregated(site, "IfcBuilding"):
                 bname = bldg.Name or ""
-    model = BuildingModel(name=bname or (project.Name if project else "")
-                          or path.stem)
+    model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
 
     # --- spatial hierarchy ------------------------------------------------
     storeys = []
@@ -412,10 +434,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     storeys.sort(key=lambda s: float(getattr(s, "Elevation", 0.0) or 0.0))
 
     # --- openings indexed by host -----------------------------------------
-    voids = {}   # opening GlobalId -> host element
+    voids = {}  # opening GlobalId -> host element
     for rel in f.by_type("IfcRelVoidsElement"):
         voids[rel.RelatedOpeningElement.GlobalId] = rel.RelatingBuildingElement
-    fills = {}   # opening GlobalId -> fill element
+    fills = {}  # opening GlobalId -> fill element
     for rel in f.by_type("IfcRelFillsElement"):
         fills[rel.RelatingOpeningElement.GlobalId] = rel.RelatedBuildingElement
 
@@ -426,8 +448,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = float(getattr(storey, "Elevation", 0.0) or 0.0) * scale
-        level = Level(id=level_id, name=storey.Name or "",
-                      elevation_z_m=elev)
+        level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
         model.levels.append(level)
 
         # --- spaces -------------------------------------------------------
@@ -441,20 +462,24 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             gid = sp.GlobalId
             space_by_gid[gid] = sid
 
-            polygon, area, volume, conf, method, note = [], None, None, 0.4, \
-                "ifc_import:tier0:space", "no geometry; identity only"
+            polygon, area, volume, conf, method, note = (
+                [],
+                None,
+                None,
+                0.4,
+                "ifc_import:tier0:space",
+                "no geometry; identity only",
+            )
             solids = _body_extrusions(sp)
             fp = _polyline_footprint(solids[0], scale) if solids else None
             if fp is not None:
                 pts_local, depth = fp
                 ang, tx, ty, _tz = _placement_transform(sp, scale)
-                polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly))
-                           for lx, ly in pts_local]
+                polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in pts_local]
                 area = abs(_shoelace(polygon))
                 volume = area * depth
                 conf, method = 0.95, "ifc_import:tier0:space:solid"
-                note = (f"footprint from IfcExtrudedAreaSolid "
-                        f"({len(polygon)} pts)")
+                note = f"footprint from IfcExtrudedAreaSolid ({len(polygon)} pts)"
             else:
                 q = _quantities(sp, "Qto_SpaceBaseQuantities", scale)
                 if "GrossFloorArea" in q:
@@ -465,15 +490,21 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 model.flag_for_review(
                     "space_no_geometry",
                     f"space {sid} ({sp.Name}) has no solid geometry",
-                    conf, prov("ifc_import:tier0:space", conf, note, gid))
+                    conf,
+                    prov("ifc_import:tier0:space", conf, note, gid),
+                )
 
             space = Space(
-                id=sid, level_id=level_id, name=label, number=number or "",
+                id=sid,
+                level_id=level_id,
+                name=label,
+                number=number or "",
                 polygon_m=[[round(x, 4), round(y, 4)] for x, y in polygon],
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
                 core_provenance=prov(method, conf, note, gid),
-                label_confidence=0.9 if number else 0.6)
+                label_confidence=0.9 if number else 0.6,
+            )
             model.spaces[sid] = space
 
         # --- elements -----------------------------------------------------
@@ -481,10 +512,17 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         wall_heights = []
         for el in elements:
             cls = el.is_a()
-            if cls not in ("IfcWall", "IfcWallStandardCase", "IfcSlab",
-                           "IfcRoof", "IfcColumn", "IfcBeam",
-                           "IfcCurtainWall", "IfcDuctSegment",
-                           "IfcDistributionElement"):
+            if cls not in (
+                "IfcWall",
+                "IfcWallStandardCase",
+                "IfcSlab",
+                "IfcRoof",
+                "IfcColumn",
+                "IfcBeam",
+                "IfcCurtainWall",
+                "IfcDuctSegment",
+                "IfcDistributionElement",
+            ):
                 continue
             gid = el.GlobalId
             ang, tx, ty, tz = _placement_transform(el, scale)
@@ -492,8 +530,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
             length_m = width_m = height_m = thick_m = None
             area_m2 = volume_m3 = None
-            conf, method, note = 0.5, "ifc_import:tier0:element:placement", \
-                "placement only; no usable solid"
+            conf, method, note = (
+                0.5,
+                "ifc_import:tier0:element:placement",
+                "placement only; no usable solid",
+            )
             solids = _body_extrusions(el)
             dims = _rect_profile_dims(solids[0], scale) if solids else None
             dims_note = "IfcExtrudedAreaSolid/IfcRectangleProfileDef"
@@ -501,8 +542,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 ext = _local_extents(el, scale)
                 if ext is not None:
                     dims = ext
-                    dims_note = ("local extents via geometry kernel "
-                                 "(axis-aligned solid assumed)")
+                    dims_note = "local extents via geometry kernel (axis-aligned solid assumed)"
             if dims is not None:
                 xd, yd, dep = dims
                 if cls in ("IfcWall", "IfcWallStandardCase"):
@@ -521,14 +561,20 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
             cx, cy = _to_canonical(tx, ty)
             be = BimElement(
-                global_id=gid, ifc_class=cls, name=el.Name or "",
+                global_id=gid,
+                ifc_class=cls,
+                name=el.Name or "",
                 level_id=level_id,
-                length_m=_r4(length_m), width_m=_r4(width_m),
-                height_m=_r4(height_m), thickness_m=_r4(thick_m),
-                area_m2=_r4(area_m2), volume_m3=_r4(volume_m3),
+                length_m=_r4(length_m),
+                width_m=_r4(width_m),
+                height_m=_r4(height_m),
+                thickness_m=_r4(thick_m),
+                area_m2=_r4(area_m2),
+                volume_m3=_r4(volume_m3),
                 material_layers=layers,
                 placement_m=[round(cx, 4), round(cy, 4), round(tz, 4)],
-                provenance=prov(method, conf, note, gid))
+                provenance=prov(method, conf, note, gid),
+            )
             model.bim_elements.append(be)
 
             # walls also feed the BEM envelope (facade classification
@@ -538,18 +584,23 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 p0 = (cx, cy)
                 p1 = (cx + dx * length_m, cy + dy * length_m)
                 wall_heights.append(height_m or 0.0)
-                model.envelope.append(EnvelopeWall(
-                    id=f"env-{len(model.envelope) + 1:03d}",
-                    facade="",
-                    from_m=[round(p0[0], 4), round(p0[1], 4)],
-                    to_m=[round(p1[0], 4), round(p1[1], 4)],
-                    length_m=round(length_m, 4),
-                    height_m=round(height_m, 4) if height_m else None,
-                    area_m2=round(length_m * height_m, 4)
-                    if height_m else None,
-                    provenance=prov("ifc_import:tier0:envelope", 0.95,
-                                    f"wall centerline segment; facade TBD "
-                                    f"(Tier 1)", gid)))
+                model.envelope.append(
+                    EnvelopeWall(
+                        id=f"env-{len(model.envelope) + 1:03d}",
+                        facade="",
+                        from_m=[round(p0[0], 4), round(p0[1], 4)],
+                        to_m=[round(p1[0], 4), round(p1[1], 4)],
+                        length_m=round(length_m, 4),
+                        height_m=round(height_m, 4) if height_m else None,
+                        area_m2=round(length_m * height_m, 4) if height_m else None,
+                        provenance=prov(
+                            "ifc_import:tier0:envelope",
+                            0.95,
+                            "wall centerline segment; facade TBD (Tier 1)",
+                            gid,
+                        ),
+                    )
+                )
 
             # openings hosted in this element
             if cls in ("IfcWall", "IfcWallStandardCase"):
@@ -560,10 +611,18 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                     if opening is None:
                         continue
                     be.openings.append(
-                        _read_opening(f, opening, fills.get(ogid),
-                                      (ang, tx, ty, tz), length_m,
-                                      sheet, revision, scale,
-                                      host_gid=gid))
+                        _read_opening(
+                            f,
+                            opening,
+                            fills.get(ogid),
+                            (ang, tx, ty, tz),
+                            length_m,
+                            sheet,
+                            revision,
+                            scale,
+                            host_gid=gid,
+                        )
+                    )
 
         if wall_heights:
             level.wall_height_m = round(max(wall_heights), 4)
@@ -581,18 +640,26 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             continue
         zid = z.Name or f"ZONE-{z.GlobalId[:8]}"
         model.zones[zid] = Zone(
-            id=zid, level_id=model.levels[0].id if model.levels else "L1",
+            id=zid,
+            level_id=model.levels[0].id if model.levels else "L1",
             space_ids=sids,
-            provenance=prov("ifc_import:tier0:zone", 0.9,
-                            f"{len(sids)} spaces via IfcRelAssignsToGroup",
-                            z.GlobalId))
+            provenance=prov(
+                "ifc_import:tier0:zone",
+                0.9,
+                f"{len(sids)} spaces via IfcRelAssignsToGroup",
+                z.GlobalId,
+            ),
+        )
 
     model.log_revision(
-        sheet, revision, "ingest",
+        sheet,
+        revision,
+        "ingest",
         f"Tier-0 IFC import: {len(model.spaces)} spaces, "
         f"{len(model.bim_elements)} elements, "
         f"{sum(len(e.openings) for e in model.bim_elements)} openings, "
-        f"{len(model.zones)} zones; scale={scale}")
+        f"{len(model.zones)} zones; scale={scale}",
+    )
     return model
 
 
@@ -600,8 +667,7 @@ def _r4(v):
     return round(v, 4) if v is not None else None
 
 
-def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision,
-                  scale, host_gid=""):
+def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):
     """One BimOpening from void/fill relationships + opening geometry.
 
     Dimensions come from the opening's product-local vertices (geometry
@@ -626,12 +692,10 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision,
     note = "void/fill relationships only; no opening solid"
     verts = _geom_verts(opening)
     if verts:
-        rel = _compose(_invert(wall_world),
-                       _placement_transform(opening, scale))
+        rel = _compose(_invert(wall_world), _placement_transform(opening, scale))
         xs, zs = [], []
         for i in range(0, len(verts), 3):
-            wx, wy, wz = _apply(rel, verts[i] * scale,
-                                verts[i + 1] * scale, verts[i + 2] * scale)
+            wx, wy, wz = _apply(rel, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
             xs.append(wx)
             zs.append(wz)
         if xs and zs:
@@ -641,26 +705,36 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision,
             s_center_m = 0.5 * (min(xs) + max(xs))
             conf, method = 0.95, "ifc_import:tier0:opening:solid"
             note = "dims from opening solid, wall-local frame"
-            if wall_len and not (-0.01 <= min(xs)
-                                 <= max(xs) <= wall_len + 0.01):
+            if wall_len and not (-0.01 <= min(xs) <= max(xs) <= wall_len + 0.01):
                 note += " (outside wall extent -- flagged)"
-    p = Provenance(sheet_id=sheet, revision=revision, method=method,
-                   confidence=conf,
-                   note=f"GlobalId={ogid} fill={fgid} {note}".strip())
+    p = Provenance(
+        sheet_id=sheet,
+        revision=revision,
+        method=method,
+        confidence=conf,
+        note=f"GlobalId={ogid} fill={fgid} {note}".strip(),
+    )
     if tag:
         # tag itself is a convention-dependent parse of the fill Name
         p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
     return BimOpening(
-        id=ogid, category=category, tag=tag,
-        width_m=_r4(width_m), height_m=_r4(height_m),
-        sill_m=_r4(sill_m), s_center_m=_r4(s_center_m),
+        id=ogid,
+        category=category,
+        tag=tag,
+        width_m=_r4(width_m),
+        height_m=_r4(height_m),
+        sill_m=_r4(sill_m),
+        s_center_m=_r4(s_center_m),
         host_global_id=host_gid,
-        fill_global_id=fgid, provenance=p)
+        fill_global_id=fgid,
+        provenance=p,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Tier 1 (out of scope for this module version): geometric adjacency
 # ---------------------------------------------------------------------------
+
 
 def infer_adjacency(model: BuildingModel):
     """Tier 1 (NOT IMPLEMENTED): geometric space<->element adjacency.
@@ -673,4 +747,5 @@ def infer_adjacency(model: BuildingModel):
     """
     raise NotImplementedError(
         "Tier 1 geometric adjacency inference is not implemented yet; "
-        "see docs/ifc_import.md for the plan.")
+        "see docs/ifc_import.md for the plan."
+    )

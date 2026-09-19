@@ -6,16 +6,11 @@ validation battery (including the simplifier area budget), and assert
 ZERO errors. Warnings are collected and printed -- they are tripwires,
 not failures -- so a warning regression is visible but not fatal.
 """
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from synth.multidiscipline import generate_building  # noqa: E402
-from link import build_model  # noqa: E402
-from geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
-from validate import run_checks, export_gate  # noqa: E402
-
+from geometry_simplify import footprint_from_regions, simplify_ring
+from link import build_model
+from synth.multidiscipline import generate_building
+from validate import export_gate, run_checks
 
 SEEDS = [201, 202, 203, 204, 205, 206, 207, 208, 209, 210]
 
@@ -33,19 +28,18 @@ def test_property_no_errors_across_random_buildings(capsys):
     all_warnings = []
     n_checked = 0
     for i, seed in enumerate(SEEDS):
-        span = (i % 2 == 1)
+        span = i % 2 == 1
         ekey = "elev_nogrid" if (i % 3 == 2) else "elev_grid"
         bldg = generate_building(seed, open_office_span=span)
-        model, _ = build_model(bldg, elevation_key=ekey,
-                               building_name=bldg["building_id"])
+        model, _ = build_model(bldg, elevation_key=ekey, building_name=bldg["building_id"])
         sres = _sres_for(model)
         report = run_checks(model, sres=sres)
         n_checked += 1
         errs = report.errors
         assert not errs, (
             f"seed={seed} span={span} elev={ekey}: "
-            f"{len(errs)} ERROR(S):\n" +
-            "\n".join(f"  [{e.check_id}] {e.message}" for e in errs))
+            f"{len(errs)} ERROR(S):\n" + "\n".join(f"  [{e.check_id}] {e.message}" for e in errs)
+        )
         assert export_gate(report), f"seed={seed}: export gate closed"
         for w in report.warnings:
             all_warnings.append((seed, w.check_id, w.message))
@@ -54,9 +48,11 @@ def test_property_no_errors_across_random_buildings(capsys):
     for seed, cid, msg in all_warnings:
         kinds.setdefault(cid, []).append(seed)
     with capsys.disabled():
-        print(f"\nproperty test: {n_checked} buildings, 0 errors; "
-              f"{len(all_warnings)} warnings "
-              f"({', '.join(f'{k}x{len(v)}' for k, v in kinds.items()) or 'none'})")
+        print(
+            f"\nproperty test: {n_checked} buildings, 0 errors; "
+            f"{len(all_warnings)} warnings "
+            f"({', '.join(f'{k}x{len(v)}' for k, v in kinds.items()) or 'none'})"
+        )
 
 
 def test_area_conservation_is_tight_on_tiled_synth():
@@ -66,8 +62,7 @@ def test_area_conservation_is_tight_on_tiled_synth():
     bldg = generate_building(201, open_office_span=False)
     model, _ = build_model(bldg, building_name=bldg["building_id"])
     report = run_checks(model)
-    r = next(x for x in report.results
-             if x.check_id == "area_conservation")
+    r = next(x for x in report.results if x.check_id == "area_conservation")
     assert r.severity == "pass"
     assert r.actual is not None and r.expected is not None
     rel = abs(r.actual - r.expected) / r.expected

@@ -4,14 +4,11 @@ Regenerate with:  python -m tests.make_goldens
 (then eyeball the diff before committing -- a golden change means the
 pipeline or the battery changed behavior.)
 """
+
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from validate import run_checks  # noqa: E402
+from validate import run_checks
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "goldens"
 
@@ -22,15 +19,20 @@ def _load(name):
 
 
 def test_golden_clean():
-    from model_factory import make_clean_model
+    from tests.model_factory import make_clean_model
+
     report = run_checks(make_clean_model())
     assert report.to_dict() == _load("clean_report.json")
 
 
 def test_golden_defective():
-    from model_factory import (make_clean_model, break_area,
-                               break_lpd_absurd,
-                               break_fixture_no_schedule_flagged)
+    from tests.model_factory import (
+        break_area,
+        break_fixture_no_schedule_flagged,
+        break_lpd_absurd,
+        make_clean_model,
+    )
+
     m = make_clean_model()
     break_area(m)
     break_lpd_absurd(m)
