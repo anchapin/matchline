@@ -36,7 +36,9 @@ def main():
     args = ap.parse_args()
 
     import random
+
     import numpy as np
+
     random.seed(args.seed)
     np.random.seed(args.seed)
     print(f'[train] seed={args.seed}')
@@ -100,7 +102,6 @@ def _subset_yaml(data_yaml, n_train, n_val, run_dir):
         d = yaml.safe_load(f)
     base = d['path']
     sub = dict(d)
-    import shutil
     subset_root = os.path.join(run_dir, 'subset')
     if os.path.exists(subset_root):
         _safe_rmtree(subset_root, run_dir)
