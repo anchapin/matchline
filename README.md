@@ -74,4 +74,4 @@ follows a fine-tuned YOLO + tiling/legend-learning pattern.
 
 ## License
 
-TBD.
+BSD-3-Clause. See [LICENSE](LICENSE).
