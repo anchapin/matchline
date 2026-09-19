@@ -513,8 +513,11 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
         errors.append(f"XSD not found at {xsd_path}; skipping XSD validation")
         return _gbxml_smoke_check(path, errors)
     try:
-        schema = etree.XMLSchema(etree.parse(str(xsd_path)))
-        doc = etree.parse(path)
+        # Harden against entity-expansion / XXE: user-supplied gbXML and XSD
+        # files are untrusted input (see AGENTS.md untrusted-input policy).
+        safe_parser = etree.XMLParser(resolve_entities=False, no_network=True)
+        schema = etree.XMLSchema(etree.parse(str(xsd_path), safe_parser))
+        doc = etree.parse(path, safe_parser)
         ok = schema.validate(doc)
         for e in schema.error_log:
             errors.append(f"line {e.line}: {e.message}")
