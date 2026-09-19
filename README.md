@@ -1,6 +1,7 @@
-# WiSARD-BEM
+# Matchline
 
-Deterministic, auditable extraction of building energy modeling (BEM) inputs from
+Cross-sheet entity resolution for construction drawings: deterministic, auditable
+extraction of building energy modeling (BEM) inputs from
 architectural drawings: floor plans, elevations, lighting plans, and mechanical plans.
 
 The pipeline turns clean digital construction drawings into quantity takeoffs,
@@ -29,15 +30,15 @@ Every demo script is a subcommand (the old `python3 run_*.py` scripts still
 work as thin wrappers):
 
 ```bash
-wisard-bem validate            # validation battery demo (synthetic)
-wisard-bem bem-export --sheet-id sheet_007
-wisard-bem elevation-windows    # exact window placement + daylight (synthetic)
-wisard-bem room-labels          # OCR room labeling (synthetic)
-wisard-bem multidiscipline      # cross-discipline linking (synthetic)
-wisard-bem symbols              # symbol eval + GD&T invariant check
-wisard-bem mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
-wisard-bem facade-takeoff --n 5  # needs the CMP Facade dataset (not committed)
-wisard-bem ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
+matchline validate            # validation battery demo (synthetic)
+matchline bem-export --sheet-id sheet_007
+matchline elevation-windows    # exact window placement + daylight (synthetic)
+matchline room-labels          # OCR room labeling (synthetic)
+matchline multidiscipline      # cross-discipline linking (synthetic)
+matchline symbols              # symbol eval + GD&T invariant check
+matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
+matchline facade-takeoff --n 5  # needs the CMP Facade dataset (not committed)
+matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 ```
 
 ## Pipeline
@@ -70,7 +71,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
-| `cli.py` | Unified `wisard-bem` CLI (one subcommand per demo script) |
+| `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
 | `validate.py` | 26-check invariant battery; errors block export |
 
 ## Quickstart
@@ -83,7 +84,7 @@ python3 run_bem_export.py          # gbXML + IFC export demos
 python3 run_facade_takeoff.py      # facade takeoffs — needs ~/workspace/datasets/cmp-facade
 ```
 
-(Or the equivalent `wisard-bem <command>` forms above.)
+(Or the equivalent `matchline <command>` forms above.)
 
 ## Validation
 

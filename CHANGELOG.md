@@ -6,11 +6,17 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Changed
+- Renamed the project from `wisard-bem` to **Matchline**: distribution name,
+  GitHub repo (`anchapin/matchline`), docs, and the `matchline` CLI. The old
+  `wisard-bem` command still works as a deprecated alias (removal in 0.2.0).
+  The WiSARD paper-reproduction module (`jesse.py`) keeps its name.
+
 ### Added
 - `pyproject.toml`: the project is installable (`pip install -e .`), version
   0.1.0, with declared runtime dependencies and optional `ocr`, `test`, and
   `detector` extras.
-- Unified `wisard-bem` CLI with subcommands for every demo script
+- Unified `matchline` CLI with subcommands for every demo script
   (`validate`, `bem-export`, `elevation-windows`, `facade-takeoff`,
   `room-labels`, `multidiscipline`, `mnist`, `symbols`, `ifc-import`).
 - GitHub Actions CI: install, `ruff check`, `ruff format --check`, pytest on

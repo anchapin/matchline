@@ -1,4 +1,4 @@
-"""Unified detection taxonomy for the wisard-bem detector track.
+"""Unified detection taxonomy for the matchline detector track.
 
 Monday-critical classes are door + window (they drive takeoffs). The taxonomy
 is intentionally small: a fine-tuned YOLO baseline on clean drawings only

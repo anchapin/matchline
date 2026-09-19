@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Config-driven YOLO fine-tuning harness for the wisard-bem detector track.
+"""Config-driven YOLO fine-tuning harness for the matchline detector track.
 
 Baseline: YOLO11n (COCO-pretrained), fine-tuned on CubiCasa5K door/window
 boxes. CPU-friendly: small model, modest epochs, few workers.
