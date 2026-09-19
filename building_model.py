@@ -241,6 +241,51 @@ class EnvelopeWall:
 
 
 @dataclass
+class BimOpening:
+    """One window/door hosted in a BIM element (IFC Tier 0).
+
+    Tier 0 recovers the opening, its dimensions, and its host wall WITHOUT
+    IfcRelSpaceBoundary -- so openings are NOT attached to spaces yet.
+    Space attachment is Tier 1 (geometric adjacency inference).
+    """
+    id: str                    # GlobalId of the IfcOpeningElement
+    category: str              # "window" | "door" | "unknown"
+    tag: str = ""
+    width_m: Optional[float] = None
+    height_m: Optional[float] = None
+    sill_m: Optional[float] = None       # above host wall base
+    s_center_m: Optional[float] = None   # along host wall from wall start
+    host_global_id: str = ""             # the IfcWall / host element
+    fill_global_id: str = ""             # the IfcWindow / IfcDoor
+    provenance: Provenance = None
+
+
+@dataclass
+class BimElement:
+    """Raw BIM element inventory (IFC Tier 0).
+
+    Walls are ALSO mirrored into ``BuildingModel.envelope`` for the BEM
+    path; everything else lives here until Tier 1 assigns it a role.
+    """
+    global_id: str
+    ifc_class: str            # "IfcWall", "IfcSlab", ...
+    name: str = ""
+    level_id: str = ""
+    length_m: Optional[float] = None
+    width_m: Optional[float] = None
+    height_m: Optional[float] = None
+    thickness_m: Optional[float] = None   # geometry or material layers
+    area_m2: Optional[float] = None
+    volume_m3: Optional[float] = None
+    material_layers: List[dict] = field(default_factory=list)
+    # [{"material": str, "thickness_m": float}] -- the analytical
+    # wall-thickness answer (roadmap item 1 on the BIM path)
+    placement_m: Optional[list] = None    # [x, y, z], canonical frame
+    openings: List["BimOpening"] = field(default_factory=list)
+    provenance: Provenance = None
+
+
+@dataclass
 class Level:
     id: str                    # "L1"
     name: str = ""
@@ -275,6 +320,8 @@ class BuildingModel:
     spaces: Dict[str, Space] = field(default_factory=dict)
     zones: Dict[str, Zone] = field(default_factory=dict)
     envelope: List[EnvelopeWall] = field(default_factory=list)
+    bim_elements: List[BimElement] = field(default_factory=list)
+    # raw BIM element inventory (IFC frontend, Tier 0+)
     schedules: Dict[str, dict] = field(default_factory=dict)
     # schedules: tag -> ScheduleEntry as plain dict (revived on load)
     revision_log: List[RevisionEvent] = field(default_factory=list)
