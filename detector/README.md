@@ -54,12 +54,24 @@ python3 eval_zero_shot.py --preds /tmp/sheet01_preds.json \
     --labels ~/workspace/datasets/detector_yolo/aec/labels/eval
 ```
 
-## Status / next (Monday)
+## Status (2026-09-19)
 
-- [ ] Full CubiCasa conversion (train 4199 / val 399 / test 399)
-- [ ] Harness validation run (subset, few epochs)
-- [ ] Full training run (background)
-- [ ] mAP50 on CubiCasa val
-- [ ] SAHI demo on one AEC sheet + zero-shot P/R on 2-3 sheets
+- [x] Full CubiCasa conversion: train 4200 / val 400 / test 400 plans,
+      42,392 doors + 35,419 windows, integrity-checked (`check_dataset.py`)
+- [x] AEC eval set: 15 sheets, 678 doors + 494 windows (render verified)
+- [x] FloorPlanCAD eval set: 5,308 images, 12,697 doors + 1,952 windows
+- [x] Harness validation: 3 epochs, 400/100 subset -> val mAP50=0.65
+      (P=0.741, R=0.655) — pipeline works end to end
+- [x] SAHI tiling + NMS proven on a 7201x4801 AEC sheet (26 preds, ~30s CPU)
+- [x] Zero-shot eval harness (`eval_zero_shot.py`) proven on sheet_01
+- [ ] Full training run: 10 epochs YOLO11n, all 4200 train images (in progress,
+      ~6h CPU) -> `~/workspace/datasets/detector_runs/cubi_yolo11n_e10/`
+- [ ] Re-run SAHI + zero-shot P/R on 2-3 AEC sheets with the full model
 - [ ] Monday: fine-tune/eval on Alex's commercial drawings; legend one-shot
       classification prototype (PID stage 2)
+
+Environment note: this sandbox's torchvision wheels ship a broken C++
+extension against torch 2.14.0+cpu (`_C_stable.so` fails to load), so the
+project venv (`~/workspace/.venv-det`, isolated) uses a minimal pure-torch
+`torchvision.ops.nms` stub — NMS behavior verified on a toy case. Revisit on
+better hardware Monday.
