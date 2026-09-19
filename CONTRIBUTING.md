@@ -39,10 +39,17 @@ Set up the git hooks once: `pre-commit install`.
 ## Branch / PR conventions
 
 - Work on feature branches off `develop`; open PRs against `develop`.
+  **PRs are required — no direct pushes to `develop`**, by agents or by
+  humans. This is the project's standing decision (2026-09-19).
 - `main` is releases only — see `RELEASING.md`. Never merge feature work
   into `main` directly.
 - CI must be green: install, `ruff check`, `ruff format --check`, pytest.
 - Keep PRs focused; one concern per PR.
+- Recommended: enable GitHub branch protection on `develop` (repo settings)
+  requiring a PR and green CI before merge, so the rule is enforced by the
+  platform and not just by convention. AI coding agents: see `AGENTS.md`
+  for the full operating instructions, including the attribution trailer
+  and verification requirements.
 
 ## Adding a module
 
