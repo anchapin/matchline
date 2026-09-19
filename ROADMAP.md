@@ -194,3 +194,27 @@ Candidate approaches:
   start from BIM; wisard-bem starts from drawings and *could* start from BIM.
   Worth showing Simon once the IFC frontend exists; the validation battery and
   simplifier are the components most likely to interest him.
+
+## 8. Non-developer UX: a GUI path for practicing modelers
+
+If the pipeline becomes reliable, the users are building energy modelers —
+technical people who generally don't live in a Python CLI. The GUI should come
+*after* the core is validated on real drawings (post fine-tuning milestone),
+not before. But the architecture is already GUI-shaped, which is worth noting
+so it stays that way.
+
+- **The review queue is the interface.** The natural GUI isn't "run the
+  pipeline" — it's visual verification: show the floor plan with detected
+  windows/doors/rooms highlighted, let the modeler click to correct a
+  mislabeled room or a missed opening, then export gbXML/IFC. Provenance on
+  every extracted fact plus the structured validation results are exactly the
+  data structures a frontend needs. Keep them machine-readable and the GUI
+  stays cheap.
+- **Sequencing: Streamlit first.** An afternoon-scale prototype (drag in a PDF,
+  see takeoffs, walk the review queue) is enough to put in front of a modeler
+  and learn what they actually need. Then decide between a real web app and a
+  plugin that meets them where they live (OpenStudio/Revit ecosystem) based on
+  who shows up.
+- **The trust story is the product story.** Deterministic extraction plus
+  human verification is the moat — the GUI should make the verification step
+  fast and the audit trail visible, not hide the pipeline's workings.
