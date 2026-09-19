@@ -158,6 +158,33 @@ Candidate approaches:
   wildly in the wild — this is where Autodesk and others struggle too. Apply
   the project's review-queue philosophy: low-confidence boundary mappings get
   flagged, never silently accepted or silently dropped.
+- **Design the frontend in tiers so space boundaries are optional, not
+  load-bearing** (Alex's question, 2026-09-19):
+  - *Tier 0 — no boundaries needed.* `IfcSpace` entities carry identity
+    (name/number) and their own 3D geometry. `IfcWall/Slab/Roof/Window/Door`
+    carry geometry, type info, and material layer sets. `IfcOpeningElement` +
+    `IfcRelVoidsElement`/`IfcRelFillsElement` recover window/door placement in
+    walls. `IfcRelAggregates` + `IfcRelContainedInSpatialStructure` give the
+    storey structure. Tier 0 alone already delivers takeoffs (wall/window/door
+    areas), the room list, and the envelope element inventory.
+  - *Tier 1 — geometric inference.* Space↔element adjacency via
+    proximity/clash queries (walls intersecting the space solid's expanded
+    boundary); interior-vs-exterior classification via outward ray tests. Every
+    inferred association carries method + confidence + provenance, and
+    ambiguous cases go to the review queue. Audited inference, not perfect
+    inference.
+  - *Tier 2 — authored boundaries as cross-check.* When `IfcRelSpaceBoundary`
+    *does* exist, treat it as untrusted input: run Tier 1 independently and
+    flag disagreements for review. Inferred-vs-authored agreement becomes a
+    validation check rather than a load-bearing dependency.
+- **Bonus: IFC solves the wall-thickness problem analytically.**
+  `IfcMaterialLayerSet` gives true per-layer thickness — interior and exterior
+  faces are derivable, not convention-guessed. This feeds roadmap item 1
+  directly: the "derive faces per convention at export" design gets real
+  thickness data on the BIM path.
+- **Thermal properties remain a gap on both paths.** `Pset_MaterialThermal`
+  is usually absent in practice; both frontends need the same
+  material→property lookup table.
 - **Testing bonus:** IFC round-trip gives ground truth for the drawing
   pipeline. Where both an IFC and drawings of one building exist, the two
   frontends should produce models that agree within the validation tolerances
