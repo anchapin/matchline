@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv*/
+venv/
+
+# Data & generated outputs (reproducible via scripts)
+/data/
+synth/out/
+bem_out/
+*_results.json
+
+# OS
+.DS_Store
