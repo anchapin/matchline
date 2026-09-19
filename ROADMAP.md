@@ -131,3 +131,39 @@ Candidate approaches:
   concept.
 - Item 4's classifier is the only one here that needs real labeled data before
   design can start; the rest can be prototyped synthetically.
+
+## 7. IFC/BIM as a second input frontend
+
+The drawing pipeline and a BIM pipeline should converge on the same canonical
+model. Alex's point: the surface-count reduction and validation logic are
+needed in BIM→BEM just as badly, and the industry hasn't handled it well.
+
+Candidate approaches:
+- **Two frontends, one core.** The architecture already has the right shape:
+  source-specific extraction feeding the source-agnostic canonical model
+  (`building_model.py`), then shared downstream (simplify → validate →
+  export). IFC becomes a second frontend: parse with IfcOpenShell (already
+  vendored for export — reading is the same library in reverse) and populate
+  spaces, levels, openings, constructions. Everything downstream is reused
+  unchanged.
+- **The simplifier is the shared asset.** BIM geometry is often *more*
+  over-faceted than drawings (curtain-wall mullions as individual surfaces,
+  every stud modeled). The area-budgeted simplifier applies directly, and the
+  1–5% budget gives BIM→BEM something it lacks today: a stated, checked
+  fidelity bound instead of silent decimation.
+- **The validation battery is arguably more valuable on BIM input.** BIM→BEM
+  failures are silent: unenclosed zones, sliver spaces, dropped space
+  boundaries. Area/volume conservation and closure checks catch exactly these.
+- **The hard part is space boundaries.** `IfcRelSpaceBoundary` quality varies
+  wildly in the wild — this is where Autodesk and others struggle too. Apply
+  the project's review-queue philosophy: low-confidence boundary mappings get
+  flagged, never silently accepted or silently dropped.
+- **Testing bonus:** IFC round-trip gives ground truth for the drawing
+  pipeline. Where both an IFC and drawings of one building exist, the two
+  frontends should produce models that agree within the validation tolerances
+  — a cross-frontend consistency check.
+- **Ecosystem note:** abstract.build (Simon's company) does BIM data analysis
+  for thermal simulations — adjacent and complementary, not competitive. They
+  start from BIM; wisard-bem starts from drawings and *could* start from BIM.
+  Worth showing Simon once the IFC frontend exists; the validation battery and
+  simplifier are the components most likely to interest him.
