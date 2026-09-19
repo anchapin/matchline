@@ -31,7 +31,20 @@ def main():
     ap.add_argument('--subset-val', type=int, default=0,
                     help='use only first N val images (0 = all)')
     ap.add_argument('--resume', default=None)
+    ap.add_argument('--seed', type=int, default=0,
+                    help='random seed for python/numpy/torch (default 0)')
     args = ap.parse_args()
+
+    import random
+    import numpy as np
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    print(f'[train] seed={args.seed}')
+    try:
+        import torch
+        torch.manual_seed(args.seed)
+    except ImportError:
+        pass
 
     from ultralytics import YOLO
 
