@@ -248,15 +248,37 @@ Candidate approaches:
   class, confidence, and provenance — the same schema the canonical model
   already expects — so simplify → validate → export stay backend-agnostic.
 - **Backends behind the contract:** (1) the current YOLOv11+SAHI raster
-  detector; (2) the R1 vector-native prototype; (3) third-party APIs (Kamai,
-  etc.).
-- **Kamai evaluation is cost-blocked for now.** Self-serve API access starts at
-  the Contractor tier ($800/mo, ~800 sheets, ~$1–2/sheet) — too expensive for
-  a quick evaluation. Evaluate Kamai integration **only if a free trial or
-  partner evaluation access is obtained** (their stated go-to-market is
-  B2B2B/partner sales; a sales conversation is the realistic path to eval
-  access). In the meantime, the R1 track doubles as our own research into
-  what their geometric models do.
+  detector; (2) the R1 vector-native prototype; (3) third-party APIs —
+  evaluated candidates named below, with Kreo as the only verified Kamai
+  alternative and an open-source self-hosted option.
+- **Evaluated third-party candidates.**
+  - *Kamai* — cost-blocked for now. Self-serve API access starts at the
+    Contractor tier ($800/mo, ~800 sheets, ~$1–2/sheet) — too expensive for a
+    quick evaluation. Evaluate Kamai integration **only if a free trial or
+    partner evaluation access is obtained** (their stated go-to-market is
+    B2B2B/partner sales; a sales conversation is the realistic path to eval
+    access). In the meantime, the R1 track doubles as our own research into
+    what their geometric models do.
+  - *Kreo Software — Auto Measure API* (https://www.kreo.net/features/api) —
+    the only other verified public drawing-in → structured-geometry-out REST
+    API. Accepts PDF/DWG/DXF/DWF/PNG/JPG/TIFF; returns walls (ext/int),
+    doors, windows, rooms/areas (GEA/GIA/NIA) as JSON with per-object pixel
+    contours, OCR text, area/perimeter/length/thickness. Example pricing
+    ≈$0.85/request (~$670/mo at 500 requests); sandbox + limited free
+    requests via sales. **Unverified:** data retention, privacy/DPA terms,
+    hosting region, and on-premise options — resolve before any production
+    use.
+  - *FloorPlanAnalyzer* (https://github.com/mageaustralia/FloorPlanAnalyzer) —
+    open-source YOLOv8 + OCR, self-hosted (self-hosting solves the
+    privacy/on-prem story outright). Accuracy on commercial construction
+    drawings unverified; license terms unverified.
+- **Excluded (with reason).** Togal.ai: no verified public/self-serve
+  detection API (partner-managed integrations only). Rasterscan: an API and
+  claimed on-premise exist, but a paying customer reports API failures with
+  no support response — too risky for now. magicplan/CubiCasa: capture
+  workflows (phone scans), not arbitrary-drawing parsers. Autodesk ACC
+  Takeoff, STACK, Bluebeam: public APIs exist but cannot trigger AI
+  detection headlessly (read/file-management APIs only).
 - **Provider-agnostic conformance.** Run the same AEC sheets through each
   backend under the same F1-at-IoU-0.50 protocol; report per-backend deltas in
   the audit artifact. Backend disagreement becomes a cross-check, not just a
