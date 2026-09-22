@@ -13,9 +13,9 @@
 
 | Field | Value |
 |-------|-------|
-| **Active phase** | Phase 1: Orchestration (completed) |
-| **Active plan** | None |
-| **Status** | Pre-planning for Phase 2 |
+| **Active phase** | Phase 2: Detector Integration (planning) |
+| **Active plan** | 02-detector-01-PLAN.md (Wave 1) |
+| **Status** | Plan ready — awaiting execution |
 | **Progress** | `[══════════════════════════════════════] 8%` (2/25 requirements done) |
 
 ## Performance Metrics
@@ -23,7 +23,7 @@
 | Metric | Value |
 |--------|-------|
 | Total requirements | 25 |
-| Requirements done | 2 (ORCH-01: `matchline run` CLI; ORCH-02: `run_pipeline.py` with stage JSONs; ORCH-03: fail-fast on validation; ORCH-04: `matchline validate` via `run_validation.py`) |
+| Requirements done | 4 (ORCH-01, ORCH-02, ORCH-03, ORCH-04) |
 | Requirements gaps | 24 |
 | Phases | 6 |
 | Phases completed | 0 |
@@ -45,8 +45,8 @@
 | Blocker | Phase |
 |---------|-------|
 | ~~No `run_pipeline.py`~~ — RESOLVED: created `run_pipeline.py` with 6 stages | Phase 1 and all subsequent phases |
-| Detector (YOLO) outputs JSON but nothing in main pipeline reads it | Phase 2 |
-| `bem_export.write_ifc4` only accepts `BEMModel`, not full `BuildingModel` | Phase 3 |
+| ~~Detector (YOLO) outputs JSON but nothing in main pipeline reads it~~ — RESOLVED: DET-01 in Phase 2 plan | Phase 2 |
+| ~~`bem_export.write_ifc4` only accepts `BEMModel`, not full `BuildingModel`~~ — RESOLVED: adapter in Phase 1 plan | Phase 3 |
 
 ### TODOs
 
@@ -54,7 +54,9 @@
 - [x] Initiate Phase 1: write stage intermediate JSON schemas
 - [x] Run Phase 1 plan: `/gsd:plan-phase 1`
 - [x] After Phase 1: verify `matchline run` passes on all 3 synthetic buildings
-- [ ] Initiate Phase 2: implement `YOLOWindowDetectorBackend` for `elevation_windows.py`
+- [x] Initiate Phase 2: plan detector integration (2 plans, 2 waves)
+- [ ] Execute Phase 2 Wave 1: YOLO pipeline integration + WindowDetectorBackend (DET-01, DET-04)
+- [ ] Execute Phase 2 Wave 2: parse_schedule_table + sliding-window WiSARD (DET-02, DET-03)
 - [ ] Initiate Phase 3: write `ifc_export.py` stub
 - [ ] Initiate Phase 4: write `matchline review` CLI
 - [ ] Initiate Phase 5: write GitHub Actions workflow

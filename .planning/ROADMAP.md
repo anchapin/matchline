@@ -50,7 +50,11 @@
 3. The YOLO backend for `elevation_windows.py` (`WindowDetectorBackend` subclass) produces `ElevationWindowObs` results comparable to the contour backend on synthetic data
 4. On AEC-Bench sheets, the pipeline (YOLO → schedule → rollup → link → validate → export) produces no more than 5% count error per symbol class versus ground truth
 
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
+
+**Plan list:**
+- [ ] 02-detector-01-PLAN.md — YOLO pipeline integration + WindowDetectorBackend (DET-01, DET-04)
+- [ ] 02-detector-02-PLAN.md — parse_schedule_table + sliding-window WiSARD (DET-02, DET-03)
 
 ---
 
@@ -135,8 +139,8 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Orchestration | 0/1 | Planned | - |
-| 2. Detector Integration | 0/4 | Not started | - |
+| 1. Orchestration | 1/1 | Completed | 2026-09-21 |
+| 2. Detector Integration | 0/2 | Planned | - |
 | 3. IFC Round-Trip | 0/4 | Not started | - |
 | 4. Review Queue UX | 0/4 | Not started | - |
 | 5. Real-Data Validation + CI | 0/5 | Not started | - |
