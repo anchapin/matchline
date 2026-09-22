@@ -118,6 +118,19 @@ def model_from_takeoff(
         )
     notes = []
 
+    # --- coordinate transform provenance ------------------------------------
+    # All geometry (spaces + envelope ring) enters as drawing pixels
+    # (x-right, y-DOWN) and is converted to canonical BEM meters
+    # (x-east, y-NORTH, z-up) via:  x_m = x_px * s,  y_m = -y_px * s
+    # This is a deterministic mathematical transform (confidence=1.0).
+    notes.append(
+        f"Coordinate transform: drawing px -> m (scale={s:.4f} m/px), "
+        f"y-down -> north-up flip applied to {len(labeled.spaces)} space(s) "
+        f"and envelope ring ({len(sres.ring)} vertices, simplified "
+        f"from {sres.original_count} original edges, "
+        f"area_delta={sres.area_delta_pct:.2f}%)."
+    )
+
     # --- spaces -----------------------------------------------------------
     spaces = []
     for i, sp in enumerate(labeled.spaces):
