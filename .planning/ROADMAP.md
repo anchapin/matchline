@@ -99,9 +99,9 @@
 **Plans**: 3 plans in 2 waves
 
 **Plan list:**
-- [ ] 04-review-01-PLAN.md — Review CLI + list view with classifier inline (RVIEW-01, RVIEW-03)
-- [ ] 04-review-02-PLAN.md — Confirm/reject mutations + revalidation (RVIEW-02)
-- [ ] 04-review-03-PLAN.md — Classifier training data pipeline for real-drawing examples (RVIEW-04)
+- [x] 04-review-01-PLAN.md — Review CLI + list view with classifier inline (RVIEW-01, RVIEW-03)
+- [x] 04-review-02-PLAN.md — Confirm/reject mutations + revalidation (RVIEW-02)
+- [x] 04-review-03-PLAN.md — Classifier training data pipeline for real-drawing examples (RVIEW-04)
 
 ---
 

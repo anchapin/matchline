@@ -116,6 +116,13 @@ def cmd_ifc_export(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}")
 
 
+def cmd_review(args: argparse.Namespace) -> None:
+    """Review queue: list open review items, confirm or reject decisions."""
+    import run_review
+
+    run_review.main(args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="matchline",
@@ -189,6 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("model", help="BuildingModel JSON file path")
     p.add_argument("out", help="Output IFC4 file path")
     p.set_defaults(func=cmd_ifc_export)
+
+    p = sub.add_parser("review", help="Review queue: list open items, confirm or reject decisions")
+    p.add_argument("model", help="BuildingModel JSON file path")
+    p.add_argument("--confirm", metavar="ID", help="Confirm a review item (marks confirmed, re-runs validation)")
+    p.add_argument("--reject", metavar="ID", help="Reject a review item (marks rejected, re-runs validation)")
+    p.add_argument("--show-all", action="store_true", help="Also show confirmed and rejected items")
+    p.set_defaults(func=cmd_review)
 
     return ap
 
