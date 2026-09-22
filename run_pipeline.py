@@ -5,6 +5,7 @@ Chains all pipeline stages:
   Stage 2: build_model()                 -> stage_02_model.json
   Stage 3: simplify_ring()               -> stage_03_simplified.json
   Stage 4: run_checks()                  -> stage_04_validation.json
+  Stage 4b: _run_auto_triage()           -> stage_04b_auto_triage.json  [opt-in via ENABLE_AUTO_TRIAGE=1]
   Stage 5: (fail-fast on validation)
   Stage 6: BEM export (gbXML + IFC4)     -> stage_06_bem/
 
@@ -15,6 +16,7 @@ Validation errors block export (exit code 1, not silent).
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -57,6 +59,21 @@ def _ensure_ccw(ring: list) -> list:
         x1, y1 = ring[(i + 1) % n]
         s += x0 * y1 - x1 * y0
     return list(reversed(ring)) if s < 0 else list(ring)
+
+
+def _run_auto_triage(model) -> None:
+    """Run auto-triage on every item currently in the review queue.
+
+    This is called after validation checks so that triage can benefit from
+    the confidence scores already computed.  Items are triaged in-place
+    (mutating ``model.review_queue``) so that the enriched queue is
+    reflected in the exported model JSON.
+
+    Silently skips if the triage classifier is unavailable (all fields
+    keep their safe defaults: ``needs_human=1.0``, ``urgency=1``).
+    """
+    for item in model.review_queue:
+        model._triage_item(item)
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +332,17 @@ def main(args, config: dict | None = None) -> None:
     # --- Stage 4: validation checks --------------------------------------
     report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
     write_json(out_dir / "stage_04_validation.json", report.to_dict())
+
+    # --- Stage 4b: auto-triage (respects ENABLE_AUTO_TRIAGE env var) -------
+    if os.environ.get("ENABLE_AUTO_TRIAGE", "").lower() in ("1", "true", "yes"):
+        import building_model
+
+        building_model.ENABLE_AUTO_TRIAGE = True
+        _run_auto_triage(model)
+        write_json(
+            out_dir / "stage_04b_auto_triage.json",
+            {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
+        )
 
     # --- Stage 5: fail-fast on validation errors ------------------------
     if not export_gate(report):
