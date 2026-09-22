@@ -34,14 +34,19 @@ north end for east/west); see registration.py.
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 import link
 from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
+from detector.classes import CLASS_NAMES
+from detector.sahi_infer import infer_sheet
 from registration import (
     Facade,
     FacadeRegistration,
@@ -171,7 +176,78 @@ class ContourWindowDetector(WindowDetectorBackend):
         return obs
 
 
-_BACKENDS = {"contour": ContourWindowDetector()}
+class YOLOWindowDetectorBackend(WindowDetectorBackend):
+    """Learned YOLO backend using sahi-style tiled inference.
+
+    Calls detector/sahi_infer.py:infer_sheet() internally. Returns
+    ElevationWindowObs in sheet px, same contract as ContourWindowDetector.
+    """
+
+    def __init__(
+        self,
+        weights: str | Path = "detector/best.pt",
+        conf: float = 0.25,
+        iou_thr: float = 0.5,
+        tile: int = 1024,
+        overlap: float = 0.2,
+        imgsz: int = 1024,
+        device: str = "cpu",
+    ):
+        self.weights = Path(weights)
+        self.conf = conf
+        self.iou_thr = iou_thr
+        self.tile = tile
+        self.overlap = overlap
+        self.imgsz = imgsz
+        self.device = device
+
+    def detect(self, image, px_per_m: float, sheet_id: str, revision: int) -> list:
+        # image: np.ndarray (H, W) in 0-255 uint8
+        # Write temp PNG, run infer_sheet, delete temp
+        from PIL import Image
+
+        # Convert grayscale to RGB for YOLO
+        if len(image.shape) == 2:
+            img_rgb = np.stack([image, image, image], axis=-1)
+        else:
+            img_rgb = image
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.close()
+        try:
+            Image.fromarray(img_rgb).save(tmp.name)
+            preds, (W, H) = infer_sheet(
+                str(self.weights), tmp.name,
+                tile=self.tile, overlap=self.overlap,
+                conf=self.conf, iou_thr=self.iou_thr,
+                imgsz=self.imgsz, device=self.device,
+            )
+        finally:
+            os.unlink(tmp.name)
+
+        # Filter to windows only (cls==1), build ElevationWindowObs
+        obs = []
+        for i, p in enumerate(preds):
+            if CLASS_NAMES[p["cls"]] != "window":
+                continue
+            x0, y0, x1, y1 = p["x0"], p["y0"], p["x1"], p["y1"]
+            obs.append(ElevationWindowObs(
+                id=f"EW-YOLO-{i+1}",
+                u0_px=float(x0),
+                u1_px=float(x1),
+                v_head_px=float(y0),   # smaller v = head
+                v_sill_px=float(y1),   # larger v = sill
+                confidence=float(p["conf"]),
+                method="yolo_sahi",
+                bbox_px=[float(x0), float(y0), float(x1), float(y1)],
+            ))
+        obs.sort(key=lambda o: o.u0_px)
+        for i, o in enumerate(obs):
+            o.id = f"EW-YOLO-{i+1}"
+        return obs
+
+
+_BACKENDS = {"contour": ContourWindowDetector(), "yolo": YOLOWindowDetectorBackend()}
 
 
 def register_backend(name: str, backend: WindowDetectorBackend) -> None:
