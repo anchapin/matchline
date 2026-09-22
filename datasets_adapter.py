@@ -46,16 +46,15 @@ import csv
 import json
 import math
 import re
-from lxml import etree
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from safe_xml import safe_xml_parser
-
 import cv2  # opencv-python
 import numpy as np
+from lxml import etree
 
 from detector.classes import CLASS_NAMES
+from safe_xml import safe_xml_parser
 
 # ---------------------------------------------------------------------------
 # Output contract
