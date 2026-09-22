@@ -13,10 +13,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Active phase** | Phase 3: IFC Round-Trip (planned) |
-| **Active plan** | 03-ifc-01-PLAN.md ready for execution |
-| **Status** | Phase 3 planned — 2 plans in 2 waves; ready to execute |
-| **Progress** | `[══════════════════════════════════════] 32%` (8/25 requirements done) |
+| **Active phase** | Phase 5: Real-Data Validation + CI (planned) |
+| **Active plan** | Not yet planned |
+| **Status** | Phase 4 complete — 3 plans executed; 3/3 plans done |
+| **Progress** | `[══════════════════════════════] 52%` (13/25 requirements done) |
 
 ## Performance Metrics
 
@@ -26,7 +26,7 @@
 | Requirements done | 8 (ORCH-01, ORCH-02, ORCH-03, ORCH-04, DET-01, DET-02, DET-03, DET-04) |
 | Requirements gaps | 24 |
 | Phases | 6 |
-| Phases completed | 1 (Phase 1: Orchestration) |
+| Phases completed | 3 (Phase 1: Orchestration, Phase 2: Detector, Phase 3: IFC Round-Trip) |
 | Test coverage | `tests/` exist for validate, invariants, ifc_import, review_classifier; no integration tests |
 | Open issues (docs) | 4 (window dedup, IFC Tier 1, thick-stroke skeletons, complex GD&T rows) |
 
@@ -57,8 +57,9 @@
 - [x] Initiate Phase 2: plan detector integration (2 plans, 2 waves)
 - [x] Execute Phase 2 Wave 1: YOLO pipeline integration + WindowDetectorBackend (DET-01, DET-04) — 3 commits
 - [x] Execute Phase 2 Wave 2: parse_schedule_table + sliding-window WiSARD (DET-02, DET-03) — 2 commits
-- [ ] Initiate Phase 3: write `ifc_export.py` stub
-- [ ] Initiate Phase 4: write `matchline review` CLI
+- [x] Initiate Phase 3: write `ifc_export.py` stub
+- [x] Initiate Phase 4: write `matchline review` CLI
+- [x] Execute Phase 4: run_review.py + review classifier + training pipeline
 - [ ] Initiate Phase 5: write GitHub Actions workflow
 - [ ] Initiate Phase 6: design per-building config YAML schema
 
