@@ -51,6 +51,7 @@ class BEMSpace:
     polygon_m: list  # [(x, y), ...] CCW, x=east, y=north
     area_m2: float
     volume_m3: float
+    lighting_w: float = 0.0  # total lighting power (watts), from SpaceLighting
 
 
 @dataclass
@@ -74,6 +75,7 @@ class BEMModel:
     simplify_tol_pct: float
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
+    zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +598,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     import ifcopenshell.api.aggregate as _Ag
     import ifcopenshell.api.context as _C
     import ifcopenshell.api.geometry as _Gm
+    import ifcopenshell.api.group as _Grp
     import ifcopenshell.api.project as _P
     import ifcopenshell.api.root as _R
     import ifcopenshell.api.spatial as _Sp
@@ -687,6 +690,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
 
     # --- spaces -----------------------------------------------------------
+    ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
     for sp in model.spaces:
         n = len(sp.polygon_m)
         cx = sum(p[0] for p in sp.polygon_m) / n
@@ -708,12 +712,51 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             _Ps.edit_qto(f, qto=qto, properties={"GrossFloorArea": sp.area_m2})
         except Exception:
             pass  # quantities are enrichment, not core validity
+        # footprint geometry: IfcGeometricCurveSet so the space polygon survives
+        # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
+        if len(sp.polygon_m) >= 3:
+            try:
+                pts = [f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
+                       for x, y in sp.polygon_m]
+                polyline = f.create_entity("IfcPolyline", Points=pts)
+                curve_set = f.create_entity("IfcGeometricCurveSet", Elements=[polyline])
+                footprint_shape = f.create_entity(
+                    "IfcShapeRepresentation",
+                    ContextOfItems=body,
+                    RepresentationIdentifier="FootPrint",
+                    RepresentationType="GeometricCurveSet",
+                    Items=[curve_set],
+                )
+                pds = f.create_entity(
+                    "IfcProductDefinitionShape",
+                    Representations=[footprint_shape],
+                )
+                space.Representation = pds
+            except Exception:
+                pass  # footprint is enrichment, not required for validity
+        # lighting power as a property (best effort)
+        if sp.lighting_w > 0:
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=space, name="Pset_SpaceLighting")
+                _Ps.edit_pset(f, pset=pset, properties={"LightingPower": sp.lighting_w})
+            except Exception:
+                pass
+        ifc_space_by_sid[sp.sid] = space
+
+    # --- zones ------------------------------------------------------------
+    for zone_id, zone_space_ids in model.zones:
+        zone = f.create_entity("IfcZone", Name=zone_id)
+        zone_spaces = [ifc_space_by_sid[sid] for sid in zone_space_ids if sid in ifc_space_by_sid]
+        if zone_spaces:
+            _Grp.assign_group(f, products=zone_spaces, group=zone)
 
     path = Path(path)
     f.write(str(path))
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
-        f"spaces, {len(model.openings)} openings hosted."
+        f"spaces, {len(model.openings)} openings hosted, {len(model.zones)} zones."
     )
     return path
 

@@ -257,9 +257,9 @@ def _check_area_conservation(ctx) -> CheckResult:
             expected=fp,
             actual=total,
         )
-    detail = {lid: round(ctx.footprint_area.get(lid, 0.0), 2) for lid in ctx.level_of}
-    total_all = sum(sum(sp.area_m2 or 0.0 for sp in spaces) for spaces in ctx.level_of.values())
-    fp_all = sum(ctx.footprint_area.get(lid, 0.0) for lid in ctx.level_of)
+    detail = {lid: round(float(ctx.footprint_area.get(lid, 0.0)), 2) for lid in ctx.level_of}
+    total_all = float(sum(sum(sp.area_m2 or 0.0 for sp in spaces) for spaces in ctx.level_of.values()))
+    fp_all = float(sum(ctx.footprint_area.get(lid, 0.0) for lid in ctx.level_of))
     return CheckResult(
         "area_conservation",
         "Area conservation (sum rooms ~= footprint)",
