@@ -698,20 +698,18 @@ def _floorplancad_from_parquet(path: Path, size: int, scale_m_per_px: float | No
 
     table = pq.read_table(str(path))
     names = table.schema.names
-    # TODO(validate): confirm these column names against the real export.
-    # Expected: an image/svg payload column and an annotations column with
-    # per-symbol {label, bbox|polygon} records.
     raise NotImplementedError(
-        f"FloorPlanCAD parquet columns are {names}; annotation decoding not "
-        f"yet validated against the completed download. See TODO above."
+        f"FloorPlanCAD parquet at {path}: columns are {names}. "
+        f"Implement _floorplancad_from_parquet to decode this schema. "
+        f"See https://github.com/ for dataset details."
     )
 
 
 def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | None):
-    # TODO(validate): confirm against the original FloorPlanCAD release layout
-    # (svg_gt/*.svg + JSON annotations as produced by parse_FpCAD_svg.py).
     raise NotImplementedError(
-        "FloorPlanCAD SVG+JSON branch not yet validated (no SVG data on disk)."
+        f"FloorPlanCAD SVG+JSON loader not yet implemented. "
+        f"SVG root: {split_dir}. "
+        f"Implement _floorplancad_from_svg to decode the SVG+JSON annotation format."
     )
 
 
@@ -736,10 +734,17 @@ def load_archcad(
     Auto-detects the local export layout (parquet / image dir + metadata).
     """
     root = Path(root)
-    if not any(root.iterdir()):
-        raise FileNotFoundError(f"{root} is empty: ArchCAD-400K HF export not yet downloaded.")
-    # TODO(validate): implement once the HF export layout is known.
+    contents = list(root.iterdir())
+    if not contents:
+        raise FileNotFoundError(
+            f"ArchCAD-400K dataset at {root} is empty: "
+            f"download from https://huggingface.co/jackluoluo/ArchCAD "
+            f"and extract to that directory."
+        )
+    # TODO(validate): inspect the HF export layout and implement _archcad_from_parquet
+    # or _archcad_from_dir once the format is confirmed.
     raise NotImplementedError(
-        "ArchCAD-400K loader pending: HF export layout not yet inspected. "
-        "Contents: " + ", ".join(sorted(p.name for p in root.iterdir())[:10])
+        f"ArchCAD-400K loader not yet implemented. "
+        f"Dataset root ({root}) contains: " + ", ".join(sorted(p.name for p in contents)[:10]) + ". "
+        f"Implement the loader after inspecting the export format."
     )
