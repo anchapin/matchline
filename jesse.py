@@ -14,6 +14,8 @@ Paper spec (Section 2):
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 
 # --- Paper Section 2: thresholds ------------------------------------------------
@@ -396,3 +398,62 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
         "holes": holes,
         "chi": 1 - holes,
     }
+
+
+def sliding_window_tag_extract(
+    image: np.ndarray,
+    detections: list,
+    window_px: int = 80,
+    stride_px: int = 20,
+    ocr_lang: str = "eng",
+) -> dict[int, str]:
+    """Extract schedule tag text adjacent to each detected symbol.
+
+    For each detection bbox, crops a window to the LEFT of the symbol
+    (where schedule tags typically appear on drawings) and runs OCR.
+    Returns {detection_index: tag_str}.
+
+    Returns empty string for detections where no tag was read.
+    """
+    import pytesseract
+
+    tags = {}
+    for i, det in enumerate(detections):
+        x0, y0, x1, y1 = det.bbox
+        h = y1 - y0
+        w = x1 - x0
+
+        # Crop: left of symbol, same height, up to window_px wide
+        tag_x0 = max(0, int(x0) - window_px)
+        tag_y0 = max(0, int(y0))
+        tag_x1 = max(0, int(x0) - 2)  # 2px gap from symbol edge
+        tag_y1 = min(image.shape[1], int(y1))
+
+        if tag_x1 <= tag_x0 or tag_y1 <= tag_y0:
+            tags[i] = ""
+            continue
+
+        crop = image[tag_y0:tag_y1, tag_x0:tag_x1]
+        if crop.size == 0:
+            tags[i] = ""
+            continue
+
+        text = pytesseract.image_to_string(crop, lang=ocr_lang, config="--psm 6").strip()
+        # Normalize: uppercase, remove spaces, extract tag pattern
+        m = re.search(r"[A-Z]\d*-\d+|[A-Z]\d+", text.upper())
+        tags[i] = m.group(0) if m else ""
+    return tags
+
+
+def tag_detections(
+    detections: list,
+    image: np.ndarray,
+) -> list:
+    """Fill .tag field on Detection objects using sliding-window OCR.
+
+    Modifies detections in place and also returns them.
+    """
+    tags = sliding_window_tag_extract(image, detections)
+    for i, det in enumerate(detections):
+        det.tag = tags.get(i, "")
+    return detections
