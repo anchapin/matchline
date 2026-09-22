@@ -8,11 +8,9 @@ export via ifc_export, re-import via ifc_import, assert zone memberships and
 lighting watt totals are preserved within 1% tolerance.
 """
 
-import pytest
 
 from building_model import (
     BuildingModel,
-    FixtureInstance,
     Level,
     Provenance,
     Space,

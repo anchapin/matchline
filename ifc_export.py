@@ -67,6 +67,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                 polygon_m=poly_ccw,
                 area_m2=space.area_m2 or 0.0,
                 volume_m3=vol or 0.0,
+                lighting_w=space.lighting.total_w or 0.0,
             )
         )
 
@@ -105,6 +106,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         wall_height_m=wall_height,
         area_delta_pct=0.0,  # no simplification on export path
         simplify_tol_pct=0.0,
+        zones=[(z.id, z.space_ids) for z in model.zones.values()],
     )
 
 
