@@ -12,7 +12,6 @@ import pytest
 from ifc_import import _ensure_ifc, import_ifc
 
 _ensure_ifc()
-import ifcopenshell  # noqa: E402
 
 
 def _write_ifc(step: str) -> Path:
