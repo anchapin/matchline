@@ -457,7 +457,14 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     if not storeys:
         # degenerate but non-empty file: fall back to a flat scan
         storeys = f.by_type("IfcBuildingStorey")
-    storeys.sort(key=lambda s: float(getattr(s, "Elevation", 0.0) or 0.0))
+
+    def _storey_elevation(s):
+        try:
+            return float(getattr(s, "Elevation", 0.0) or 0.0)
+        except (RuntimeError, TypeError, ValueError):
+            return 0.0
+
+    storeys.sort(key=_storey_elevation)
 
     # --- openings indexed by host -----------------------------------------
     voids = {}  # opening GlobalId -> host element
@@ -473,7 +480,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
-        elev = float(getattr(storey, "Elevation", 0.0) or 0.0) * scale
+        try:
+            elev = float(getattr(storey, "Elevation", 0.0) or 0.0) * scale
+        except (RuntimeError, TypeError, ValueError):
+            elev = 0.0
         level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
         model.levels.append(level)
 
