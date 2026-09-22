@@ -208,6 +208,42 @@ def scale_from_reference(
 # ---------------------------------------------------------------------------
 
 
+class DetectorOutputValidationError(ValueError):
+    """Raised when detector JSON output violates the schema contract."""
+
+
+def _validate_detector_output(data: dict, path: str | Path) -> None:
+    """Validate detector JSON output against the versioned schema contract.
+
+    Raises DetectorOutputValidationError with a descriptive message on any
+    violation. The pipeline MUST fail loudly — not silently — on schema
+    violations to catch detector output format drift.
+    """
+    schema_path = Path(__file__).resolve().parent / "schemas" / "detector_output_v1.schema.json"
+    if not schema_path.exists():
+        raise DetectorOutputValidationError(
+            f"Schema not found at {schema_path}; cannot validate {path}"
+        )
+
+    try:
+        import jsonschema
+    except ImportError:
+        raise DetectorOutputValidationError(
+            "jsonschema is required for detector output validation. "
+            "Install with: pip install jsonschema"
+        )
+
+    schema = json.loads(schema_path.read_text())
+    validator = jsonschema.Draft7Validator(schema)
+    errors = list(validator.iter_errors(data))
+    if errors:
+        first = errors[0]
+        raise DetectorOutputValidationError(
+            f"Detector output {path} violates schema "
+            f"at {' > '.join(str(p) for p in first.path)}: {first.message}"
+        )
+
+
 def detections_from_yolo_json(
     yolo_json_path: str | Path,
     source: str,
@@ -216,11 +252,26 @@ def detections_from_yolo_json(
 
     yolo_json_path: path to the JSON written by sahi_infer.py main().
     source: sheet identifier, e.g. "aec-bench:sheet_01" — stored as Detection.source.
+
+    Raises DetectorOutputValidationError if the JSON violates the versioned
+    detector output schema (schemas/detector_output_v1.schema.json).
     """
-    data = json.loads(Path(yolo_json_path).read_text())
+    try:
+        data = json.loads(Path(yolo_json_path).read_text())
+    except json.JSONDecodeError as exc:
+        raise DetectorOutputValidationError(
+            f"Detector output {yolo_json_path} is not valid JSON: {exc}"
+        ) from exc
+    _validate_detector_output(data, yolo_json_path)
     dets = []
-    for p in data["preds"]:
-        label = CLASS_NAMES[p["cls"]]
+    for i, p in enumerate(data["preds"]):
+        try:
+            label = CLASS_NAMES[p["cls"]]
+        except IndexError:
+            raise DetectorOutputValidationError(
+                f"preds[{i}]: cls={p['cls']} is out of range for CLASS_NAMES "
+                f"(len={len(CLASS_NAMES)}). Detector output format may have changed."
+            ) from None
         dets.append(
             Detection(
                 label=label,
