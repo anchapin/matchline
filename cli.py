@@ -208,8 +208,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("review", help="Review queue: list open items, confirm or reject decisions")
     p.add_argument("model", help="BuildingModel JSON file path")
-    p.add_argument("--confirm", metavar="ID", help="Confirm a review item (marks confirmed, re-runs validation)")
-    p.add_argument("--reject", metavar="ID", help="Reject a review item (marks rejected, re-runs validation)")
+    p.add_argument(
+        "--confirm",
+        metavar="ID",
+        help="Confirm a review item (marks confirmed, re-runs validation)",
+    )
+    p.add_argument(
+        "--reject", metavar="ID", help="Reject a review item (marks rejected, re-runs validation)"
+    )
     p.add_argument("--show-all", action="store_true", help="Also show confirmed and rejected items")
     p.set_defaults(func=cmd_review)
 

@@ -65,11 +65,7 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
 def _format_item(item: ReviewItem, out: TextIO = sys.stdout) -> None:
     """Print a single ReviewItem to stdout."""
     prov = item.provenance
-    prov_str = (
-        f"{prov.sheet_id} r{prov.revision} via {prov.method}"
-        if prov
-        else "no provenance"
-    )
+    prov_str = f"{prov.sheet_id} r{prov.revision} via {prov.method}" if prov else "no provenance"
     print(f"  [{item.id}] {item.kind}  conf={item.confidence:.2f}", file=out)
     print(f"    → {item.description}", file=out)
     print(f"    provenance: {prov_str}", file=out)
@@ -111,18 +107,13 @@ def format_review_list(
             file=sys.stderr,
         )
 
-    items = [
-        item
-        for item in model.review_queue
-        if show_all or item.status == "open"
-    ]
+    items = [item for item in model.review_queue if show_all or item.status == "open"]
 
     if not items:
         print("No review items in queue." if show_all else "No open review items.")
         return items, classifier_available
 
-    print(f"Review queue — {len(items)} item(s) shown "
-          f"(of {len(model.review_queue)} total)")
+    print(f"Review queue — {len(items)} item(s) shown (of {len(model.review_queue)} total)")
     print()
 
     for item in items:
@@ -152,9 +143,7 @@ def format_review_list(
 
         prov = item.provenance
         prov_str = (
-            f"{prov.sheet_id} r{prov.revision} via {prov.method}"
-            if prov
-            else "no provenance"
+            f"{prov.sheet_id} r{prov.revision} via {prov.method}" if prov else "no provenance"
         )
         print(f"   {item.description}")
         print(f"   provenance: {prov_str}")

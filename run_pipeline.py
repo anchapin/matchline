@@ -164,9 +164,13 @@ def parse_args():
         description="Unified pipeline: generate + link + validate + BEM export.",
     )
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--seed", type=int, help="synthetic seed (mutually exclusive with --image and --aec-bench)")
     g.add_argument(
-        "--image", type=Path, help="real sheet image path (mutually exclusive with --seed and --aec-bench)"
+        "--seed", type=int, help="synthetic seed (mutually exclusive with --image and --aec-bench)"
+    )
+    g.add_argument(
+        "--image",
+        type=Path,
+        help="real sheet image path (mutually exclusive with --seed and --aec-bench)",
     )
     g.add_argument(
         "--aec-bench",
@@ -343,8 +347,8 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     warnings acceptable).  This is not architecturally accurate — it is the
     minimum viable model needed to run validation and produce gbXML.
     """
-    from shapely import Polygon as ShapelyPolygon
     from shapely import MultiPolygon as ShapelyMultiPolygon
+    from shapely import Polygon as ShapelyPolygon
     from shapely.ops import unary_union
 
     from building_model import (
@@ -492,8 +496,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     # --- Envelope wall: single facade from bounding box ---
     n = len(poly)
     perimeter = sum(
-        ((poly[i][0] - poly[(i + 1) % n][0]) ** 2 +
-         (poly[i][1] - poly[(i + 1) % n][1]) ** 2) ** 0.5
+        ((poly[i][0] - poly[(i + 1) % n][0]) ** 2 + (poly[i][1] - poly[(i + 1) % n][1]) ** 2) ** 0.5
         for i in range(n)
     )
 

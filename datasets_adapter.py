@@ -744,7 +744,11 @@ def load_archcad(
     # TODO(validate): inspect the HF export layout and implement _archcad_from_parquet
     # or _archcad_from_dir once the format is confirmed.
     raise NotImplementedError(
-        f"ArchCAD-400K loader not yet implemented. "
-        f"Dataset root ({root}) contains: " + ", ".join(sorted(p.name for p in contents)[:10]) + ". "
-        f"Implement the loader after inspecting the export format."
+        "ArchCAD-400K loader not yet implemented. "
+        "Dataset root ("
+        + str(root)
+        + ") contains: "
+        + ", ".join(sorted(p.name for p in contents)[:10])
+        + ". "
+        "Implement the loader after inspecting the export format."
     )
