@@ -26,7 +26,6 @@ import json
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from building_model import BuildingModel
 from datasets_adapter import polygon_area_px2
@@ -1084,11 +1083,10 @@ def _check_ifc_counts(ctx) -> CheckResult:
     if not path:
         return CheckResult("ifc_entity_counts", "IFC entity counts", "skip", "no IFC path given")
     try:
-        import sys as _sys
+        import importlib.util
 
-        _vendor = str(Path.home() / "workspace" / "vendor" / "pylibs")
-        if _vendor not in _sys.path:
-            _sys.path.insert(0, _vendor)
+        if importlib.util.find_spec("ifcopenshell") is None:
+            raise ImportError("ifcopenshell not found")
         import ifcopenshell
     except ImportError:
         return CheckResult(
