@@ -195,33 +195,88 @@ Candidate approaches:
   Worth showing Simon once the IFC frontend exists; the validation battery and
   simplifier are the components most likely to interest him.
 
-## 9. Opt-in data flywheel: users share corrections back to improve the models
+---
 
-Labeled commercial drawings are the scarcest resource in this project —
-synthetic→real transfer is weak, and open datasets don't cover real commercial
-practice. The way out is a data flywheel: users opt in to sharing data back,
-the models improve, the tool gets better for everyone. Rising tide lifts all
-boats — but only if the incentive and the privacy story are both real.
+# Part II — Future directions
 
-- **Share corrections, not drawings.** The review-queue GUI (item 8) generates
-  human-verified labels as a byproduct of normal use. A bundle of "200 verified
-  door/window boxes" is a far smaller privacy surface than a full sheet, and
-  it's the highest-value training signal. Raw PDFs never need to leave the
-  user's machine.
-- **Privacy by design.** Opt-in per project, default off. Anonymization pass
-  before upload: strip title blocks, generalize or drop room names, remove
-  client identifiers. Show the user exactly what will be uploaded before it
-  goes — a preview they approve, not a black box.
-- **Licensing.** A clear training-use grant at opt-in: contributors keep
-  ownership of their drawings; the project gets the right to train on the
-  anonymized correction bundles. Get this reviewed before building the pipe.
-- **Make the loop visible.** "The tool gets better someday" doesn't motivate.
-  "Your 200 corrections improved door detection 3.2% in this month's model"
-  does. Credit contributing firms, publish the metric deltas, and consider
-  giving contributors the improved model first with public release after.
-- **Pipeline shape.** Incoming bundles → quarantine → spot-check quality →
-  split into training pool and held-out eval (per-contributor provenance for
-  bias tracking). Contaminated or low-quality bundles get rejected with a
-  reason, not silently absorbed.
-- **Sequencing.** This comes after the GUI review step (item 8), which is what
-  generates the labels. No sharing pipe before there's something to share.
+A categorized backlog from an eight-persona review (legal, marketing, product
+design, project management, software architecture, MEP engineering, energy
+modeling, incumbent vendor) on 2026-09-19. These are *not* sequenced or
+numbered: they are directions to pull into the numbered roadmap as priorities
+crystallize. Items marked with multiple-persona support independently came up
+in more than one review.
+
+## Trust, legal, professional
+
+- Professional-use disclaimer and E&O framing ★
+- Stampable, dated sign-off report with source/revision traceability ★
+- Versioned data-contribution agreement for the flywheel ★
+- Training-data license ledger and quarantine for noncommercial data/weights ★
+- CLA or DCO for code contributions
+- Privacy/security-sensitive-building policy and guaranteed local-only mode
+- GUI/service terms governing liability and data retention/deletion
+- Defensive publication of novel methods
+- Legal review of professional-licensure / "practicing engineering" risk
+
+## Product/UX and drawing-set reality
+
+- Drawing-set ingestion via cover-sheet index/title-block parsing
+- Revision/addenda tracking and takeoff diffs
+- Match lines, split sheets, and enlarged-plan deduplication
+- Per-project legend/tag/convention learning ★
+- SD/DD/CD design-phase awareness
+- Explicit area definitions: GSF, BOMA rentable, program/assignable
+- Worst-first, keyboard-first review queue with bulk actions
+- Correction history, undo, and revert-to-automatic output
+- Loud, specific failure modes for bad inputs
+- Progressive takeoff mode vs full-BEM mode
+- Export package: model + one-page trust report + editable decisions file + share-back preview ★
+
+## BEM last mile
+
+- ASHRAE 90.1 Appendix G perimeter/core thermal zoning
+- Below-grade detection and correct ground/outdoor boundaries
+- Space-use classification to cited load/schedule templates
+- Versioned construction library with cited U-values; never fabricate missing values
+- Blocking OpenStudio importer round-trip gate
+- Inter-story surface matching and atrium/shaft consistency
+
+## MEP
+
+- Mechanical schedule parsing and system-type classification
+- Engineering reconciliation gates and discipline-specific accuracy bars
+- Lighting controls and control zones
+- Riser/one-line topology parsing
+- First-class system entities linked to rooms
+- Plumbing fixture takeoffs and service-water-heating inputs
+- Architect-facing plan-vs-schedule coordination QA
+
+## Go-to-market
+
+- Positioning: "auditable extraction, not AI magic"; feed incumbents rather than replace them
+- Real-building benchmark on 3–5 commercial buildings ★
+- Five-minute demo, bundled sample project, results gallery ★
+- Quiet beta with friendly firms before public launch
+- Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
+- Visible monthly flywheel/model changelog
+- Rename before public launch because WiSARD is not the production detector
+
+## Strategy
+
+- Revit/AutoCAD plugin
+- Enterprise trust package: SSO, audit logs, isolation, SOC 2 story, air-gapped/on-prem mode
+- Standalone BIM import health score
+- Platform-risk hedge: keep IFC and web GUI first-class
+- Deliberate open-core commercial model
+- Publish validation checks as an industry benchmark
+
+## Process
+
+- Define Monday validation exit criteria before fine-tuning
+- Define v0.1.0 scope and release cadence
+- Maintain an in-repo risk register
+- Add a dependency/sequencing map
+- Add explicit non-goals and parked ideas
+- Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
+
+★ = raised independently by multiple personas — highest signal.
