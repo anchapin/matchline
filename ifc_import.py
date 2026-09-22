@@ -457,6 +457,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     if not storeys:
         # degenerate but non-empty file: fall back to a flat scan
         storeys = f.by_type("IfcBuildingStorey")
+
     def _storey_elevation(s):
         try:
             return float(getattr(s, "Elevation", 0.0) or 0.0)
