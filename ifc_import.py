@@ -723,18 +723,80 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
 
     # --- attach openings to spaces (Tier 1 fallback) -----------------------
-    # For each BimOpening on a wall, find which space contains the wall's
-    # center and create a SpaceOpening on that space so Space.openings is
-    # populated for the BEM path.
+    # Issue #2: use opening's along-wall position (s_center_m) to determine
+    # which space the opening belongs to, rather than the wall center. This
+    # correctly handles exterior walls that span multiple spaces (e.g., a
+    # 20m south wall spanning 3 rooms: each window's s_center_m determines
+    # which room's polygon contains the opening's 2D center point).
+    #
+    # Strategy: for each opening on a wall element, compute the opening's
+    # 2-D center from the wall's direction and the opening's s_center_m.
+    # Two sources for wall direction:
+    #  1. Envelope wall match: same length → use its from/to direction.
+    #  2. Wall's own RefDirection: the IFC placement stores the wall axis.
     for el in model.bim_elements:
         if not el.openings or not el.placement_m:
             continue
-        # wall center in canonical frame
+        if el.ifc_class not in ("IfcWall", "IfcWallStandardCase"):
+            continue
         cx, cy = el.placement_m[0], el.placement_m[1]
-        for sp in model.spaces.values():
-            if sp.polygon_m and _point_in_polygon((cx, cy), sp.polygon_m):
-                for bo in el.openings:
-                    # reconstruct SpaceOpening from BimOpening data
+        length_m = el.length_m
+        if length_m is None:
+            continue
+
+        # Try to get wall direction from envelope (preferred)
+        wall_dir = None
+        for ew in model.envelope:
+            ew_len = math.sqrt((ew.to_m[0] - ew.from_m[0]) ** 2 + (ew.to_m[1] - ew.from_m[1]) ** 2)
+            if abs(ew_len - length_m) < 0.1:
+                dx = ew.to_m[0] - ew.from_m[0]
+                dy = ew.to_m[1] - ew.from_m[1]
+                norm = math.sqrt(dx * dx + dy * dy)
+                if norm > 1e-9:
+                    wall_dir = (dx / norm, dy / norm)
+                    break
+
+        # Fallback: derive direction from the wall's own IFC placement RefDirection
+        if wall_dir is None:
+            pl = getattr(el, "_ifc_entity", None) or getattr(el, "entity", None)
+            if pl is None:
+                # Try to get the raw IFC entity from bim_elements
+                pass
+            # The wall direction from placement is stored in the entity's
+            # ObjectPlacement.RelativePlacement.RefDirection. We read it from
+            # the raw ifcopenshell entity attached to the BimElement.
+            # Note: BimElement.global_id can be used to re-query the entity.
+            raw = getattr(el, "_raw_ifc", None)
+            if raw is None:
+                # No raw IFC access; skip attachment for this element
+                continue
+            op_pl = getattr(raw, "ObjectPlacement", None)
+            if op_pl is not None:
+                rel = getattr(op_pl, "RelativePlacement", None)
+                if rel is not None and rel.is_a("IfcAxis2Placement3D"):
+                    rd = getattr(rel, "RefDirection", None)
+                    if rd is not None:
+                        dr = rd.DirectionRatios
+                        if dr:
+                            dx, dy = float(dr[0]), float(dr[1])
+                            norm = math.sqrt(dx * dx + dy * dy)
+                            if norm > 1e-9:
+                                wall_dir = (dx / norm, dy / norm)
+
+        if wall_dir is None:
+            continue  # cannot determine wall direction
+
+        for bo in el.openings:
+            if bo.s_center_m is None:
+                continue
+
+            # Opening center in canonical 2-D:
+            # wall center (cx,cy) minus half-length along direction + s_center_m
+            ox = cx + wall_dir[0] * (bo.s_center_m - length_m / 2)
+            oy = cy + wall_dir[1] * (bo.s_center_m - length_m / 2)
+
+            for sp in model.spaces.values():
+                if sp.polygon_m and _point_in_polygon((ox, oy), sp.polygon_m):
                     sp.openings.append(
                         SpaceOpening(
                             id=bo.id,
@@ -747,7 +809,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                             provenance=bo.provenance,
                         )
                     )
-                break  # each wall belongs to exactly one space
+                    break  # opening belongs to exactly one space
 
     model.log_revision(
         sheet,
@@ -785,7 +847,20 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         category = "unknown"
     tag = _parse_fill_tag(fill.Name) if fill is not None else ""
 
-    width_m = height_m = sill_m = s_center_m = None
+    # Extract s_center_m from opening placement (always available, even without geometry).
+    # The opening's RelativePlacement gives (s_mid, 0, sill) in the wall's local frame.
+    s_center_m = None
+    op_pl = getattr(opening, "ObjectPlacement", None)
+    if op_pl is not None:
+        rel = getattr(op_pl, "RelativePlacement", None)
+        if rel is not None and rel.is_a("IfcAxis2Placement3D"):
+            loc = rel.Location
+            if loc and hasattr(loc, "Coordinates"):
+                coords = loc.Coordinates
+                if coords:
+                    s_center_m = float(coords[0]) * scale
+
+    width_m = height_m = sill_m = None
     conf, method = 0.5, "ifc_import:tier0:opening:novolume"
     note = "void/fill relationships only; no opening solid"
     verts = _geom_verts(opening)
