@@ -86,6 +86,7 @@ class TestProvenanceCompleteValidationCheck:
         result = _provenance_check(model)
         assert result.severity == "pass"
         import re
+
         m = re.search(r"(\d+) facts", result.message)
         assert m is not None and int(m.group(1)) > 0, (
             f"expected positive fact count in message: {result.message}"
