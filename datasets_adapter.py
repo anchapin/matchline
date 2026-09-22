@@ -45,10 +45,12 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import cv2  # opencv-python
 import numpy as np
 
 from detector.classes import CLASS_NAMES
@@ -329,16 +331,134 @@ def parse_lighting_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
 def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
     """Stage 2 (full): find + parse the schedule table on a sheet image.
 
-    TODO: document-layout stage -- (a) locate the schedule table region
-    (Jesse's document-layout analysis claims 100% on clean vector sheets and
-    is the natural fit), (b) cell segmentation, (c) OCR cell text, (d)
-    normalize into ScheduleEntry records via parse_schedule_csv's format.
-    Raises until implemented; v1 callers pass CSV directly.
+    Heuristic approach:
+    1. Detect horizontal/vertical separator lines (table grid)
+    2. Segment cells
+    3. OCR cell text
+    4. Map columns by header row
+
+    Falls back to raising NotImplementedError if no table found.
     """
-    raise NotImplementedError(
-        "Schedule table detection/parsing not yet implemented. "
-        "Provide the schedule as CSV to parse_schedule_csv()."
-    )
+    # Convert to grayscale if needed
+    if len(sheet_image.shape) == 3:
+        gray = cv2.cvtColor(sheet_image, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = sheet_image
+
+    # Detect horizontal lines: close horizontal morphology, threshold
+    horiz = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((1, 40)))
+    h_lines = cv2.threshold(horiz, 0, 255, cv2.THRESH_BINARY)[1]
+    h_coords = [r for r in range(h_lines.shape[0]) if h_lines[r, :].mean() > 200]
+
+    # Detect vertical lines: close vertical morph, threshold
+    vert = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((40, 1)))
+    v_lines = cv2.threshold(vert, 0, 255, cv2.THRESH_BINARY)[1]
+    v_coords = [c for c in range(v_lines.shape[1]) if v_lines[:, c].mean() > 200]
+
+    if len(h_coords) < 2 or len(v_coords) < 2:
+        raise NotImplementedError(
+            "No table grid detected on this sheet. "
+            "Use parse_schedule_csv() with a CSV export instead."
+        )
+
+    # Row detection: split at horizontal lines
+    row_bounds = []
+    prev_h = 0
+    for h in h_coords:
+        if h - prev_h > 10:  # minimum row height
+            row_bounds.append((prev_h, h))
+        prev_h = h
+    if prev_h < gray.shape[0] - 5:
+        row_bounds.append((prev_h, gray.shape[0]))
+
+    # Column detection: split at vertical lines
+    col_bounds = []
+    prev_v = 0
+    for v in v_coords:
+        if v - prev_v > 10:  # minimum col width
+            col_bounds.append((prev_v, v))
+        prev_v = v
+    if prev_v < gray.shape[1] - 5:
+        col_bounds.append((prev_v, gray.shape[1]))
+
+    # OCR each cell with pytesseract
+    try:
+        import pytesseract
+    except ImportError:
+        raise ImportError("pytesseract required for schedule table parsing: pip install pytesseract")
+
+    rows_data = []
+    for (y0, y1) in row_bounds:
+        row_cells = []
+        for (x0, x1) in col_bounds:
+            crop = gray[y0:y1, x0:x1]
+            text = pytesseract.image_to_string(crop, config="--psm 6").strip()
+            row_cells.append(text)
+        rows_data.append(row_cells)
+
+    # Find header row: look for "tag", "type", "width", "height" in first non-empty row
+    header_idx = None
+    for i, row in enumerate(rows_data):
+        joined = " ".join(row).lower()
+        if any(k in joined for k in ["tag", "type", "width", "height", "dims"]):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        raise NotImplementedError("Could not identify table header row. Use parse_schedule_csv() instead.")
+
+    # Build column index from header
+    header = [c.lower().strip() for c in rows_data[header_idx]]
+    # Map: "tag"->0, "type"/"cat"/"category"->1, "width"/"w"->2, "height"/"h"->3, "note"/"desc"->4
+    col_map = {}
+    for i, h in enumerate(header):
+        if "tag" in h and "num" not in h:
+            col_map["tag"] = i
+        elif "type" in h or "cat" in h or "category" in h:
+            col_map["category"] = i
+        elif "width" in h or ("w" == h.strip()):
+            col_map["width"] = i
+        elif "height" in h or ("h" == h.strip()):
+            col_map["height"] = i
+        elif "note" in h or "desc" in h:
+            col_map["note"] = i
+
+    # Parse data rows
+    schedule = {}
+    for row in rows_data[header_idx + 1 :]:
+        if not any(c.strip() for c in row):
+            continue
+        tag_raw = row[col_map.get("tag", 0)].strip()
+        if not tag_raw or tag_raw in [c.lower() for c in header]:
+            continue
+        tag = tag_raw.upper().replace(" ", "")
+
+        cat_raw = row[col_map.get("category", 1)].strip().lower() if col_map.get("category") else ""
+        category = "window" if "window" in cat_raw or "win" in cat_raw else \
+                  "door" if "door" in cat_raw else \
+                  "lighting" if "light" in cat_raw else "opening"
+
+        w_raw = row[col_map.get("width", 2)].strip() if col_map.get("width") else ""
+        h_raw = row[col_map.get("height", 3)].strip() if col_map.get("height") else ""
+
+        def parse_dim(s):
+            m = re.search(r"[\d.]+", s)
+            return float(m.group()) if m else None
+
+        width_m = parse_dim(w_raw)
+        height_m = parse_dim(h_raw)
+
+        note = row[col_map.get("note", -1)].strip() if col_map.get("note") else ""
+
+        schedule[tag] = ScheduleEntry(
+            tag=tag,
+            category=category,
+            width_m=width_m,
+            height_m=height_m,
+            note=note,
+        )
+
+    return schedule
 
 
 def rollup_takeoff(
