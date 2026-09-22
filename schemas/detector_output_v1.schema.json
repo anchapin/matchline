@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://matchline.ai/schemas/detector_output_v1.schema.json",
+  "title": "Detector YOLO Output",
+  "version": "1.0",
+  "description": "JSON output schema for detector/sahi_infer.py. Governs the interface between the YOLO detector and the quantity-takeoff pipeline.",
+  "type": "object",
+  "required": ["image", "width", "height", "preds"],
+  "properties": {
+    "image": {
+      "type": "string",
+      "description": "Path to the source image file"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Image width in pixels"
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Image height in pixels"
+    },
+    "preds": {
+      "type": "array",
+      "description": "List of detections after non-maximum suppression",
+      "items": {
+        "type": "object",
+        "required": ["cls", "conf", "x0", "y0", "x1", "y1"],
+        "additionalProperties": false,
+        "properties": {
+          "cls": {
+            "type": "integer",
+            "description": "Class index. 0=door, 1=window. Must be within CLASS_NAMES bounds.",
+            "minimum": 0
+          },
+          "conf": {
+            "type": "number",
+            "description": "Confidence score in [0.0, 1.0]",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "x0": {
+            "type": "number",
+            "description": "Bounding box left edge in pixels (absolute, not tile-relative)"
+          },
+          "y0": {
+            "type": "number",
+            "description": "Bounding box top edge in pixels"
+          },
+          "x1": {
+            "type": "number",
+            "description": "Bounding box right edge in pixels; must be >= x0",
+            "minimum": 0
+          },
+          "y1": {
+            "type": "number",
+            "description": "Bounding box bottom edge in pixels; must be >= y0",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}
