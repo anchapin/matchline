@@ -27,6 +27,7 @@ from bem_export import (
     write_gbxml,
     write_ifc4,
 )
+from datasets_adapter import detections_from_yolo_json, rollup_takeoff, parse_schedule_csv
 from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
@@ -157,7 +158,12 @@ def parse_args():
         prog="run_pipeline",
         description="Unified pipeline: generate + link + validate + BEM export.",
     )
-    ap.add_argument("--seed", type=int, required=True, help="random seed for synthetic building")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--seed", type=int, help="synthetic seed (mutually exclusive with --image)")
+    g.add_argument("--image", type=Path, help="real sheet image path (mutually exclusive with --seed)")
+    ap.add_argument("--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)")
+    ap.add_argument("--schedule-csv", type=Path, help="schedule CSV (required with --image, mutually exclusive with --schedule-table)")
+    ap.add_argument("--weights", type=Path, default=Path("detector/best.pt"), help="YOLO weights path")
     ap.add_argument(
         "--out-dir",
         type=Path,
@@ -193,9 +199,37 @@ def main(args) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Stage 1: generate building ----------------------------------------
-    bldg = generate_building(args.seed, open_office_span=args.open_office_span)
-    write_json(out_dir / "stage_01_building.json", bldg)
+    # --- Stage 1: generate building or load real-sheet detections ----------
+    if args.image:
+        # Real sheet path: YOLO detections + optional schedule CSV
+        dets = detections_from_yolo_json(args.detections, args.image.stem)
+        schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
+        takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
+        bldg = {
+            "building_id": args.image.stem,
+            "seed": None,
+            "detections": [d.__dict__ for d in dets],
+            "schedule": {k: v.__dict__ for k, v in schedule.items()},
+            "takeoff": takeoff,
+        }
+        write_json(out_dir / "stage_01_building.json", {
+            "source": str(args.image),
+            "n_detections": len(dets),
+            "n_scheduled": len(schedule),
+        })
+        # Stage 2 for real sheets: building model from a drawing requires
+        # an architectural plan sheet + link step — not available here.
+        # Raise a clear error so operators know to use the full pipeline.
+        raise NotImplementedError(
+            "Stage 2 (build_model) for real sheets requires an architectural "
+            "plan sheet and the link step. For real-sheet processing, run "
+            "the full pipeline: matchline run --image <sheet> --detections <preds.json> "
+            "with a linked building model instead of this simplified path."
+        )
+    else:
+        # Synthetic path (existing logic)
+        bldg = generate_building(args.seed, open_office_span=args.open_office_span)
+        write_json(out_dir / "stage_01_building.json", bldg)
 
     # --- Stage 2: build model --------------------------------------------
     model, link_report = build_model(
