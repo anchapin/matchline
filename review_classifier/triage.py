@@ -71,17 +71,11 @@ class ReviewTriage:
         self._high_urgency_threshold = high_urgency_threshold
 
         if needs_human_model_path is None:
-            needs_human_model_path = (
-                pathlib.Path(__file__).parent / "trained_model_needs_human.pkl"
-            )
+            needs_human_model_path = pathlib.Path(__file__).parent / "trained_model_needs_human.pkl"
         if urgency_model_path is None:
-            urgency_model_path = (
-                pathlib.Path(__file__).parent / "trained_model_urgency.pkl"
-            )
+            urgency_model_path = pathlib.Path(__file__).parent / "trained_model_urgency.pkl"
         if resolution_model_path is None:
-            resolution_model_path = (
-                pathlib.Path(__file__).parent / "trained_model_resolution.pkl"
-            )
+            resolution_model_path = pathlib.Path(__file__).parent / "trained_model_resolution.pkl"
 
         self._needs_human_path = needs_human_model_path
         self._urgency_path = urgency_model_path
@@ -121,8 +115,7 @@ class ReviewTriage:
         resolution, res_conf = self._decide_resolution(example)
 
         auto_resolved = (
-            res_conf >= self._auto_resolve_confidence
-            and urgency < self._high_urgency_threshold
+            res_conf >= self._auto_resolve_confidence and urgency < self._high_urgency_threshold
         )
 
         return TriageDecision(
