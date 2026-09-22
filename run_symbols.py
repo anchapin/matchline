@@ -11,7 +11,13 @@ import time
 
 import numpy as np
 
-from jesse import WisardClassifier, make_tuple_indices, skeleton_invariants, zhang_suen
+from jesse import (  # noqa: I001
+    WisardClassifier,
+    is_complex_invariant,
+    make_tuple_indices,
+    skeleton_invariants,
+    zhang_suen,
+)
 from symbols import NAMES, make_dataset
 
 
@@ -94,6 +100,7 @@ def main(out_path: str = "symbols_results.json"):
         ("parallelism (||)", _p, dict(endpoints=4, t_junctions=0, holes=0)),
     ]
     inv_results = {}
+    complex_rows = []
     allok = True
     for label, img, expect in checks:
         inv = skeleton_invariants(zhang_suen(img))
@@ -101,8 +108,17 @@ def main(out_path: str = "symbols_results.json"):
         ok = got == expect
         allok &= ok
         inv_results[label] = inv
-        print(f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'}")
+        # Flag complex rows: exceeded Table 9.4 simple envelope, or compound glyphs
+        if is_complex_invariant(inv):
+            complex_rows.append({"label": label, "inv": inv})
+            print(
+                f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'} [COMPLEX — gd_complex_row]"
+            )
+        else:
+            print(f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'}")
     print("  all match paper Table 9.4:", allok)
+    if complex_rows:
+        print(f"  {len(complex_rows)} complex row(s) — see gd_complex_row review items above")
 
     with open(out_path, "w") as f:
         json.dump(
@@ -111,6 +127,7 @@ def main(out_path: str = "symbols_results.json"):
                 "train_time_s": t_train,
                 "confusion": cm.tolist(),
                 "invariants": inv_results,
+                "complex_rows": complex_rows,  # flagged for review with gd_complex_row kind
             },
             f,
             indent=2,

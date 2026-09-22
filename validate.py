@@ -258,7 +258,9 @@ def _check_area_conservation(ctx) -> CheckResult:
             actual=total,
         )
     detail = {lid: round(float(ctx.footprint_area.get(lid, 0.0)), 2) for lid in ctx.level_of}
-    total_all = float(sum(sum(sp.area_m2 or 0.0 for sp in spaces) for spaces in ctx.level_of.values()))
+    total_all = float(
+        sum(sum(sp.area_m2 or 0.0 for sp in spaces) for spaces in ctx.level_of.values())
+    )
     fp_all = float(sum(ctx.footprint_area.get(lid, 0.0) for lid in ctx.level_of))
     return CheckResult(
         "area_conservation",
@@ -1173,6 +1175,7 @@ def run_checks(
     tol_envelope: float = 0.01,
     lpd_warn_max: float = 25.0,
     opening_eps: float = 0.005,
+    min_review_confidence: float | None = None,
 ) -> ValidationReport:
     """Run the full invariant battery against a BuildingModel.
 
@@ -1180,6 +1183,11 @@ def run_checks(
     errored; use ``export_gate(report)`` to decide whether the model may
     be exported to gbXML/IFC.
     """
+    # Filter review items by confidence if threshold is set
+    if min_review_confidence is not None:
+        model.review_queue = [
+            item for item in model.review_queue if item.confidence >= min_review_confidence
+        ]
     ctx = _build_ctx(
         model,
         tol_area=tol_area,

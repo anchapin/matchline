@@ -716,8 +716,10 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
         if len(sp.polygon_m) >= 3:
             try:
-                pts = [f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
-                       for x, y in sp.polygon_m]
+                pts = [
+                    f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
+                    for x, y in sp.polygon_m
+                ]
                 polyline = f.create_entity("IfcPolyline", Points=pts)
                 curve_set = f.create_entity("IfcGeometricCurveSet", Elements=[polyline])
                 footprint_shape = f.create_entity(

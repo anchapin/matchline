@@ -8,7 +8,6 @@ export via ifc_export, re-import via ifc_import, assert zone memberships and
 lighting watt totals are preserved within 1% tolerance.
 """
 
-
 from building_model import (
     BuildingModel,
     Level,
@@ -144,14 +143,38 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     model = BuildingModel(name="Dedup Test", levels=[Level(id="L1", wall_height_m=3.0)])
     prov = Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=0.9)
 
-    sp = Space(id="L1-101", level_id="L1", name="Room", number="101",
-               polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]], area_m2=80.0)
+    sp = Space(
+        id="L1-101",
+        level_id="L1",
+        name="Room",
+        number="101",
+        polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]],
+        area_m2=80.0,
+    )
     # Two identical windows (simulating two elevations of same facade)
     sp.openings = [
-        SpaceOpening(id="w1", tag="A", category="window", width_m=1.5, height_m=1.2,
-                    sill_m=0.9, host_facade="south", s_center_m=2.0, provenance=prov),
-        SpaceOpening(id="w2", tag="A", category="window", width_m=1.5, height_m=1.2,
-                    sill_m=0.9, host_facade="south", s_center_m=2.0, provenance=prov),
+        SpaceOpening(
+            id="w1",
+            tag="A",
+            category="window",
+            width_m=1.5,
+            height_m=1.2,
+            sill_m=0.9,
+            host_facade="south",
+            s_center_m=2.0,
+            provenance=prov,
+        ),
+        SpaceOpening(
+            id="w2",
+            tag="A",
+            category="window",
+            width_m=1.5,
+            height_m=1.2,
+            sill_m=0.9,
+            host_facade="south",
+            s_center_m=2.0,
+            provenance=prov,
+        ),
     ]
     model.spaces["L1-101"] = sp
 

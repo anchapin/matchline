@@ -13,20 +13,20 @@
 
 | Field | Value |
 |-------|-------|
-| **Active phase** | Phase 5: Real-Data Validation + CI (planned) |
-| **Active plan** | Not yet planned |
-| **Status** | Phase 4 complete — 3 plans executed; 3/3 plans done |
-| **Progress** | `[══════════════════════════════] 52%` (13/25 requirements done) |
+| **Active phase** | Phase 6: Production Hardening |
+| **Active plan** | All 4 Phase 6 requirements complete (CFG-01 through CFG-04) |
+| **Status** | Phase 6 complete — 4/4 done |
+| **Progress** | `[==============] 48%` (12/25 requirements done) |
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
 | Total requirements | 25 |
-| Requirements done | 8 (ORCH-01, ORCH-02, ORCH-03, ORCH-04, DET-01, DET-02, DET-03, DET-04) |
-| Requirements gaps | 24 |
+| Requirements done | 12 (ORCH-01, ORCH-02, ORCH-03, ORCH-04, DET-01, DET-02, DET-03, DET-04, CFG-01, CFG-02, CFG-03, CFG-04) |
+| Requirements gaps | 13 |
 | Phases | 6 |
-| Phases completed | 3 (Phase 1: Orchestration, Phase 2: Detector, Phase 3: IFC Round-Trip) |
+| Phases completed | 5 (Phase 1–5 complete; Phase 6 in progress) |
 | Test coverage | `tests/` exist for validate, invariants, ifc_import, review_classifier; no integration tests |
 | Open issues (docs) | 4 (window dedup, IFC Tier 1, thick-stroke skeletons, complex GD&T rows) |
 
@@ -60,11 +60,15 @@
 - [x] Initiate Phase 3: write `ifc_export.py` stub
 - [x] Initiate Phase 4: write `matchline review` CLI
 - [x] Execute Phase 4: run_review.py + review classifier + training pipeline
-- [ ] Initiate Phase 5: write GitHub Actions workflow
-- [ ] Initiate Phase 6: design per-building config YAML schema
+- [x] Initiate Phase 5: write GitHub Actions workflow
+- [x] Initiate Phase 6: design per-building config YAML schema
+- [x] CFG-01: per-building YAML config — `--config` arg, `simplify_tolerance`/`wall_height`/`min_review_confidence` applied at pipeline stages 3 & 6 + validate.py filter
+- [x] CFG-02: thick-stroke skeleton preprocessing documented in `docs/jesse.md` (adaptive threshold + morphological ops)
+- [x] CFG-03: `jesse.is_complex_invariant()` + `gd_complex_row` review kind for complex GD&T rows
+- [x] CFG-04: `docs/design-docs/open-issues.md` updated with all 4 issues and workarounds (CFG-02/CFG-03 cross-referenced)
 
 ## Session Continuity
 
 | Last session | Next action |
 |-------------|-------------|
-| 2026-09-22: Phase 2 complete (all 4 DET requirements done) | Initiate Phase 3: `/gsd:plan-phase 3` |
+| 2026-09-22: Phase 5 complete (CI + real-data path + all 64 tests pass) | 2026-09-22: Phase 6 all 4 requirements complete — CFG-01 (YAML config), CFG-02 (jesse.md thick-stroke docs), CFG-03 (gd_complex_row), CFG-04 (open-issues.md) |

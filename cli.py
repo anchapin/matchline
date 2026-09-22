@@ -25,7 +25,23 @@ def cmd_run(args: argparse.Namespace) -> None:
     if (args.seed is None) == (args.aec_bench is None):
         print("Error: exactly one of --seed or --aec-bench is required", file=sys.stderr)
         sys.exit(1)
-    run_pipeline.main(args)
+    config = None
+    if args.config_path:
+        from pathlib import Path
+
+        import yaml
+
+        config_path = Path(args.config_path)
+        if not config_path.exists():
+            print(f"Error: config file not found: {config_path}", file=sys.stderr)
+            sys.exit(1)
+        with config_path.open() as f:
+            config = yaml.safe_load(f) or {}
+        known_keys = {"simplify_tolerance", "wall_height", "review_confidence"}
+        unknown = set(config.keys()) - known_keys
+        if unknown:
+            print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
+    run_pipeline.main(args, config=config)
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
@@ -155,6 +171,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["elev_grid", "elev_nogrid"],
     )
     p.add_argument("--simplify-tol", type=float, default=0.02)
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        dest="config_path",
+        help="YAML config file. Keys: review_confidence (float, default 0.0=no filter), "
+        "simplify_tolerance (float, default 0.02=2%%), wall_height (float, metres, "
+        "default from level). "
+        "Example: review_confidence: 0.85  simplify_tolerance: 0.01  wall_height: 3.5",
+    )
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("bem-export", help="gbXML + IFC4 export demo (synthetic)")

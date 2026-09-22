@@ -52,7 +52,17 @@ def save_example(example: Example, corpus_dir: pathlib.Path | None = None) -> No
     dir_path.mkdir(parents=True, exist_ok=True)
     path = _corpus_path(example.task, corpus_dir)
     with path.open("a") as f:
-        f.write(json.dumps({"task": example.task, "text": example.text, "numeric": example.numeric, "label": example.label}) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "task": example.task,
+                    "text": example.text,
+                    "numeric": example.numeric,
+                    "label": example.label,
+                }
+            )
+            + "\n"
+        )
 
 
 def export_from_model(
@@ -123,7 +133,9 @@ if __name__ == "__main__":
         examples = load_corpus(args.task)
         print(f"Loaded {len(examples)} examples for {args.task}")
     elif args.command == "export":
-        counts = export_from_model(args.model_json, output_dir=pathlib.Path(args.out) if args.out else None)
+        counts = export_from_model(
+            args.model_json, output_dir=pathlib.Path(args.out) if args.out else None
+        )
         for task, n in counts.items():
             print(f"Exported {n} examples for {task}")
     else:

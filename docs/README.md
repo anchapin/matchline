@@ -15,6 +15,7 @@ disclosed, not hidden.
 | `geometry_simplification.md` | Area-budgeted BEM surface reduction |
 | `hvac_zoning.md` | Duct tracing → terminal units → zone graphs |
 | `ifc_import.md` | Tier-0 IFC import: what recovers without space boundaries |
+| `jesse.md` | WiSARD classifier + Zhang-Suen skeleton invariants + thick-stroke preprocessing |
 | `lighting_takeoff.md` | Fixture takeoffs, building watts, per-space LPD |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
 | `room_labeling.md` | OCR room names/numbers and polygon association |

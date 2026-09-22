@@ -68,7 +68,11 @@ def train_task(
     if task not in VALID_TASKS:
         raise ValueError(f"unknown task {task!r}; expected one of {VALID_TASKS}")
 
-    corpus = corpus_examples if corpus_examples is not None else load_corpus_for_task(task, DEFAULT_CORPUS_DIR)
+    corpus = (
+        corpus_examples
+        if corpus_examples is not None
+        else load_corpus_for_task(task, DEFAULT_CORPUS_DIR)
+    )
     synthetic = generate(task, n=synthetic_n, seed=seed)
     combined = synthetic + corpus
 

@@ -124,9 +124,9 @@
 **Plans**: 3 plans in 1 wave (all parallel — CI infrastructure + dataset loaders are independent)
 
 **Plan list:**
-- [ ] 05-01-ci-workflow-PLAN.md — GitHub Actions CI: ruff + pytest gates (CI-01)
-- [ ] 05-02-aecbench-pipeline-PLAN.md — `matchline run --aec-bench` for all 15 sheets + gbXML export (CI-02)
-- [ ] 05-03-dataset-loaders-PLAN.md — `load_floorplancad()` + `load_archcad()` implementations (CI-03, CI-04)
+- [x] 05-01-ci-workflow-PLAN.md — GitHub Actions CI: ruff + pytest gates (CI-01)
+- [x] 05-02-aecbench-pipeline-PLAN.md — `matchline run --aec-bench` for all 15 sheets + gbXML export (CI-02)
+- [x] 05-03-dataset-loaders-PLAN.md — `load_floorplancad()` + `load_archcad()` implementations (CI-03, CI-04)
 
 ---
 
@@ -136,7 +136,7 @@
 
 **Depends on**: Phase 4 (review queue), Phase 5 (CI)
 
-**Requirements**: CFG-01, CFG-02, CFG-03, CFG-04
+**Requirements**: CFG-01 ✅, CFG-02 ✅, CFG-03 ✅, CFG-04 ✅
 
 **Success Criteria** (what must be TRUE when this phase completes):
 
@@ -157,5 +157,5 @@
 | 2. Detector Integration | 2/2 | Completed | 2026-09-22 |
 | 3. IFC Round-Trip | 2/2 | Completed | 2026-09-22 |
 | 4. Review Queue UX | 3/3 | Completed | 2026-09-22 |
-| 5. Real-Data Validation + CI | 0/3 | Planned | - |
-| 6. Production Hardening | 0/4 | Not started | - |
+| 5. Real-Data Validation + CI | 3/3 | Completed | 2026-09-22 |
+| 6. Production Hardening | 4/4 | ✅ All done | 2026-09-22 |

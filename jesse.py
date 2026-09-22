@@ -295,6 +295,98 @@ def zhang_suen(binary: np.ndarray) -> np.ndarray:
 
 
 # --- Section 9.2: topological invariants ----------------------------------------------
+
+# Thresholds for "simple" Table 9.4 glyphs.
+# Simple glyphs: endpoints ≤ 4, t_junctions ≤ 1, x_junctions ≤ 1, holes ≤ 2.
+# Anything exceeding these bounds, or with both t_junctions AND x_junctions
+# non-zero, is a complex row whose signature cannot be automatically classified
+# under the paper's underspecified junction convention.
+_SIMPLE_MAX_ENDPOINTS = 4
+_SIMPLE_MAX_T_JUNCTIONS = 1
+_SIMPLE_MAX_X_JUNCTIONS = 1
+_SIMPLE_MAX_HOLES = 2
+
+
+def is_complex_invariant(inv: dict) -> bool:
+    """Return True if ``inv`` (a skeleton_invariants dict) represents a complex
+    GD&T row that cannot be automatically classified.
+
+    Complex rows exceed the simple Table 9.4 envelope in at least one
+    invariant, or combine both T- and X-junctions (compound glyphs such as
+    True Position with multiple datum references). The paper's junction
+    convention is underspecified for these cases — they must go to the review
+    queue as ``gd_complex_row`` rather than being silently accepted or
+    rejected.
+
+    Parameters
+    ----------
+    inv : dict
+        Output of ``skeleton_invariants()`` — keys:
+        ``endpoints``, ``t_junctions``, ``x_junctions``, ``holes``.
+
+    Returns
+    -------
+    bool
+        True if the row is complex and should be flagged for review.
+    """
+    e = inv.get("endpoints", 0)
+    t = inv.get("t_junctions", 0)
+    x = inv.get("x_junctions", 0)
+    h = inv.get("holes", 0)
+    if e > _SIMPLE_MAX_ENDPOINTS:
+        return True
+    if t > _SIMPLE_MAX_T_JUNCTIONS:
+        return True
+    if x > _SIMPLE_MAX_X_JUNCTIONS:
+        return True
+    if h > _SIMPLE_MAX_HOLES:
+        return True
+    if t > 0 and x > 0:
+        return True  # compound: both T and X junctions
+    return False
+
+
+def complex_invariant_review_item(
+    inv: dict,
+    glyph_name: str,
+    provenance: object,
+) -> "ReviewItem":  # noqa: F821 — ReviewItem resolved at runtime via lazy import inside function
+    """Build a ``gd_complex_row`` review item for a complex GD&T invariant.
+
+    Parameters
+    ----------
+    inv : dict
+        Output of ``skeleton_invariants()``.
+    glyph_name : str
+        Human-readable name of the glyph that produced these invariants.
+    provenance : Provenance
+        Provenance record for this observation.
+
+    Returns
+    -------
+    ReviewItem
+        A review queue item with kind ``gd_complex_row``.
+    """
+    e = inv.get("endpoints", 0)
+    t = inv.get("t_junctions", 0)
+    x = inv.get("x_junctions", 0)
+    h = inv.get("holes", 0)
+    desc = (
+        f"Complex GD&T row ({glyph_name}): "
+        f"E={e}, J_T={t}, J_X={x}, b₁={h}. "
+        f"Signature exceeds Table 9.4 simple-glyph envelope; "
+        f"junction convention is underspecified for compound glyphs. "
+        f"Treat as indicative — validate against known-good reference drawings."
+    )
+    # Import here to avoid circular import at module load time.
+    from building_model import ReviewItem
+
+    rid = f"GD-CPX-{e}{t}{x}{h}"
+    return ReviewItem(
+        id=rid, kind="gd_complex_row", description=desc, confidence=0.5, provenance=provenance
+    )
+
+
 def skeleton_invariants(skel: np.ndarray) -> dict:
     """d(p) = sum of active 8-neighbors; endpoints d=1, T-junctions d=3,
     cross d>=4; holes b_1 via background flood fill; chi = 1 - b_1 for a

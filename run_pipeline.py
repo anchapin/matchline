@@ -219,7 +219,7 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 
-def main(args) -> None:
+def main(args, config: dict | None = None) -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -287,10 +287,20 @@ def main(args) -> None:
         },
     )
 
+    # --- Config overrides (from YAML) ----------------------------------
+    simplify_tol = args.simplify_tol
+    wall_height = None  # None means "use model default"
+    min_review_confidence = None
+    if config:
+        simplify_tol = config.get("simplify_tolerance", simplify_tol)
+        wall_height = config.get("wall_height", None)
+        min_review_confidence = config.get("review_confidence", None)
+
     # --- Stage 3: simplify geometry --------------------------------------
-    wall_height = model.levels[0].wall_height_m
+    if wall_height is None:
+        wall_height = model.levels[0].wall_height_m
     ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-    sres = simplify_ring(ring, tol=args.simplify_tol, wall_height=wall_height)
+    sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
     write_json(
         out_dir / "stage_03_simplified.json",
         {
@@ -303,7 +313,7 @@ def main(args) -> None:
     )
 
     # --- Stage 4: validation checks --------------------------------------
-    report = run_checks(model, sres=sres)
+    report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
     write_json(out_dir / "stage_04_validation.json", report.to_dict())
 
     # --- Stage 5: fail-fast on validation errors ------------------------
@@ -321,7 +331,7 @@ def main(args) -> None:
         model=model,
         simplified_ring=sres.ring,
         wall_height_m=wall_height,
-        simplify_tol_pct=args.simplify_tol * 100.0,
+        simplify_tol_pct=simplify_tol * 100.0,
     )
 
     gbxml_path = bem_dir / f"{model.name or 'building'}.xml"

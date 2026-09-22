@@ -517,7 +517,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                                 for curve in getattr(item, "Elements", None) or []:
                                     if curve.is_a("IfcPolyline"):
                                         pts = [
-                                            (float(p.Coordinates[0]) * scale, float(p.Coordinates[1]) * scale)
+                                            (
+                                                float(p.Coordinates[0]) * scale,
+                                                float(p.Coordinates[1]) * scale,
+                                            )
                                             for p in getattr(curve, "Points", None) or []
                                         ]
                                         if len(pts) >= 3:
@@ -565,7 +568,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                     continue
                 if psd.Name != "Pset_SpaceLighting":
                     continue
-                for prop in (psd.HasProperties or []):
+                for prop in psd.HasProperties or []:
                     if prop.is_a("IfcPropertySingleValue") and prop.Name == "LightingPower":
                         try:
                             space.lighting = SpaceLighting(
