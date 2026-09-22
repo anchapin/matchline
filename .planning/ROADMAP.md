@@ -73,7 +73,11 @@
 3. An IFC round-trip (import → export) preserves zone-to-space many-to-many membership and lighting watt totals within 1% tolerance
 4. Running elevation linking twice on two separate elevations of the same facade produces exactly one `SpaceOpening` per window (not two)
 
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
+
+**Plan list:**
+- [ ] 03-ifc-01-PLAN.md — `ifc_export.py` + `matchline ifc-export` CLI + BuildingModel→BEMModel adapter (IFC-01, IFC-02 basic)
+- [ ] 03-ifc-02-PLAN.md — Zone + SpaceLighting IFC4 export + cross-sheet window dedup + round-trip test (IFC-02 extended, IFC-03, IFC-04)
 
 ---
 
@@ -140,8 +144,8 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Orchestration | 1/1 | Completed | 2026-09-21 |
-| 2. Detector Integration | 0/2 | Planned | - |
-| 3. IFC Round-Trip | 0/4 | Not started | - |
+| 2. Detector Integration | 2/2 | Completed | 2026-09-22 |
+| 3. IFC Round-Trip | 0/2 | Planned | - |
 | 4. Review Queue UX | 0/4 | Not started | - |
 | 5. Real-Data Validation + CI | 0/5 | Not started | - |
 | 6. Production Hardening | 0/4 | Not started | - |

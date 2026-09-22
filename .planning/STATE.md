@@ -13,10 +13,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Active phase** | Phase 2: Detector Integration (complete) |
-| **Active plan** | All Phase 2 plans executed |
-| **Status** | Phase 2 complete — DET-01, DET-02, DET-03, DET-04 done |
-| **Progress** | `[══════════════════════════════════════] 20%` (5/25 requirements done) |
+| **Active phase** | Phase 3: IFC Round-Trip (planned) |
+| **Active plan** | 03-ifc-01-PLAN.md ready for execution |
+| **Status** | Phase 3 planned — 2 plans in 2 waves; ready to execute |
+| **Progress** | `[══════════════════════════════════════] 32%` (8/25 requirements done) |
 
 ## Performance Metrics
 
