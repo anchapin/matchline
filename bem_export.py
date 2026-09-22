@@ -580,18 +580,12 @@ def _gbxml_semantic_checks(doc) -> list:
 
 
 def _ensure_ifc():
-    """Import IfcOpenShell, falling back to the workspace-vendored copy."""
-    import sys as _sys
+    """Import IfcOpenShell via importlib.util.find_spec probe."""
+    import importlib.util
 
-    _vendor = str(Path.home() / "workspace" / "vendor" / "pylibs")
-    if _vendor not in _sys.path:
-        _sys.path.insert(0, _vendor)
-    try:
-        import ifcopenshell  # noqa: F401
-    except ImportError as e:
-        raise RuntimeError(
-            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
-        ) from e
+    if importlib.util.find_spec("ifcopenshell") is None:
+        raise RuntimeError("IfcOpenShell is not installed; install with `pip install ifcopenshell`")
+    import ifcopenshell  # noqa: F401
 
 
 def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:

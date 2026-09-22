@@ -46,23 +46,13 @@ from building_model import (
     Zone,
 )
 
-# ---------------------------------------------------------------------------
-# IfcOpenShell bootstrap (same vendored fallback as bem_export)
-# ---------------------------------------------------------------------------
-
 
 def _ensure_ifc():
-    import sys as _sys
+    import importlib.util
 
-    _vendor = str(Path.home() / "workspace" / "vendor" / "pylibs")
-    if _vendor not in _sys.path:
-        _sys.path.insert(0, _vendor)
-    try:
-        import ifcopenshell  # noqa: F401
-    except ImportError as e:
-        raise RuntimeError(
-            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
-        ) from e
+    if importlib.util.find_spec("ifcopenshell") is None:
+        raise RuntimeError("IfcOpenShell is not installed; install with `pip install ifcopenshell`")
+    import ifcopenshell  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
