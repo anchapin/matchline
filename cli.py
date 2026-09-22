@@ -6,6 +6,7 @@ Every demo/evaluation script in this repo is reachable as a subcommand::
     matchline bem-export --sheet-id sheet_007
     matchline facade-takeoff --n 5 --full
     matchline ifc-import building.ifc --out model.json
+    matchline ifc-export model.json out.ifc
 
 The historical ``python3 run_*.py`` scripts still work; they are thin
 wrappers around the same functions.
@@ -107,6 +108,14 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
         print(f"wrote {args.out}")
 
 
+def cmd_ifc_export(args: argparse.Namespace) -> None:
+    """Export a BuildingModel JSON file to an IFC4 file."""
+    from ifc_export import export_ifc
+
+    export_ifc(args.model, args.out)
+    print(f"wrote {args.out}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="matchline",
@@ -175,6 +184,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="input .ifc file")
     p.add_argument("--out", default=None, help="write canonical model JSON here")
     p.set_defaults(func=cmd_ifc_import)
+
+    p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
+    p.add_argument("model", help="BuildingModel JSON file path")
+    p.add_argument("out", help="Output IFC4 file path")
+    p.set_defaults(func=cmd_ifc_export)
 
     return ap
 
