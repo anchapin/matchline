@@ -1,10 +1,10 @@
-# Contributing to wisard-bem
+# Contributing to Matchline
 
 ## Setup (cold clone → green tests)
 
 ```bash
-git clone https://github.com/anchapin/wisard-bem.git
-cd wisard-bem
+git clone https://github.com/anchapin/matchline.git
+cd matchline
 git checkout develop        # develop is the working branch; main is releases only
 python3 --version           # need >= 3.10
 pip install -e ".[test]"    # editable install + pytest
@@ -22,14 +22,14 @@ pip install -e ".[detector]"  # torch + ultralytics, for detector/ (heavy;
 
 External datasets (AEC Geometric Bench, CMP Facade, CubiCasa5K, FloorPlanCAD)
 live under `~/workspace/datasets/` and are **not** committed. Demos that need
-them (`wisard-bem facade-takeoff`) fail with a clear message if the data is
+them (`matchline facade-takeoff`) fail with a clear message if the data is
 absent.
 
 ## Everyday commands
 
 ```bash
-wisard-bem --help                 # unified CLI: one subcommand per demo script
-wisard-bem validate               # validation battery demo
+matchline --help                 # unified CLI: one subcommand per demo script
+matchline validate               # validation battery demo
 python3 run_validation.py         # the old run_*.py scripts still work too
 ruff check . && ruff format .     # lint + format (or: pre-commit run --all-files)
 ```

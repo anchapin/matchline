@@ -9,7 +9,7 @@ labels: bug
 
 ## Minimal reproducer
 
-(Seed, command, and input — e.g. `wisard-bem validate`, synthetic seed 301.)
+(Seed, command, and input — e.g. `matchline validate`, synthetic seed 301.)
 
 ## Expected
 

@@ -39,7 +39,7 @@ try:
 except ImportError as e:  # pragma: no cover - packaging guarantees shapely
     raise ImportError(
         "shapely is required by geometry_simplify; install the project with "
-        "`pip install -e .` (or `pip install wisard-bem`)"
+        "`pip install -e .` (or `pip install matchline`)"
     ) from e
 
 

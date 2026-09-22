@@ -1,11 +1,11 @@
-"""wisard-bem: unified command-line interface.
+"""matchline: unified command-line interface.
 
 Every demo/evaluation script in this repo is reachable as a subcommand::
 
-    wisard-bem validate
-    wisard-bem bem-export --sheet-id sheet_007
-    wisard-bem facade-takeoff --n 5 --full
-    wisard-bem ifc-import building.ifc --out model.json
+    matchline validate
+    matchline bem-export --sheet-id sheet_007
+    matchline facade-takeoff --n 5 --full
+    matchline ifc-import building.ifc --out model.json
 
 The historical ``python3 run_*.py`` scripts still work; they are thin
 wrappers around the same functions.
@@ -102,7 +102,7 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        prog="wisard-bem",
+        prog="matchline",
         description="Deterministic, auditable drawing/BIM -> BEM quantity takeoffs.",
     )
     sub = ap.add_subparsers(dest="command", required=True, metavar="<command>")

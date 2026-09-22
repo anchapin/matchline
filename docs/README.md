@@ -1,6 +1,6 @@
 # docs/
 
-Design notes, module guides, and experiment records for wisard-bem.
+Design notes, module guides, and experiment records for Matchline.
 Each page documents what works, what doesn't, and why — limitations are
 disclosed, not hidden.
 

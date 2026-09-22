@@ -1,4 +1,4 @@
-# Releasing wisard-bem
+# Releasing Matchline
 
 `develop` is the working branch. `main` is reserved for releases and should
 only ever receive release PRs.
@@ -11,7 +11,7 @@ only ever receive release PRs.
 3. Bump `version` in `pyproject.toml`.
 4. Open a PR `develop` → `main` titled `Release vX.Y.Z`. Get review.
 5. After merge, tag the release on `main`:
-   `git tag -a vX.Y.Z -m "wisard-bem vX.Y.Z" && git push origin vX.Y.Z`.
+   `git tag -a vX.Y.Z -m "matchline vX.Y.Z" && git push origin vX.Y.Z`.
 6. Immediately after tagging, on `develop`, start a new `[Unreleased]`
    section in `CHANGELOG.md`.
 
