@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import json
 import math
-from lxml import etree
 from dataclasses import dataclass, field
 
-from safe_xml import safe_xml_parser
+from lxml import etree
 
 from building_model import BuildingModel
 from datasets_adapter import polygon_area_px2
+from safe_xml import safe_xml_parser
 
 try:
     from geometry_simplify import footprint_from_regions
