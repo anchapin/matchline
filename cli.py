@@ -17,6 +17,13 @@ import argparse
 import sys
 
 
+def cmd_run(args: argparse.Namespace) -> None:
+    """Unified pipeline: generate + link + validate + BEM export."""
+    import run_pipeline
+
+    run_pipeline.main(args)
+
+
 def cmd_validate(args: argparse.Namespace) -> None:
     """Build 2 synthetic buildings, link them, run the validation battery."""
     import run_validation
@@ -109,6 +116,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("validate", help="validation battery demo (synthetic)")
     p.set_defaults(func=cmd_validate)
+
+    p = sub.add_parser(
+        "run",
+        help="unified pipeline: generate + link + validate + export",
+    )
+    p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--out-dir", default="bem_out")
+    p.add_argument("--open-office-span", action="store_true")
+    p.add_argument(
+        "--elevation-key",
+        default="elev_grid",
+        choices=["elev_grid", "elev_nogrid"],
+    )
+    p.add_argument("--simplify-tol", type=float, default=0.02)
+    p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("bem-export", help="gbXML + IFC4 export demo (synthetic)")
     p.add_argument("--sheet-id", default="sheet_007")
