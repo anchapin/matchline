@@ -76,9 +76,9 @@ if _detected_python is None:
 
 import json  # noqa: E402
 import math  # noqa: E402
-import pickle  # noqa: E402
 import random  # noqa: E402
 
+import joblib  # noqa: E402
 import numpy as np  # noqa: E402
 
 
@@ -371,7 +371,7 @@ def main() -> None:
             mpath = clf_dir / model_name
             if mpath.exists():
                 with open(mpath, "rb") as f:
-                    model = pickle.load(f)
+                    model = joblib.load(f)
                 examples = make_review_examples(seed=42, n=300)
                 from review_classifier.data import Example
                 from review_classifier.features import ReviewFeaturizer

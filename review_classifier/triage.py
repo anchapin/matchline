@@ -17,8 +17,9 @@ Guardrails
 from __future__ import annotations
 
 import pathlib
-import pickle
 from dataclasses import dataclass
+
+import joblib
 
 from review_classifier.data import Example
 from review_classifier.model import TypedDecider
@@ -94,7 +95,8 @@ class ReviewTriage:
         if not path.exists():
             return None
         try:
-            return pickle.loads(path.read_bytes())
+            with open(path, "rb") as f:
+                return joblib.load(f)
         except Exception:
             return None
 

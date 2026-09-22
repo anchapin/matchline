@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import pickle
 import sys
 from typing import TextIO
+
+import joblib
 
 from building_model import BuildingModel, ReviewItem
 from review_classifier.data import Example
@@ -57,7 +58,8 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     if not model_path.exists():
         return None
     try:
-        return pickle.loads(model_path.read_bytes())
+        with open(model_path, "rb") as f:
+            return joblib.load(f)
     except Exception:
         return None
 
