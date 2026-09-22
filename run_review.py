@@ -62,13 +62,29 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
         return None
 
 
+def _urgency_sort_key(item: ReviewItem) -> tuple[int, bool]:
+    """Sort key: urgency descending, then auto_resolved False first (human needs first)."""
+    return (-item.urgency, item.auto_resolved)
+
+
 def _format_item(item: ReviewItem, out: TextIO = sys.stdout) -> None:
-    """Print a single ReviewItem to stdout."""
+    """Print a single ReviewItem to stdout with triage metadata."""
     prov = item.provenance
     prov_str = f"{prov.sheet_id} r{prov.revision} via {prov.method}" if prov else "no provenance"
-    print(f"  [{item.id}] {item.kind}  conf={item.confidence:.2f}", file=out)
+
+    # Triage indicators
+    triage_parts = []
+    if item.urgency > 0:
+        triage_parts.append(f"urgency={item.urgency}")
+    if item.auto_resolved:
+        triage_parts.append(f"AUTO-{item.resolution}")
+    triage_str = f"  [{', '.join(triage_parts)}]" if triage_parts else ""
+
+    print(f"  [{item.id}] {item.kind}  conf={item.confidence:.2f}{triage_str}", file=out)
     print(f"    → {item.description}", file=out)
     print(f"    provenance: {prov_str}", file=out)
+    if item.needs_human < 1.0:
+        print(f"    needs_human: {item.needs_human:.2f}", file=out)
 
 
 def format_review_list(
@@ -76,6 +92,9 @@ def format_review_list(
     show_all: bool = False,
 ) -> tuple[list[ReviewItem], bool]:
     """Load the model, classify open items, and print the review queue.
+
+    Items are ordered by urgency (highest first), then auto-resolved items
+    are shown before human-needed items at each urgency level.
 
     Args:
         model_path: path to BuildingModel JSON file
@@ -88,7 +107,6 @@ def format_review_list(
     raw = model_path.read_text()
     model = BuildingModel.from_json(raw)
 
-    # Track which tasks have models loaded
     deciders: dict[str, TypedDecider] = {}
     classifier_available = False
 
@@ -113,11 +131,18 @@ def format_review_list(
         print("No review items in queue." if show_all else "No open review items.")
         return items, classifier_available
 
-    print(f"Review queue — {len(items)} item(s) shown (of {len(model.review_queue)} total)")
+    # Sort by urgency (highest first), auto-resolved last within urgency band
+    items.sort(key=_urgency_sort_key)
+
+    n_auto = sum(1 for i in items if i.auto_resolved)
+    print(
+        f"Review queue — {len(items)} item(s) shown "
+        f"({n_auto} auto-resolved) "
+        f"(of {len(model.review_queue)} total)"
+    )
     print()
 
     for item in items:
-        # Show classifier suggestion if model is available for this item's task
         classifier_label = None
         classifier_conf: float | None = None
         task = _kind_to_task(item.kind)
@@ -132,10 +157,16 @@ def format_review_list(
                 classifier_label = "(classifier error)"
                 classifier_conf = None
 
-        # Status indicator
         status_icon = {"open": "○", "confirmed": "●", "rejected": "✗"}[item.status]
 
-        print(f"{status_icon} [{item.id}] {item.kind}  conf={item.confidence:.2f}")
+        triage_parts = []
+        if item.urgency > 0:
+            triage_parts.append(f"urgency={item.urgency}")
+        if item.auto_resolved:
+            triage_parts.append(f"AUTO-{item.resolution}")
+        triage_str = f"  [{', '.join(triage_parts)}]" if triage_parts else ""
+
+        print(f"{status_icon} [{item.id}] {item.kind}  conf={item.confidence:.2f}{triage_str}")
         if classifier_label is not None and classifier_conf is not None:
             print(f"   → classifier: {classifier_label} ({classifier_conf:.2f})")
         elif classifier_label is not None:
@@ -147,6 +178,8 @@ def format_review_list(
         )
         print(f"   {item.description}")
         print(f"   provenance: {prov_str}")
+        if item.needs_human < 1.0:
+            print(f"   needs_human: {item.needs_human:.2f}")
         print()
 
     return items, classifier_available

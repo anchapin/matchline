@@ -137,7 +137,18 @@ def cmd_ifc_export(args: argparse.Namespace) -> None:
 
 def cmd_review(args: argparse.Namespace) -> None:
     """Review queue: list open review items, confirm or reject decisions."""
+    import os
+
     import run_review
+
+    if args.enable_auto_triage:
+        import building_model
+
+        building_model.ENABLE_AUTO_TRIAGE = True
+    elif os.environ.get("ENABLE_AUTO_TRIAGE", "").lower() in ("1", "true", "yes"):
+        import building_model
+
+        building_model.ENABLE_AUTO_TRIAGE = True
 
     run_review.main(args)
 
@@ -243,6 +254,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--reject", metavar="ID", help="Reject a review item (marks rejected, re-runs validation)"
     )
     p.add_argument("--show-all", action="store_true", help="Also show confirmed and rejected items")
+    p.add_argument(
+        "--enable-auto-triage",
+        action="store_true",
+        help="Enable auto-triage classifier when loading the model "
+        "(ENABLE_AUTO_TRIAGE env var also respected)",
+    )
     p.set_defaults(func=cmd_review)
 
     return ap

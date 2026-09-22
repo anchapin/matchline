@@ -20,7 +20,14 @@ from review_classifier.model import TypedDecider
 
 DEFAULT_CORPUS_DIR = pathlib.Path(__file__).parent / "corpus"
 DEFAULT_OUT_DIR = pathlib.Path(__file__).parent
-VALID_TASKS = ["route_to_review", "schedule_match", "extraction_type"]
+VALID_TASKS = [
+    "route_to_review",
+    "schedule_match",
+    "extraction_type",
+    "needs_human",
+    "urgency",
+    "resolution",
+]
 
 
 def model_path_for_task(task: str, out_dir: pathlib.Path | None = None) -> pathlib.Path:

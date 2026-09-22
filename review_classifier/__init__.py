@@ -9,5 +9,6 @@ re-measured on real drawings (see REPORT.md).
 """
 
 from review_classifier.model import TypedDecider
+from review_classifier.triage import ReviewTriage, TriageDecision, get_triage, reset_triage
 
-__all__ = ["TypedDecider"]
+__all__ = ["TypedDecider", "ReviewTriage", "TriageDecision", "get_triage", "reset_triage"]
