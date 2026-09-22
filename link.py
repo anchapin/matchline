@@ -44,6 +44,7 @@ from building_model import (
     Zone,
 )
 from datasets_adapter import ScheduleEntry, polygon_area_px2
+from polygon_classify import classify_polygons
 from registration import (
     Affine2D,
     Facade,
@@ -216,6 +217,9 @@ class LinkReport:
 
 def _build_spaces(bldg, model: BuildingModel, level_id: str, wall_height_m: float) -> list:
     meta = bldg["sheets"]["arch"]["meta"]
+    south_windows = bldg.get("south_windows", [])
+    grids_h = bldg.get("grids_h", {})
+    classifications = classify_polygons(bldg["rooms"], south_windows, grids_h)
     spaces = []
     unlabeled_k = 0
     for r in bldg["rooms"]:
@@ -234,6 +238,8 @@ def _build_spaces(bldg, model: BuildingModel, level_id: str, wall_height_m: floa
             confidence=1.0,
             note=f"polygon + label '{r['name']} {r['number']}'",
         )
+        clf = classifications.get(number)
+        poly_type = clf.poly_type if clf else "room"
         sp = Space(
             id=sid,
             level_id=level_id,
@@ -244,6 +250,7 @@ def _build_spaces(bldg, model: BuildingModel, level_id: str, wall_height_m: floa
             volume_m3=area * wall_height_m,
             core_provenance=prov,
             label_confidence=1.0,
+            poly_type=poly_type,
         )
         model.spaces[sid] = sp
         spaces.append(sp)

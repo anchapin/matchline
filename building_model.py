@@ -42,6 +42,10 @@ MODEL_VERSION = "1.0"
 # accepted (review queue, not dropped).
 REVIEW_CONFIDENCE = 0.80
 
+# Feature flag: enable auto-triage via the local review_classifier TypedDecider.
+# When False (default), flag_for_review behaves as before (pure flagging).
+ENABLE_AUTO_TRIAGE = False
+
 
 # ---------------------------------------------------------------------------
 # Provenance + revisions
@@ -209,6 +213,7 @@ class Space:
     daylight: "SpaceDaylight" = field(default_factory=lambda: SpaceDaylight())
     core_provenance: Provenance = None  # polygon + name/number source
     label_confidence: float = 0.0
+    poly_type: str = "room"  # "room" | "shaft" | "closet" | "elevator_core" | "unassigned"
     history: List[Provenance] = field(default_factory=list)
 
     @property
@@ -321,6 +326,10 @@ class ReviewItem:
     confidence: float
     provenance: Provenance = None
     status: str = "open"  # "open" | "confirmed" | "rejected"
+    needs_human: float = 1.0  # P(needs human) — set by triage
+    urgency: int = 1  # 0-3; set by triage
+    auto_resolved: bool = False  # True if auto-resolved per guardrails
+    resolution: str = ""  # "accept" | "drop" | "reassign" — set by triage
 
 
 # ---------------------------------------------------------------------------
@@ -386,10 +395,42 @@ class BuildingModel:
     ) -> ReviewItem:
         rid = f"RVW-{len(self.review_queue) + 1:03d}"
         item = ReviewItem(
-            id=rid, kind=kind, description=description, confidence=confidence, provenance=provenance
+            id=rid,
+            kind=kind,
+            description=description,
+            confidence=confidence,
+            provenance=provenance,
         )
+        if ENABLE_AUTO_TRIAGE:
+            self._triage_item(item)
         self.review_queue.append(item)
         return item
+
+    def _triage_item(self, item: ReviewItem) -> None:
+        """Run the triage classifier on ``item`` and populate triage fields.
+
+        Silently skips if the triage classifier is unavailable (all fields keep
+        their safe defaults: ``needs_human=1.0``, ``urgency=1``).
+        This method never invents geometry — it only sets metadata on the flag.
+        """
+        try:
+            from review_classifier.data import Example
+            from review_classifier.triage import get_triage
+
+            text = f"[{item.kind}] {item.description} (conf={item.confidence:.2f})"
+            example = Example(
+                task="route_to_review",
+                text=text,
+                numeric={"det_conf": item.confidence},
+            )
+            triage = get_triage()
+            decision = triage.triage(example)
+            item.needs_human = decision.needs_human
+            item.urgency = decision.urgency
+            item.auto_resolved = decision.auto_resolved
+            item.resolution = decision.resolution
+        except Exception:
+            pass  # classifier unavailable — leave safe defaults
 
     # -- JSON --------------------------------------------------------------
     def to_dict(self) -> dict:

@@ -106,7 +106,19 @@ revision logged.
    calibrate, or should fallback links block export instead of flagging?
 2. Multi-storey + risers: is the zone model per-level with riser links,
    or a true 3D zone graph?
-3. Dedup rule for two elevations of one facade — prefer grid path and
-   discard geometric sightings, or keep both with "sighting" provenance?
+  3. **RESOLVED (Issue #11) — Observation reconciliation via typed-decision
+     candidates**: The dedup rule uses `same_object` + `prefer` adjudication.
+     `assign_window_tag_candidates()` returns all schedule tags matching the
+     measured window size within 0.15 m. `adjudicate_tag()` resolves
+     conflicts using a configurable `prefer` strategy:
+       - `"grid"` (default): prefer grid-registered observations; ties go to nearest size
+       - `"geometric"`: prefer geometric-registered observations
+       - `"keep_both"`: if candidates disagree on identity (different tags),
+         return both as a comma-joined string (e.g. `"A,B"`); if same tag, return it
+       - `"nearest"`: original behavior — closest by size distance only
+     See `elevation_windows.py::adjudicate_tag` for the full implementation.
+     Non-room polygons (shafts, closets, elevator_cores) are classified by
+     `polygon_classify.py` using area, aspect ratio, label text, and
+     adjacency evidence, and excluded from area rollups before computation.
 4. Interior partitions are still omitted from BEM export; do you need them
    for zone adjacency, or is space→zone mapping sufficient for now?

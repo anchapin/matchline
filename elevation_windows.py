@@ -351,10 +351,130 @@ def observations_to_facade(obs_list: list, reg: FacadeRegistration, facade: str)
 
 
 # ---------------------------------------------------------------------------
-# Schedule tag association by measured size
+# Schedule tag association: candidates + prefer strategy
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class WindowTagCandidate:
+    """One schedule tag that matches a measured window instance."""
+
+    tag: str
+    distance_m: float  # size distance (hypot of width and height delta)
+    registration_method: str  # "grid" | "geometric" | "unknown"
+
+
+def assign_window_tag_candidates(
+    width_m: float,
+    height_m: float,
+    win_sched: dict,
+    tol_m: float = 0.15,
+    registration_method: str = "unknown",
+) -> list[WindowTagCandidate]:
+    """Return all schedule tags matching measured size within tol_m.
+
+    Returns candidates sorted by distance_m ascending. Empty list means no
+    match within tolerance -- the instance is kept as UNTAGGED with
+    measured dims, flagged for review at attach time, never dropped.
+    """
+    candidates = []
+    for tag, e in win_sched.items():
+        if e.width_m is None or e.height_m is None:
+            continue
+        d = math.hypot(width_m - e.width_m, height_m - e.height_m)
+        if d <= tol_m:
+            candidates.append(
+                WindowTagCandidate(tag=tag, distance_m=d, registration_method=registration_method)
+            )
+    candidates.sort(key=lambda c: c.distance_m)
+    return candidates
+
+
+def same_object(a: WindowTagCandidate, b: WindowTagCandidate) -> bool:
+    """Return True if two candidates refer to the same schedule entry.
+
+    Uses tag identity: same tag means same object.
+    """
+    return a.tag == b.tag
+
+
+def prefer_grid(a: WindowTagCandidate, b: WindowTagCandidate) -> WindowTagCandidate:
+    """Prefer grid-registered observation over geometric."""
+    if a.registration_method == "grid" and b.registration_method != "grid":
+        return a
+    if b.registration_method == "grid" and a.registration_method != "grid":
+        return b
+    if a.distance_m < b.distance_m:
+        return a
+    return b
+
+
+def prefer_geometric(a: WindowTagCandidate, b: WindowTagCandidate) -> WindowTagCandidate:
+    """Prefer geometric-registered observation over grid."""
+    if a.registration_method == "geometric" and b.registration_method != "geometric":
+        return a
+    if b.registration_method == "geometric" and a.registration_method != "geometric":
+        return b
+    if a.distance_m < b.distance_m:
+        return a
+    return b
+
+
+def keep_both(
+    a: WindowTagCandidate, b: WindowTagCandidate
+) -> tuple[WindowTagCandidate, WindowTagCandidate] | WindowTagCandidate:
+    """Return both candidates when they refer to different objects."""
+    if not same_object(a, b):
+        return (a, b)
+    return prefer_grid(a, b)
+
+
+def adjudicate_tag(candidates: list[WindowTagCandidate], prefer: str = "grid") -> Optional[str]:
+    """Choose a single tag from candidates using the prefer strategy.
+
+    prefer: "grid" | "geometric" | "keep_both" | "nearest"
+      grid       -- prefer grid-registered; ties go to nearest size
+      geometric  -- prefer geometric-registered; ties go to nearest size
+      keep_both  -- if candidates disagree on identity (different tags),
+                   return all as comma-joined string; if same tag, return it
+      nearest    -- original behavior: closest by size distance
+
+    Returns None if no candidates, else the chosen tag string.
+    """
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0].tag
+
+    if prefer == "nearest":
+        return candidates[0].tag
+
+    if prefer == "keep_both":
+        chosen = candidates[0]
+        for c in candidates[1:]:
+            result = keep_both(chosen, c)
+            if isinstance(result, tuple):
+                tags = sorted(set(result[0].tag, result[1].tag))
+                return ",".join(tags)
+            chosen = result
+        return chosen.tag
+
+    if prefer == "grid":
+        best = candidates[0]
+        for c in candidates[1:]:
+            best = prefer_grid(best, c)
+        return best.tag
+
+    if prefer == "geometric":
+        best = candidates[0]
+        for c in candidates[1:]:
+            best = prefer_geometric(best, c)
+        return best.tag
+
+    return candidates[0].tag
+
+
+# Backward-compatibility alias: original nearest-tag-within-0.15m behavior
 def assign_window_tag(
     width_m: float, height_m: float, win_sched: dict, tol_m: float = 0.15
 ) -> Optional[str]:
@@ -364,14 +484,8 @@ def assign_window_tag(
     None (kept as an untagged instance with measured dims -- flagged
     for review at attach time, never dropped).
     """
-    best, best_d = None, tol_m
-    for tag, e in win_sched.items():
-        if e.width_m is None or e.height_m is None:
-            continue
-        d = math.hypot(width_m - e.width_m, height_m - e.height_m)
-        if d <= best_d:
-            best, best_d = tag, d
-    return best
+    cands = assign_window_tag_candidates(width_m, height_m, win_sched, tol_m)
+    return adjudicate_tag(cands, prefer="nearest")
 
 
 # ---------------------------------------------------------------------------
