@@ -43,12 +43,15 @@ schedule, which is why it is more robust than pixel measurement.
 from __future__ import annotations
 
 import csv
+import json
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+from detector.classes import CLASS_NAMES
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -201,6 +204,32 @@ def scale_from_reference(
 # ---------------------------------------------------------------------------
 # Three-stage takeoff pipeline: detections -> schedule -> rollup
 # ---------------------------------------------------------------------------
+
+
+def detections_from_yolo_json(
+    yolo_json_path: str | Path,
+    source: str,
+) -> list[Detection]:
+    """Convert sahi_infer.py JSON output to Detection list.
+
+    yolo_json_path: path to the JSON written by sahi_infer.py main().
+    source: sheet identifier, e.g. "aec-bench:sheet_01" — stored as Detection.source.
+    """
+    data = json.loads(Path(yolo_json_path).read_text())
+    dets = []
+    for p in data["preds"]:
+        label = CLASS_NAMES[p["cls"]]
+        dets.append(
+            Detection(
+                label=label,
+                tag="",  # tag extracted by separate OCR/WiSARD step (DET-02/DET-03)
+                score=float(p["conf"]),
+                bbox=(float(p["x0"]), float(p["y0"]), float(p["x1"]), float(p["y1"])),
+                source=source,
+                drawing_type="floor_plan",
+            )
+        )
+    return dets
 
 
 def detections_from_regions(regions: list[Region], score: float = 1.0) -> list[Detection]:
