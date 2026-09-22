@@ -31,7 +31,22 @@ def main():
     ap.add_argument('--subset-val', type=int, default=0,
                     help='use only first N val images (0 = all)')
     ap.add_argument('--resume', default=None)
+    ap.add_argument('--seed', type=int, default=0,
+                    help='random seed for python/numpy/torch (default 0)')
     args = ap.parse_args()
+
+    import random
+
+    import numpy as np
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    print(f'[train] seed={args.seed}')
+    try:
+        import torch
+        torch.manual_seed(args.seed)
+    except ImportError:
+        pass
 
     from ultralytics import YOLO
 
@@ -58,6 +73,27 @@ def main():
     print('TRAIN DONE. best:', results.save_dir if hasattr(results, 'save_dir') else '')
 
 
+def _safe_rmtree(path, must_live_under):
+    """Delete *path* only if it is a plausible run subdirectory.
+
+    Refuses when the resolved path is `/`, the home directory, or anything
+    outside *must_live_under* — a wrong `--project`/`--run-dir` must never
+    wipe unrelated data. Prints what is being deleted.
+    """
+    import shutil
+    from pathlib import Path
+    target = Path(path).resolve()
+    anchor = Path(must_live_under).resolve()
+    home = Path.home().resolve()
+    if target == Path('/') or target == home:
+        raise ValueError(f'refusing to delete {target}: unsafe target')
+    if anchor not in target.parents:
+        raise ValueError(
+            f'refusing to delete {target}: outside run dir {anchor}')
+    print(f'[train] removing previous subset dir: {target}')
+    shutil.rmtree(target)
+
+
 def _subset_yaml(data_yaml, n_train, n_val, run_dir):
     """Build a temp data yaml pointing at subset file lists."""
     import yaml
@@ -66,10 +102,9 @@ def _subset_yaml(data_yaml, n_train, n_val, run_dir):
         d = yaml.safe_load(f)
     base = d['path']
     sub = dict(d)
-    import shutil
     subset_root = os.path.join(run_dir, 'subset')
     if os.path.exists(subset_root):
-        shutil.rmtree(subset_root)
+        _safe_rmtree(subset_root, run_dir)
     for split, n in (('train', n_train), ('val', n_val)):
         if not n:
             continue
