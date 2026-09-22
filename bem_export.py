@@ -533,6 +533,13 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
         safe_parser = etree.XMLParser(resolve_entities=False, no_network=True)
         schema = etree.XMLSchema(etree.parse(str(xsd_path), safe_parser))
         doc = etree.parse(path, safe_parser)
+        if doc.docinfo.internalDTD is not None:
+            entities = list(doc.docinfo.internalDTD.iterentities())
+            if entities:
+                return False, [
+                    f"DOCTYPE with entity declaration rejected for security "
+                    f"({len(entities)} entity/entities found)"
+                ]
         ok = schema.validate(doc)
         for e in schema.error_log:
             errors.append(f"line {e.line}: {e.message}")
