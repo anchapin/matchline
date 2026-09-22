@@ -141,14 +141,14 @@ def cmd_review(args: argparse.Namespace) -> None:
 
     import run_review
 
-    if args.enable_auto_triage:
-        import building_model
-
-        building_model.ENABLE_AUTO_TRIAGE = True
-    elif os.environ.get("ENABLE_AUTO_TRIAGE", "").lower() in ("1", "true", "yes"):
-        import building_model
-
-        building_model.ENABLE_AUTO_TRIAGE = True
+    if args.enable_auto_triage or os.environ.get("ENABLE_AUTO_TRIAGE", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        args.auto_triage = True
+    else:
+        args.auto_triage = False
 
     run_review.main(args)
 
