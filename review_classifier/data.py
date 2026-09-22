@@ -157,12 +157,7 @@ def _gen_needs_human(rng: random.Random, n: int) -> list[Example]:
             det_conf = rng.uniform(0.35, 0.75)
             ocr_edits = rng.randint(1, 5)
             sched_match = rng.uniform(0.3, 0.85)
-        quality = (
-            0.9 * det_conf
-            - 0.12 * ocr_edits
-            + 0.5 * sched_match
-            + rng.gauss(0, 0.09)
-        )
+        quality = 0.9 * det_conf - 0.12 * ocr_edits + 0.5 * sched_match + rng.gauss(0, 0.09)
         needs_human = quality < 0.55
         text = (
             f"extraction det_conf={det_conf:.2f} ocr_edits={ocr_edits} "
@@ -197,12 +192,7 @@ def _gen_urgency(rng: random.Random, n: int) -> list[Example]:
         area_delta = rng.uniform(0.0, 30.0)
         sched_match = rng.uniform(0.3, 1.0)
 
-        score = (
-            1.5 * (1 - det_conf)
-            + 0.05 * area_delta
-            - 0.5 * sched_match
-            + rng.gauss(0, 0.2)
-        )
+        score = 1.5 * (1 - det_conf) + 0.05 * area_delta - 0.5 * sched_match + rng.gauss(0, 0.2)
 
         if score < -0.5:
             urgency = 0
