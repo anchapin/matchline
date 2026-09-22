@@ -121,7 +121,12 @@
 4. `load_archcad()` returns valid `SymbolSample` and `TakeoffResult` objects for the ArchCAD dataset without raising `NotImplementedError`
 5. CMP Facade sweep (`matchline facade-takeoff --full`) produces `facade_priors.json` covering all 606 facades with no crashes
 
-**Plans**: TBD
+**Plans**: 3 plans in 1 wave (all parallel — CI infrastructure + dataset loaders are independent)
+
+**Plan list:**
+- [ ] 05-01-ci-workflow-PLAN.md — GitHub Actions CI: ruff + pytest gates (CI-01)
+- [ ] 05-02-aecbench-pipeline-PLAN.md — `matchline run --aec-bench` for all 15 sheets + gbXML export (CI-02)
+- [ ] 05-03-dataset-loaders-PLAN.md — `load_floorplancad()` + `load_archcad()` implementations (CI-03, CI-04)
 
 ---
 
@@ -151,6 +156,6 @@
 | 1. Orchestration | 1/1 | Completed | 2026-09-21 |
 | 2. Detector Integration | 2/2 | Completed | 2026-09-22 |
 | 3. IFC Round-Trip | 2/2 | Completed | 2026-09-22 |
-| 4. Review Queue UX | 0/3 | Not started | - |
-| 5. Real-Data Validation + CI | 0/5 | Not started | - |
+| 4. Review Queue UX | 3/3 | Completed | 2026-09-22 |
+| 5. Real-Data Validation + CI | 0/3 | Planned | - |
 | 6. Production Hardening | 0/4 | Not started | - |
