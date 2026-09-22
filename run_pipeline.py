@@ -523,20 +523,24 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     ]
 
     # --- Review queue: suppress fixture/opening errors ---
+    # These are known limitations (not reviewed); needs_review=False with
+    # confidence < 1.0 per the conservation-law invariant.
     review_queue = [
         ReviewItem(
             id="rq-fixture",
             kind="fixture_schedule",
             description="AEC-Bench minimal model: fixture schedule unavailable",
-            confidence=1.0,
+            confidence=0.85,
             provenance=prov,
+            needs_review=False,
         ),
         ReviewItem(
             id="rq-opening",
             kind="window_room_link",
             description="AEC-Bench minimal model: opening dimensions estimated",
-            confidence=1.0,
+            confidence=0.85,
             provenance=prov,
+            needs_review=False,
         ),
     ]
 

@@ -330,6 +330,15 @@ class ReviewItem:
     urgency: int = 1  # 0-3; set by triage
     auto_resolved: bool = False  # True if auto-resolved per guardrails
     resolution: str = ""  # "accept" | "drop" | "reassign" — set by triage
+    needs_review: bool = True  # True = awaiting human review; False = reviewed
+
+    def __post_init__(self):
+        if not self.needs_review and self.confidence >= 1.0:
+            raise ValueError(
+                f"ReviewItem '{self.id}' has confidence={self.confidence} but is marked "
+                f"needs_review=False. A reviewed item cannot carry confidence=1.0 "
+                f"(fully confirmed). Use confidence < 1.0 for known limitations."
+            )
 
 
 # ---------------------------------------------------------------------------
