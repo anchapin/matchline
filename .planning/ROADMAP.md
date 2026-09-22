@@ -96,7 +96,12 @@
 3. `matchline review --model model.json --reject <id>` marks the item as rejected and re-runs `validate.py`
 4. On a model with 20+ review items, the classifier suggestion matches the human decision in ≥70% of cases (measured over a curated set of real-drawing review items)
 
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
+
+**Plan list:**
+- [ ] 04-review-01-PLAN.md — Review CLI + list view with classifier inline (RVIEW-01, RVIEW-03)
+- [ ] 04-review-02-PLAN.md — Confirm/reject mutations + revalidation (RVIEW-02)
+- [ ] 04-review-03-PLAN.md — Classifier training data pipeline for real-drawing examples (RVIEW-04)
 
 ---
 
@@ -145,7 +150,7 @@
 |-------|----------------|--------|-----------|
 | 1. Orchestration | 1/1 | Completed | 2026-09-21 |
 | 2. Detector Integration | 2/2 | Completed | 2026-09-22 |
-| 3. IFC Round-Trip | 0/2 | Planned | - |
-| 4. Review Queue UX | 0/4 | Not started | - |
+| 3. IFC Round-Trip | 2/2 | Completed | 2026-09-22 |
+| 4. Review Queue UX | 0/3 | Not started | - |
 | 5. Real-Data Validation + CI | 0/5 | Not started | - |
 | 6. Production Hardening | 0/4 | Not started | - |
