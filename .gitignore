@@ -11,5 +11,18 @@ synth/out/
 bem_out/
 *_results.json
 
+# ML model artifacts (reproducible via review_classifier/train.py)
+/review_classifier/trained_model.pkl
+
+# Agent runtimes & MCP server state
+.agents/
+.foreman/
+
+# Planning docs (personal/dynamic — not project source)
+/.planning/NEXT_SESSION.md
+/.planning/PROJECT.md
+/.planning/REQUIREMENTS.md
+/.planning/phases/
+
 # OS
 .DS_Store
