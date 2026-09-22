@@ -23,9 +23,7 @@ from bem_export import (
     _ensure_ccw,
     write_ifc4,
 )
-
-from building_model import BuildingModel, EnvelopeWall, Space
-
+from building_model import BuildingModel, EnvelopeWall
 
 # ---------------------------------------------------------------------------
 # Adapter
@@ -57,7 +55,9 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         # name uses Space.label which is "{name} {number}" e.g. "OPEN OFFICE 101"
         name = space.label
         # volume: use stored value or derive from area * wall_height
-        vol = space.volume_m3 if space.volume_m3 is not None else (space.area_m2 or 0.0) * wall_height
+        vol = (
+            space.volume_m3 if space.volume_m3 is not None else (space.area_m2 or 0.0) * wall_height
+        )
 
         spaces.append(
             BEMSpace(
