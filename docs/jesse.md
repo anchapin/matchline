@@ -113,11 +113,12 @@ import cv2
 
 # Adaptive Gaussian threshold — handles uneven ink density across the sheet
 binary = cv2.adaptiveThreshold(
-    gray, maxValue=255,
+    gray,
+    maxValue=255,
     adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
     thresholdType=cv2.THRESH_BINARY_INV,
-    blockSize=15,   # pixel neighborhood; tune for your DPI
-    C=10             # constant subtracted from weighted mean
+    blockSize=15,  # pixel neighborhood; tune for your DPI
+    C=10,  # constant subtracted from weighted mean
 )
 ```
 
@@ -149,7 +150,7 @@ binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)  # remove noise
 from jesse import zhang_suen, skeleton_invariants
 
 skel = zhang_suen(binary.astype(np.uint8))
-inv  = skeleton_invariants(skel)
+inv = skeleton_invariants(skel)
 ```
 
 ### Full Pre-processing Function
@@ -192,9 +193,14 @@ def preprocess_for_invariants(
     """
     # Step 1: binarize
     if gray.dtype != np.uint8:
-        gray = (gray / gray.max() * 255).astype(np.uint8) if gray.max() > 1 else (gray * 255).astype(np.uint8)
+        gray = (
+            (gray / gray.max() * 255).astype(np.uint8)
+            if gray.max() > 1
+            else (gray * 255).astype(np.uint8)
+        )
     binary = cv2.adaptiveThreshold(
-        gray, maxValue=255,
+        gray,
+        maxValue=255,
         adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         thresholdType=cv2.THRESH_BINARY_INV,
         blockSize=blockSize,
@@ -202,7 +208,7 @@ def preprocess_for_invariants(
     )
     # Step 2: morphological cleanup
     close_k = cv2.getStructuringElement(cv2.MORPH_RECT, (close_kernel, close_kernel))
-    open_k  = cv2.getStructuringElement(cv2.MORPH_RECT, (open_kernel, open_kernel))
+    open_k = cv2.getStructuringElement(cv2.MORPH_RECT, (open_kernel, open_kernel))
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, close_k)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, open_k)
     # Step 3: skeletonize and compute invariants
