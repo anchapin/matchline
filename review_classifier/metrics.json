@@ -1,0 +1,40 @@
+{
+  "route_to_review": {
+    "n_train": 1200,
+    "n_test": 300,
+    "classes": [
+      "False",
+      "True"
+    ],
+    "accuracy": 0.9933,
+    "f1": 0.9923,
+    "ece_uncalibrated": 0.0094,
+    "ece_calibrated": 0.0201
+  },
+  "schedule_match": {
+    "n_train": 1200,
+    "n_test": 300,
+    "classes": [
+      "False",
+      "True"
+    ],
+    "accuracy": 0.9467,
+    "f1": 0.9635,
+    "ece_uncalibrated": 0.0137,
+    "ece_calibrated": 0.0291
+  },
+  "extraction_type": {
+    "n_train": 1200,
+    "n_test": 300,
+    "classes": [
+      "'door'",
+      "'fixture'",
+      "'room_label'",
+      "'window'"
+    ],
+    "accuracy": 1.0,
+    "f1": 1.0,
+    "ece_uncalibrated": 0.0587,
+    "ece_calibrated": 0.0438
+  }
+}
