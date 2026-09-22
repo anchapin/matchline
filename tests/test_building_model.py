@@ -6,6 +6,7 @@ from building_model import (
     Provenance,
     Space,
     SpaceOpening,
+    Zone,
 )
 
 
@@ -34,19 +35,19 @@ def test_provenance_roundtrip():
     assert restored.confidence == p.confidence
 
 
-def test_space_provenance_history():
-    """Space.provenance and history fields work correctly."""
+def test_space_core_provenance_history():
+    """Space.core_provenance and history fields work correctly."""
     p = _make_provenance()
     sp = Space(
         id="L1-101",
         level_id="L1",
-        polygon_m=[(0, 0), (10, 0), (10, 10), (0, 10)],
+        polygon_m=[[0, 0], [10, 0], [10, 10], [0, 10]],
         name="Open Office",
         number="101",
-        provenance=p,
+        core_provenance=p,
         history=[],
     )
-    assert sp.provenance == p
+    assert sp.core_provenance == p
     assert sp.history == []
 
 
@@ -61,19 +62,18 @@ def test_space_opening_defaults():
 
 def test_building_model_empty():
     """Empty BuildingModel can be constructed."""
-    m = BuildingModel(building_id="bldg_1", building_name="Test", levels=[], spaces={})
-    assert m.building_id == "bldg_1"
+    m = BuildingModel(name="Test")
+    assert m.name == "Test"
     assert m.model_version == MODEL_VERSION
 
 
 def test_building_model_to_json_and_back():
     """BuildingModel.to_json() and from_json() round-trip cleanly."""
-    m = BuildingModel(building_id="bldg_1", building_name="Test", levels=[], spaces={})
+    m = BuildingModel(name="Test")
     m._rev_seq = 0
     s = m.to_json()
     restored = BuildingModel.from_json(s)
-    assert restored.building_id == m.building_id
-    assert restored.building_name == m.building_name
+    assert restored.name == m.name
     assert restored.model_version == MODEL_VERSION
 
 
@@ -82,7 +82,7 @@ def test_space_to_dict_contains_required_keys():
     sp = Space(
         id="L1-101",
         level_id="L1",
-        polygon_m=[(0, 0), (10, 0), (10, 10), (0, 10)],
+        polygon_m=[[0, 0], [10, 0], [10, 10], [0, 10]],
         name="Office",
         number="101",
     )
@@ -90,3 +90,10 @@ def test_space_to_dict_contains_required_keys():
     assert "id" in d
     assert "polygon_m" in d
     assert "name" in d
+
+
+def test_zone_creation():
+    """Zone can be constructed with required fields."""
+    z = Zone(id="z1", level_id="L1", space_ids=["L1-101"])
+    assert z.id == "z1"
+    assert z.space_ids == ["L1-101"]

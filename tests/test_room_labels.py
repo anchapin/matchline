@@ -1,5 +1,6 @@
 """Tests for room_labels.py — room name/number labeling and label parsing."""
 
+import pytest
 from room_labels import (
     LabeledSpace,
     LabeledTakeoff,
@@ -35,7 +36,7 @@ class TestParseRoomLabel:
 
     def test_parse_ocr_confusion_o_as_zero(self):
         """OCR 'O' between digits is treated as zero."""
-        name, number, conf = parse_room_label("ROOM 20O5")
+        name, number, conf = parse_room_label("2O5")
         assert number == "205"
 
     def test_parse_fallback_returns_original_text(self):
@@ -95,12 +96,12 @@ class TestToRoomLabel:
 class TestLabeledTakeoff:
     def test_unlabeled_spaces_property(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (10, 0), (10, 10), (0, 10)], name="", number=""),
+            LabeledSpace(polygon_px=[(0, 0), (10, 0), (10, 10), (0, 10)]),
             LabeledSpace(
                 polygon_px=[(20, 0), (30, 0), (30, 10), (20, 10)], name="Office", number="101"
             ),
         ]
-        lt = LabeledTakeoff(spaces=spaces, labels=[], unmatched_labels=[], n_labeled=1, n_total=2)
+        lt = LabeledTakeoff(spaces=spaces, labels=[], unmatched_labels=[])
         unlabeled = lt.unlabeled_spaces
         assert len(unlabeled) == 1
-        assert unlabeled[0].number == ""
+        assert unlabeled[0].name == ""
