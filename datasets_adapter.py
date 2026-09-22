@@ -46,9 +46,11 @@ import csv
 import json
 import math
 import re
-import xml.etree.ElementTree as ET
+from lxml import etree
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from safe_xml import safe_xml_parser
 
 import cv2  # opencv-python
 import numpy as np
@@ -645,7 +647,7 @@ def load_aec_bench(
     """
     root = Path(root)
     xml_path = root / "annotations_15.xml"
-    tree = ET.parse(str(xml_path))
+    tree = etree.parse(str(xml_path), safe_xml_parser())
     samples: list[SymbolSample] = []
     regions: list[Region] = []
 
