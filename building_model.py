@@ -341,6 +341,7 @@ class ReviewItem:
 class BuildingModel:
     name: str = ""
     model_version: str = MODEL_VERSION
+    auto_triage: Optional[bool] = None
     levels: List[Level] = field(default_factory=list)
     spaces: Dict[str, Space] = field(default_factory=dict)
     zones: Dict[str, Zone] = field(default_factory=dict)
@@ -401,7 +402,7 @@ class BuildingModel:
             confidence=confidence,
             provenance=provenance,
         )
-        if ENABLE_AUTO_TRIAGE:
+        if self.auto_triage if self.auto_triage is not None else ENABLE_AUTO_TRIAGE:
             self._triage_item(item)
         self.review_queue.append(item)
         return item

@@ -234,6 +234,9 @@ def main(args: argparse.Namespace | None = None) -> None:
     raw = model_path.read_text()
     model = BuildingModel.from_json(raw)
 
+    if args.auto_triage:
+        model.auto_triage = True
+
     # --- Confirm or Reject ---
     if args.confirm is not None or args.reject is not None:
         if args.confirm is not None and args.reject is not None:
@@ -288,6 +291,12 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--show-all",
         action="store_true",
         help="Also show confirmed and rejected items",
+    )
+    parser.add_argument(
+        "--auto-triage",
+        action="store_true",
+        default=False,
+        help="Enable auto-triage for review items (sets model.auto_triage=True)",
     )
     return parser
 
