@@ -217,10 +217,14 @@ class YOLOWindowDetectorBackend(WindowDetectorBackend):
         try:
             Image.fromarray(img_rgb).save(tmp.name)
             preds, (W, H) = infer_sheet(
-                str(self.weights), tmp.name,
-                tile=self.tile, overlap=self.overlap,
-                conf=self.conf, iou_thr=self.iou_thr,
-                imgsz=self.imgsz, device=self.device,
+                str(self.weights),
+                tmp.name,
+                tile=self.tile,
+                overlap=self.overlap,
+                conf=self.conf,
+                iou_thr=self.iou_thr,
+                imgsz=self.imgsz,
+                device=self.device,
             )
         finally:
             os.unlink(tmp.name)
@@ -231,19 +235,21 @@ class YOLOWindowDetectorBackend(WindowDetectorBackend):
             if CLASS_NAMES[p["cls"]] != "window":
                 continue
             x0, y0, x1, y1 = p["x0"], p["y0"], p["x1"], p["y1"]
-            obs.append(ElevationWindowObs(
-                id=f"EW-YOLO-{i+1}",
-                u0_px=float(x0),
-                u1_px=float(x1),
-                v_head_px=float(y0),   # smaller v = head
-                v_sill_px=float(y1),   # larger v = sill
-                confidence=float(p["conf"]),
-                method="yolo_sahi",
-                bbox_px=[float(x0), float(y0), float(x1), float(y1)],
-            ))
+            obs.append(
+                ElevationWindowObs(
+                    id=f"EW-YOLO-{i + 1}",
+                    u0_px=float(x0),
+                    u1_px=float(x1),
+                    v_head_px=float(y0),  # smaller v = head
+                    v_sill_px=float(y1),  # larger v = sill
+                    confidence=float(p["conf"]),
+                    method="yolo_sahi",
+                    bbox_px=[float(x0), float(y0), float(x1), float(y1)],
+                )
+            )
         obs.sort(key=lambda o: o.u0_px)
         for i, o in enumerate(obs):
-            o.id = f"EW-YOLO-{i+1}"
+            o.id = f"EW-YOLO-{i + 1}"
         return obs
 
 

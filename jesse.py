@@ -420,8 +420,6 @@ def sliding_window_tag_extract(
     tags = {}
     for i, det in enumerate(detections):
         x0, y0, x1, y1 = det.bbox
-        h = y1 - y0
-        w = x1 - x0
 
         # Crop: left of symbol, same height, up to window_px wide
         tag_x0 = max(0, int(x0) - window_px)

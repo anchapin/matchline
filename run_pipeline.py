@@ -27,7 +27,7 @@ from bem_export import (
     write_gbxml,
     write_ifc4,
 )
-from datasets_adapter import detections_from_yolo_json, rollup_takeoff, parse_schedule_csv
+from datasets_adapter import detections_from_yolo_json, parse_schedule_csv, rollup_takeoff
 from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
@@ -160,10 +160,20 @@ def parse_args():
     )
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--seed", type=int, help="synthetic seed (mutually exclusive with --image)")
-    g.add_argument("--image", type=Path, help="real sheet image path (mutually exclusive with --seed)")
-    ap.add_argument("--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)")
-    ap.add_argument("--schedule-csv", type=Path, help="schedule CSV (required with --image, mutually exclusive with --schedule-table)")
-    ap.add_argument("--weights", type=Path, default=Path("detector/best.pt"), help="YOLO weights path")
+    g.add_argument(
+        "--image", type=Path, help="real sheet image path (mutually exclusive with --seed)"
+    )
+    ap.add_argument(
+        "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
+    )
+    ap.add_argument(
+        "--schedule-csv",
+        type=Path,
+        help="schedule CSV (required with --image, mutually exclusive with --schedule-table)",
+    )
+    ap.add_argument(
+        "--weights", type=Path, default=Path("detector/best.pt"), help="YOLO weights path"
+    )
     ap.add_argument(
         "--out-dir",
         type=Path,
@@ -212,11 +222,14 @@ def main(args) -> None:
             "schedule": {k: v.__dict__ for k, v in schedule.items()},
             "takeoff": takeoff,
         }
-        write_json(out_dir / "stage_01_building.json", {
-            "source": str(args.image),
-            "n_detections": len(dets),
-            "n_scheduled": len(schedule),
-        })
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.image),
+                "n_detections": len(dets),
+                "n_scheduled": len(schedule),
+            },
+        )
         # Stage 2 for real sheets: building model from a drawing requires
         # an architectural plan sheet + link step — not available here.
         # Raise a clear error so operators know to use the full pipeline.
@@ -235,22 +248,30 @@ def main(args) -> None:
     model, link_report = build_model(
         bldg, elevation_key=args.elevation_key, building_name=bldg["building_id"]
     )
-    write_json(out_dir / "stage_02_model.json", {
-        "model": json.loads(model.to_json()) if hasattr(model, "to_json") else _model_to_dict(model),
-        "link_report": asdict(link_report),
-    })
+    write_json(
+        out_dir / "stage_02_model.json",
+        {
+            "model": json.loads(model.to_json())
+            if hasattr(model, "to_json")
+            else _model_to_dict(model),
+            "link_report": asdict(link_report),
+        },
+    )
 
     # --- Stage 3: simplify geometry --------------------------------------
     wall_height = model.levels[0].wall_height_m
     ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
     sres = simplify_ring(ring, tol=args.simplify_tol, wall_height=wall_height)
-    write_json(out_dir / "stage_03_simplified.json", {
-        "original_count": sres.original_count,
-        "simplified_count": sres.simplified_count,
-        "simplified_ring": sres.ring,
-        "area_delta_pct": sres.area_delta_pct,
-        "tolerance_pct": sres.tol * 100.0,
-    })
+    write_json(
+        out_dir / "stage_03_simplified.json",
+        {
+            "original_count": sres.original_count,
+            "simplified_count": sres.simplified_count,
+            "simplified_ring": sres.ring,
+            "area_delta_pct": sres.area_delta_pct,
+            "tolerance_pct": sres.tol * 100.0,
+        },
+    )
 
     # --- Stage 4: validation checks --------------------------------------
     report = run_checks(model, sres=sres)

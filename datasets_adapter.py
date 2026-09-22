@@ -385,12 +385,14 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
     try:
         import pytesseract
     except ImportError:
-        raise ImportError("pytesseract required for schedule table parsing: pip install pytesseract")
+        raise ImportError(
+            "pytesseract required for schedule table parsing: pip install pytesseract"
+        )
 
     rows_data = []
-    for (y0, y1) in row_bounds:
+    for y0, y1 in row_bounds:
         row_cells = []
-        for (x0, x1) in col_bounds:
+        for x0, x1 in col_bounds:
             crop = gray[y0:y1, x0:x1]
             text = pytesseract.image_to_string(crop, config="--psm 6").strip()
             row_cells.append(text)
@@ -405,7 +407,9 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
             break
 
     if header_idx is None:
-        raise NotImplementedError("Could not identify table header row. Use parse_schedule_csv() instead.")
+        raise NotImplementedError(
+            "Could not identify table header row. Use parse_schedule_csv() instead."
+        )
 
     # Build column index from header
     header = [c.lower().strip() for c in rows_data[header_idx]]
@@ -434,9 +438,15 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
         tag = tag_raw.upper().replace(" ", "")
 
         cat_raw = row[col_map.get("category", 1)].strip().lower() if col_map.get("category") else ""
-        category = "window" if "window" in cat_raw or "win" in cat_raw else \
-                  "door" if "door" in cat_raw else \
-                  "lighting" if "light" in cat_raw else "opening"
+        category = (
+            "window"
+            if "window" in cat_raw or "win" in cat_raw
+            else "door"
+            if "door" in cat_raw
+            else "lighting"
+            if "light" in cat_raw
+            else "opening"
+        )
 
         w_raw = row[col_map.get("width", 2)].strip() if col_map.get("width") else ""
         h_raw = row[col_map.get("height", 3)].strip() if col_map.get("height") else ""
