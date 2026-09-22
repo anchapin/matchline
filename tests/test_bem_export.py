@@ -1,6 +1,5 @@
 """Tests for bem_export.py — BEM model assembly and gbXML export."""
 
-
 import pytest
 
 from bem_export import (
@@ -34,7 +33,11 @@ def _make_labeled():
 
     return LabeledTakeoff(
         spaces=[
-            LabeledSpace(polygon_px=[(100, 100), (300, 100), (300, 300), (100, 300)], name="Office", number="101"),
+            LabeledSpace(
+                polygon_px=[(100, 100), (300, 100), (300, 300), (100, 300)],
+                name="Office",
+                number="101",
+            ),
         ],
         labels=[],
         unmatched_labels=[],
@@ -79,7 +82,14 @@ class TestModelFromTakeoff:
     def test_model_from_takeoff_requires_scale(self):
         from datasets_adapter import DrawingScale, TakeoffResult
 
-        takeoff = TakeoffResult(lines=[], scale=DrawingScale(m_per_px=None), total_window_m2=0, total_door_m2=0, unmatched=[], notes=[])
+        takeoff = TakeoffResult(
+            lines=[],
+            scale=DrawingScale(m_per_px=None),
+            total_window_m2=0,
+            total_door_m2=0,
+            unmatched=[],
+            notes=[],
+        )
         with pytest.raises(ValueError, match="scale"):
             model_from_takeoff(takeoff, _make_labeled(), _make_sres())
 

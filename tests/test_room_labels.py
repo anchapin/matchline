@@ -96,7 +96,9 @@ class TestLabeledTakeoff:
     def test_unlabeled_spaces_property(self):
         spaces = [
             LabeledSpace(polygon_px=[(0, 0), (10, 0), (10, 10), (0, 10)], name="", number=""),
-            LabeledSpace(polygon_px=[(20, 0), (30, 0), (30, 10), (20, 10)], name="Office", number="101"),
+            LabeledSpace(
+                polygon_px=[(20, 0), (30, 0), (30, 10), (20, 10)], name="Office", number="101"
+            ),
         ]
         lt = LabeledTakeoff(spaces=spaces, labels=[], unmatched_labels=[], n_labeled=1, n_total=2)
         unlabeled = lt.unlabeled_spaces

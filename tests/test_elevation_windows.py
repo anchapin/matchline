@@ -57,7 +57,9 @@ class TestContourWindowDetector:
 class TestDetectWindows:
     def test_detect_windows_unknown_backend_raises(self):
         with pytest.raises(ValueError, match="unknown window detector backend"):
-            detect_windows(np.zeros((100, 100, 3), dtype=np.uint8), 100.0, "sheet", 1, backend="nonexistent")
+            detect_windows(
+                np.zeros((100, 100, 3), dtype=np.uint8), 100.0, "sheet", 1, backend="nonexistent"
+            )
 
     def test_detect_windows_with_valid_backend(self):
         img = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -72,5 +74,7 @@ class TestRegisterBackend:
                 return []
 
         register_backend("test_dummy", DummyBackend())
-        result = detect_windows(np.zeros((100, 100, 3), dtype=np.uint8), 100.0, "sheet", 1, backend="test_dummy")
+        result = detect_windows(
+            np.zeros((100, 100, 3), dtype=np.uint8), 100.0, "sheet", 1, backend="test_dummy"
+        )
         assert result == []

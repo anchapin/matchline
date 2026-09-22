@@ -63,8 +63,7 @@ def test_safe_xml_parser_roundtrip_valid_document():
     """A valid XML document round-trips cleanly through the safe parser."""
     doc = etree.parse(
         BytesIO(
-            b'<?xml version="1.0"?>'
-            b"<root><space id='sp-001'><name>Office</name></space></root>"
+            b"<?xml version=\"1.0\"?><root><space id='sp-001'><name>Office</name></space></root>"
         ),
         _make_parser(),
     )
