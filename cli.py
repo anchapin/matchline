@@ -22,6 +22,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     """Unified pipeline: generate + link + validate + BEM export."""
     import run_pipeline
 
+    if (args.seed is None) == (args.aec_bench is None):
+        print("Error: exactly one of --seed or --aec-bench is required", file=sys.stderr)
+        sys.exit(1)
     run_pipeline.main(args)
 
 
@@ -137,7 +140,13 @@ def build_parser() -> argparse.ArgumentParser:
         "run",
         help="unified pipeline: generate + link + validate + export",
     )
-    p.add_argument("--seed", type=int, required=True)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument(
+        "--aec-bench",
+        type=str,
+        default=None,
+        help="Path to AEC-Bench dataset root (contains annotations_15.xml)",
+    )
     p.add_argument("--out-dir", default="bem_out")
     p.add_argument("--open-office-span", action="store_true")
     p.add_argument(
