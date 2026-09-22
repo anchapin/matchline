@@ -195,26 +195,33 @@ Candidate approaches:
   Worth showing Simon once the IFC frontend exists; the validation battery and
   simplifier are the components most likely to interest him.
 
-## 8. Non-developer UX: a GUI path for practicing modelers
+## 9. Opt-in data flywheel: users share corrections back to improve the models
 
-If the pipeline becomes reliable, the users are building energy modelers —
-technical people who generally don't live in a Python CLI. The GUI should come
-*after* the core is validated on real drawings (post fine-tuning milestone),
-not before. But the architecture is already GUI-shaped, which is worth noting
-so it stays that way.
+Labeled commercial drawings are the scarcest resource in this project —
+synthetic→real transfer is weak, and open datasets don't cover real commercial
+practice. The way out is a data flywheel: users opt in to sharing data back,
+the models improve, the tool gets better for everyone. Rising tide lifts all
+boats — but only if the incentive and the privacy story are both real.
 
-- **The review queue is the interface.** The natural GUI isn't "run the
-  pipeline" — it's visual verification: show the floor plan with detected
-  windows/doors/rooms highlighted, let the modeler click to correct a
-  mislabeled room or a missed opening, then export gbXML/IFC. Provenance on
-  every extracted fact plus the structured validation results are exactly the
-  data structures a frontend needs. Keep them machine-readable and the GUI
-  stays cheap.
-- **Sequencing: Streamlit first.** An afternoon-scale prototype (drag in a PDF,
-  see takeoffs, walk the review queue) is enough to put in front of a modeler
-  and learn what they actually need. Then decide between a real web app and a
-  plugin that meets them where they live (OpenStudio/Revit ecosystem) based on
-  who shows up.
-- **The trust story is the product story.** Deterministic extraction plus
-  human verification is the moat — the GUI should make the verification step
-  fast and the audit trail visible, not hide the pipeline's workings.
+- **Share corrections, not drawings.** The review-queue GUI (item 8) generates
+  human-verified labels as a byproduct of normal use. A bundle of "200 verified
+  door/window boxes" is a far smaller privacy surface than a full sheet, and
+  it's the highest-value training signal. Raw PDFs never need to leave the
+  user's machine.
+- **Privacy by design.** Opt-in per project, default off. Anonymization pass
+  before upload: strip title blocks, generalize or drop room names, remove
+  client identifiers. Show the user exactly what will be uploaded before it
+  goes — a preview they approve, not a black box.
+- **Licensing.** A clear training-use grant at opt-in: contributors keep
+  ownership of their drawings; the project gets the right to train on the
+  anonymized correction bundles. Get this reviewed before building the pipe.
+- **Make the loop visible.** "The tool gets better someday" doesn't motivate.
+  "Your 200 corrections improved door detection 3.2% in this month's model"
+  does. Credit contributing firms, publish the metric deltas, and consider
+  giving contributors the improved model first with public release after.
+- **Pipeline shape.** Incoming bundles → quarantine → spot-check quality →
+  split into training pool and held-out eval (per-contributor provenance for
+  bias tracking). Contaminated or low-quality bundles get rejected with a
+  reason, not silently absorbed.
+- **Sequencing.** This comes after the GUI review step (item 8), which is what
+  generates the labels. No sharing pipe before there's something to share.
