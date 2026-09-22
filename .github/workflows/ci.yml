@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [develop, main]
   pull_request:
-    branches: [main, develop]
+    branches: [develop, main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -18,20 +18,20 @@ jobs:
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install package
-        run: |
-          pip install -e ".[test]"
+        run: pip install -e ".[test]"
 
       - name: Run ruff check
         run: ruff check .
