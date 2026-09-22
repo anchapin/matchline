@@ -343,6 +343,10 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     warnings acceptable).  This is not architecturally accurate — it is the
     minimum viable model needed to run validation and produce gbXML.
     """
+    from shapely import Polygon as ShapelyPolygon
+    from shapely import MultiPolygon as ShapelyMultiPolygon
+    from shapely.ops import unary_union
+
     from building_model import (
         BuildingModel,
         EnvelopeWall,
@@ -354,47 +358,62 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
         SpaceLighting,
         SpaceOpening,
     )
-    from geometry_simplify import footprint_from_regions
 
     regions = takeoff_result.regions
     by_cat: dict[str, list] = {}
     for r in regions:
         by_cat.setdefault(r.category, []).append(r)
 
-    # --- Polygon: union of all floor_area regions, fallback bounding box ---
+    # AEC-Bench annotations are in pixel coordinates.  Use a rough scale
+    # (1 px = 0.001 m ≈ 200 DPI architectural drawing) to produce plausible
+    # metre-level geometry for BEM export.
+    scale = 0.001  # m per px
+
+    def px_to_m(pt):
+        return [float(pt[0]) * scale, float(pt[1]) * scale]
+
+    # --- Polygon: union of all floor_area regions in metres, fallback bounding box ---
     floor_regions = by_cat.get("floor_area", [])
     if floor_regions:
-        poly = footprint_from_regions([fr.polygon for fr in floor_regions])
-        if not poly:
-            # Union produced empty result: fall back to bounding box of all regions
-            all_pts: list[list[float]] = []
-            for r in regions:
-                all_pts.extend(r.polygon)
+        polys_shapely = []
+        for fr in floor_regions:
+            if len(fr.polygon_px) >= 3:
+                pts_m = [px_to_m(p) for p in fr.polygon_px]
+                polys_shapely.append(ShapelyPolygon(pts_m))
+        if polys_shapely:
+            merged = unary_union(polys_shapely)
+            if isinstance(merged, ShapelyMultiPolygon):
+                merged = max(merged.geoms, key=lambda g: g.area)
+            ring_m = list(merged.exterior.coords)
+            if ring_m and ring_m[0] == ring_m[-1]:
+                ring_m = ring_m[:-1]
+            poly = ring_m
+        else:
+            poly = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+    else:
+        # No floor areas: use bounding box of all wall regions in metres
+        wall_regions = by_cat.get("wall", [])
+        if wall_regions:
+            all_pts = []
+            for wr in wall_regions:
+                all_pts.extend(wr.polygon_px)
             if all_pts:
                 xs = [p[0] for p in all_pts]
                 ys = [p[1] for p in all_pts]
                 min_x, max_x = min(xs), max(xs)
                 min_y, max_y = min(ys), max(ys)
-                poly = [[float(min_x), float(min_y)], [float(max_x), float(min_y)],
-                         [float(max_x), float(max_y)], [float(min_x), float(max_y)]]
+                poly = [
+                    px_to_m((min_x, min_y)),
+                    px_to_m((max_x, min_y)),
+                    px_to_m((max_x, max_y)),
+                    px_to_m((min_x, max_y)),
+                ]
             else:
                 poly = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
-    else:
-        # No floor areas: use bounding box of all wall regions
-        wall_regions = by_cat.get("wall", [])
-        if wall_regions:
-            xs, ys = [], []
-            for wr in wall_regions:
-                for x, y in wr.polygon:
-                    xs.append(float(x))
-                    ys.append(float(y))
-            min_x, max_x = min(xs), max(xs)
-            min_y, max_y = min(ys), max(ys)
-            poly = [[min_x, min_y], [max_x, min_y], [max_x, max_y], [min_x, max_y]]
         else:
             poly = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
 
-    # --- Compute area from polygon (shoelace) ---
+    # --- Compute area from polygon (shoelace, in m²) ---
     area = 0.0
     n = len(poly)
     for i in range(n):
@@ -408,7 +427,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     level = Level(id="L1", name="Level 1", wall_height_m=wall_height)
     prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
 
-    # --- Space with minimal openings from window/door regions ---
+    # --- Space with minimal openings ---
     openings: list[SpaceOpening] = []
     for i, wr in enumerate(by_cat.get("wall", [])):
         tag = f"W{i:02d}"
@@ -470,7 +489,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
         label_confidence=1.0,
     )
 
-    # --- Envelope wall: single wall run from bounding box ---
+    # --- Envelope wall: single facade from bounding box ---
     n = len(poly)
     perimeter = sum(
         ((poly[i][0] - poly[(i + 1) % n][0]) ** 2 +
@@ -483,7 +502,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
             id="ENV-1",
             facade="south",
             from_m=[float(v) for v in poly[0]],
-            to_m=[float(v) for v in poly[1 % n]],
+            to_m=[float(v) for v in poly[1 if n > 1 else 0]],
             height_m=wall_height,
             area_m2=perimeter * wall_height,
             provenance=prov,
