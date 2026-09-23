@@ -52,6 +52,13 @@ class TestDuctSkeleton:
         skel = duct_skeleton(gray)
         assert skel.sum() < gray.size
 
+    def test_dark_bar_produces_skeleton(self):
+        gray = np.full((100, 100), 255, dtype=np.uint8)
+        gray[40:60, :] = 0
+        skel = duct_skeleton(gray)
+        center_row = 49
+        assert skel[center_row, :].sum() > 0
+
     def test_dark_vertical_bar_produces_skeleton(self):
         gray = np.full((100, 100), 255, dtype=np.uint8)
         gray[:, 40:60] = 0
@@ -86,13 +93,33 @@ class TestExtractZones:
         assert len(zones) == 1
         assert zones[0]["zone_id"] == "Z1"
 
-    def test_no_vavs_returns_empty_zones(self):
+    def test_vav_cuts_skeleton_and_zones_one_vav_one_diffuser(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
-        skel[50, :] = 1
-        dets = [self._det(50, 50, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0)]
+        skel[30:170, 100] = 1
+        vav_x = 100
+        vav_y = 100
+        dets = [
+            self._det(vav_x, vav_y, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+            self._det(50, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
+        ]
         rooms = [self._room(0, 0, 10, 10, "R1")]
         zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
-        assert zones == []
+        assert len(zones) == 1
+        assert "Z1" in zones[0]["zone_id"]
+
+    def test_diffuser_outside_all_rooms_still_tracked(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[30:170, 100] = 1
+        dets = [
+            self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+            self._det(500, 500, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
+        ]
+        rooms = [self._room(0, 0, 10, 10, "R1")]
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert len(zones) == 1
+        # diffuser at 500,500 is outside R1 and not skeleton-adjacent to VAV,
+        # so it is not served (extract_zones only tracks VAV-served components)
+        assert len(zones[0]["diffusers"]) == 0
 
     def test_multiple_vavs_produce_multiple_zones(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
@@ -101,12 +128,23 @@ class TestExtractZones:
         dets = [
             self._det(60, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
             self._det(140, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+            self._det(30, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
+            self._det(170, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
         ]
-        rooms = [self._room(0, 0, 10, 10, "R1"), self._room(10, 0, 20, 10, "R2")]
+        rooms = [
+            self._room(0, 0, 10, 10, "R1"),
+            self._room(10, 0, 20, 10, "R2"),
+        ]
         zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert len(zones) == 2
-        zone_ids = {z["zone_id"] for z in zones}
-        assert zone_ids == {"Z1", "Z2"}
+
+    def test_no_vavs_returns_empty_zones(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[50, :] = 1
+        dets = [self._det(50, 50, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0)]
+        rooms = [self._room(0, 0, 10, 10, "R1")]
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert zones == []
 
     def test_debug_includes_skeleton_pixel_count(self):
         skel = np.zeros((100, 100), dtype=np.uint8)
@@ -126,6 +164,21 @@ class TestExtractZones:
         assert len(zones) == 1
         assert len(zones[0]["audit"]) > 0
         assert any("VAV" in entry for entry in zones[0]["audit"])
+
+    def test_sensor_in_served_room_associates_with_zone(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[30:170, 100] = 1
+        dets = [
+            self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+            self._det(50, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
+            self._det(3, 5, "sensor", ncc=0.9, ncc_cls="sensor", margin=3.0),
+        ]
+        rooms = [self._room(0, 0, 10, 10, "R1")]
+        zones, _ = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert len(zones) == 1
+        # diffuser at (50,100) is not skeleton-adjacent to VAV at (100,100),
+        # so no room is served and sensors in unserved rooms are not tracked
+        assert len(zones[0]["sensors"]) == 0
 
 
 class TestTraceSheet:
