@@ -47,12 +47,37 @@ def _item_to_example(item: ReviewItem) -> Example:
     return Example(task=task, text=text, numeric=numeric)
 
 
+def _check_no_pkl_in_review_classifier() -> None:
+    """Security check: reject any .pkl files in the review_classifier directory.
+
+    Pickle files can execute arbitrary code on deserialization, making them a
+    supply-chain attack vector. This check prevents loading any .pkl files from
+    the review_classifier directory.
+    """
+    review_classifier_dir = pathlib.Path(__file__).parent / "review_classifier"
+    pkl_files = list(review_classifier_dir.glob("*.pkl"))
+    if pkl_files:
+        pkl_names = ", ".join(f'"{p.name}"' for p in pkl_files)
+        raise SecurityError(
+            f"Pickle files are blocked in review_classifier directory: {pkl_names}. "
+            "Pickle deserialization can execute arbitrary code and is a "
+            "supply-chain attack vector. Use .npz format instead."
+        )
+
+
+class SecurityError(Exception):
+    """Raised when a security check fails in the review pipeline."""
+
+    pass
+
+
 def _load_classifier_for_task(task: str) -> TypedDecider | None:
     """Load a pre-trained TypedDecider for a specific task, or None if not found.
 
     Loads from ``.npz`` (safe numpy archive). Pickle loading was removed —
     use ``TypedDecider.from_npz()`` only.
     """
+    _check_no_pkl_in_review_classifier()
     model_file = _TASK_MODEL_NAMES.get(task)
     if model_file is None:
         return None
