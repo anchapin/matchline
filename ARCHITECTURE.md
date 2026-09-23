@@ -16,6 +16,9 @@ drawings
   → geometry simplification       →  geometry_simplify  (≤2% area drift)
   → validation battery           →  validate  (errors block export)
   → BEM export                  →  bem_export (gbXML 6.01 / IFC4)
+
+See [`docs/pipeline.md`](docs/pipeline.md) for the full stage chain, intermediate
+artifact schemas, and auto-triage integration.
   → BIM import (reverse)        →  ifc_import (Tier 0, no space boundaries)
 ```
 
