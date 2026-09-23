@@ -111,6 +111,21 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
 
     from ifc_import import import_ifc
 
+    inp = Path(args.path)
+    if not inp.is_absolute():
+        inp_resolved = inp.resolve()
+        cwd_resolved = Path.cwd().resolve()
+        try:
+            inp_resolved.relative_to(cwd_resolved)
+        except ValueError:
+            raise ValueError(
+                f"Input path '{inp}' resolves to '{inp_resolved}' which escapes "
+                f"the working directory '{cwd_resolved}'. "
+                "Rejecting to prevent path traversal."
+            )
+    if not inp.is_file():
+        raise ValueError(f"Input path '{inp}' is not a file or does not exist.")
+
     model = import_ifc(args.path)
     n_open = sum(len(sp.openings) for sp in model.spaces.values())
     n_bim = len(getattr(model, "bim_elements", []) or [])
@@ -123,7 +138,20 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
         for item in list(model.review_queue)[:10]:
             print(f"  - {item.kind}: {item.description}")
     if args.out:
-        Path(args.out).write_text(model.to_json())
+        outp = Path(args.out)
+        if not outp.is_absolute():
+            outp_resolved = outp.resolve()
+            cwd_resolved = Path.cwd().resolve()
+            try:
+                outp_resolved.relative_to(cwd_resolved)
+            except ValueError:
+                raise ValueError(
+                    f"Output path '{outp}' resolves to '{outp_resolved}' which escapes "
+                    f"the working directory '{cwd_resolved}'. "
+                    "Rejecting to prevent path traversal."
+                )
+        outp.parent.mkdir(parents=True, exist_ok=True)
+        outp.write_text(model.to_json())
         print(f"wrote {args.out}")
 
 

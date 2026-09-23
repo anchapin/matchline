@@ -21,6 +21,7 @@ from bem_export import (
     BEMOpeningUnit,
     BEMSpace,
     _ensure_ccw,
+    _validate_out_path,
     write_ifc4,
 )
 from building_model import BuildingModel, EnvelopeWall
@@ -142,6 +143,29 @@ def _build_ring(walls: List[EnvelopeWall]) -> List[tuple]:
     return ring
 
 
+def _validate_in_path(path: str | Path) -> Path:
+    """Validate an input path is safe: must resolve within cwd.
+
+    Raises ValueError if a relative path escapes the current working directory.
+    Absolute paths are allowed as user-intended destinations.
+    """
+    path = Path(path)
+    if not path.is_absolute():
+        resolved = Path(path).resolve()
+        cwd_resolved = Path.cwd().resolve()
+        try:
+            resolved.relative_to(cwd_resolved)
+        except ValueError:
+            raise ValueError(
+                f"Input path '{path}' resolves to '{resolved}' which escapes "
+                f"the working directory '{cwd_resolved}'. Rejecting to prevent "
+                "path traversal."
+            )
+    if not path.is_file():
+        raise ValueError(f"Input path '{path}' is not a file or does not exist.")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # IFC export
 # ---------------------------------------------------------------------------
@@ -168,5 +192,6 @@ def export_ifc(model_path: str, out_path: str) -> None:
         model_path: path to BuildingModel JSON file
         out_path:   output IFC4 file path
     """
+    _validate_in_path(model_path)
     model = BuildingModel.from_json(Path(model_path).read_text())
-    _export_ifc(model, out_path)
+    _export_ifc(model, _validate_out_path(out_path))
