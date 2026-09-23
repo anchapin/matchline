@@ -4,7 +4,6 @@ import pytest
 
 from datasets_adapter import Detection, DrawingScale, ScheduleEntry
 from lighting import (
-    LightingResult,
     assign_fixtures_to_spaces,
     lighting_takeoff,
     summarize_lighting,
@@ -21,7 +20,9 @@ class TestAssignFixturesToSpaces:
 
     def test_single_fixture_inside_one_room(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         dets = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         result = assign_fixtures_to_spaces(dets, spaces)
@@ -31,7 +32,9 @@ class TestAssignFixturesToSpaces:
 
     def test_fixture_outside_all_rooms_goes_to_unassigned(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         dets = [_detection(tag="T84", bbox=(200, 200, 220, 220))]
         result = assign_fixtures_to_spaces(dets, spaces)
@@ -40,8 +43,12 @@ class TestAssignFixturesToSpaces:
 
     def test_multiple_fixtures_multiple_rooms(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
-            LabeledSpace(polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
+            LabeledSpace(
+                polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"
+            ),
         ]
         dets = [
             _detection(tag="T84", bbox=(40, 40, 60, 60)),
@@ -53,8 +60,12 @@ class TestAssignFixturesToSpaces:
 
     def test_fixture_inside_second_room(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
-            LabeledSpace(polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
+            LabeledSpace(
+                polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"
+            ),
         ]
         dets = [_detection(tag="T84", bbox=(130, 40, 150, 60))]
         result = assign_fixtures_to_spaces(dets, spaces)
@@ -82,7 +93,12 @@ class TestLightingTakeoff:
         ]
         schedule = {
             "T84": ScheduleEntry(
-                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0, description="2x4 LED"
+                tag="T84",
+                category="lighting",
+                width_m=None,
+                height_m=None,
+                watts=64.0,
+                description="2x4 LED",
             )
         }
         result = lighting_takeoff(
@@ -104,14 +120,18 @@ class TestLightingTakeoff:
 
     def test_unmatched_detections_tag_not_in_schedule(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [
             _detection(tag="T84", bbox=(40, 40, 60, 60)),
             _detection(tag="MISSING", bbox=(50, 50, 70, 70)),
         ]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -124,12 +144,19 @@ class TestLightingTakeoff:
 
     def test_no_watts_schedule_entry_lacks_watts(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         schedule = {
             "T84": ScheduleEntry(
-                tag="T84", category="lighting", width_m=None, height_m=None, watts=None, description="TBD"
+                tag="T84",
+                category="lighting",
+                width_m=None,
+                height_m=None,
+                watts=None,
+                description="TBD",
             )
         }
         result = lighting_takeoff(
@@ -145,14 +172,18 @@ class TestLightingTakeoff:
 
     def test_unassigned_fixture_centroid_in_no_room(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [
             _detection(tag="T84", bbox=(40, 40, 60, 60)),
             _detection(tag="T84", bbox=(200, 200, 220, 220)),
         ]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -165,12 +196,18 @@ class TestLightingTakeoff:
 
     def test_space_with_no_fixtures_has_zero_watts(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
-            LabeledSpace(polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
+            LabeledSpace(
+                polygon_px=[(100, 0), (200, 0), (200, 100), (100, 100)], name="R2", number="102"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -184,11 +221,15 @@ class TestLightingTakeoff:
 
     def test_space_areas_m2_override_polygon_measurement(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -203,11 +244,15 @@ class TestLightingTakeoff:
 
     def test_no_scale_gives_none_lpd(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -222,7 +267,9 @@ class TestLightingTakeoff:
 
     def test_multiple_tags_rollup_correctly(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [
             _detection(tag="T84", bbox=(40, 40, 60, 60)),
@@ -230,8 +277,12 @@ class TestLightingTakeoff:
             _detection(tag="LED", bbox=(10, 10, 30, 30)),
         ]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0),
-            "LED": ScheduleEntry(tag="LED", category="lighting", width_m=None, height_m=None, watts=30.0),
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            ),
+            "LED": ScheduleEntry(
+                tag="LED", category="lighting", width_m=None, height_m=None, watts=30.0
+            ),
         }
         result = lighting_takeoff(
             detections=detections,
@@ -248,11 +299,15 @@ class TestLightingTakeoff:
 class TestSummarizeLighting:
     def test_summarize_includes_total_and_room_lines(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="Office", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="Office", number="101"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(40, 40, 60, 60))]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
@@ -266,7 +321,9 @@ class TestSummarizeLighting:
 
     def test_summarize_reports_unmatched_tags(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [_detection(tag="MISSING", bbox=(40, 40, 60, 60))]
         schedule = {}
@@ -281,11 +338,15 @@ class TestSummarizeLighting:
 
     def test_summarize_reports_unassigned_count(self):
         spaces = [
-            LabeledSpace(polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"),
+            LabeledSpace(
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)], name="R1", number="101"
+            ),
         ]
         detections = [_detection(tag="T84", bbox=(200, 200, 220, 220))]
         schedule = {
-            "T84": ScheduleEntry(tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0)
+            "T84": ScheduleEntry(
+                tag="T84", category="lighting", width_m=None, height_m=None, watts=64.0
+            )
         }
         result = lighting_takeoff(
             detections=detections,
