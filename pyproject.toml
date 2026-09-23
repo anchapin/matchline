@@ -81,7 +81,7 @@ target-version = "py310"
 exclude = ["detector"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W", "FA"]
 ignore = [
     "E501", # long lines: geometry literals read better unbroken
     "E701", # pre-existing style: `if x: return y` one-liners used throughout
