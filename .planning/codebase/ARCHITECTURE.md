@@ -45,7 +45,7 @@
 
 **Validation:**
 - Location: `validate.py`
-- Purpose: 26-check invariant battery; errors block export
+- Purpose: 28-check invariant battery; errors block export
 - Contains: `run_checks()`, `ValidationReport`, `export_gate()`
 - Depends on: `building_model`, `datasets_adapter`
 - Used by: `link.py`, CLI commands
@@ -137,7 +137,7 @@
 4. HVAC zoning → duct tracing builds zone graphs from diffuser positions
 5. Elevation windows → exact placement + sidelit daylight zones
 6. Geometry simplification → area-budgeted surface reduction
-7. Validation battery → 26 checks, errors block export
+7. Validation battery → 28 checks, errors block export
 8. BEM export → gbXML 6.01 / IFC4
 
 **BIM Import Path:**

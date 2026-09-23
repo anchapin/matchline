@@ -25,7 +25,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 **Grade: A**
 
-- 26-check invariant battery documented in `docs/validation.md`
+- 28-check invariant battery documented in `docs/validation.md`
 - Conservation laws block export via `export_gate()`
 - Defect injection tests in `tests/test_validate.py` (`model_factory.py`)
 - Every check has error/warn/skip semantics

@@ -68,7 +68,7 @@ matchline/
 - `building_model.py`: `BuildingModel` dataclass tree and core types
 - `link.py`: `build_model()` cross-discipline linking orchestrator
 - `registration.py`: `Affine2D`, sheet registration transforms
-- `validate.py`: 26-check validation battery
+- `validate.py`: 28-check validation battery
 
 **Synthetic Data:**
 - `synth/multidiscipline.py`: `generate_building()` for linked multi-discipline buildings

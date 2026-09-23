@@ -75,7 +75,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate.py` | 26-check invariant battery; errors block export |
+| `validate.py` | 28-check invariant battery; errors block export |
 
 ## Quickstart
 
