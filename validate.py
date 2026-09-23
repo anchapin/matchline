@@ -1034,6 +1034,26 @@ def _check_review_queue_sound(ctx) -> CheckResult:
     )
 
 
+def _check_review_queue_acknowledged(ctx) -> CheckResult:
+    unacknowledged = [i.id for i in ctx.model.review_queue if i.needs_review and not i.acknowledged]
+    if unacknowledged:
+        return CheckResult(
+            "review_queue_acknowledged",
+            "Review queue acknowledged",
+            "error",
+            f"{len(unacknowledged)} unacknowledged review item(s) with "
+            f"needs_review=True: must acknowledge before export",
+            entities=unacknowledged[:20],
+        )
+    return CheckResult(
+        "review_queue_acknowledged",
+        "Review queue acknowledged",
+        "pass",
+        f"{len(ctx.model.review_queue)} review item(s): all needs_review "
+        f"items have been acknowledged",
+    )
+
+
 def _check_revision_log_present(ctx) -> CheckResult:
     n = len(ctx.model.revision_log)
     if n == 0:
@@ -1219,6 +1239,7 @@ BATTERY = [
     # provenance / auditability
     _check_provenance_complete,
     _check_review_queue_sound,
+    _check_review_queue_acknowledged,
     _check_revision_log_present,
     # export (skipped unless paths given)
     _check_gbxml_spaces,

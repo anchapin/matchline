@@ -331,6 +331,7 @@ class ReviewItem:
     auto_resolved: bool = False  # True if auto-resolved per guardrails
     resolution: str = ""  # "accept" | "drop" | "reassign" — set by triage
     needs_review: bool = True  # True = awaiting human review; False = reviewed
+    acknowledged: bool = False  # True = human explicitly acknowledged this item
 
     def __post_init__(self):
         if not self.needs_review and self.confidence >= 1.0:
