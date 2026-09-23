@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 ROOT = Path(__file__).parent.parent
 
 
@@ -47,6 +52,7 @@ class TestArgumentParsing:
         assert r.returncode == 1
         assert "exactly one of --seed or --aec-bench is required" in r.stderr
 
+    @pytest.mark.skipif(yaml is None, reason="pyyaml not installed")
     def test_run_rejects_missing_config(self):
         r = _run(["run", "--seed", "101", "--config", "/nonexistent/config.yaml"])
         assert r.returncode == 1

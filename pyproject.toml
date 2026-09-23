@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 # OCR for room labels (lazy import; helpful error if missing)
 ocr = ["rapidocr_onnxruntime"]
-test = ["pytest", "opencv-python", "scikit-learn"]
+test = ["pytest", "opencv-python", "scikit-learn", "pyyaml"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
 # (see detector/README.md); this extra is for real hardware / CI images.
 detector = ["torch", "ultralytics"]
