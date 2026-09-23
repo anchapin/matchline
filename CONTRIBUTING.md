@@ -1,78 +1,100 @@
 # Contributing to Matchline
 
-## Setup (cold clone → green tests)
+## Branching Conventions
+
+- `develop` is the working branch. All development happens here.
+- `main` is reserved for releases only. **Never push directly to `main`.**
+- Feature branches should be named `fix/<issue-number>-<short-description>` or `feat/<short-description>`.
+
+## Development Environment Setup
+
+### 1. Clone the repository and enter it
 
 ```bash
-git clone https://github.com/anchapin/matchline.git
+git clone <your-fork-url>
 cd matchline
-git checkout develop        # develop is the working branch; main is releases only
-python3 --version           # need >= 3.10
-pip install -e ".[test]"    # editable install + pytest
-python -m pytest tests/ -q  # 324 tests, a few seconds, no network needed
+git checkout develop
+```
+
+### 2. Create a virtual environment (recommended)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # on Windows: .venv\Scripts\activate
+```
+
+### 3. Install the package in editable mode with test dependencies
+
+```bash
+pip install -e ".[test]"
 ```
 
 Optional extras:
+- `[ocr]` — OCR support for room labels (`rapidocr_onnxruntime`)
+- `[detector]` — YOLO detector support (`torch`, `ultralytics`); the `detector/` directory has its own venv — see `detector/README.md`
+
+### 4. Verify the installation
 
 ```bash
-pip install -e ".[ocr]"       # rapidocr_onnxruntime, for room_labels OCR
-pip install -e ".[detector]"  # torch + ultralytics, for detector/ (heavy;
-                              # detector/ normally runs in its own venv,
-                              # see detector/README.md)
+python -m pytest tests/ -q
 ```
 
-External datasets (AEC Geometric Bench, CMP Facade, CubiCasa5K, FloorPlanCAD)
-live under `~/workspace/datasets/` and are **not** committed. Demos that need
-them (`matchline facade-takeoff`) fail with a clear message if the data is
-absent.
-
-## Everyday commands
+## Running the Test Suite
 
 ```bash
-matchline --help                 # unified CLI: one subcommand per demo script
-matchline validate               # validation battery demo
-python3 run_validation.py         # the old run_*.py scripts still work too
-ruff check . && ruff format .     # lint + format (or: pre-commit run --all-files)
+python -m pytest tests/ -q
 ```
 
-Set up the git hooks once: `pre-commit install`.
+The full suite runs in a few seconds and is hermetic (no external network or dataset dependencies required for the core tests).
 
-## Branch / PR conventions
+## Linting and Formatting
 
-- Work on feature branches off `develop`; open PRs against `develop`.
-  **PRs are required — no direct pushes to `develop`**, by agents or by
-  humans. This is the project's standing decision (2026-09-19).
-- `main` is releases only — see `RELEASING.md`. Never merge feature work
-  into `main` directly.
-- CI must be green: install, `ruff check`, `ruff format --check`, pytest.
-- Keep PRs focused; one concern per PR.
-- Recommended: enable GitHub branch protection on `develop` (repo settings)
-  requiring a PR and green CI before merge, so the rule is enforced by the
-  platform and not just by convention. AI coding agents: see `AGENTS.md`
-  for the full operating instructions, including the attribution trailer
-  and verification requirements.
+We use `ruff` for both linting and formatting.
 
-## Adding a module
+```bash
+# Check for lint issues
+ruff check .
 
-A new pipeline module is done when it has all four:
+# Check formatting
+ruff format --check .
+```
 
-1. **Implementation** — library code with no `print()` in library paths
-   (prints belong in `main()` demos / the CLI layer).
-2. **Tests** — in `tests/`; cover the happy path, an invariant, and at
-   least one defect-injection case where it makes sense.
-3. **Docs** — a page under `docs/` (one line in `docs/README.md`), with a
-   limitations section. This project documents what *doesn't* work yet.
-   **Naming convention**: doc pages are named to match their module. If a module
-   is `geometry_simplify.py`, the doc is `docs/geometry_simplify.md`
-   (not `geometry_simplification.md`). This keeps the mapping discoverable.
-4. **Provenance** — every extracted fact that lands in `BuildingModel`
-   carries sheet, revision, method, and confidence. Low-confidence results
-   go to the review queue; nothing is silently accepted or silently dropped.
+To auto-fix lint issues and format code:
 
-## Style
+```bash
+ruff check . --fix
+ruff format .
+```
 
-- `ruff check` / `ruff format` are the law; the pre-commit hook enforces them.
-- Type hints on public functions; `from __future__ import annotations`
-  where it helps.
-- No `sys.path` hacks — the package is installed; imports resolve normally.
-- No machine-specific paths in library code (no `~/workspace/...` fallbacks).
-- Behavior-preserving refactors only unless the PR says otherwise.
+## Code Style
+
+- Line length: 100 characters
+- Target Python version: 3.10+
+- Ruff lint rules enabled: `E`, `F`, `I`, `W`, `FA`
+- Ruff ignores: `E501`, `E701`, `E702`, `E741`
+- Use `from __future__ import annotations` where it helps with type hints
+- Every extracted fact must carry provenance: sheet, revision, method, confidence
+
+## Pull Request Conventions
+
+- All PRs should target the `develop` branch (not `main`).
+- PRs require all CI checks to pass before merging.
+- Keep PRs focused and reasonably sized. If a change is large, discuss with maintainers first.
+- Link the relevant GitHub issue in the PR description (e.g., "Fixes #212").
+
+## Adding a Module
+
+When adding a new module, you must provide:
+
+1. **Implementation** in the appropriate `.py` file
+2. **Tests** — happy path, invariant checks, and defect injection
+3. **Documentation** — a `docs/<module>.md` page (with a limitations section)
+4. **Provenance** — every extracted fact must carry sheet, revision, method, confidence
+
+## Dataset Conventions
+
+External datasets (AEC Geometric Bench, CMP Facade, CubiCasa5K, FloorPlanCAD) live under `~/workspace/datasets/` and are **not committed** to the repository. Demos that need them fail clearly if absent.
+
+## Documentation
+
+Module documentation lives in `docs/`. See `docs/README.md` for the full structure and writing guidelines.
