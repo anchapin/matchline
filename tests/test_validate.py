@@ -29,6 +29,7 @@ from tests.model_factory import (
     break_takeoff_counts_reconcile,
     break_untagged_opening,
     break_volume_conservation,
+    break_window_double_link,
     break_zone_empty,
     make_clean_model,
 )
@@ -53,7 +54,7 @@ def test_clean_model_fully_green():
 def test_battery_size_documented():
     # keep docs/validation.md's check count honest; update the doc if this
     # number changes intentionally.
-    assert N_CHECKS == 26
+    assert N_CHECKS == 27
 
 
 @pytest.mark.parametrize(
@@ -68,6 +69,7 @@ def test_battery_size_documented():
         (break_opening_oversize, "facade_opening_closure", "error"),
         (break_negative_area, "no_negative_areas", "error"),
         (break_untagged_opening, "window_tag_coverage", "error"),
+        (break_window_double_link, "window_double_link", "error"),
         (break_fixture_no_schedule, "fixture_schedule_join", "error"),
         (break_fixture_no_schedule_flagged, "fixture_schedule_join", "warn"),
         (break_lpd_unit_slip, "lpd_unit_consistency", "error"),

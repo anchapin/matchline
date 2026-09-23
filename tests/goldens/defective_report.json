@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 26,
+  "n_checks": 27,
   "errors": 2,
   "warnings": 3,
-  "passes": 17,
+  "passes": 18,
   "skipped": 4
  },
  "results": [
@@ -163,6 +163,13 @@
    "name": "Window tag coverage",
    "severity": "pass",
    "message": "2 openings all carry schedule tags",
+   "entities": []
+  },
+  {
+   "check_id": "window_double_link",
+   "name": "Window double-link detection",
+   "severity": "pass",
+   "message": "2 tagged window(s): no double-links detected",
    "entities": []
   },
   {
