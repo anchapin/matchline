@@ -61,6 +61,9 @@ A new pipeline module is done when it has all four:
    least one defect-injection case where it makes sense.
 3. **Docs** — a page under `docs/` (one line in `docs/README.md`), with a
    limitations section. This project documents what *doesn't* work yet.
+   **Naming convention**: doc pages are named to match their module. If a module
+   is `geometry_simplify.py`, the doc is `docs/geometry_simplify.md`
+   (not `geometry_simplification.md`). This keeps the mapping discoverable.
 4. **Provenance** — every extracted fact that lands in `BuildingModel`
    carries sheet, revision, method, and confidence. Low-confidence results
    go to the review queue; nothing is silently accepted or silently dropped.

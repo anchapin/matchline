@@ -16,7 +16,7 @@ Rendering choices (documented, spike-scoped):
 - Ducts are rendered as SOLID FILLED bars, not the double-line outlines
   real CAD uses. This isolates the graph-extraction proof from the
   wall-pairing problem; pairing double lines into centerlines is a known
-  v2 step (flagged in docs/hvac_zoning.md).
+  v2 step (flagged in `docs/hvac_trace.md`).
 - Crossings between independent nets are rendered with a GAP in exactly
   one duct (return ducts and the supply trunk may be gapped; taps,
   spines and drops never are, so every supply zone subgraph stays
