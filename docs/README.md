@@ -18,6 +18,7 @@ disclosed, not hidden.
 | `jesse.md` | WiSARD classifier + Zhang-Suen skeleton invariants + thick-stroke preprocessing |
 | `lighting_takeoff.md` | Fixture takeoffs, building watts, per-space LPD |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
+| `polygon_classify.md` | Non-room polygon classification: shaft, closet, elevator_core by geometric rules |
 | `room_labeling.md` | OCR room names/numbers and polygon association |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
 | `validation.md` | The 26-check invariant battery and tolerance rationales |
