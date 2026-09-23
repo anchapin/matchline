@@ -19,8 +19,6 @@ from __future__ import annotations
 import pathlib
 from dataclasses import dataclass
 
-import joblib
-
 from review_classifier.data import Example
 from review_classifier.model import TypedDecider
 
@@ -98,15 +96,13 @@ class ReviewTriage:
                 return TypedDecider.from_npz(npz_path)
             except Exception:
                 return None
-        if not path.exists():
-            return None
-        try:
-            model = joblib.load(path)
-            if not isinstance(model, TypedDecider):
-                return None
-            return model
-        except Exception:
-            return None
+        if path.exists():
+            raise ValueError(
+                f"npz fallback is required for security; "
+                f"no .npz found for {path.name}. "
+                f"Convert the model to .npz format or remove the .pkl file."
+            )
+        return None
 
     @property
     def is_loaded(self) -> bool:
