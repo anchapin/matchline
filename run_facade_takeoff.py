@@ -34,7 +34,7 @@ def demo_facades(n: int = 5, data_root: "str | Path | None" = None) -> None:
     if not root.exists():
         raise SystemExit(
             f"CMP Facade dataset not found at {root}; it lives outside the repo "
-            "(see DATASETS.md under ~/workspace/datasets/). Pass --data-root."
+            "(see CONTRIBUTING.md for setup). Pass --data-root to override."
         )
     facs = list(iter_facades(root))[:n]
     for i, (fid, png, xml) in enumerate(facs):
