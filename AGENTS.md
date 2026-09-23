@@ -36,16 +36,27 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 ## CLI
 
 ```bash
+# Core pipeline
 matchline validate              # synthetic validation battery
+matchline run --seed S          # unified pipeline (generate + link + validate + export)
 matchline bem-export --sheet-id sheet_007
-matchline elevation-windows     # synthetic
-matchline room-labels          # synthetic
-matchline multidiscipline      # 3 synthetic buildings
-matchline symbols             # GD&T invariant check
-matchline ifc-import foo.ifc --out model.json
 
-matchline facade-takeoff --n 5  # needs ~/workspace/datasets/cmp-facade
-matchline mnist --data-dir data  # needs data/mnist_*.npy
+# Drawing extraction
+matchline elevation-windows     # exact window placement + daylight (synthetic)
+matchline room-labels          # OCR room labeling (synthetic)
+matchline symbols              # symbol eval + GD&T invariant check
+matchline facade-takeoff --n 5 # CMP Facade area takeoffs
+
+# BIM import/export
+matchline ifc-import foo.ifc --out model.json
+matchline ifc-export model.json out.ifc
+
+# Review queue
+matchline review model.json     # list/confirm/reject review items
+
+# External datasets (require local data)
+matchline multidiscipline       # 3 synthetic buildings
+matchline mnist --data-dir data # needs data/mnist_*.npy
 ```
 
 ## Data conventions
