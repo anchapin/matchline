@@ -43,6 +43,111 @@ class TestProvenanceCompleteSynthetic:
         assert result.severity == "pass", f"seed={seed} (nogrid): {result.message}"
 
 
+class TestProvenanceCompleteAllCategories:
+    """Assert every entity category's provenance field is non-None after a clean pipeline run."""
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_space_provenance_non_none(self, seed):
+        """Space.core_provenance and Space.history are non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for sid, sp in model.spaces.items():
+            assert sp.core_provenance is not None, (
+                f"seed={seed} space={sid}: core_provenance is None"
+            )
+            assert sp.history is not None, f"seed={seed} space={sid}: history is None"
+            for h in sp.history:
+                assert h.sheet_id, f"seed={seed} space={sid}: history entry missing sheet_id"
+                assert h.method, f"seed={seed} space={sid}: history entry missing method"
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_opening_provenance_non_none(self, seed):
+        """SpaceOpening.provenance is non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for sid, sp in model.spaces.items():
+            for o in sp.openings:
+                assert o.provenance is not None, (
+                    f"seed={seed} opening={o.id} space={sid}: provenance is None"
+                )
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_lighting_provenance_non_none(self, seed):
+        """SpaceLighting.provenance and fixture provenance are non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for sid, sp in model.spaces.items():
+            assert sp.lighting.provenance is not None, (
+                f"seed={seed} space={sid}: lighting.provenance is None"
+            )
+            for f in sp.lighting.fixtures:
+                assert f.provenance is not None, (
+                    f"seed={seed} fixture={f.id} space={sid}: provenance is None"
+                )
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_hvac_provenance_non_none(self, seed):
+        """SpaceHVAC.provenance and ComponentRef provenance are non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for sid, sp in model.spaces.items():
+            assert sp.hvac.provenance is not None, (
+                f"seed={seed} space={sid}: hvac.provenance is None"
+            )
+            for d in sp.hvac.diffusers:
+                assert d.provenance is not None, (
+                    f"seed={seed} diffuser={d.id} space={sid}: provenance is None"
+                )
+            for s in sp.hvac.sensors:
+                assert s.provenance is not None, (
+                    f"seed={seed} sensor={s.id} space={sid}: provenance is None"
+                )
+            for t in sp.hvac.terminal_units:
+                assert t.provenance is not None, (
+                    f"seed={seed} terminal={t.id} space={sid}: provenance is None"
+                )
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    @pytest.mark.xfail(
+        reason="SpaceDaylight.provenance is set only by elevation_windows.compute_daylit_zones "
+        "which build_model does not call; build_model only links openings, not daylight zones. "
+        "The full build_model_with_elevations path sets daylight provenance correctly."
+    )
+    def test_all_daylight_provenance_non_none(self, seed):
+        """SpaceDaylight.provenance and DaylitZone provenance are non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for sid, sp in model.spaces.items():
+            assert sp.daylight.provenance is not None, (
+                f"seed={seed} space={sid}: daylight.provenance is None"
+            )
+            for dz in sp.daylight.primary:
+                assert dz.provenance is not None, (
+                    f"seed={seed} primary_daylight_zone={dz.id} space={sid}: provenance is None"
+                )
+            for dz in sp.daylight.secondary:
+                assert dz.provenance is not None, (
+                    f"seed={seed} secondary_daylight_zone={dz.id} space={sid}: provenance is None"
+                )
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_zone_provenance_non_none(self, seed):
+        """Zone.provenance is non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for zid, z in model.zones.items():
+            assert z.provenance is not None, f"seed={seed} zone={zid}: provenance is None"
+            assert z.history is not None, f"seed={seed} zone={zid}: history is None"
+
+    @pytest.mark.parametrize("seed", [101, 102, 103])
+    def test_all_envelope_provenance_non_none(self, seed):
+        """EnvelopeWall.provenance is non-None after pipeline."""
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for w in model.envelope:
+            assert w.provenance is not None, f"seed={seed} envelope_wall={w.id}: provenance is None"
+
+
 class TestProvenanceCompleteValidationCheck:
     """The provenance_complete check fires correctly when provenance is missing."""
 
