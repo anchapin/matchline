@@ -100,8 +100,9 @@ class TestExtractZones:
         rooms = [self._room(0, 0, 10, 10, "R1")]
         zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert len(zones) == 1
-        # diffuser at 500,500 is outside R1 (0,0)-(10,10)
-        assert len(zones[0]["diffusers"]) == 0  # not skeleton-adjacent to VAV
+        # diffuser at 500,500 is outside R1 and not skeleton-adjacent to VAV,
+        # so it is not served (extract_zones only tracks VAV-served components)
+        assert len(zones[0]["diffusers"]) == 0
 
     def test_multiple_vavs_produce_multiple_zones(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
@@ -148,7 +149,8 @@ class TestExtractZones:
         rooms = [self._room(0, 0, 10, 10, "R1")]
         zones, _ = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert len(zones) == 1
-        # sensor in room not served by VAV (diffuser not adjacent), so not tracked
+        # diffuser at (50,100) is not skeleton-adjacent to VAV at (100,100),
+        # so no room is served and sensors in unserved rooms are not tracked
         assert len(zones[0]["sensors"]) == 0
 
 
