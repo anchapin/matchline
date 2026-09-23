@@ -362,7 +362,6 @@ def break_revision_log_present(m: BuildingModel):
     m.revision_log.clear()
 
 
-
 def break_gbxml_spaces(m: BuildingModel):
     """gbXML parse finds wrong number of spaces."""
     import os
@@ -432,4 +431,3 @@ END-ISO-10303-21;
     os.write(fd, ifc_content.encode())
     os.close(fd)
     m._ifc_path = path
-

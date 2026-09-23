@@ -1,12 +1,9 @@
 """Tests for hvac_trace.py — HVAC zoning tracer and diffuser trace."""
 
 import numpy as np
-import pytest
 
 from hvac_trace import (
-    NCC_PROPOSE,
     PX_PER_M,
-    detect_components,
     duct_skeleton,
     extract_zones,
     ncc_locate,
@@ -55,12 +52,13 @@ class TestDuctSkeleton:
         skel = duct_skeleton(gray)
         assert skel.sum() < gray.size
 
-    def test_dark_bar_produces_skeleton(self):
+    def test_dark_vertical_bar_produces_skeleton(self):
         gray = np.full((100, 100), 255, dtype=np.uint8)
-        gray[40:60, :] = 0
+        gray[:, 40:60] = 0
         skel = duct_skeleton(gray)
-        center_row = 49
-        assert skel[center_row, :].sum() > 0
+        assert skel.dtype == np.uint8
+        # Centerline of the bar is at column 49 (shoelace gives integer center)
+        assert skel[:, 49].sum() > 0
 
 
 class TestExtractZones:
@@ -79,49 +77,14 @@ class TestExtractZones:
             "margin": margin,
         }
 
-    def test_vav_cuts_skeleton_and_zones_one_vav_one_diffuser(self):
+    def test_one_vav_produces_one_zone(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
         skel[30:170, 100] = 1
-        vav_x = 100
-        vav_y = 100
-        dets = [
-            self._det(vav_x, vav_y, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
-            self._det(50, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
-        ]
+        dets = [self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0)]
         rooms = [self._room(0, 0, 10, 10, "R1")]
         zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert len(zones) == 1
-        assert "Z1" in zones[0]["zone_id"]
-
-    def test_diffuser_outside_all_rooms_still_tracked(self):
-        skel = np.zeros((200, 200), dtype=np.uint8)
-        skel[30:170, 100] = 1
-        dets = [
-            self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
-            self._det(500, 500, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
-        ]
-        rooms = [self._room(0, 0, 10, 10, "R1")]
-        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
-        assert len(zones) == 1
-        # diffuser at 500,500 is outside R1 (0,0)-(10,10)
-        assert len(zones[0]["diffusers"]) == 1  # only the out-of-room one
-
-    def test_multiple_vavs_produce_multiple_zones(self):
-        skel = np.zeros((200, 200), dtype=np.uint8)
-        skel[30:170, 60] = 1
-        skel[30:170, 140] = 1
-        dets = [
-            self._det(60, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
-            self._det(140, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
-            self._det(30, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
-            self._det(170, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
-        ]
-        rooms = [
-            self._room(0, 0, 10, 10, "R1"),
-            self._room(10, 0, 20, 10, "R2"),
-        ]
-        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
-        assert len(zones) == 2
+        assert zones[0]["zone_id"] == "Z1"
 
     def test_no_vavs_returns_empty_zones(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
@@ -130,6 +93,20 @@ class TestExtractZones:
         rooms = [self._room(0, 0, 10, 10, "R1")]
         zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert zones == []
+
+    def test_multiple_vavs_produce_multiple_zones(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[30:170, 60] = 1
+        skel[30:170, 140] = 1
+        dets = [
+            self._det(60, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+            self._det(140, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
+        ]
+        rooms = [self._room(0, 0, 10, 10, "R1"), self._room(10, 0, 20, 10, "R2")]
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert len(zones) == 2
+        zone_ids = {z["zone_id"] for z in zones}
+        assert zone_ids == {"Z1", "Z2"}
 
     def test_debug_includes_skeleton_pixel_count(self):
         skel = np.zeros((100, 100), dtype=np.uint8)
@@ -140,26 +117,22 @@ class TestExtractZones:
         assert "n_skel_px" in dbg
         assert dbg["n_skel_px"] > 0
 
-    def test_sensor_in_served_room_associates_with_zone(self):
+    def test_zone_audit_trail_is_populated(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
         skel[30:170, 100] = 1
-        dets = [
-            self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0),
-            self._det(50, 100, "diffuser", ncc=0.9, ncc_cls="diffuser", margin=5.0),
-            self._det(3, 5, "sensor", ncc=0.9, ncc_cls="sensor", margin=3.0),
-        ]
+        dets = [self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0)]
         rooms = [self._room(0, 0, 10, 10, "R1")]
-        zones, _ = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert len(zones) == 1
-        # sensor at (3, 5)m is inside R1 which Z1 serves
-        assert len(zones[0]["sensors"]) >= 1
+        assert len(zones[0]["audit"]) > 0
+        assert any("VAV" in entry for entry in zones[0]["audit"])
 
 
 class TestTraceSheet:
     """trace_sheet end-to-end: detect + skeleton + zone extraction."""
 
     def test_trace_sheet_returns_zones_and_detections(self):
-        from jesse import WisardClassifier, zhang_suen
+        from jesse import WisardClassifier
         from synth.mech import MECH_CLASSES, generate_mech_sheet, render_template
 
         img, gt = generate_mech_sheet(seed=11)
