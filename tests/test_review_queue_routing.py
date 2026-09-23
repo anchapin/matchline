@@ -33,6 +33,28 @@ class TestReviewQueueRoutingDirect:
         )
         assert item.confidence == 0.95
         assert item in model.review_queue
+        assert item.provenance.sheet_id == "test"
+        assert item.provenance.revision == 1
+        assert item.provenance.method == "test"
+        assert item.provenance.confidence == 0.95
+
+    def test_provenance_preserved_in_low_confidence_review_item(self):
+        """Low-confidence item (conf=0.79) preserves provenance in the review queue item."""
+        model = BuildingModel()
+        prov = Provenance(
+            sheet_id="sheet_001", revision=3, method="geometric_fallback", confidence=0.62
+        )
+        item = model.flag_for_review(
+            kind="window_room_link",
+            description="Window W1 in room 101 — ambiguous geometric link",
+            confidence=0.79,
+            provenance=prov,
+        )
+        assert item in model.review_queue
+        assert item.provenance.sheet_id == "sheet_001"
+        assert item.provenance.revision == 3
+        assert item.provenance.method == "geometric_fallback"
+        assert item.provenance.confidence == 0.62
 
     def test_flag_review_accepts_boundary_confidence(self):
         """Boundary confidence (conf=0.80) is NOT flagged — REVIEW_CONFIDENCE uses < comparison."""
@@ -46,6 +68,10 @@ class TestReviewQueueRoutingDirect:
         )
         assert item.confidence == REVIEW_CONFIDENCE
         assert item in model.review_queue
+        assert item.provenance.sheet_id == "test"
+        assert item.provenance.revision == 1
+        assert item.provenance.method == "test"
+        assert item.provenance.confidence == REVIEW_CONFIDENCE
 
     def test_flag_review_rejects_sub_threshold_confidence(self):
         """Sub-threshold confidence (conf=0.79) IS flagged for review."""
@@ -59,6 +85,10 @@ class TestReviewQueueRoutingDirect:
         )
         assert item.confidence == 0.79
         assert item in model.review_queue
+        assert item.provenance.sheet_id == "test"
+        assert item.provenance.revision == 1
+        assert item.provenance.method == "test"
+        assert item.provenance.confidence == 0.79
 
     def test_geometric_fallback_confidence_below_threshold(self):
         """Geometric fallback registration confidence (0.65) is always below REVIEW_CONFIDENCE.
@@ -106,6 +136,10 @@ class TestReviewQueueRoutingPipeline:
         )
         for item in window_items:
             assert item.confidence < REVIEW_CONFIDENCE
+            assert item.provenance.sheet_id is not None
+            assert item.provenance.revision is not None
+            assert item.provenance.method is not None
+            assert item.provenance.confidence is not None
 
     @pytest.mark.parametrize("seed", [101, 102, 103])
     def test_grid_elevation_routing_is_fraction_dependent(self, seed):
@@ -128,6 +162,29 @@ class TestReviewQueueRoutingPipeline:
             if sp.openings and not sp.openings[-1].needs_review
         ]
         assert len(non_routed_openings) > 0 or len(window_items) > 0
+
+    def test_provenance_preserved_in_geometric_review_items(self, tmp_path):
+        """Review items from geometric fallback preserve provenance (sheet, revision, method, conf).
+
+        This verifies issue #206: low-confidence routing must not discard provenance.
+        """
+        bldg = generate_building(101, open_office_span=False)
+        model, report = build_model(
+            bldg, elevation_key="elev_nogrid", building_name=bldg["building_id"]
+        )
+        window_items = [r for r in model.review_queue if r.kind == "window_room_link"]
+        assert len(window_items) > 0
+        for item in window_items:
+            assert item.provenance is not None
+            assert item.provenance.sheet_id is not None
+            assert item.provenance.revision is not None
+            assert item.provenance.method is not None
+            assert item.provenance.confidence is not None
+            assert isinstance(item.provenance.sheet_id, str)
+            assert isinstance(item.provenance.revision, int)
+            assert isinstance(item.provenance.method, str)
+            assert isinstance(item.provenance.confidence, float)
+            assert item.provenance.method == "geometric_registration"
 
 
 class TestMatchIntervalSegmentsReview:
