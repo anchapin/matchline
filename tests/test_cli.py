@@ -18,9 +18,23 @@ def _run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 class TestHelp:
-    @pytest.mark.parametrize("sub", ["run", "validate", "bem-export", "elevation-windows",
-                                     "facade-takeoff", "room-labels", "multidiscipline",
-                                     "mnist", "symbols", "ifc-import", "ifc-export", "review"])
+    @pytest.mark.parametrize(
+        "sub",
+        [
+            "run",
+            "validate",
+            "bem-export",
+            "elevation-windows",
+            "facade-takeoff",
+            "room-labels",
+            "multidiscipline",
+            "mnist",
+            "symbols",
+            "ifc-import",
+            "ifc-export",
+            "review",
+        ],
+    )
     def test_subcommand_help(self, sub):
         r = _run([sub, "--help"])
         assert r.returncode == 0, r.stderr
