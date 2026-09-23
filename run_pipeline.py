@@ -26,6 +26,7 @@ from bem_export import (
     BEMModel,
     BEMOpeningUnit,
     BEMSpace,
+    _validate_out_path,
     write_gbxml,
     write_ifc4,
 )
@@ -247,7 +248,7 @@ def parse_args():
 
 
 def main(args, config: dict | None = None) -> None:
-    out_dir = Path(args.out_dir)
+    out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Stage 1: generate building or load real-sheet detections ----------
