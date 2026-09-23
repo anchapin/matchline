@@ -15,7 +15,10 @@ wrappers around the same functions.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+
+DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -41,6 +44,25 @@ def cmd_run(args: argparse.Namespace) -> None:
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
+
+    confidence_threshold = args.confidence_threshold
+    if confidence_threshold is None:
+        env_val = os.environ.get("MATCHLINE_CONFIDENCE_THRESHOLD")
+        if env_val is not None:
+            try:
+                confidence_threshold = float(env_val)
+            except ValueError:
+                print(
+                    f"Error: MATCHLINE_CONFIDENCE_THRESHOLD is not a valid float: {env_val}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    if confidence_threshold is None:
+        confidence_threshold = DEFAULT_CONFIDENCE_THRESHOLD
+
+    if config is None:
+        config = {}
+    config["review_confidence"] = confidence_threshold
     run_pipeline.main(args, config=config)
 
 
@@ -219,6 +241,15 @@ def build_parser() -> argparse.ArgumentParser:
         "simplify_tolerance (float, default 0.02=2%%), wall_height (float, metres, "
         "default from level). "
         "Example: review_confidence: 0.85  simplify_tolerance: 0.01  wall_height: 3.5",
+    )
+    p.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=None,
+        dest="confidence_threshold",
+        help=f"Minimum confidence for review queue (0.0-1.0). Overrides config file. "
+        f"Default: {DEFAULT_CONFIDENCE_THRESHOLD}. "
+        f"Can also be set via MATCHLINE_CONFIDENCE_THRESHOLD env var.",
     )
     p.set_defaults(func=cmd_run)
 
