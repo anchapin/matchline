@@ -8,7 +8,7 @@ cd matchline
 git checkout develop        # develop is the working branch; main is releases only
 python3 --version           # need >= 3.10
 pip install -e ".[test]"    # editable install + pytest
-python -m pytest tests/ -q  # 270 tests, a few seconds, no network needed
+python -m pytest tests/ -q  # 324 tests, a few seconds, no network needed
 ```
 
 Optional extras:
