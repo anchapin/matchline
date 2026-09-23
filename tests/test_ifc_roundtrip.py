@@ -27,7 +27,7 @@ import ifcopenshell  # noqa: E402
 def _model_with_zones_and_lighting() -> BuildingModel:
     """Build a model matching the test_ifc_import fixture but with explicit zones and lighting."""
     model = BuildingModel(name="Fixture Building")
-    model.levels = [Level(id="L1", name="Level 1", elevation_z_m=0.0, wall_height_m=3.0)]
+    model.levels = [Level(id="L1", name="Level 1", elevation_z_m=0.0, wall_height_m=3.0, provenance=Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=1.0))]
     model.spaces = {}
 
     spaces_data = [
@@ -140,7 +140,7 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     Simulated by: creating two SpaceOpenings with identical (tag, sill, center, facade)
     on the same space, then verifying that after a round-trip only one remains.
     """
-    model = BuildingModel(name="Dedup Test", levels=[Level(id="L1", wall_height_m=3.0)])
+    model = BuildingModel(name="Dedup Test", levels=[Level(id="L1", wall_height_m=3.0, provenance=Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=1.0))])
     prov = Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=0.9)
 
     sp = Space(

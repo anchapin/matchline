@@ -28,7 +28,7 @@ import ifcopenshell  # noqa: E402
 def _simple_model(name: str = "Test Building", n_spaces: int = 3) -> BuildingModel:
     """Build a minimal but well-formed model with n spaces."""
     model = BuildingModel(name=name)
-    model.levels = [Level(id="L1", name="Level 1", elevation_z_m=0.0, wall_height_m=3.0)]
+    model.levels = [Level(id="L1", name="Level 1", elevation_z_m=0.0, wall_height_m=3.0, provenance=Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=1.0))]
     prov = Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=1.0)
 
     polygons = [

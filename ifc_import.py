@@ -672,7 +672,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             elev = float(getattr(storey, "Elevation", 0.0) or 0.0) * scale
         except (RuntimeError, TypeError, ValueError):
             elev = 0.0
-        level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
+        level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev, provenance=prov("aec-bench", conf=1.0))
         model.levels.append(level)
 
         # --- spaces -------------------------------------------------------

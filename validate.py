@@ -984,6 +984,8 @@ def _all_facts(ctx):
             yield f"{sid}:{t.id}", t.provenance
     for zid, z in m.zones.items():
         yield zid, z.provenance
+    for lv in m.levels:
+        yield lv.id, lv.provenance
     for w in m.envelope:
         yield w.id, w.provenance
 

@@ -306,10 +306,11 @@ class BimElement:
 
 @dataclass
 class Level:
-    id: str  # "L1"
+    id: str
     name: str = ""
     elevation_z_m: float = 0.0
     wall_height_m: float = 3.0
+    provenance: Provenance = None
 
 
 # ---------------------------------------------------------------------------

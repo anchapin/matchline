@@ -526,8 +526,8 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     wall_height = 3.0  # metres
     volume = area * wall_height
 
-    level = Level(id="L1", name="Level 1", wall_height_m=wall_height)
     prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
+    level = Level(id="L1", name="Level 1", wall_height_m=wall_height, provenance=prov)
 
     # --- Space with minimal openings ---
     openings: list[SpaceOpening] = []

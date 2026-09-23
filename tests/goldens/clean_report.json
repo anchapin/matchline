@@ -164,7 +164,7 @@
    "check_id": "provenance_complete",
    "name": "Provenance complete",
    "severity": "pass",
-   "message": "15 facts, every one cites sheet/revision/method",
+   "message": "16 facts, every one cites sheet/revision/method",
    "entities": []
   },
   {

@@ -705,7 +705,7 @@ def build_model(bldg: dict, elevation_key: str = "elev_grid", building_name: str
 
     model = BuildingModel(name=building_name or bldg["building_id"])
     level_id = bldg["level_id"]
-    model.levels.append(Level(id=level_id, name="Level 1", wall_height_m=bldg["wall_height_m"]))
+    model.levels.append(Level(id=level_id, name="Level 1", wall_height_m=bldg["wall_height_m"], provenance=Provenance(sheet_id=building_name or "link", revision=1, method="link", confidence=1.0)))
     report = LinkReport(
         building_id=bldg["building_id"],
         elevation_path=(

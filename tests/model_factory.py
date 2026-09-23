@@ -27,7 +27,7 @@ def P(sheet="arch_A101", method="test", conf=1.0, note=""):
 
 def make_clean_model() -> BuildingModel:
     m = BuildingModel(name="test_bldg")
-    m.levels.append(Level(id="L1", name="Level 1", wall_height_m=H))
+    m.levels.append(Level(id="L1", name="Level 1", wall_height_m=H, provenance=P(note="test")))
 
     def space(sid, num, name, poly):
         area = 5.0 * 6.0
