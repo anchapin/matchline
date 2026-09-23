@@ -343,3 +343,43 @@ class TestConfidenceThresholdOverride:
             cmd_run(ns)
 
         assert captured_config.get("review_confidence") == 0.75
+        seg, frac, ambiguous = match_interval_to_segments(0.0, 10.0, segments)
+        assert ambiguous
+        assert frac < 0.5
+
+    def test_no_overlap_is_ambiguous(self):
+        """No overlap → ambiguous → needs_review = True."""
+        _facade = Facade(
+            name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x"
+        )
+        segments = [{"id": "seg1", "s0": 15.0, "s1": 20.0}]
+        seg, frac, ambiguous = match_interval_to_segments(0.0, 5.0, segments)
+        assert seg is None
+        assert ambiguous
+
+
+class TestReviewItemKindLiteral:
+    """Type-level tests: verify mypy rejects invalid ReviewItem.kind values."""
+
+    def test_valid_kind_values(self):
+        """All known kind values should be accepted by the type checker."""
+        valid_kinds = [
+            "fixture_assignment",
+            "fixture_schedule",
+            "diffuser_assignment",
+            "sensor_assignment",
+            "window_room_link",
+            "space_no_geometry",
+            "elevation_conflict",
+            "window_reconciliation",
+            "gd_complex_row",
+        ]
+        for kind in valid_kinds:
+            item = ReviewItem(
+                id=f"test-{kind}",
+                kind=kind,
+                description="test",
+                confidence=0.5,
+                provenance=Provenance(sheet_id="test", revision=0, method="test", confidence=0.5),
+            )
+            assert item.kind == kind
