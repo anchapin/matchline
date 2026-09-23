@@ -48,7 +48,7 @@ class ReviewTriage:
 
 class TriageDecision(NamedTuple):
     needs_human: bool
-    urgency: int          # 0=low, 1=medium, 2=high
+    urgency: int  # 0=low, 1=medium, 2=high
     auto_resolved: bool
     reason: str
 
