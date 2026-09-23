@@ -78,6 +78,18 @@ def test_warnings_do_not_close_gate():
     assert report.warnings and export_gate(report)
 
 
+def test_export_gate_blocks_errors_explicitly():
+    """Conservation law: export_gate returns False when errors are present.
+
+    This makes the blocking enforcement auditable as a standalone assertion,
+    separate from the parametrized defect battery.
+    """
+    m = make_clean_model()
+    break_area(m)
+    report = run_checks(m)
+    assert not export_gate(report)
+
+
 def test_report_serializes_to_json():
     m = make_clean_model()
     report = run_checks(m)
