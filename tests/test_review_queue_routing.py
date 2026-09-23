@@ -343,3 +343,5 @@ class TestConfidenceThresholdOverride:
             cmd_run(ns)
 
         assert captured_config.get("review_confidence") == 0.75
+
+# debug: force CI refresh
