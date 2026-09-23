@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field
+from typing import Optional
 
 from lxml import etree
 
@@ -33,7 +34,7 @@ from datasets_adapter import polygon_area_px2
 from safe_xml import safe_xml_parser
 
 try:
-    from geometry_simplify import footprint_from_regions
+    from geometry_simplify import footprint_from_regions, simplify_ring
 
     _HAS_SIMPLIFY = True
 except Exception:
@@ -425,6 +426,36 @@ def _check_simplify_budget(ctx) -> CheckResult:
             expected=tol_pct,
             actual=delta,
         )
+    if _HAS_SIMPLIFY:
+        spaces_iter = (
+            ctx.model.spaces.values() if hasattr(ctx.model.spaces, "values") else ctx.model.spaces
+        )
+        raw_polys = [
+            sp.polygon_m for sp in spaces_iter if getattr(sp, "polygon_m", None) is not None
+        ]
+        if len(raw_polys) >= 1:
+            ring = footprint_from_regions(raw_polys)
+            if ring is not None:
+                wall_height = (
+                    getattr(ctx.model.levels[0], "wall_height_m", None)
+                    if ctx.model.levels
+                    else None
+                )
+                fresh = simplify_ring(ring, tol=sres.tol if sres else 0.02, wall_height=wall_height)
+                sres_area = getattr(sres, "simplified_area", None)
+                orig_area = getattr(sres, "original_area", None)
+                if fresh.original_area and sres_area and orig_area and orig_area > 0:
+                    if abs(fresh.original_area - orig_area) / orig_area * 100.0 > 0.1:
+                        return CheckResult(
+                            "simplify_budget",
+                            "Simplification within area budget",
+                            "error",
+                            f"original area re-verification failed: "
+                            f"fresh {fresh.original_area:.3f} m² vs "
+                            f"reported {orig_area:.3f} m²",
+                            expected=orig_area,
+                            actual=fresh.original_area,
+                        )
     return CheckResult(
         "simplify_budget",
         "Simplification within area budget",
@@ -1163,6 +1194,91 @@ def _check_gbxml_opening_refs(ctx) -> CheckResult:
     )
 
 
+def _parse_cartesian_point(pt) -> Optional[tuple]:
+    try:
+        coords = [float(c.text) for c in pt]
+        return (coords[0], coords[1]) if len(coords) >= 2 else None
+    except Exception:
+        return None
+
+
+def _check_gbxml_wall_areas(ctx) -> CheckResult:
+    path = ctx.gbxml_path
+    if not path:
+        return CheckResult(
+            "gbxml_wall_areas",
+            "gbXML wall area cross-pipeline reconciliation",
+            "skip",
+            "no gbXML path given",
+        )
+    try:
+        root = etree.parse(str(path), safe_xml_parser()).getroot()
+    except etree.XMLSyntaxError as e:
+        return CheckResult(
+            "gbxml_wall_areas",
+            "gbXML wall area cross-pipeline reconciliation",
+            "error",
+            f"gbXML not well-formed: {e}",
+        )
+    ns = {"g": _GBXML_NS}
+    space_height_map = {}
+    for sp in ctx.model.spaces.values():
+        if getattr(sp, "gbxml_id", None) and getattr(sp, "wall_height_m", 0):
+            space_height_map[sp.gbxml_id] = sp.wall_height_m
+
+    total_gbxml_area = 0.0
+    for surf in root.findall(".//g:Surface", ns):
+        if surf.get("surfaceType") not in ("ExteriorWall",):
+            continue
+        rg = surf.find("g:RectangularGeometry", ns)
+        if rg is None:
+            continue
+        pts = rg.findall("g:CartesianPoint", ns)
+        if len(pts) < 2:
+            continue
+        p0 = _parse_cartesian_point(pts[0])
+        p1 = _parse_cartesian_point(pts[1])
+        if p0 is None or p1 is None:
+            continue
+        length = math.sqrt((p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2)
+        adj = surf.find("g:AdjacentSpaceId", ns)
+        h = 0.0
+        if adj is not None:
+            sid = adj.get("spaceIdRef", "")
+            h = space_height_map.get(sid, 0.0)
+        if h <= 0:
+            continue
+        total_gbxml_area += length * h
+
+    total_canonical = sum(w.area_m2 for w in ctx.model.envelope if getattr(w, "area_m2", 0) > 0)
+    if total_canonical <= 0 or total_gbxml_area <= 0:
+        return CheckResult(
+            "gbxml_wall_areas",
+            "gbXML wall area cross-pipeline reconciliation",
+            "skip",
+            f"canonical {total_canonical:.3f} m², gbXML {total_gbxml_area:.3f} m²",
+        )
+    rel_err = abs(total_gbxml_area - total_canonical) / total_canonical
+    tol = ctx.tol_envelope if hasattr(ctx, "tol_envelope") else 0.02
+    if rel_err > tol:
+        return CheckResult(
+            "gbxml_wall_areas",
+            "gbXML wall area cross-pipeline reconciliation",
+            "error",
+            f"gbXML wall area {total_gbxml_area:.3f} m² vs canonical "
+            f"{total_canonical:.3f} m²: discrepancy {rel_err * 100:.2f}% > tol {tol * 100:.1f}%",
+            expected=total_canonical,
+            actual=total_gbxml_area,
+        )
+    return CheckResult(
+        "gbxml_wall_areas",
+        "gbXML wall area cross-pipeline reconciliation",
+        "pass",
+        f"gbXML wall area {total_gbxml_area:.3f} m² matches canonical "
+        f"{total_canonical:.3f} m² ({rel_err * 100:.2f}%)",
+    )
+
+
 def _check_ifc_counts(ctx) -> CheckResult:
     path = ctx.ifc_path
     if not path:
@@ -1244,6 +1360,7 @@ BATTERY = [
     # export (skipped unless paths given)
     _check_gbxml_spaces,
     _check_gbxml_opening_refs,
+    _check_gbxml_wall_areas,
     _check_ifc_counts,
 ]
 
