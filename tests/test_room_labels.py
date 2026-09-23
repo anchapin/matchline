@@ -1,6 +1,5 @@
 """Tests for room_labels.py — room name/number labeling and label parsing."""
 
-import pytest
 from room_labels import (
     LabeledSpace,
     LabeledTakeoff,

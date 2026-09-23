@@ -1,12 +1,11 @@
 """Tests for bem_export.py — BEM export from canonical building model."""
 
-import pytest
+from building_model import Space
 from datasets_adapter import (
     DrawingScale,
     TakeoffLine,
     TakeoffResult,
 )
-from building_model import BuildingModel, Space, Zone
 
 
 def _make_scale():
