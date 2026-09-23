@@ -46,7 +46,7 @@ jobs:
         run: |
           # Record the test count; a drift of ±1 or more requires investigation before merging.
           # Expected: ~324 tests. Update EXPECTED_TEST_COUNT if test count changes legitimately.
-          EXPECTED_TEST_COUNT=369
+          EXPECTED_TEST_COUNT=404
           ACTUAL_TEST_COUNT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1 | awk '{print $1}')
           echo "Expected: $EXPECTED_TEST_COUNT, Actual: $ACTUAL_TEST_COUNT"
           if [ "$ACTUAL_TEST_COUNT" != "$EXPECTED_TEST_COUNT" ]; then
