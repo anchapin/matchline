@@ -46,11 +46,13 @@ class TypedDecider:
 class ReviewTriage:
     def triage(self, example: Example) -> TriageDecision: ...
 
+
 class TriageDecision(NamedTuple):
     needs_human: bool
     urgency: int  # 0=low, 1=medium, 2=high
     auto_resolved: bool
     reason: str
+
 
 def get_triage() -> ReviewTriage: ...
 def reset_triage() -> None: ...
