@@ -110,4 +110,4 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
    `IfcSlab`/`IfcRoof` is straightforward to add.
 6. **IfcSpace has no solid geometry** in v1 (placement + quantities only).
 7. Window/door opening areas are not yet reconciled against the simplified
-   envelope (double-count risk noted in `docs/geometry_simplification.md`).
+   envelope (double-count risk noted in `docs/geometry_simplify.md`).

@@ -66,7 +66,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - Area-budgeted simplification with ≤2% drift default
 - `SimplifyResult` with `valid` flag and `area_delta_pct`
 - Validation check in `validate.py` (`_check_simplify_budget`)
-- Tolerances documented in `docs/geometry_simplification.md`
+- Tolerances documented in `docs/geometry_simplify.md`
 
 ### HVAC Zoning (`hvac_trace.py`)
 
