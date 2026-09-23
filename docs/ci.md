@@ -8,7 +8,7 @@ This document describes the automated gates that run on every PR and push.
 
 **Location:** `.github/workflows/ci.yml` — `Check test count` step
 
-**Expected test count:** ~324 tests
+**Expected test count:** 368 tests
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
