@@ -225,6 +225,10 @@ def convert_plan(svg_path):
         tree = lxml.etree.parse(svg_path, safe_xml_parser())
     except lxml.etree.XMLSyntaxError:
         return None
+    if tree.docinfo.internalDTD is not None:
+        entities = list(tree.docinfo.internalDTD.iterentities())
+        if entities:
+            return None
     root = tree.getroot()
     vb = root.get("viewBox")
     if vb:
