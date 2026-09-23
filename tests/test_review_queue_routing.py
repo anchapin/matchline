@@ -180,3 +180,109 @@ class TestMatchIntervalSegmentsReview:
         seg, frac, ambiguous = match_interval_to_segments(0.0, 5.0, segments)
         assert seg is None
         assert ambiguous
+
+
+class TestConfidenceThresholdOverride:
+    """Tests for --confidence-threshold CLI override and MATCHLINE_CONFIDENCE_THRESHOLD env var."""
+
+    def test_confidence_threshold_cli_override(self, monkeypatch):
+        """--confidence-threshold sets review_confidence in config."""
+        import argparse
+        from unittest.mock import patch
+
+        from cli import cmd_run
+
+        monkeypatch.delenv("MATCHLINE_CONFIDENCE_THRESHOLD", raising=False)
+
+        ns = argparse.Namespace(
+            seed=42,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=None,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+            confidence_threshold=0.60,
+            config_path=None,
+        )
+
+        captured_config = {}
+
+        def mock_main(args_ns, config=None):
+            captured_config.update(config or {})
+
+        with patch("run_pipeline.main", mock_main):
+            cmd_run(ns)
+
+        assert captured_config.get("review_confidence") == 0.60
+
+    def test_confidence_threshold_env_var_override(self, monkeypatch):
+        """MATCHLINE_CONFIDENCE_THRESHOLD env var sets review_confidence in config."""
+        import argparse
+        from unittest.mock import patch
+
+        from cli import cmd_run
+
+        monkeypatch.setenv("MATCHLINE_CONFIDENCE_THRESHOLD", "0.55")
+
+        ns = argparse.Namespace(
+            seed=42,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=None,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+            confidence_threshold=None,
+            config_path=None,
+        )
+
+        captured_config = {}
+
+        def mock_main(args_ns, config=None):
+            captured_config.update(config or {})
+
+        with patch("run_pipeline.main", mock_main):
+            cmd_run(ns)
+
+        assert captured_config.get("review_confidence") == 0.55
+
+    def test_confidence_threshold_default(self):
+        """Default confidence threshold is 0.75 when no override provided."""
+        import argparse
+        from unittest.mock import patch
+
+        from cli import DEFAULT_CONFIDENCE_THRESHOLD, cmd_run
+
+        assert DEFAULT_CONFIDENCE_THRESHOLD == 0.75
+
+        ns = argparse.Namespace(
+            seed=42,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=None,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+            confidence_threshold=None,
+            config_path=None,
+        )
+
+        captured_config = {}
+
+        def mock_main(args_ns, config=None):
+            captured_config.update(config or {})
+
+        with patch("run_pipeline.main", mock_main):
+            cmd_run(ns)
+
+        assert captured_config.get("review_confidence") == 0.75
