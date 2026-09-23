@@ -25,7 +25,7 @@ Stage 6: BEM export               → stage_06_bem/{name}.xml + {name}.ifc
 | 1 | `generate_building` | seed (int) | `stage_01_building.json` | Synthetic `BuildingModel` dict; real-sheet path raises `NotImplementedError` |
 | 2 | `build_model` | `stage_01_building.json` | `stage_02_model.json` | Adds elevations, openings, linked spaces; also writes `link_report` |
 | 3 | `simplify_ring` | `stage_02_model.json` | `stage_03_simplified.json` | Reduces polygon vertices; tracks `area_delta_pct` (≤ 2 % default) |
-| 4 | `run_checks` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_04_validation.json` | 26-check invariant battery; errors **block export** |
+| 4 | `run_checks` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_04_validation.json` | 28-check invariant battery; errors **block export** |
 | 4b | `_run_auto_triage` | `stage_04_validation.json` | `stage_04b_auto_triage.json` | Opt-in via `ENABLE_AUTO_TRIAGE=1`; mutates `model.review_queue` |
 | 5 | `export_gate` | `stage_04_validation.json` | — | Exits with code 1 if any error; no artifact written |
 | 6 | `write_gbxml` + `write_ifc4` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_06_bem/{name}.xml`, `{name}.ifc` | gbXML 6.01 + IFC4 from `BEMModel` |

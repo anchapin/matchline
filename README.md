@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # 270 tests, hermetic, a few seconds
+python -m pytest tests/ -q   # 324 tests, hermetic, a few seconds
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
@@ -75,12 +75,12 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate.py` | 26-check invariant battery; errors block export |
+| `validate.py` | 28-check invariant battery; errors block export |
 
 ## Quickstart
 
 ```bash
-python3 -m pytest tests/ -q        # 270 tests: units, invariants, defect injection, goldens
+python3 -m pytest tests/ -q        # 324 tests: units, invariants, defect injection, goldens
 python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
 python3 run_validation.py          # invariant battery demo
 python3 run_bem_export.py          # gbXML + IFC export demos

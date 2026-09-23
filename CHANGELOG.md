@@ -42,7 +42,7 @@ Initial public development snapshot on `develop`.
 - CMP Facade takeoffs: wall/glazing/door fractions + dataset priors.
 - Canonical `BuildingModel`: architectural spaces as the canonical entity,
   provenance on every fact, review queue, cross-discipline linking.
-- 26-check validation battery; errors block export.
+- 28-check validation battery; errors block export.
 - gbXML 6.01 + IFC4 export (schema/round-trip validated).
 - Tier-0 IFC import frontend: IFC4 → canonical model without space
   boundaries (spaces, elements, openings, material layers, zones).

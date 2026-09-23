@@ -58,7 +58,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 | `link.py` | Orchestrates cross-sheet registration + linking into BuildingModel |
 | `registration.py` | Affine2D transforms, cross-sheet coordinate registration |
 | `datasets_adapter.py` | Detector → schedule join → count×width×height takeoffs |
-| `validate.py` | 26-check invariant battery; errors **block export** |
+| `validate.py` | 28-check invariant battery; errors **block export** |
 | `bem_export.py` | gbXML 6.01 + IFC4 export from canonical model |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0; Tier 1 = space attachment, open) |
 | `geometry_simplify.py` | Area-budgeted surface reduction (≤2% area drift default) |
