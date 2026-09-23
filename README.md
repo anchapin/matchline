@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # 55+ tests, hermetic, a few seconds
+python -m pytest tests/ -q   # 199 tests, hermetic, a few seconds
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
@@ -30,15 +30,18 @@ Every demo script is a subcommand (the old `python3 run_*.py` scripts still
 work as thin wrappers):
 
 ```bash
-matchline validate            # validation battery demo (synthetic)
+matchline validate              # validation battery demo (synthetic)
+matchline run --seed S         # unified pipeline: generate + link + validate + export
 matchline bem-export --sheet-id sheet_007
-matchline elevation-windows    # exact window placement + daylight (synthetic)
+matchline elevation-windows     # exact window placement + daylight (synthetic)
 matchline room-labels          # OCR room labeling (synthetic)
-matchline multidiscipline      # cross-discipline linking (synthetic)
 matchline symbols              # symbol eval + GD&T invariant check
-matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
-matchline facade-takeoff --n 5  # needs the CMP Facade dataset (not committed)
+matchline facade-takeoff --n 5 # CMP Facade area takeoffs
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
+matchline ifc-export model.json out.ifc  # IFC4 export
+matchline review model.json     # review queue: list/confirm/reject
+matchline multidiscipline       # 3 synthetic buildings
+matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
 ```
 
 ## Pipeline
@@ -77,7 +80,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 ## Quickstart
 
 ```bash
-python3 -m pytest tests/ -q        # 55+ tests: units, invariants, defect injection, goldens
+python3 -m pytest tests/ -q        # 199 tests: units, invariants, defect injection, goldens
 python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
 python3 run_validation.py          # invariant battery demo
 python3 run_bem_export.py          # gbXML + IFC export demos
