@@ -396,8 +396,7 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
     """
     if cv2 is None:
         raise ImportError(
-            "opencv-python is required for parse_schedule_table: "
-            "pip install opencv-python"
+            "opencv-python is required for parse_schedule_table: pip install opencv-python"
         )
     # Convert to grayscale if needed
     if len(sheet_image.shape) == 3:
