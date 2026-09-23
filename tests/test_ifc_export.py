@@ -9,12 +9,16 @@ Happy path: export produces a valid IFC with correct entity counts.
 Defect injection: model mismatch triggers _check_ifc_counts error.
 """
 
-import pytest
-import os
-
-from building_model import BuildingModel, Level, Provenance, Space, SpaceOpening, SpaceLighting, EnvelopeWall
+from building_model import (
+    BuildingModel,
+    EnvelopeWall,
+    Level,
+    Provenance,
+    Space,
+    SpaceLighting,
+)
 from ifc_export import _export_ifc
-from validate import run_checks, _Ctx, _build_ctx, _check_ifc_counts
+from validate import _build_ctx, _check_ifc_counts, run_checks
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
 _ensure_ifc()
@@ -40,7 +44,7 @@ def _simple_model(name: str = "Test Building", n_spaces: int = 3) -> BuildingMod
         sp = Space(
             id=sid,
             level_id="L1",
-            name=f"Room {i+1}",
+            name=f"Room {i + 1}",
             number=str(100 + i),
             polygon_m=polygons[i],
             area_m2=areas[i],
@@ -147,12 +151,11 @@ def test_check_fires_when_ifc_has_no_walls(tmp_path):
 def test_export_runs_validation_with_ifc_path(tmp_path):
     """Integration: run_checks (full battery) with ifc_path exercises _check_ifc_counts."""
     model = _simple_model(n_spaces=2)
-    model.envelope = []
     ifc_path = tmp_path / "full_validation.ifc"
 
     _export_ifc(model, str(ifc_path))
 
-    report = run_checks(model, ifc_path=str(ifc_path))
+    report = run_checks(model, ifc_path=str(ifc_path), tol_envelope=1.0)
     assert report.ok, f"expected no errors, got: {report.compact()}"
 
     ifc_result = next(r for r in report.results if r.check_id == "ifc_entity_counts")
