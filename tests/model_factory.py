@@ -285,3 +285,149 @@ def break_lpd_unit_slip(m: BuildingModel):
     """Simulate a ft^2 value leaking into the m^2 field (10.76x slip)."""
     sp = m.spaces["L1-101"]
     sp.lighting.lpd_w_ft2 = sp.lighting.lpd_w_m2  # forgot the conversion
+
+
+def break_space_volume_matches_area_height(m: BuildingModel):
+    """Space 101 volume no longer equals area x wall height."""
+    m.spaces["L1-101"].volume_m3 = 15.0
+
+
+def break_volume_conservation(m: BuildingModel):
+    """Sum of space volumes no longer equals footprint x wall height."""
+    m.spaces["L1-101"].volume_m3 = 15.0
+
+
+def break_envelope_area_matches_perimeter(m: BuildingModel):
+    """Envelope wall area no longer matches perimeter x height."""
+    m.envelope[0].area_m2 = 100.0
+
+
+def break_simplify_budget(m: BuildingModel):
+    """Simplifier result marks area_delta_pct outside its own budget."""
+
+    class _FakeSres:
+        area_delta_pct = 8.0
+        tol = 0.02
+        valid = True
+
+    m._sres = _FakeSres()
+
+
+def break_takeoff_counts_reconcile(m: BuildingModel):
+    """Count x schedule dims disagrees with recorded opening areas."""
+    m.spaces["L1-101"].openings[0].area_m2 = 99.0
+
+
+def break_opening_schedule_join(m: BuildingModel):
+    """Opening has no inline dims and its schedule entry has no dims either."""
+    m.spaces["L1-101"].openings[0].width_m = None
+    m.spaces["L1-101"].openings[0].height_m = None
+    m.schedules["A"]["width_m"] = None
+    m.schedules["A"]["height_m"] = None
+
+
+def break_sill_head_sanity(m: BuildingModel):
+    """Opening sill is below floor or head exceeds wall height."""
+    m.spaces["L1-101"].openings[0].sill_m = -0.5
+
+
+def break_space_id_hygiene(m: BuildingModel):
+    """Space id is malformed (no hyphen)."""
+    m.spaces["BADID"] = m.spaces.pop("L1-101")
+
+
+def break_elevation_placement_consistency(m: BuildingModel):
+    """Opening has exact placement but head != sill + height."""
+    m.spaces["L1-101"].openings[0].head_m = 1.0
+
+
+def break_review_queue_sound(m: BuildingModel):
+    """Review queue item is missing kind."""
+    from building_model import ReviewItem
+
+    m.review_queue.append(
+        ReviewItem(
+            id="RX",
+            kind="",
+            description="malformed",
+            status="open",
+            confidence=0.5,
+            provenance=P(),
+        )
+    )
+
+
+def break_revision_log_present(m: BuildingModel):
+    """Revision log is empty."""
+    m.revision_log.clear()
+
+
+def break_gbxml_spaces(m: BuildingModel):
+    """gbXML parse finds wrong number of spaces."""
+    import os
+    import tempfile
+
+    root = """<?xml version="1.0" encoding="UTF-8"?>
+<gbXML xmlns="http://www.gbxml.org/schema" temperatureUnit="C">
+  <Campus id="c1" name="test">
+    <Building id="b1" name="test_bldg" buildingType="Office">
+      <Space id="sp1" name="S1"><Area>30</Area><Volume>90</Volume></Space>
+      <Space id="sp2" name="S2"><Area>30</Area><Volume>90</Volume></Space>
+      <Space id="sp3" name="S3"><Area>30</Area><Volume>90</Volume></Space>
+    </Building>
+  </Campus>
+</gbXML>"""
+    fd, path = tempfile.mkstemp(suffix=".xml")
+    os.write(fd, root.encode())
+    os.close(fd)
+    m._gbxml_path = path
+
+
+def break_gbxml_opening_refs(m: BuildingModel):
+    """gbXML has openings not hosted on a surface with an id."""
+    import os
+    import tempfile
+
+    root = """<?xml version="1.0" encoding="UTF-8"?>
+<gbXML xmlns="http://www.gbxml.org/schema" temperatureUnit="C">
+  <Campus id="c1" name="test">
+    <Building id="b1" name="test_bldg" buildingType="Office">
+      <Space id="sp1" name="S1"><Area>30</Area><Volume>90</Volume></Space>
+      <Surface id="s1" surfaceType="Wall">
+        <Opening id="o1"><Width>1.5</Width><Height>2.1</Height></Opening>
+      </Surface>
+      <Surface id="">
+        <Opening id="o2"><Width>1.5</Width><Height>2.1</Height></Opening>
+      </Surface>
+    </Building>
+  </Campus>
+</gbXML>"""
+    fd, path = tempfile.mkstemp(suffix=".xml")
+    os.write(fd, root.encode())
+    os.close(fd)
+    m._gbxml_path = path
+
+
+def break_ifc_counts(m: BuildingModel):
+    """IFC has fewer spaces than the model."""
+    import os
+    import tempfile
+
+    ifc_content = """ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+FILE_NAME('test.ifc','','','','','','');
+FILE_SCHEMA(('IFC2X3'));
+ENDSEC;
+DATA;
+#1=IFCSITE('0',$,$,$,$,$,$,$,$,$,$,$,$,$,$);
+#2=IFCBUILDING('0',$,$,$,$,$,$,$,$,$,$,$);
+#3=IFCSPACESHELL('0',$,$,#2);
+#4=IFCSPACESHELL('0',$,$,#2);
+ENDSEC;
+END-ISO-10303-21;
+"""
+    fd, path = tempfile.mkstemp(suffix=".ifc")
+    os.write(fd, ifc_content.encode())
+    os.close(fd)
+    m._ifc_path = path

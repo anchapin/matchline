@@ -169,6 +169,12 @@ class _Ctx:
 
 def _build_ctx(model, **kw) -> _Ctx:
     ctx = _Ctx(model=model, **kw)
+    if ctx.sres is None:
+        ctx.sres = getattr(model, "_sres", None)
+    if ctx.gbxml_path is None:
+        ctx.gbxml_path = getattr(model, "_gbxml_path", None)
+    if ctx.ifc_path is None:
+        ctx.ifc_path = getattr(model, "_ifc_path", None)
     for sid, sp in model.spaces.items():
         ctx.level_of.setdefault(sp.level_id, []).append(sp)
     for lvl in model.levels:
