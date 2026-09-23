@@ -78,7 +78,6 @@ import json  # noqa: E402
 import math  # noqa: E402
 import random  # noqa: E402
 
-import joblib  # noqa: E402
 import numpy as np  # noqa: E402
 
 
@@ -295,9 +294,9 @@ def run_laya_inference(examples: list[dict]) -> list[dict]:
     import subprocess
     import tempfile
 
-    script_path = Path("/tmp/laya_worker.py")
-    script_path.write_text(_LAYA_INFER_SCRIPT)
-
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as sf:
+        sf.write(_LAYA_INFER_SCRIPT)
+        script_path = sf.name
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as ef:
         json.dump(examples, ef)
         examples_path = ef.name
@@ -305,7 +304,7 @@ def run_laya_inference(examples: list[dict]) -> list[dict]:
 
     try:
         result = subprocess.run(
-            [_detected_python, str(script_path), examples_path, results_path],
+            [_detected_python, script_path, examples_path, results_path],
             capture_output=True,
             text=True,
             timeout=600,
@@ -319,7 +318,7 @@ def run_laya_inference(examples: list[dict]) -> list[dict]:
     finally:
         import os
 
-        for p in [examples_path, results_path]:
+        for p in [script_path, examples_path, results_path]:
             try:
                 os.unlink(p)
             except OSError:
@@ -371,18 +370,10 @@ def main() -> None:
 
         for base_name in ["trained_model_route_to_review", "trained_model_urgency"]:
             npz_path = clf_dir / f"{base_name}.npz"
-            pkl_path = clf_dir / f"{base_name}.pkl"
             model = None
             if npz_path.exists():
                 try:
                     model = TypedDecider.from_npz(npz_path)
-                except Exception:
-                    pass
-            elif pkl_path.exists():
-                try:
-                    loaded = joblib.load(pkl_path)
-                    if isinstance(loaded, TypedDecider):
-                        model = loaded
                 except Exception:
                     pass
             if model is None:
