@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 28,
+  "n_checks": 29,
   "errors": 3,
   "warnings": 3,
   "passes": 18,
-  "skipped": 4
+  "skipped": 5
  },
  "results": [
   {
@@ -212,6 +212,13 @@
   {
    "check_id": "gbxml_opening_refs",
    "name": "gbXML opening refs",
+   "severity": "skip",
+   "message": "no gbXML path given",
+   "entities": []
+  },
+  {
+   "check_id": "gbxml_wall_areas",
+   "name": "gbXML wall area cross-pipeline reconciliation",
    "severity": "skip",
    "message": "no gbXML path given",
    "entities": []

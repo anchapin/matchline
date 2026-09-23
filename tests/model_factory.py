@@ -447,6 +447,58 @@ def break_gbxml_opening_refs(m: BuildingModel):
     m._gbxml_path = path
 
 
+def break_gbxml_wall_areas(m: BuildingModel):
+    """Canonical wall areas differ from what gbXML export would produce."""
+    import os
+    import tempfile
+
+    canonical_area = sum(
+        w.area_m2 for w in m.envelope if getattr(w, "area_m2", 0) > 0
+    )
+    target_gbxml_area = canonical_area * 0.1
+    n_walls = max(1, len([w for w in m.envelope if getattr(w, "area_m2", 0) > 0]))
+    per_wall_area = target_gbxml_area / n_walls
+    ns_uri = "http://www.gbxml.org/schema"
+    space_ids = [f"space-{i}" for i in range(len(m.spaces))]
+    sp_map = {}
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<gbXML xmlns="{ns_uri}">',
+        "  <Campus>",
+    ]
+    for idx, (k, sp) in enumerate(m.spaces.items()):
+        sid = f"space-{idx}"
+        wh = getattr(sp, "wall_height_m", None) or 3.0
+        sp.wall_height_m = wh
+        sp.gbxml_id = sid
+        sp_map[sid] = wh
+        lines.append(f'    <Space id="{sid}" spaceName="{sp.name or k}"/>')
+    lines.append("  </Campus>")
+    for i, w in enumerate(w for w in m.envelope if getattr(w, "area_m2", 0) > 0):
+        h = w.height_m or 3.0
+        target_len = per_wall_area / h
+        lines.append(f'    <Surface surfaceType="ExteriorWall" id="wall-{i:03d}">')
+        lines.append(f'      <AdjacentSpaceId spaceIdRef="{space_ids[0]}"/>')
+        lines.append("      <RectangularGeometry>")
+        lines.append("        <Azimuth>0</Azimuth>")
+        lines.append("        <Tilt>90</Tilt>")
+        lines.append("        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
+        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
+        lines.append("      </RectangularGeometry>")
+        lines.append("      <PlanarGeometry><Polygon>")
+        lines.append("        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
+        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
+        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>")
+        lines.append(f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>")
+        lines.append("      </Polygon></PlanarGeometry>")
+        lines.append("    </Surface>")
+    lines.append("</gbXML>")
+    fd, path = tempfile.mkstemp(suffix=".xml")
+    os.write(fd, "\n".join(lines).encode())
+    os.close(fd)
+    m._gbxml_path = path
+
+
 def break_ifc_counts(m: BuildingModel):
     """IFC has fewer spaces than the model."""
     import os

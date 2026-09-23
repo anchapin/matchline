@@ -13,6 +13,7 @@ from tests.model_factory import (
     break_fixture_no_schedule_flagged,
     break_gbxml_opening_refs,
     break_gbxml_spaces,
+    break_gbxml_wall_areas,
     break_ifc_counts,
     break_lpd_absurd,
     break_lpd_unit_slip,
@@ -55,7 +56,7 @@ def test_clean_model_fully_green():
 def test_battery_size_documented():
     # keep docs/validation.md's check count honest; update the doc if this
     # number changes intentionally.
-    assert N_CHECKS == 28
+    assert N_CHECKS == 29
 
 
 @pytest.mark.parametrize(
@@ -88,6 +89,7 @@ def test_battery_size_documented():
         (break_revision_log_present, "revision_log_present", "warn"),
         (break_gbxml_spaces, "gbxml_space_areas", "error"),
         (break_gbxml_opening_refs, "gbxml_opening_refs", "error"),
+        (break_gbxml_wall_areas, "gbxml_wall_areas", "error"),
         (break_ifc_counts, "ifc_entity_counts", "error"),
     ],
 )

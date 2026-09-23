@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (28 checks)
+## The battery (29 checks)
 
 ### Conservation laws (error)
 
@@ -136,9 +136,10 @@ are consistent with each other but implausible for a real building).
 - **Envelope 1%:** assumes exterior runs and room faces differ only by
   wall thickness. Curtain-wall buildings with deep mullion zones may
   need more.
-- **`simplify_budget`** currently only checks the simplifier's
-  self-reported delta. A stronger check — re-running the simplifier from
-  the raw footprint and comparing — is future work.
-- Export checks are structural (counts, refs, positivity), not semantic:
-  they don't verify the gbXML wall areas match the canonical model's.
-  Cross-pipeline numeric reconciliation is the next check to write.
+- **`simplify_budget`** re-runs the simplifier from the raw footprint
+  to verify the self-reported delta. If the re-verified original area
+  differs from the stored value by more than 0.1 m², an error is raised.
+- **`gbxml_wall_areas`** (new) verifies that gbXML-exported wall areas
+  match the canonical model's envelope wall areas. Cross-pipeline numeric
+  reconciliation closes the gap between structural-only export checks and
+  semantic verification.
