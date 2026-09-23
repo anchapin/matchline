@@ -403,6 +403,187 @@ def _parse_fill_tag(name):
 
 
 # ---------------------------------------------------------------------------
+# Helpers for import_ifc complexity reduction
+# ---------------------------------------------------------------------------
+
+
+def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
+    """Extract polygon/area/volume from an IfcSpace entity.
+
+    Tries in order: IfcExtrudedAreaSolid, IfcGeometricCurveSet,
+    Qto_SpaceBaseQuantities.  Returns (polygon, area, volume, conf, method,
+    note).  Flags for review when geometry is insufficient.
+    """
+    polygon, area, volume, conf, method, note = (
+        [],
+        None,
+        None,
+        0.4,
+        "ifc_import:tier0:space",
+        "no geometry; identity only",
+    )
+    solids = _body_extrusions(sp)
+    fp = _polyline_footprint(solids[0], scale) if solids else None
+    if fp is not None:
+        pts_local, depth = fp
+        ang, tx, ty, _tz = _placement_transform(sp, scale)
+        polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in pts_local]
+        area = abs(_shoelace(polygon))
+        volume = area * depth
+        conf, method = 0.95, "ifc_import:tier0:space:solid"
+        note = f"footprint from IfcExtrudedAreaSolid ({len(polygon)} pts)"
+    else:
+        polygon = _try_curve_set_footprint(sp, scale)
+        if polygon:
+            area = abs(_shoelace(polygon))
+            volume = None
+            conf, method = 0.9, "ifc_import:tier0:space:curve_set"
+            note = f"footprint from IfcGeometricCurveSet ({len(polygon)} pts)"
+        else:
+            q = _quantities(sp, "Qto_SpaceBaseQuantities", scale)
+            if "GrossFloorArea" in q:
+                area = q["GrossFloorArea"]
+                volume = q.get("GrossVolume")
+                conf, method = 0.6, "ifc_import:tier0:space:quantity"
+                note = "no solid geometry; area from GrossFloorArea"
+            model.flag_for_review(
+                "space_no_geometry",
+                f"space {sid} ({sp_name}) has no solid geometry",
+                conf,
+                prov_fn("ifc_import:tier0:space", conf, note),
+            )
+    return polygon, area, volume, conf, method, note
+
+
+def _try_curve_set_footprint(sp, scale):
+    """Try to read a 2-D IfcGeometricCurveSet footprint from sp."""
+    rep = getattr(sp, "Representation", None)
+    if not rep:
+        return []
+    for shape_rep in getattr(rep, "Representations", None) or []:
+        for item in getattr(shape_rep, "Items", None) or []:
+            if not item.is_a("IfcGeometricCurveSet"):
+                continue
+            for curve in getattr(item, "Elements", None) or []:
+                if not curve.is_a("IfcPolyline"):
+                    continue
+                pts = [
+                    (float(p.Coordinates[0]) * scale, float(p.Coordinates[1]) * scale)
+                    for p in getattr(curve, "Points", None) or []
+                ]
+                if len(pts) >= 3:
+                    return [_to_canonical(x, y) for x, y in pts]
+    return []
+
+
+def _read_lighting(sp):
+    """Read Pset_SpaceLighting.LightingPower from sp. Returns SpaceLighting or None."""
+    for rel in getattr(sp, "IsDefinedBy", None) or []:
+        if not rel.is_a("IfcRelDefinesByProperties"):
+            continue
+        psd = rel.RelatingPropertyDefinition
+        if psd is None or not psd.is_a("IfcPropertySet"):
+            continue
+        if psd.Name != "Pset_SpaceLighting":
+            continue
+        for prop in psd.HasProperties or []:
+            if not prop.is_a("IfcPropertySingleValue"):
+                continue
+            if prop.Name != "LightingPower":
+                continue
+            try:
+                return SpaceLighting(fixtures=[], total_w=float(prop.NominalValue.wrappedValue))
+            except Exception:
+                pass
+    return None
+
+
+def _wall_direction_from_envelope(el, model):
+    """Try to get wall direction from an envelope wall of matching length."""
+    length_m = el.length_m
+    if length_m is None:
+        return None
+    for ew in model.envelope:
+        ew_len = math.sqrt((ew.to_m[0] - ew.from_m[0]) ** 2 + (ew.to_m[1] - ew.from_m[1]) ** 2)
+        if abs(ew_len - length_m) < 0.1:
+            dx = ew.to_m[0] - ew.from_m[0]
+            dy = ew.to_m[1] - ew.from_m[1]
+            norm = math.sqrt(dx * dx + dy * dy)
+            if norm > 1e-9:
+                return (dx / norm, dy / norm)
+    return None
+
+
+def _wall_direction_from_entity(el):
+    """Derive wall direction from the raw IFC entity's RefDirection."""
+    raw = getattr(el, "_raw_ifc", None)
+    if raw is None:
+        return None
+    op_pl = getattr(raw, "ObjectPlacement", None)
+    if op_pl is None:
+        return None
+    rel = getattr(op_pl, "RelativePlacement", None)
+    if rel is None or not rel.is_a("IfcAxis2Placement3D"):
+        return None
+    rd = getattr(rel, "RefDirection", None)
+    if rd is None:
+        return None
+    dr = getattr(rd, "DirectionRatios", None)
+    if not dr:
+        return None
+    dx, dy = float(dr[0]), float(dr[1])
+    norm = math.sqrt(dx * dx + dy * dy)
+    if norm <= 1e-9:
+        return None
+    return (dx / norm, dy / norm)
+
+
+def _attach_openings_to_spaces(model):
+    """Tier-1 fallback: attach BEM openings to the spaces whose polygons contain them.
+
+    Uses the opening's along-wall position (s_center_m) to determine which space
+    the opening belongs to, correctly handling exterior walls that span multiple
+    spaces.
+    """
+    for el in model.bim_elements:
+        if not el.openings or not el.placement_m:
+            continue
+        if el.ifc_class not in ("IfcWall", "IfcWallStandardCase"):
+            continue
+        cx, cy = el.placement_m[0], el.placement_m[1]
+        length_m = el.length_m
+        if length_m is None:
+            continue
+
+        wall_dir = _wall_direction_from_envelope(el, model)
+        if wall_dir is None:
+            wall_dir = _wall_direction_from_entity(el)
+        if wall_dir is None:
+            continue
+
+        for bo in el.openings:
+            if bo.s_center_m is None:
+                continue
+            ox = cx + wall_dir[0] * (bo.s_center_m - length_m / 2)
+            oy = cy + wall_dir[1] * (bo.s_center_m - length_m / 2)
+            for sp in model.spaces.values():
+                if sp.polygon_m and _point_in_polygon((ox, oy), sp.polygon_m):
+                    sp.openings.append(
+                        SpaceOpening(
+                            id=bo.id,
+                            tag=bo.tag,
+                            category=bo.category,
+                            width_m=bo.width_m or 0.0,
+                            height_m=bo.height_m or 0.0,
+                            sill_m=bo.sill_m,
+                            s_center_m=bo.s_center_m,
+                            provenance=bo.provenance,
+                        )
+                    )
+                    break
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -488,65 +669,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             gid = sp.GlobalId
             space_by_gid[gid] = sid
 
-            polygon, area, volume, conf, method, note = (
-                [],
-                None,
-                None,
-                0.4,
-                "ifc_import:tier0:space",
-                "no geometry; identity only",
+            polygon, area, volume, conf, method, note = _extract_space_geometry(
+                sp, scale, sid, sp.Name, prov, model
             )
-            solids = _body_extrusions(sp)
-            fp = _polyline_footprint(solids[0], scale) if solids else None
-            if fp is not None:
-                pts_local, depth = fp
-                ang, tx, ty, _tz = _placement_transform(sp, scale)
-                polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in pts_local]
-                area = abs(_shoelace(polygon))
-                volume = area * depth
-                conf, method = 0.95, "ifc_import:tier0:space:solid"
-                note = f"footprint from IfcExtrudedAreaSolid ({len(polygon)} pts)"
-            else:
-                # Tier-1: try IfcGeometricCurveSet footprint (added by export)
-                rep = getattr(sp, "Representation", None)
-                if rep:
-                    # IfcProductDefinitionShape.Representations gives [IfcShapeRepresentation]
-                    for shape_rep in getattr(rep, "Representations", None) or []:
-                        for item in getattr(shape_rep, "Items", None) or []:
-                            if item.is_a("IfcGeometricCurveSet"):
-                                for curve in getattr(item, "Elements", None) or []:
-                                    if curve.is_a("IfcPolyline"):
-                                        pts = [
-                                            (
-                                                float(p.Coordinates[0]) * scale,
-                                                float(p.Coordinates[1]) * scale,
-                                            )
-                                            for p in getattr(curve, "Points", None) or []
-                                        ]
-                                        if len(pts) >= 3:
-                                            polygon = [_to_canonical(x, y) for x, y in pts]
-                                            area = abs(_shoelace(polygon))
-                                            volume = None  # no depth from 2D curve
-                                            conf, method = 0.9, "ifc_import:tier0:space:curve_set"
-                                            note = f"footprint from IfcGeometricCurveSet ({len(polygon)} pts)"
-                                            break
-                                if polygon:
-                                    break
-                        if polygon:
-                            break
-                if not polygon:
-                    q = _quantities(sp, "Qto_SpaceBaseQuantities", scale)
-                    if "GrossFloorArea" in q:
-                        area = q["GrossFloorArea"]
-                        volume = q.get("GrossVolume")
-                        conf, method = 0.6, "ifc_import:tier0:space:quantity"
-                        note = "no solid geometry; area from GrossFloorArea"
-                    model.flag_for_review(
-                        "space_no_geometry",
-                        f"space {sid} ({sp.Name}) has no solid geometry",
-                        conf,
-                        prov("ifc_import:tier0:space", conf, note, gid),
-                    )
 
             space = Space(
                 id=sid,
@@ -559,23 +684,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 core_provenance=prov(method, conf, note, gid),
                 label_confidence=0.9 if number else 0.6,
             )
-            # read lighting power from Pset_SpaceLighting if present
-            for rel in getattr(sp, "IsDefinedBy", None) or []:
-                if not rel.is_a("IfcRelDefinesByProperties"):
-                    continue
-                psd = rel.RelatingPropertyDefinition
-                if psd is None or not psd.is_a("IfcPropertySet"):
-                    continue
-                if psd.Name != "Pset_SpaceLighting":
-                    continue
-                for prop in psd.HasProperties or []:
-                    if prop.is_a("IfcPropertySingleValue") and prop.Name == "LightingPower":
-                        try:
-                            space.lighting = SpaceLighting(
-                                fixtures=[], total_w=float(prop.NominalValue.wrappedValue)
-                            )
-                        except Exception:
-                            pass
+            space.lighting = _read_lighting(sp)
             model.spaces[sid] = space
 
         # --- elements -----------------------------------------------------
@@ -722,94 +831,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             ),
         )
 
-    # --- attach openings to spaces (Tier 1 fallback) -----------------------
-    # Issue #2: use opening's along-wall position (s_center_m) to determine
-    # which space the opening belongs to, rather than the wall center. This
-    # correctly handles exterior walls that span multiple spaces (e.g., a
-    # 20m south wall spanning 3 rooms: each window's s_center_m determines
-    # which room's polygon contains the opening's 2D center point).
-    #
-    # Strategy: for each opening on a wall element, compute the opening's
-    # 2-D center from the wall's direction and the opening's s_center_m.
-    # Two sources for wall direction:
-    #  1. Envelope wall match: same length → use its from/to direction.
-    #  2. Wall's own RefDirection: the IFC placement stores the wall axis.
-    for el in model.bim_elements:
-        if not el.openings or not el.placement_m:
-            continue
-        if el.ifc_class not in ("IfcWall", "IfcWallStandardCase"):
-            continue
-        cx, cy = el.placement_m[0], el.placement_m[1]
-        length_m = el.length_m
-        if length_m is None:
-            continue
-
-        # Try to get wall direction from envelope (preferred)
-        wall_dir = None
-        for ew in model.envelope:
-            ew_len = math.sqrt((ew.to_m[0] - ew.from_m[0]) ** 2 + (ew.to_m[1] - ew.from_m[1]) ** 2)
-            if abs(ew_len - length_m) < 0.1:
-                dx = ew.to_m[0] - ew.from_m[0]
-                dy = ew.to_m[1] - ew.from_m[1]
-                norm = math.sqrt(dx * dx + dy * dy)
-                if norm > 1e-9:
-                    wall_dir = (dx / norm, dy / norm)
-                    break
-
-        # Fallback: derive direction from the wall's own IFC placement RefDirection
-        if wall_dir is None:
-            pl = getattr(el, "_ifc_entity", None) or getattr(el, "entity", None)
-            if pl is None:
-                # Try to get the raw IFC entity from bim_elements
-                pass
-            # The wall direction from placement is stored in the entity's
-            # ObjectPlacement.RelativePlacement.RefDirection. We read it from
-            # the raw ifcopenshell entity attached to the BimElement.
-            # Note: BimElement.global_id can be used to re-query the entity.
-            raw = getattr(el, "_raw_ifc", None)
-            if raw is None:
-                # No raw IFC access; skip attachment for this element
-                continue
-            op_pl = getattr(raw, "ObjectPlacement", None)
-            if op_pl is not None:
-                rel = getattr(op_pl, "RelativePlacement", None)
-                if rel is not None and rel.is_a("IfcAxis2Placement3D"):
-                    rd = getattr(rel, "RefDirection", None)
-                    if rd is not None:
-                        dr = rd.DirectionRatios
-                        if dr:
-                            dx, dy = float(dr[0]), float(dr[1])
-                            norm = math.sqrt(dx * dx + dy * dy)
-                            if norm > 1e-9:
-                                wall_dir = (dx / norm, dy / norm)
-
-        if wall_dir is None:
-            continue  # cannot determine wall direction
-
-        for bo in el.openings:
-            if bo.s_center_m is None:
-                continue
-
-            # Opening center in canonical 2-D:
-            # wall center (cx,cy) minus half-length along direction + s_center_m
-            ox = cx + wall_dir[0] * (bo.s_center_m - length_m / 2)
-            oy = cy + wall_dir[1] * (bo.s_center_m - length_m / 2)
-
-            for sp in model.spaces.values():
-                if sp.polygon_m and _point_in_polygon((ox, oy), sp.polygon_m):
-                    sp.openings.append(
-                        SpaceOpening(
-                            id=bo.id,
-                            tag=bo.tag,
-                            category=bo.category,
-                            width_m=bo.width_m or 0.0,
-                            height_m=bo.height_m or 0.0,
-                            sill_m=bo.sill_m,
-                            s_center_m=bo.s_center_m,
-                            provenance=bo.provenance,
-                        )
-                    )
-                    break  # opening belongs to exactly one space
+    _attach_openings_to_spaces(model)
 
     model.log_revision(
         sheet,
