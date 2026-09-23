@@ -92,11 +92,19 @@ class ReviewTriage:
         return self
 
     def _load_one(self, path: pathlib.Path) -> TypedDecider | None:
+        npz_path = path.with_suffix(".npz")
+        if npz_path.exists():
+            try:
+                return TypedDecider.from_npz(npz_path)
+            except Exception:
+                return None
         if not path.exists():
             return None
         try:
-            with open(path, "rb") as f:
-                return joblib.load(f)
+            model = joblib.load(path)
+            if not isinstance(model, TypedDecider):
+                return None
+            return model
         except Exception:
             return None
 

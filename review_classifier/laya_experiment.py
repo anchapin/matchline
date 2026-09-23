@@ -367,42 +367,57 @@ def main() -> None:
     sklearn_results = {}
 
     try:
-        for model_name in ["trained_model_route_to_review.pkl", "trained_model_urgency.pkl"]:
-            mpath = clf_dir / model_name
-            if mpath.exists():
-                with open(mpath, "rb") as f:
-                    model = joblib.load(f)
-                examples = make_review_examples(seed=42, n=300)
-                from review_classifier.data import Example
-                from review_classifier.features import ReviewFeaturizer
+        from review_classifier.model import TypedDecider
 
-                texts = [e["text"] for e in examples]
-                feat = ReviewFeaturizer(max_features=2000)
-                feat.fit(texts)
-                X = feat.transform(
-                    [
-                        Example(task=e["task"], text=e["text"], numeric=e.get("numeric", {}))
-                        for e in examples
-                    ]
-                )
+        for base_name in ["trained_model_route_to_review", "trained_model_urgency"]:
+            npz_path = clf_dir / f"{base_name}.npz"
+            pkl_path = clf_dir / f"{base_name}.pkl"
+            model = None
+            if npz_path.exists():
+                try:
+                    model = TypedDecider.from_npz(npz_path)
+                except Exception:
+                    pass
+            elif pkl_path.exists():
+                try:
+                    loaded = joblib.load(pkl_path)
+                    if isinstance(loaded, TypedDecider):
+                        model = loaded
+                except Exception:
+                    pass
+            if model is None:
+                continue
+            from review_classifier.data import Example
+            from review_classifier.features import ReviewFeaturizer
 
-                y_task = [int(e["label"]) for e in examples]
-                y_urg = [e["urgency"] for e in examples]
+            examples = make_review_examples(seed=42, n=300)
+            texts = [e["text"] for e in examples]
+            feat = ReviewFeaturizer(max_features=2000)
+            feat.fit(texts)
+            X = feat.transform(
+                [
+                    Example(task=e["task"], text=e["text"], numeric=e.get("numeric", {}))
+                    for e in examples
+                ]
+            )
 
-                if "route_to_review" in model_name:
-                    proba = model.predict_proba(X)
-                    confs = [max(p) for p in proba]
-                    preds = [model.classes_[int(np.argmax(p))] for p in proba]
-                    acc = sum(int(p == l) for p, l in zip(preds, y_task)) / len(y_task)
-                    ece = ece_score(confs, y_task)
-                    sklearn_results["route_to_review"] = {"acc": acc, "ece": ece, "n": len(y_task)}
-                elif "urgency" in model_name:
-                    proba = model.predict_proba(X)
-                    confs = [max(p) for p in proba]
-                    preds = [model.classes_[int(np.argmax(p))] for p in proba]
-                    acc = sum(int(p == l) for p, l in zip(preds, y_urg)) / len(y_urg)
-                    ece = ece_score(confs, y_urg)
-                    sklearn_results["urgency"] = {"acc": acc, "ece": ece, "n": len(y_urg)}
+            y_task = [int(e["label"]) for e in examples]
+            y_urg = [e["urgency"] for e in examples]
+
+            if "route_to_review" in base_name:
+                proba = model.predict_proba(X)
+                confs = [max(p) for p in proba]
+                preds = [model.classes_[int(np.argmax(p))] for p in proba]
+                acc = sum(int(p == l) for p, l in zip(preds, y_task)) / len(y_task)
+                ece = ece_score(confs, y_task)
+                sklearn_results["route_to_review"] = {"acc": acc, "ece": ece, "n": len(y_task)}
+            elif "urgency" in base_name:
+                proba = model.predict_proba(X)
+                confs = [max(p) for p in proba]
+                preds = [model.classes_[int(np.argmax(p))] for p in proba]
+                acc = sum(int(p == l) for p, l in zip(preds, y_urg)) / len(y_urg)
+                ece = ece_score(confs, y_urg)
+                sklearn_results["urgency"] = {"acc": acc, "ece": ece, "n": len(y_urg)}
     except Exception as e:
         print(f"sklearn comparison skipped (models not available): {e}")
 
