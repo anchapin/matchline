@@ -13,6 +13,8 @@ bem_out/
 
 # ML model artifacts (reproducible via review_classifier/train.py)
 # -- triage.py loads these; npz is required, pkl raises ValueError --
+/review_classifier/trained_model.pkl
+/review_classifier/trained_model_extraction_type.pkl
 /review_classifier/trained_model_needs_human.pkl
 /review_classifier/trained_model_urgency.pkl
 /review_classifier/trained_model_resolution.pkl
