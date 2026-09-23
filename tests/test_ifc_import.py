@@ -333,8 +333,11 @@ def test_model_json_roundtrip(model):
     m2 = BuildingModel.from_json(model.to_json())
     assert len(m2.bim_elements) == len(model.bim_elements)
     assert len(m2.spaces) == len(model.spaces)
-    w0 = m2.bim_elements[0]
-    assert w0.material_layers and w0.openings is not None
+    # Find a BIM element with geometry (skip placement-only ducts) to verify
+    # material_layers roundtrip — element ordering is platform-dependent (CI vs local).
+    w0 = next((e for e in m2.bim_elements if e.material_layers), None)
+    assert w0 is not None, "No element with material_layers found"
+    assert w0.openings is not None
     assert m2.spaces["L1-101"].area_m2 == pytest.approx(80.0, rel=1e-6)
 
 
