@@ -81,13 +81,13 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 
 ```bash
 python3 -m pytest tests/ -q        # 324 tests: units, invariants, defect injection, goldens
+matchline validate                 # invariant battery demo  (canonical)
+matchline run --seed 0            # unified pipeline: generate + link + validate + export
+# Legacy wrappers (still work, but matchline CLI is canonical):
 python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
 python3 run_validation.py          # invariant battery demo
 python3 run_bem_export.py          # gbXML + IFC export demos
-python3 run_facade_takeoff.py      # facade takeoffs — needs ~/workspace/datasets/cmp-facade
-```
-
-(Or the equivalent `matchline <command>` forms above.)
+python3 run_facade_takeoff.py      # facade takeoffs — needs --data-root
 
 ## Validation
 
