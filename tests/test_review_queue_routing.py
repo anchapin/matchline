@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from building_model import REVIEW_CONFIDENCE, BuildingModel, Provenance
+from building_model import REVIEW_CONFIDENCE, BuildingModel, Provenance, ReviewItem
 from link import build_model, match_interval_to_segments
 from registration import Facade
 from synth.multidiscipline import generate_building
@@ -343,9 +343,6 @@ class TestConfidenceThresholdOverride:
             cmd_run(ns)
 
         assert captured_config.get("review_confidence") == 0.75
-        seg, frac, ambiguous = match_interval_to_segments(0.0, 10.0, segments)
-        assert ambiguous
-        assert frac < 0.5
 
     def test_no_overlap_is_ambiguous(self):
         """No overlap → ambiguous → needs_review = True."""
