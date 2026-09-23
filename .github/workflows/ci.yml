@@ -41,3 +41,17 @@ jobs:
 
       - name: Run pytest
         run: python -m pytest tests/ -q
+
+      - name: Check test count
+        run: |
+          # Record the test count; a drift of ±1 or more requires investigation before merging.
+          # Expected: ~324 tests. Update EXPECTED_TEST_COUNT if test count changes legitimately.
+          EXPECTED_TEST_COUNT=324
+          ACTUAL_TEST_COUNT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1 | awk '{print $1}')
+          echo "Expected: $EXPECTED_TEST_COUNT, Actual: $ACTUAL_TEST_COUNT"
+          if [ "$ACTUAL_TEST_COUNT" != "$EXPECTED_TEST_COUNT" ]; then
+            echo "ERROR: Test count changed from $EXPECTED_TEST_COUNT to $ACTUAL_TEST_COUNT"
+            echo "If this is intentional (e.g., removed obsolete tests), update EXPECTED_TEST_COUNT."
+            echo "Otherwise, investigate why tests were added or removed."
+            exit 1
+          fi
