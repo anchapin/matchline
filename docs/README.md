@@ -19,6 +19,7 @@ disclosed, not hidden.
 | `lighting.md` | Fixture takeoffs, building watts, per-space LPD |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
 | `polygon_classify.md` | Non-room polygon classification (shafts, closets, elevator cores) |
+| `registration.md` | Sheet registration: plan + elevation affine alignment into canonical metres |
 | `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
