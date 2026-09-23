@@ -600,6 +600,17 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     import ifcopenshell
 
     path = Path(path)
+    if not path.is_absolute():
+        path_resolved = path.resolve()
+        cwd_resolved = Path.cwd().resolve()
+        try:
+            path_resolved.relative_to(cwd_resolved)
+        except ValueError:
+            raise ValueError(
+                f"Input path '{path}' resolves to '{path_resolved}' which escapes "
+                f"the working directory '{cwd_resolved}'. "
+                "Rejecting to prevent path traversal."
+            )
     f = ifcopenshell.open(str(path))
     if f.schema != "IFC4":
         raise ValueError(f"expected IFC4 schema, got {f.schema}")
