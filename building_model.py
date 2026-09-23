@@ -34,7 +34,7 @@ that diffs cleanly across drawing revisions.
 
 import json
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Dict, List, Optional, Union, get_args, get_origin, get_type_hints
+from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
 MODEL_VERSION = "1.0"
 
@@ -321,7 +321,17 @@ class Level:
 @dataclass
 class ReviewItem:
     id: str
-    kind: str  # e.g. "window_room_link", "fixture_assignment"
+    kind: Literal[
+        "fixture_assignment",
+        "fixture_schedule",
+        "diffuser_assignment",
+        "sensor_assignment",
+        "window_room_link",
+        "space_no_geometry",
+        "elevation_conflict",
+        "window_reconciliation",
+        "gd_complex_row",
+    ]
     description: str
     confidence: float
     provenance: Provenance = None
@@ -402,7 +412,21 @@ class BuildingModel:
         return [self.spaces[s] for s in z.space_ids if s in self.spaces]
 
     def flag_for_review(
-        self, kind: str, description: str, confidence: float, provenance: Provenance
+        self,
+        kind: Literal[
+            "fixture_assignment",
+            "fixture_schedule",
+            "diffuser_assignment",
+            "sensor_assignment",
+            "window_room_link",
+            "space_no_geometry",
+            "elevation_conflict",
+            "window_reconciliation",
+            "gd_complex_row",
+        ],
+        description: str,
+        confidence: float,
+        provenance: Provenance,
     ) -> ReviewItem:
         rid = f"RVW-{len(self.review_queue) + 1:03d}"
         item = ReviewItem(
