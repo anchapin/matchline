@@ -9,7 +9,7 @@ All notable changes to this project are documented here, in
 ### Changed
 - Renamed the project from `wisard-bem` to **Matchline**: distribution name,
   GitHub repo (`anchapin/matchline`), docs, and the `matchline` CLI. The old
-  `wisard-bem` command still works as a deprecated alias (removal in 0.2.0).
+  `wisard-bem` alias was removed in 0.2.0.
   The WiSARD paper-reproduction module (`jesse.py`) keeps its name.
 
 ### Added
