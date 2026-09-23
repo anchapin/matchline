@@ -17,7 +17,10 @@ disclosed, not hidden.
 | `ifc_import.md` | Tier-0 IFC import: what recovers without space boundaries |
 | `jesse.md` | WiSARD classifier + Zhang-Suen skeleton invariants + thick-stroke preprocessing |
 | `lighting.md` | Fixture takeoffs, building watts, per-space LPD |
+| `link.md` | Cross-sheet linker: Spaces, fixtures, zones, elevations, dedup |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
+| `registration.md` | Sheet registration: plan + elevation affine alignment into canonical metres |
+| `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
 | `validation.md` | The 26-check invariant battery and tolerance rationales |
