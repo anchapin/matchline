@@ -7,14 +7,14 @@ The review queue is the safety net: low-confidence links are flagged for human
 review rather than silently accepted. These tests verify the routing logic
 fires at the right confidence boundary.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from building_model import REVIEW_CONFIDENCE, BuildingModel, Provenance, SpaceOpening
+from building_model import REVIEW_CONFIDENCE, BuildingModel, Provenance
 from link import build_model, match_interval_to_segments
 from registration import Facade
-
 from synth.multidiscipline import generate_building
 
 
@@ -24,9 +24,7 @@ class TestReviewQueueRoutingDirect:
     def test_flag_review_accepts_high_confidence(self):
         """High-confidence item (conf=0.95) is NOT flagged for review by threshold check."""
         model = BuildingModel()
-        prov = Provenance(
-            sheet_id="test", revision=1, method="test", confidence=0.95
-        )
+        prov = Provenance(sheet_id="test", revision=1, method="test", confidence=0.95)
         item = model.flag_for_review(
             kind="fixture_assignment",
             description="fixture X in room 101",
@@ -39,9 +37,7 @@ class TestReviewQueueRoutingDirect:
     def test_flag_review_accepts_boundary_confidence(self):
         """Boundary confidence (conf=0.80) is NOT flagged — REVIEW_CONFIDENCE uses < comparison."""
         model = BuildingModel()
-        prov = Provenance(
-            sheet_id="test", revision=1, method="test", confidence=REVIEW_CONFIDENCE
-        )
+        prov = Provenance(sheet_id="test", revision=1, method="test", confidence=REVIEW_CONFIDENCE)
         item = model.flag_for_review(
             kind="fixture_assignment",
             description="fixture X in room 101",
@@ -54,9 +50,7 @@ class TestReviewQueueRoutingDirect:
     def test_flag_review_rejects_sub_threshold_confidence(self):
         """Sub-threshold confidence (conf=0.79) IS flagged for review."""
         model = BuildingModel()
-        prov = Provenance(
-            sheet_id="test", revision=1, method="test", confidence=0.79
-        )
+        prov = Provenance(sheet_id="test", revision=1, method="test", confidence=0.79)
         item = model.flag_for_review(
             kind="fixture_assignment",
             description="fixture X in room 101",
@@ -141,7 +135,9 @@ class TestMatchIntervalSegmentsReview:
 
     def test_perfect_overlap_not_ambiguous(self):
         """Full-overlap segment match is not ambiguous."""
-        facade = Facade(name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x")
+        _facade = Facade(
+            name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x"
+        )
         segments = [{"id": "seg1", "s0": 0.0, "s1": 10.0}]
         seg, frac, ambiguous = match_interval_to_segments(0.0, 10.0, segments)
         assert seg is not None
@@ -150,7 +146,9 @@ class TestMatchIntervalSegmentsReview:
 
     def test_partial_overlap_not_ambiguous_above_margin(self):
         """Overlap fraction > 0.5 with clear winner is not ambiguous."""
-        facade = Facade(name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x")
+        _facade = Facade(
+            name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x"
+        )
         segments = [
             {"id": "seg1", "s0": 0.0, "s1": 10.0},
             {"id": "seg2", "s0": 8.0, "s1": 18.0},
@@ -162,7 +160,9 @@ class TestMatchIntervalSegmentsReview:
 
     def test_low_overlap_is_ambiguous(self):
         """Low overlap fraction triggers ambiguity → needs_review = True."""
-        facade = Facade(name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x")
+        _facade = Facade(
+            name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x"
+        )
         segments = [
             {"id": "seg1", "s0": 0.0, "s1": 2.0},
             {"id": "seg2", "s0": 8.0, "s1": 10.0},
@@ -173,7 +173,9 @@ class TestMatchIntervalSegmentsReview:
 
     def test_no_overlap_is_ambiguous(self):
         """No overlap → ambiguous → needs_review = True."""
-        facade = Facade(name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x")
+        _facade = Facade(
+            name="south", ref_corner_m=(0.0, 10.0), length_m=20.0, fixed_coord_m=10.0, axis="x"
+        )
         segments = [{"id": "seg1", "s0": 15.0, "s1": 20.0}]
         seg, frac, ambiguous = match_interval_to_segments(0.0, 5.0, segments)
         assert seg is None
