@@ -27,4 +27,14 @@ disclosed, not hidden.
 | `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `validation.md` | The 28-check invariant battery and tolerance rationales |
 
+## Quick Start
+
+```bash
+pip install -e ".[test]"        # (1) editable install with test extras
+python -m pytest tests/ -q      # (2) smoke test — 324 tests, a few seconds
+matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
+```
+
+See the [full documentation](../README.md) or browse the tables above for module guides.
+
 Start with `ROADMAP.md` (repo root) for where the project is going.
