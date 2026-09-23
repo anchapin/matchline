@@ -50,18 +50,31 @@ def _item_to_example(item: ReviewItem) -> Example:
 
 
 def _load_classifier_for_task(task: str) -> TypedDecider | None:
-    """Load a pre-trained TypedDecider for a specific task, or None if not found."""
+    """Load a pre-trained TypedDecider for a specific task, or None if not found.
+
+    Loads from ``.npz`` (safe numpy archive) if available; falls back to
+    ``.pkl`` with type verification for backwards compatibility.
+    """
     model_file = _TASK_MODEL_NAMES.get(task)
     if model_file is None:
         return None
-    model_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
-    if not model_path.exists():
-        return None
-    try:
-        with open(model_path, "rb") as f:
-            return joblib.load(f)
-    except Exception:
-        return None
+    base_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
+    npz_path = base_path.with_suffix(".npz")
+    if npz_path.exists():
+        try:
+            return TypedDecider.from_npz(npz_path)
+        except Exception:
+            return None
+    pkl_path = base_path.with_suffix(".pkl")
+    if pkl_path.exists():
+        try:
+            model = joblib.load(pkl_path)
+            if not isinstance(model, TypedDecider):
+                return None
+            return model
+        except Exception:
+            return None
+    return None
 
 
 def _urgency_sort_key(item: ReviewItem) -> tuple[int, bool]:

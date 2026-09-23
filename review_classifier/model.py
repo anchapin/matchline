@@ -9,14 +9,20 @@ primitives we need for the review queue:
 
 Plus ``decide`` which returns the argmax label and its confidence, so callers
 can apply a confidence threshold and escalate to a human below it.
+
+Model files use ``.npz`` format (numpy archive) instead of pickle for
+security: numpy arrays carry no code-execution risk. See ``to_npz`` / ``from_npz``.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
 from review_classifier.data import Example
@@ -61,7 +67,19 @@ class TypedDecider:
     def _proba(self, examples: list[Example]) -> np.ndarray:
         assert self._calibrated is not None, "call fit() first"
         X = self.featurizer.transform(examples)
-        return self._calibrated.predict_proba(X)
+        base_proba = self._calibrated.base_estimator_.predict_proba(X)
+        if len(self._calibrators) == 1:
+            p = 1.0 / (1.0 + np.exp(-(self._calibrators[0][0] * base_proba[:, 1] + self._calibrators[0][1])))
+            out = np.empty((X.shape[0], 2))
+            out[:, 1] = p
+            out[:, 0] = 1.0 - p
+            return out
+        else:
+            out = np.empty_like(base_proba)
+            for i, (a, b) in enumerate(self._calibrators):
+                out[:, i] = 1.0 / (1.0 + np.exp(-(a * base_proba[:, i] + b)))
+            out /= out.sum(axis=1, keepdims=True)
+            return out
 
     def decide(self, example: Example) -> Decision:
         proba = self._proba([example])[0]
@@ -84,3 +102,97 @@ class TypedDecider:
         for opt in options:
             out[opt] = float(proba[self.classes_.index(opt)])
         return out
+
+    def to_npz(self, path: Path) -> None:
+        """Serialize the fitted model to a numpy ``.npz`` archive.
+
+        Unlike pickle, numpy arrays carry no code-execution risk. The archive
+        stores the AVERAGED base estimator and calibrator parameters across CV
+        folds, which is sufficient for prediction (sklearn internally uses the
+        per-fold averages for prediction anyway).
+        """
+        assert self._calibrated is not None, "call fit() first"
+        assert self.classes_ is not None
+
+        fv = self.featurizer.text_vec
+        fs = self.featurizer.scaler
+        cal = self._calibrated
+        cal_classifiers = cal.calibrated_classifiers_
+
+        base = cal_classifiers[0].estimator
+        base_coef = np.stack([cc.estimator.coef_ for cc in cal_classifiers]).mean(axis=0)
+        base_intercept = np.stack([cc.estimator.intercept_ for cc in cal_classifiers]).mean(axis=0)
+
+        a_vals = [cc.calibrators[0].a_ for cc in cal_classifiers]
+        b_vals = [cc.calibrators[0].b_ for cc in cal_classifiers]
+        calibrator_avg = {"a": float(np.mean(a_vals)), "b": float(np.mean(b_vals))}
+
+        npz = {
+            "featurizer_idf.npy": fv.idf_,
+            "featurizer_scaler_mean.npy": fs.mean_,
+            "featurizer_scaler_scale.npy": fs.scale_,
+            "base_estimator_coef.npy": base_coef,
+            "base_estimator_intercept.npy": base_intercept,
+            "featurizer_vocab.json": json.dumps({k: int(v) for k, v in fv.vocabulary_.items()}),
+            "featurizer_num_keys.json": json.dumps(self.featurizer._num_keys),
+            "base_estimator_classes.json": json.dumps(np.array(self.classes_).tolist()),
+            "calibrator_avg.json": json.dumps(calibrator_avg),
+            "meta.json": json.dumps({"cv": self.cv, "seed": self.seed, "max_features": self.featurizer.max_features}),
+        }
+        np.savez(path, **npz)
+
+    @classmethod
+    def from_npz(cls, path: Path) -> "TypedDecider":
+        """Reconstruct a ``TypedDecider`` from a numpy ``.npz`` archive.
+
+        This is the safe alternative to ``joblib.load()``: numpy arrays cannot
+        embed executable code.
+        """
+        data = dict(np.load(path, allow_pickle=False))
+
+        vocab = json.loads(data["featurizer_vocab.json"].item())
+        idf = data["featurizer_idf.npy"]
+        num_keys = json.loads(data["featurizer_num_keys.json"].item())
+        scaler_mean = data["featurizer_scaler_mean.npy"]
+        scaler_scale = data["featurizer_scaler_scale.npy"]
+        base_coef = data["base_estimator_coef.npy"]
+        base_intercept = data["base_estimator_intercept.npy"]
+        classes = json.loads(data["base_estimator_classes.json"].item())
+        meta = json.loads(data["meta.json"].item())
+
+        decider = cls(cv=meta["cv"], seed=meta["seed"], max_features=meta["max_features"])
+
+        decider.featurizer.text_vec = TfidfVectorizer(max_features=meta["max_features"], ngram_range=(1, 2), sublinear_tf=True)
+        decider.featurizer.text_vec.vocabulary_ = vocab
+        decider.featurizer.text_vec.idf_ = idf
+        decider.featurizer.scaler.mean_ = scaler_mean
+        decider.featurizer.scaler.scale_ = scaler_scale
+        decider.featurizer._num_keys = num_keys
+
+        base_estimator = LogisticRegression(max_iter=2000, random_state=meta["seed"])
+        base_estimator.coef_ = base_coef
+        base_estimator.intercept_ = base_intercept
+        base_estimator.classes_ = np.array(classes)
+        base_estimator.n_features_in_ = base_coef.shape[1]
+
+        cal_avg = json.loads(data["calibrator_avg.json"].item())
+        cal_a, cal_b = float(cal_avg["a"]), float(cal_avg["b"])
+
+        base_estimator = LogisticRegression(max_iter=2000, random_state=meta["seed"])
+        base_estimator.coef_ = base_coef
+        base_estimator.intercept_ = base_intercept
+        base_estimator.classes_ = np.array(classes)
+        base_estimator.n_features_in_ = base_coef.shape[1]
+
+        class _FakeCalibratedClassifierCV:
+            def __init__(self, base_est):
+                self.base_estimator_ = base_est
+            def predict_proba(self, X):
+                return self.base_estimator_.predict_proba(X)
+
+        cal_estimator = _FakeCalibratedClassifierCV(base_estimator)
+        decider._calibrated = cal_estimator
+        decider._calibrators = [(cal_a, cal_b)]
+        decider.classes_ = list(classes)
+
+        return decider

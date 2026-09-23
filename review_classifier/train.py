@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import pickle
 
 from sklearn.model_selection import cross_val_score
 
@@ -31,9 +30,9 @@ VALID_TASKS = [
 
 
 def model_path_for_task(task: str, out_dir: pathlib.Path | None = None) -> pathlib.Path:
-    """Path for a per-task model file."""
+    """Path for a per-task model file (``.npz`` format — no pickle)."""
     d = out_dir or DEFAULT_OUT_DIR
-    return d / f"trained_model_{task}.pkl"
+    return d / f"trained_model_{task}.npz"
 
 
 def load_corpus_for_task(task: str, corpus_dir: pathlib.Path) -> list[Example]:
@@ -118,7 +117,7 @@ def train_task(
 
     if out_path is not None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(pickle.dumps(decider))
+        decider.to_npz(out_path)
         if verbose:
             print(f"  saved model -> {out_path}")
 
