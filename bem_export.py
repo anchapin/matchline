@@ -575,8 +575,13 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
 
 def _gbxml_smoke_check(path: str, errors: list) -> tuple[bool, list]:
     try:
-        root = ET.parse(path).getroot()
-    except ET.ParseError as e:
+        from lxml import etree as lxml_etree
+
+        safe_parser = lxml_etree.XMLParser(resolve_entities=False, no_network=True)
+        root = lxml_etree.parse(path, safe_parser).getroot()
+    except ImportError:
+        return False, errors + ["lxml not available; cannot parse gbXML"]
+    except lxml_etree.XMLSyntaxError as e:
         return False, errors + [f"not well-formed: {e}"]
     ns = {"g": GBXML_NS}
     for tag in ("Campus", "Building", "Space", "Surface"):
