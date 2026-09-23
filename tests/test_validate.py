@@ -24,6 +24,7 @@ from tests.model_factory import (
     break_review_queue_acknowledged,
     break_review_queue_sound,
     break_revision_log_present,
+    break_room_number,
     break_sill_head_sanity,
     break_simplify_budget,
     break_simplify_invalid,
@@ -93,6 +94,14 @@ def test_battery_size_documented():
         (break_gbxml_opening_refs, "gbxml_opening_refs", "error"),
         (break_gbxml_wall_areas, "gbxml_wall_areas", "error"),
         (break_ifc_counts, "ifc_entity_counts", "error"),
+        pytest.param(
+            break_room_number,
+            "area_conservation",
+            "error",
+            marks=pytest.mark.xfail(
+                reason="Bug: area_conservation does not filter by poly_type - see issue #201"
+            ),
+        ),
     ],
 )
 def test_defect_fires_expected_check(breaker, check_id, severity):

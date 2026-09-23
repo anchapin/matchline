@@ -543,3 +543,14 @@ END-ISO-10303-21;
     os.write(fd, ifc_content.encode())
     os.close(fd)
     m._ifc_path = path
+
+
+def break_room_number(m: BuildingModel):
+    """Room 101's number is missing, so polygon_classify treats it as unassigned.
+
+    When a room has no number, classify_polygons returns poly_type='unassigned'
+    instead of 'room'.  This defect exercises the polygon_classify integration:
+    the conservation law should fire when poly_type is wrong, but currently
+    the conservation check does not filter by poly_type, so no error fires.
+    """
+    m.spaces["L1-101"].number = None
