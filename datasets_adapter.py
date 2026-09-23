@@ -49,7 +49,10 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import cv2  # opencv-python
+try:
+    import cv2  # opencv-python
+except ImportError:
+    cv2 = None  # lazy import below; parse_schedule_table requires it
 import numpy as np
 from lxml import etree
 
@@ -389,8 +392,12 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
     3. OCR cell text
     4. Map columns by header row
 
-    Falls back to raising NotImplementedError if no table found.
+    Raises ImportError if opencv-python is not installed.
     """
+    if cv2 is None:
+        raise ImportError(
+            "opencv-python is required for parse_schedule_table: pip install opencv-python"
+        )
     # Convert to grayscale if needed
     if len(sheet_image.shape) == 3:
         gray = cv2.cvtColor(sheet_image, cv2.COLOR_RGB2GRAY)
