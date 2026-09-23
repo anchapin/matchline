@@ -55,6 +55,13 @@ class TypedDecider:
         )
         self._calibrated.fit(X, y)
         self.classes_ = list(self._calibrated.classes_)
+        self._calibrators = [
+            (cc.calibrators[0].a_, cc.calibrators[0].b_) for cc in self._calibrated.calibrated_classifiers_
+        ]
+        self._calibrator_avg = (
+            float(np.mean([a for a, _ in self._calibrators])),
+            float(np.mean([b for _, b in self._calibrators])),
+        )
         return self
 
     def fit_uncalibrated(self, examples: list[Example]) -> LogisticRegression:
@@ -67,22 +74,21 @@ class TypedDecider:
     def _proba(self, examples: list[Example]) -> np.ndarray:
         assert self._calibrated is not None, "call fit() first"
         X = self.featurizer.transform(examples)
-        base_proba = self._calibrated.base_estimator_.predict_proba(X)
-        if len(self._calibrators) == 1:
-            p = 1.0 / (
-                1.0
-                + np.exp(-(self._calibrators[0][0] * base_proba[:, 1] + self._calibrators[0][1]))
-            )
-            out = np.empty((X.shape[0], 2))
-            out[:, 1] = p
-            out[:, 0] = 1.0 - p
-            return out
-        else:
+        if hasattr(self, "_calibrator_avg"):
+            base_proba = self._calibrated.calibrated_classifiers_[0].estimator.predict_proba(X)
+            a, b = self._calibrator_avg
+            if len(self.classes_) == 2:
+                p = 1.0 / (1.0 + np.exp(-(a * base_proba[:, 1] + b)))
+                out = np.empty((X.shape[0], 2))
+                out[:, 1] = p
+                out[:, 0] = 1.0 - p
+                return out
             out = np.empty_like(base_proba)
-            for i, (a, b) in enumerate(self._calibrators):
+            for i in range(len(self.classes_)):
                 out[:, i] = 1.0 / (1.0 + np.exp(-(a * base_proba[:, i] + b)))
             out /= out.sum(axis=1, keepdims=True)
             return out
+        return self._calibrated.predict_proba(X)
 
     def decide(self, example: Example) -> Decision:
         proba = self._proba([example])[0]
