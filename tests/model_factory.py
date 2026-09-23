@@ -334,6 +334,17 @@ def break_simplify_budget(m: BuildingModel):
     m._sres = _FakeSres()
 
 
+def break_simplify_invalid(m: BuildingModel):
+    """Simplifier result marked invalid – simplification was rejected."""
+
+    class _FakeSres:
+        area_delta_pct = 0.0
+        tol = 0.02
+        valid = False
+
+    m._sres = _FakeSres()
+
+
 def break_takeoff_counts_reconcile(m: BuildingModel):
     """Count x schedule dims disagrees with recorded opening areas."""
     m.spaces["L1-101"].openings[0].area_m2 = 99.0
