@@ -144,13 +144,16 @@ def model_from_takeoff(
     # All geometry (spaces + envelope ring) enters as drawing pixels
     # (x-right, y-DOWN) and is converted to canonical BEM meters
     # (x-east, y-NORTH, z-up) via:  x_m = x_px * s,  y_m = -y_px * s
-    # This is a deterministic mathematical transform (confidence=1.0).
+    src_conf = max((sp.label_confidence for sp in labeled.spaces), default=1.0)
+    coord_conf = min(1.0, src_conf)
     notes.append(
         f"Coordinate transform: drawing px -> m (scale={s:.4f} m/px), "
         f"y-down -> north-up flip applied to {len(labeled.spaces)} space(s) "
         f"and envelope ring ({len(sres.ring)} vertices, simplified "
         f"from {sres.original_count} original edges, "
-        f"area_delta={sres.area_delta_pct:.2f}%)."
+        f"area_delta={sres.area_delta_pct:.2f}%). "
+        f"Transform confidence={coord_conf:.2f} (geometrically exact, "
+        f"bounded by source geometry confidence={src_conf:.2f})."
     )
 
     # --- spaces -----------------------------------------------------------
