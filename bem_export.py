@@ -43,6 +43,28 @@ WINDOW_SILL_M = 0.9  # placement assumption, documented
 DOOR_SILL_M = 0.0
 
 
+def _validate_out_path(path: str | Path) -> Path:
+    """Validate output path is safe: reject traversal beyond cwd.
+
+    Allows absolute paths (user-intended destinations).
+    For relative paths: resolves symlinks and rejects if the result escapes cwd.
+    """
+    path = Path(path)
+    if not path.is_absolute():
+        resolved = (Path.cwd() / path).resolve()
+        cwd_resolved = Path.cwd().resolve()
+        try:
+            resolved.relative_to(cwd_resolved)
+        except ValueError:
+            raise ValueError(
+                f"Output path '{path}' resolves to '{resolved}' which escapes "
+                f"the working directory '{cwd_resolved}'. Rejecting to prevent "
+                "path traversal."
+            )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @dataclass
 class BEMSpace:
     sid: str
@@ -499,7 +521,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             else "No placement clamps."
         )
     )
-    path = Path(path)
+    path = _validate_out_path(path)
     with open(path, "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
         f.write(f"<!-- {comment} -->\n")
@@ -768,7 +790,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         if zone_spaces:
             _Grp.assign_group(f, products=zone_spaces, group=zone)
 
-    path = Path(path)
+    path = _validate_out_path(path)
     f.write(str(path))
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
