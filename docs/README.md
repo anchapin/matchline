@@ -24,6 +24,7 @@ disclosed, not hidden.
 | `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
+| `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `validation.md` | The 26-check invariant battery and tolerance rationales |
 
 Start with `ROADMAP.md` (repo root) for where the project is going.
