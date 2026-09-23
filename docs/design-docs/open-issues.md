@@ -12,9 +12,15 @@ pre-processing reference implementation.
 
 Two elevations of the same facade are linked in **separate model runs**. If the same window appears in both, it is linked twice (two `SpaceOpening` entries in the same space, one per elevation run).
 
-**Status**: Open. Cross-sheet observation deduplication (recognizing two sightings of the same window) is not yet implemented.
+**Status**: ✅ **ADDRESSED** — deduplication is implemented via `_dedupe_space_openings()` in `link.py`. Entries with matching tag + overlapping `host_interval_m` (within `OPENING_DEDUP_TOL_M = 0.15 m`) are merged into a single `SpaceOpening` carrying compound provenance (`sheet_id1+sheet_id2`) and the higher confidence.
 
-**Workaround**: Link each elevation in a separate run and dedupe by window tag or geometric proximity in a post-processing step.
+**Validation safety net**: `_check_window_double_link()` in `validate.py` detects pre-dedup double-links by flagging windows in the same space that share a tag and have overlapping `s_center_m` positions. This catches cases where dedupe tolerance may be too tight or two distinct sightings were not recognized as the same window.
+
+**Approach**: Dedupe by tag (primary key for tagged entries) + geometric proximity for untagged entries. The 0.15 m center-distance tolerance is documented in `docs/link.md` §"Cross-sheet window dedup is approximate".
+
+**Owner**: @alex
+**Timeline**: Completed (validation check added 2026-09-23)
+**Acceptance criteria**: Two `SpaceOpening` entries with identical `(tag, sill_m, s_center_m, host_facade)` on the same space are reduced to one after `_dedupe_space_openings()`; `_check_window_double_link` emits `error` if such duplicates exist before dedupe.
 
 ---
 
