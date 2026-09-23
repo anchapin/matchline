@@ -492,9 +492,7 @@ def _read_lighting(sp):
             if prop.Name != "LightingPower":
                 continue
             try:
-                return SpaceLighting(
-                    fixtures=[], total_w=float(prop.NominalValue.wrappedValue)
-                )
+                return SpaceLighting(fixtures=[], total_w=float(prop.NominalValue.wrappedValue))
             except Exception:
                 pass
     return None
