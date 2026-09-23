@@ -319,6 +319,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable auto-triage classifier when loading the model "
         "(ENABLE_AUTO_TRIAGE env var also respected)",
     )
+    p.add_argument(
+        "--list",
+        action="store_true",
+        help="List review items to stdout without prompting (exits 0 immediately)",
+    )
+    p.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for --list (default: text)",
+    )
     p.set_defaults(func=cmd_review)
 
     return ap

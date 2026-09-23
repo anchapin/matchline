@@ -296,8 +296,45 @@ def main(args: argparse.Namespace | None = None) -> None:
         print(_summarize_validation(report))
         return
 
-    # --- List ---
+    # --- List (non-interactive) ---
+    if args.list:
+        model = BuildingModel.from_json(pathlib.Path(args.model))
+        items = [item for item in model.review_queue if args.show_all or item.status == "open"]
+        items.sort(key=lambda i: (i.provenance.sheet_id if i.provenance else "", i.kind))
+        if not items:
+            print("No pending review items.")
+            sys.exit(0)
+        if args.format == "json":
+            import json
+
+            print(
+                json.dumps(
+                    [_review_item_to_dict(item) for item in items],
+                    indent=2,
+                )
+            )
+        else:
+            for item in items:
+                sheet = item.provenance.sheet_id if item.provenance else "?"
+                print(
+                    f"[{item.id_}] {item.kind} | sheet={sheet} "
+                    f"| confidence={item.confidence:.0%} | {item.description}"
+                )
+        sys.exit(0)
+
+    # --- Interactive List ---
     format_review_list(args.model, show_all=args.show_all)
+
+
+def _review_item_to_dict(item: ReviewItem) -> dict:
+    return {
+        "id": item.id_,
+        "kind": item.kind,
+        "sheet": item.provenance.sheet_id if item.provenance else None,
+        "confidence": item.confidence,
+        "description": item.description,
+        "status": item.status.value if item.status else None,
+    }
 
 
 def _build_argparser() -> argparse.ArgumentParser:
@@ -326,6 +363,17 @@ def _build_argparser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Enable auto-triage for review items (sets model.auto_triage=True)",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List review items to stdout without prompting (exits 0 immediately)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for --list (default: text)",
     )
     return parser
 
