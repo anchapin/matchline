@@ -152,3 +152,153 @@ class TestSmokeSubcommands:
     def test_review_help_works(self):
         r = _run(["review", "--help"])
         assert r.returncode == 0
+
+    def test_review_list_flag_shows_pending_items(self, tmp_path):
+        from building_model import BuildingModel, Provenance, ReviewItem
+
+        model = BuildingModel()
+        model.review_queue.extend(
+            [
+                ReviewItem(
+                    id="rq-001",
+                    kind="window_room_link",
+                    description="Window W1 in room 101",
+                    confidence=0.75,
+                    provenance=Provenance(
+                        sheet_id="E101", revision=1, method="geometric_fallback", confidence=0.75
+                    ),
+                    status="open",
+                ),
+                ReviewItem(
+                    id="rq-002",
+                    kind="fixture_assignment",
+                    description="Diffuser D1 in zone Z1",
+                    confidence=0.72,
+                    provenance=Provenance(
+                        sheet_id="M101", revision=2, method="ocr_inference", confidence=0.72
+                    ),
+                    status="open",
+                ),
+            ]
+        )
+        model_path = tmp_path / "model.json"
+        model_path.write_text(model.to_json())
+
+        r = _run(["review", str(model_path), "--list"])
+        assert r.returncode == 0
+        assert "rq-001" in r.stdout
+        assert "rq-002" in r.stdout
+        assert "window_room_link" in r.stdout
+        assert "fixture_assignment" in r.stdout
+
+    def test_review_list_flag_with_json_format(self, tmp_path):
+        import json
+
+        from building_model import BuildingModel, Provenance, ReviewItem
+
+        model = BuildingModel()
+        model.review_queue.append(
+            ReviewItem(
+                id="rq-json-001",
+                kind="space_no_geometry",
+                description="Space S1 has no geometry",
+                confidence=0.65,
+                provenance=Provenance(
+                    sheet_id="A101", revision=1, method=" cadastral_import", confidence=0.65
+                ),
+                status="open",
+            )
+        )
+        model_path = tmp_path / "model.json"
+        model_path.write_text(model.to_json())
+
+        r = _run(["review", str(model_path), "--list", "--format", "json"])
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert len(data) == 1
+        assert data[0]["id"] == "rq-json-001"
+        assert data[0]["kind"] == "space_no_geometry"
+        assert data[0]["confidence"] == 0.65
+
+    def test_review_list_flag_empty_queue(self, tmp_path):
+        from building_model import BuildingModel
+
+        model = BuildingModel()
+        model_path = tmp_path / "model.json"
+        model_path.write_text(model.to_json())
+
+        r = _run(["review", str(model_path), "--list"])
+        assert r.returncode == 0
+        assert "No pending review items" in r.stdout
+
+    def test_review_list_flag_show_all_includes_confirmed(self, tmp_path):
+        from building_model import BuildingModel, Provenance, ReviewItem
+
+        model = BuildingModel()
+        model.review_queue.extend(
+            [
+                ReviewItem(
+                    id="rq-open",
+                    kind="window_room_link",
+                    description="Open item",
+                    confidence=0.75,
+                    provenance=Provenance(
+                        sheet_id="E101", revision=1, method="test", confidence=0.75
+                    ),
+                    status="open",
+                ),
+                ReviewItem(
+                    id="rq-confirmed",
+                    kind="fixture_assignment",
+                    description="Confirmed item",
+                    confidence=0.82,
+                    provenance=Provenance(
+                        sheet_id="M101", revision=1, method="test", confidence=0.82
+                    ),
+                    status="confirmed",
+                ),
+            ]
+        )
+        model_path = tmp_path / "model.json"
+        model_path.write_text(model.to_json())
+
+        r = _run(["review", str(model_path), "--list", "--show-all"])
+        assert r.returncode == 0
+        assert "rq-open" in r.stdout
+        assert "rq-confirmed" in r.stdout
+
+    def test_review_list_flag_defaults_to_open_only(self, tmp_path):
+        from building_model import BuildingModel, Provenance, ReviewItem
+
+        model = BuildingModel()
+        model.review_queue.extend(
+            [
+                ReviewItem(
+                    id="rq-open",
+                    kind="window_room_link",
+                    description="Open item",
+                    confidence=0.75,
+                    provenance=Provenance(
+                        sheet_id="E101", revision=1, method="test", confidence=0.75
+                    ),
+                    status="open",
+                ),
+                ReviewItem(
+                    id="rq-confirmed",
+                    kind="fixture_assignment",
+                    description="Confirmed item",
+                    confidence=0.82,
+                    provenance=Provenance(
+                        sheet_id="M101", revision=1, method="test", confidence=0.82
+                    ),
+                    status="confirmed",
+                ),
+            ]
+        )
+        model_path = tmp_path / "model.json"
+        model_path.write_text(model.to_json())
+
+        r = _run(["review", str(model_path), "--list"])
+        assert r.returncode == 0
+        assert "rq-open" in r.stdout
+        assert "rq-confirmed" not in r.stdout

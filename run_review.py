@@ -298,7 +298,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # --- List (non-interactive) ---
     if args.list:
-        model = BuildingModel.from_json(pathlib.Path(args.model))
+        model = BuildingModel.from_json(pathlib.Path(args.model).read_text())
         items = [item for item in model.review_queue if args.show_all or item.status == "open"]
         items.sort(key=lambda i: (i.provenance.sheet_id if i.provenance else "", i.kind))
         if not items:
@@ -317,7 +317,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             for item in items:
                 sheet = item.provenance.sheet_id if item.provenance else "?"
                 print(
-                    f"[{item.id_}] {item.kind} | sheet={sheet} "
+                    f"[{item.id}] {item.kind} | sheet={sheet} "
                     f"| confidence={item.confidence:.0%} | {item.description}"
                 )
         sys.exit(0)
@@ -328,12 +328,12 @@ def main(args: argparse.Namespace | None = None) -> None:
 
 def _review_item_to_dict(item: ReviewItem) -> dict:
     return {
-        "id": item.id_,
+        "id": item.id,
         "kind": item.kind,
         "sheet": item.provenance.sheet_id if item.provenance else None,
         "confidence": item.confidence,
         "description": item.description,
-        "status": item.status.value if item.status else None,
+        "status": item.status if item.status else None,
     }
 
 
