@@ -75,6 +75,6 @@ Implementation + tests (happy path, invariant, defect injection) + `docs/` page 
 
 - `jesse.py` is a research asset (WiSARD paper reproduction), not production symbol spotting (YOLO in `detector/`).
 - Coordinate frame: canonical model uses y-down (drawing frame); BEM export flips to north-up.
-- `wisard-bem` CLI alias deprecated; use `matchline`.
+- Use `matchline` CLI.
 
 <!-- MANUAL: Notes below this line are preserved on regeneration -->
