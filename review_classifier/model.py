@@ -56,7 +56,8 @@ class TypedDecider:
         self._calibrated.fit(X, y)
         self.classes_ = list(self._calibrated.classes_)
         self._calibrators = [
-            (cc.calibrators[0].a_, cc.calibrators[0].b_) for cc in self._calibrated.calibrated_classifiers_
+            (cc.calibrators[0].a_, cc.calibrators[0].b_)
+            for cc in self._calibrated.calibrated_classifiers_
         ]
         self._calibrator_avg = (
             float(np.mean([a for a, _ in self._calibrators])),
