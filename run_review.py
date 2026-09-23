@@ -14,8 +14,6 @@ import pathlib
 import sys
 from typing import TextIO
 
-import joblib
-
 from building_model import BuildingModel, ReviewItem
 from review_classifier.data import Example
 from review_classifier.model import TypedDecider
@@ -52,8 +50,8 @@ def _item_to_example(item: ReviewItem) -> Example:
 def _load_classifier_for_task(task: str) -> TypedDecider | None:
     """Load a pre-trained TypedDecider for a specific task, or None if not found.
 
-    Loads from ``.npz`` (safe numpy archive) if available; falls back to
-    ``.pkl`` with type verification for backwards compatibility.
+    Loads from ``.npz`` (safe numpy archive). Pickle loading was removed —
+    use ``TypedDecider.from_npz()`` only.
     """
     model_file = _TASK_MODEL_NAMES.get(task)
     if model_file is None:
@@ -63,15 +61,6 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     if npz_path.exists():
         try:
             return TypedDecider.from_npz(npz_path)
-        except Exception:
-            return None
-    pkl_path = base_path.with_suffix(".pkl")
-    if pkl_path.exists():
-        try:
-            model = joblib.load(pkl_path)
-            if not isinstance(model, TypedDecider):
-                return None
-            return model
         except Exception:
             return None
     return None
