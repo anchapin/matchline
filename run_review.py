@@ -279,8 +279,10 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         try:
             if is_confirm:
+                assert args.confirm is not None
                 model, msg = _confirm_item(model, args.confirm)
             else:
+                assert args.reject is not None
                 model, msg = _reject_item(model, args.reject)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
