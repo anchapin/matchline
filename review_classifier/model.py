@@ -69,7 +69,10 @@ class TypedDecider:
         X = self.featurizer.transform(examples)
         base_proba = self._calibrated.base_estimator_.predict_proba(X)
         if len(self._calibrators) == 1:
-            p = 1.0 / (1.0 + np.exp(-(self._calibrators[0][0] * base_proba[:, 1] + self._calibrators[0][1])))
+            p = 1.0 / (
+                1.0
+                + np.exp(-(self._calibrators[0][0] * base_proba[:, 1] + self._calibrators[0][1]))
+            )
             out = np.empty((X.shape[0], 2))
             out[:, 1] = p
             out[:, 0] = 1.0 - p
@@ -119,7 +122,6 @@ class TypedDecider:
         cal = self._calibrated
         cal_classifiers = cal.calibrated_classifiers_
 
-        base = cal_classifiers[0].estimator
         base_coef = np.stack([cc.estimator.coef_ for cc in cal_classifiers]).mean(axis=0)
         base_intercept = np.stack([cc.estimator.intercept_ for cc in cal_classifiers]).mean(axis=0)
 
@@ -137,7 +139,9 @@ class TypedDecider:
             "featurizer_num_keys.json": json.dumps(self.featurizer._num_keys),
             "base_estimator_classes.json": json.dumps(np.array(self.classes_).tolist()),
             "calibrator_avg.json": json.dumps(calibrator_avg),
-            "meta.json": json.dumps({"cv": self.cv, "seed": self.seed, "max_features": self.featurizer.max_features}),
+            "meta.json": json.dumps(
+                {"cv": self.cv, "seed": self.seed, "max_features": self.featurizer.max_features}
+            ),
         }
         np.savez(path, **npz)
 
@@ -162,7 +166,9 @@ class TypedDecider:
 
         decider = cls(cv=meta["cv"], seed=meta["seed"], max_features=meta["max_features"])
 
-        decider.featurizer.text_vec = TfidfVectorizer(max_features=meta["max_features"], ngram_range=(1, 2), sublinear_tf=True)
+        decider.featurizer.text_vec = TfidfVectorizer(
+            max_features=meta["max_features"], ngram_range=(1, 2), sublinear_tf=True
+        )
         decider.featurizer.text_vec.vocabulary_ = vocab
         decider.featurizer.text_vec.idf_ = idf
         decider.featurizer.scaler.mean_ = scaler_mean
@@ -187,6 +193,7 @@ class TypedDecider:
         class _FakeCalibratedClassifierCV:
             def __init__(self, base_est):
                 self.base_estimator_ = base_est
+
             def predict_proba(self, X):
                 return self.base_estimator_.predict_proba(X)
 
