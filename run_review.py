@@ -299,11 +299,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     # --- List (non-interactive) ---
     if args.list:
         model = BuildingModel.from_json(pathlib.Path(args.model))
-        items = [
-            item
-            for item in model.review_queue
-            if args.show_all or item.status == "open"
-        ]
+        items = [item for item in model.review_queue if args.show_all or item.status == "open"]
         items.sort(key=lambda i: (i.provenance.sheet_id if i.provenance else "", i.kind))
         if not items:
             print("No pending review items.")
