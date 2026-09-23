@@ -427,12 +427,20 @@ def _check_simplify_budget(ctx) -> CheckResult:
             actual=delta,
         )
     if _HAS_SIMPLIFY:
-        spaces_iter = ctx.model.spaces.values() if hasattr(ctx.model.spaces, "values") else ctx.model.spaces
-        raw_polys = [sp.polygon_m for sp in spaces_iter if getattr(sp, "polygon_m", None) is not None]
+        spaces_iter = (
+            ctx.model.spaces.values() if hasattr(ctx.model.spaces, "values") else ctx.model.spaces
+        )
+        raw_polys = [
+            sp.polygon_m for sp in spaces_iter if getattr(sp, "polygon_m", None) is not None
+        ]
         if len(raw_polys) >= 1:
             ring = footprint_from_regions(raw_polys)
             if ring is not None:
-                wall_height = getattr(ctx.model.levels[0], "wall_height_m", None) if ctx.model.levels else None
+                wall_height = (
+                    getattr(ctx.model.levels[0], "wall_height_m", None)
+                    if ctx.model.levels
+                    else None
+                )
                 fresh = simplify_ring(ring, tol=sres.tol if sres else 0.02, wall_height=wall_height)
                 sres_area = getattr(sres, "simplified_area", None)
                 orig_area = getattr(sres, "original_area", None)
@@ -1242,9 +1250,7 @@ def _check_gbxml_wall_areas(ctx) -> CheckResult:
             continue
         total_gbxml_area += length * h
 
-    total_canonical = sum(
-        w.area_m2 for w in ctx.model.envelope if getattr(w, "area_m2", 0) > 0
-    )
+    total_canonical = sum(w.area_m2 for w in ctx.model.envelope if getattr(w, "area_m2", 0) > 0)
     if total_canonical <= 0 or total_gbxml_area <= 0:
         return CheckResult(
             "gbxml_wall_areas",
@@ -1260,7 +1266,7 @@ def _check_gbxml_wall_areas(ctx) -> CheckResult:
             "gbXML wall area cross-pipeline reconciliation",
             "error",
             f"gbXML wall area {total_gbxml_area:.3f} m² vs canonical "
-            f"{total_canonical:.3f} m²: discrepancy {rel_err*100:.2f}% > tol {tol*100:.1f}%",
+            f"{total_canonical:.3f} m²: discrepancy {rel_err * 100:.2f}% > tol {tol * 100:.1f}%",
             expected=total_canonical,
             actual=total_gbxml_area,
         )
@@ -1269,7 +1275,7 @@ def _check_gbxml_wall_areas(ctx) -> CheckResult:
         "gbXML wall area cross-pipeline reconciliation",
         "pass",
         f"gbXML wall area {total_gbxml_area:.3f} m² matches canonical "
-        f"{total_canonical:.3f} m² ({rel_err*100:.2f}%)",
+        f"{total_canonical:.3f} m² ({rel_err * 100:.2f}%)",
     )
 
 

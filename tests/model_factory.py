@@ -452,9 +452,7 @@ def break_gbxml_wall_areas(m: BuildingModel):
     import os
     import tempfile
 
-    canonical_area = sum(
-        w.area_m2 for w in m.envelope if getattr(w, "area_m2", 0) > 0
-    )
+    canonical_area = sum(w.area_m2 for w in m.envelope if getattr(w, "area_m2", 0) > 0)
     target_gbxml_area = canonical_area * 0.1
     n_walls = max(1, len([w for w in m.envelope if getattr(w, "area_m2", 0) > 0]))
     per_wall_area = target_gbxml_area / n_walls
@@ -482,14 +480,26 @@ def break_gbxml_wall_areas(m: BuildingModel):
         lines.append("      <RectangularGeometry>")
         lines.append("        <Azimuth>0</Azimuth>")
         lines.append("        <Tilt>90</Tilt>")
-        lines.append("        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
-        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
+        lines.append(
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+        )
+        lines.append(
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+        )
         lines.append("      </RectangularGeometry>")
         lines.append("      <PlanarGeometry><Polygon>")
-        lines.append("        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
-        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>")
-        lines.append(f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>")
-        lines.append(f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>")
+        lines.append(
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+        )
+        lines.append(
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+        )
+        lines.append(
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+        )
+        lines.append(
+            f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+        )
         lines.append("      </Polygon></PlanarGeometry>")
         lines.append("    </Surface>")
     lines.append("</gbXML>")
