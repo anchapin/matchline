@@ -81,6 +81,51 @@ exists, run Tier 1 independently and flag disagreements for review.
 Inferred-vs-authored agreement becomes a validation check, not a
 load-bearing dependency.
 
+### Tier 1 completion criteria
+
+Tier 1 is done when all of the following are true.
+
+#### Minimum viable feature set
+
+| # | Criterion | What must be true |
+|---|---|---|
+| 1 | `infer_adjacency(model)` no longer raises `NotImplementedError` | the function is implemented and called by `import_ifc` after Tier 0 |
+| 2 | Every `Space` with an exterior wall has `space.openings` populated | each `BimOpening` on an exterior wall is matched to its parent `Space` and attached as a `SpaceOpening` |
+| 3 | `SpaceOpening.host_facade` is set on every attached opening | the cardinal facade (`"north"`, `"south"`, `"east"`, `"west"`) is derived from the wall's outward normal in the canonical frame |
+| 4 | `SpaceOpening.host_interval_m` is set on every attached opening | the `[s0, s1]` interval along the wall centerline is computed from opening geometry + wall length |
+| 5 | `EnvelopeWall.facade` is non-empty on every envelope wall | all 4 envelope segments are classified; walls with no dominant cardinal direction are flagged for review |
+| 6 | All inferred facts carry `Provenance` with method `"ifc_import:tier1:*"` | every attachment and classification decision is traceable to its source `GlobalId`(s) and method |
+| 7 | Ambiguous cases go to the review queue | openings whose center falls within tolerance of two spaces' boundaries, or walls whose orientation is indeterminate, are flagged with a named review kind (e.g. `adjacency_ambiguous`) |
+
+**Algorithm note:** The fallback `_attach_openings_to_spaces` (currently at the end of `import_ifc`) implements a basic polygon-containment test: the opening's along-wall center point is projected into world coordinates and tested against each space polygon. Tier 1 replaces this with a proper proximity/clash query using IfcOpenShell geometry but the same data-flow: `BimOpening` → `SpaceOpening` on the correct `Space`.
+
+Facade classification: derive the wall's 2-D outward normal from its `RefDirection` in the canonical frame; project onto the four cardinal axes; assign the axis with the largest absolute dot product. Walls whose largest projection is below a documented threshold (e.g. |dot| < 0.7 — within ~45° of diagonal) are flagged `facade_unclear` and left empty.
+
+#### Test buildings
+
+| Building | Purpose | Why |
+|---|---|---|
+| `test_ifc_import.py` fixture (3-room, 6 openings, 4 walls) | Primary Tier 1 validation | Openings A/B are on the two 12m exterior walls; D1/D2 are on the shared interior wall — tests interior vs exterior discrimination |
+| `bldg_3room` (synth, pipeline fixture) | IFC-import + link + validate round-trip | Confirms that Tier 1 output feeds the full pipeline (simplify → validate → export) without regression |
+
+The IFC fixture is preferred for unit-level assertions (exact opening counts per space, exact `host_facade` values). The `bldg_3room` model is preferred for integration-level checks (validation battery passes end-to-end after Tier 1).
+
+Both buildings have openings on shared/interior walls; this is the minimum realistic configuration. A building with purely rectangular perimeter rooms and only exterior openings would not exercise the ambiguity-resolution logic.
+
+#### validate.py guards
+
+Tier 1 is blocked from shipping if any of these fire at error severity:
+
+| Check | What it catches |
+|---|---|
+| `facade_opening_closure` | `SUM(space openings per facade) > gross wall area` — detects double-attachment or misclassified facade |
+| `takeoff_counts_reconcile` | `count × schedule dims ≠ sum of recorded opening areas` — detects geometry-derived area vs schedule mismatches from incorrect attachment |
+| *(new) `space_opening_attachment`* | spaces that should have openings but have `space.openings == []` — detects completely missed attachments on exterior walls |
+| *(new) `facade_classification_complete`* | any `EnvelopeWall.facade == ""` after `infer_adjacency` — enforces criterion #5 above |
+| *(new) `adjacency_review_acknowledged`* | any `adjacency_ambiguous` review item that is not `acknowledged` — enforces criterion #7 above |
+
+The two new checks are added to `validate.py` and `N_CHECKS` incremented before Tier 1 is merged. `facade_opening_closure` and `takeoff_counts_reconcile` already exist and will start passing once `Space.openings` is populated; they serve as regression guards without requiring new code.
+
 ## IfcOpenShell notes (0.8.5, vendored)
 
 - `create_shape` returns **product-local** vertices (placements not applied);
