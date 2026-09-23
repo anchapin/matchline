@@ -12,22 +12,32 @@ to the convention that caused it, and report it. The validation battery
 
 ## 1. Wall thickness → planar BEM surfaces
 
-Current practice: exterior face of exterior walls, centerline of interior
-walls. Overestimates zone air volume; few good alternatives exist.
+**Chosen approach: keep thick walls internally** (per convention at export).
 
-Candidate approaches:
-- **Decouple area from volume at export.** gbXML and EnergyPlus both allow an
-  explicit space/zone volume independent of the surface geometry. Export
-  surfaces on the exterior-face convention (envelope area stays correct) but
-  write the interior-face-derived volume into the space volume field. Both
-  numbers right, one convention each.
-- **Keep thick walls internally.** Model walls as polygons with thickness in
-  the canonical model; derive planar surfaces per convention at export time.
-  Lets us switch conventions (interior-face, centerline, exterior-face) without
-  re-extracting, and lets validation *compute* the bias (e.g. "air volume
-  +3.2% under exterior-face convention") instead of hand-waving it.
-- Validation: add a `convention_bias` check reporting volume delta between
-  interior-face and exterior-face derivations per level.
+**Rationale.** The canonical model stores wall thickness explicitly (`BEMElement.thickness_m`
+and `BimElement.material_layers`); surfaces are derived per convention at export
+time. This approach:
+- Aligns with the existing schema (wall thickness is already a first-class field).
+- Solves the BIM path analytically: `IfcMaterialLayerSet` gives true per-layer
+  thickness — no convention needed, just extract and store.
+- Enables the `convention_bias` check: validation *computes* the volume delta
+  between interior-face and exterior-face derivations rather than hand-waving
+  a fixed percentage.
+- Is future-proof: any convention (interior-face, centerline, exterior-face) can
+  be derived at export without re-extracting from the source.
+
+**Drawing-path implementation note.** The drawing path must extract wall thickness
+from plan geometry (wall-thickness pairs, dimension annotations, or legends).
+This is an implementation detail; the architectural decision is settled.
+
+**Validation:** add a `convention_bias` check reporting volume delta between
+interior-face and exterior-face derivations per level.
+
+*Rejected alternatives.* "Decouple area from volume at export" was considered but
+rejected because it requires two geometry representations in the export format
+(gbXML/EnergyPlus space volume field) rather than one canonical form, and it
+kicks the convention question to the exporter rather than owning it in the
+canonical model.
 
 ## 2. Sloped-roof simplification
 

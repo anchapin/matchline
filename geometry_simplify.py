@@ -161,6 +161,8 @@ class SimplifyResult:
     simplified_area: float
     area_delta_pct: float
     tol: float = 0.02
+    method: str = "greedy_min_area_loss"  # simplification method
+    confidence: float = 1.0  # 0..1, based on area_delta vs tol
     provenance: list = field(default_factory=list)
     # provenance[i] = {"surface": i, "from": [orig edge idx...], "note": str}
     skipped: list = field(default_factory=list)
@@ -201,13 +203,15 @@ def simplify_ring(
     if n0 < 4:
         a = envelope_area(ring, wall_height)
         return SimplifyResult(
-            ring,
-            n0,
-            n0,
-            a,
-            a,
-            0.0,
-            tol,
+            ring=ring,
+            original_count=n0,
+            simplified_count=n0,
+            original_area=a,
+            simplified_area=a,
+            area_delta_pct=0.0,
+            tol=tol,
+            method="greedy_min_area_loss",
+            confidence=1.0,
             provenance=[
                 {"surface": i, "from": [i], "note": "unchanged (too few vertices)"}
                 for i in range(n0)
@@ -340,13 +344,15 @@ def simplify_ring(
     if not poly.is_valid or len(new_ring) < 3:
         skipped.append({"op": "final", "reason": "simplified ring invalid; returning original"})
         return SimplifyResult(
-            ring,
-            n0,
-            n0,
-            orig_area,
-            orig_area,
-            0.0,
-            tol,
+            ring=ring,
+            original_count=n0,
+            simplified_count=n0,
+            original_area=orig_area,
+            simplified_area=orig_area,
+            area_delta_pct=0.0,
+            tol=tol,
+            method="greedy_min_area_loss",
+            confidence=0.0,
             provenance=[
                 {"surface": i, "from": [i], "note": "rollback: invalid result"} for i in range(n0)
             ],
@@ -370,6 +376,7 @@ def simplify_ring(
         note = "merged %d source segments" % len(src_edges) if len(src_edges) > 1 else "unchanged"
         provenance.append({"surface": s, "from": src_edges, "note": note})
 
+    conf = max(0.0, 1.0 - abs(delta) / tol) if tol > 0 else 1.0
     return SimplifyResult(
         ring=new_ring,
         original_count=n0,
@@ -378,6 +385,8 @@ def simplify_ring(
         simplified_area=new_area,
         area_delta_pct=delta * 100.0,
         tol=tol,
+        method="greedy_min_area_loss",
+        confidence=conf,
         provenance=provenance,
         skipped=skipped,
         valid=True,
@@ -397,6 +406,8 @@ def simplify_report(res: SimplifyResult) -> dict:
         "area_delta_pct": res.area_delta_pct,
         "tolerance_pct": res.tol * 100.0,
         "within_tolerance": abs(res.area_delta_pct) <= res.tol * 100.0,
+        "method": res.method,
+        "confidence": res.confidence,
         "per_surface_mapping": res.provenance,
         "skipped_ops": res.skipped,
         "valid": res.valid,

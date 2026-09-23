@@ -28,7 +28,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 | `*.py` (root) | Core pipeline modules — standalone, no import barriers |
 | `synth/` | Synthetic data generators (tests and demos) |
 | `detector/` | YOLO fine-tuning — **separate venv**, excluded from main ruff |
-| `tests/` | Pytest suite; fixtures in `conftest.py` (`bldg_3room`, `bldg_open_office`, `bldg_8room`) |
+| `tests/` | Pytest suite; fixtures in `conftest.py` (`bldg_3room`) |
 | `docs/` | Module guides; see `docs/README.md` |
 
 **Entry point:** `matchline` CLI (`cli.py:main`).
@@ -65,7 +65,7 @@ External datasets (AEC Bench, CMP Facade, CubiCasa5K, FloorPlanCAD) live under `
 
 ## Style
 
-`ruff` (E, F, I, W; ignores `E501`, `E701`, `E702`, `E741`). `ruff-format` for formatting. Type hints on public functions. `from __future__ import annotations` where it helps.
+`ruff` (E, F, I, W, FA; ignores `E501`, `E701`, `E702`, `E741`). `ruff-format` for formatting. Type hints on public functions. `from __future__ import annotations` where it helps.
 
 ## Adding a module
 

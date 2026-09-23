@@ -58,8 +58,8 @@ def _simple_model(name: str = "Test Building", n_spaces: int = 3) -> BuildingMod
         EnvelopeWall(
             id="L1-W1",
             facade="south",
-            from_m=[0.0, 0.0],
-            to_m=[20.0, 0.0],
+            from_m=(0.0, 0.0),
+            to_m=(20.0, 0.0),
             area_m2=20.0 * 3.0,
             provenance=prov,
         ),
@@ -133,7 +133,7 @@ def test_check_fires_when_ifc_has_no_walls(tmp_path):
 
     _export_ifc(model, str(ifc_path))
 
-    with open(ifc_path) as fh:
+    with open(ifc_path, "r") as fh:
         lines = fh.readlines()
     wall_lines = [ln for ln in lines if "IFCWALL(" in ln]
     other_lines = [ln for ln in lines if "IFCWALL(" not in ln]

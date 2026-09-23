@@ -257,6 +257,27 @@ def break_untagged_opening(m: BuildingModel):
     m.spaces["L1-101"].openings[0].tag = ""
 
 
+def break_window_double_link(m: BuildingModel):
+    """Inject a duplicate window: same tag + s_center within 0.15 m of an existing window."""
+    sp = m.spaces["L1-101"]
+    sp.openings.append(
+        SpaceOpening(
+            id="south-W3",
+            tag="A",
+            category="window",
+            width_m=1.5,
+            height_m=1.2,
+            sill_m=0.9,
+            head_m=2.1,
+            host_facade="south",
+            host_interval_m=[1.6, 3.1],
+            s_center_m=1.85,
+            area_m2=1.8,
+            provenance=P("elev_A202", "grid_registration", 0.95),
+        )
+    )
+
+
 def break_fixture_no_schedule(m: BuildingModel):
     m.spaces["L1-102"].lighting.fixtures.append(
         FixtureInstance(
@@ -353,6 +374,24 @@ def break_review_queue_sound(m: BuildingModel):
             status="open",
             confidence=0.5,
             provenance=P(),
+        )
+    )
+
+
+def break_review_queue_acknowledged(m: BuildingModel):
+    """Review queue item needs_review=True but not acknowledged."""
+    from building_model import ReviewItem
+
+    m.review_queue.append(
+        ReviewItem(
+            id="RX-ACK",
+            kind="window_room_link",
+            description="unacknowledged review item",
+            status="open",
+            confidence=0.5,
+            provenance=P(),
+            needs_review=True,
+            acknowledged=False,
         )
     )
 

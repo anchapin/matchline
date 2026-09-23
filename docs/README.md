@@ -18,11 +18,13 @@ disclosed, not hidden.
 | `jesse.md` | WiSARD classifier + Zhang-Suen skeleton invariants + thick-stroke preprocessing |
 | `lighting.md` | Fixture takeoffs, building watts, per-space LPD |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
+| `pipeline.md` | Stage chain, intermediate JSON artifacts, auto-triage integration |
 | `polygon_classify.md` | Non-room polygon classification (shafts, closets, elevator cores) |
 | `registration.md` | Sheet registration: plan + elevation affine alignment into canonical metres |
 | `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
+| `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `validation.md` | The 26-check invariant battery and tolerance rationales |
 
 Start with `ROADMAP.md` (repo root) for where the project is going.

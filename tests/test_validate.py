@@ -20,6 +20,7 @@ from tests.model_factory import (
     break_opening_oversize,
     break_opening_schedule_join,
     break_provenance,
+    break_review_queue_acknowledged,
     break_review_queue_sound,
     break_revision_log_present,
     break_sill_head_sanity,
@@ -29,6 +30,7 @@ from tests.model_factory import (
     break_takeoff_counts_reconcile,
     break_untagged_opening,
     break_volume_conservation,
+    break_window_double_link,
     break_zone_empty,
     make_clean_model,
 )
@@ -53,7 +55,7 @@ def test_clean_model_fully_green():
 def test_battery_size_documented():
     # keep docs/validation.md's check count honest; update the doc if this
     # number changes intentionally.
-    assert N_CHECKS == 26
+    assert N_CHECKS == 28
 
 
 @pytest.mark.parametrize(
@@ -68,6 +70,7 @@ def test_battery_size_documented():
         (break_opening_oversize, "facade_opening_closure", "error"),
         (break_negative_area, "no_negative_areas", "error"),
         (break_untagged_opening, "window_tag_coverage", "error"),
+        (break_window_double_link, "window_double_link", "error"),
         (break_fixture_no_schedule, "fixture_schedule_join", "error"),
         (break_fixture_no_schedule_flagged, "fixture_schedule_join", "warn"),
         (break_lpd_unit_slip, "lpd_unit_consistency", "error"),
@@ -81,6 +84,7 @@ def test_battery_size_documented():
         (break_space_id_hygiene, "space_id_hygiene", "error"),
         (break_elevation_placement_consistency, "elevation_placement_consistency", "warn"),
         (break_review_queue_sound, "review_queue_sound", "error"),
+        (break_review_queue_acknowledged, "review_queue_acknowledged", "error"),
         (break_revision_log_present, "revision_log_present", "warn"),
         (break_gbxml_spaces, "gbxml_space_areas", "error"),
         (break_gbxml_opening_refs, "gbxml_opening_refs", "error"),
@@ -136,3 +140,140 @@ def test_check_never_crashes_battery():
     report = run_checks(BuildingModel(name="empty"))
     assert isinstance(report.to_json(), str)
     assert not report.ok
+
+
+class TestExportGateIntegration:
+    """Integration tests: validate-export gate blocks pipeline on error.
+
+    Verifies the hard enforcement point: when any conservation-law check
+    returns error severity, the pipeline must not call write_gbxml/write_ifc4
+    and must exit with non-zero code.
+    """
+
+    def test_pipeline_exits_non_zero_when_validation_fails(self, tmp_path, monkeypatch):
+        """Pipeline calls sys.exit(1) before export when validation returns error."""
+        import argparse
+
+        import run_pipeline
+        from validate import CheckResult, ValidationReport
+
+        out_dir = tmp_path / "run_error"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        ns = argparse.Namespace(
+            seed=101,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=out_dir,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+        )
+
+        error_report = ValidationReport(building_name="defective")
+        error_report.results.append(
+            CheckResult(
+                check_id="area_conservation",
+                name="Area conservation",
+                severity="error",
+                message="injected error for test",
+                entities=[],
+            )
+        )
+
+        def mock_run_checks(model, **kwargs):
+            return error_report
+
+        monkeypatch.setattr("run_pipeline.run_checks", mock_run_checks)
+
+        exit_called = False
+        exit_code = None
+
+        def mock_exit(code=0):
+            nonlocal exit_called, exit_code
+            exit_called = True
+            exit_code = code
+            raise SystemExit(code)
+
+        monkeypatch.setattr("sys.exit", mock_exit)
+
+        try:
+            run_pipeline.main(ns)
+        except SystemExit:
+            pass
+
+        assert exit_called, "pipeline should call sys.exit when validation fails"
+        assert exit_code == 1, f"expected exit(1), got exit({exit_code})"
+
+        bem_dir = out_dir / "stage_06_bem"
+        assert not bem_dir.exists(), "export should not be reached when validation fails"
+
+    def test_export_functions_never_called_when_gate_closed(self, tmp_path, monkeypatch):
+        """write_gbxml and write_ifc4 are never called when export_gate blocks."""
+        import argparse
+
+        import bem_export
+        import run_pipeline
+        from validate import CheckResult, ValidationReport
+
+        out_dir = tmp_path / "run_mock_export"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        ns = argparse.Namespace(
+            seed=101,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=out_dir,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+        )
+
+        error_report = ValidationReport(building_name="defective")
+        error_report.results.append(
+            CheckResult(
+                check_id="area_conservation",
+                name="Area conservation",
+                severity="error",
+                message="injected error for test",
+                entities=[],
+            )
+        )
+
+        def mock_run_checks(model, **kwargs):
+            return error_report
+
+        monkeypatch.setattr("run_pipeline.run_checks", mock_run_checks)
+
+        gbxml_called = False
+        ifc_called = False
+
+        original_write_gbxml = bem_export.write_gbxml
+        original_write_ifc4 = bem_export.write_ifc4
+
+        def mock_write_gbxml(*args, **kwargs):
+            nonlocal gbxml_called
+            gbxml_called = True
+            return original_write_gbxml(*args, **kwargs)
+
+        def mock_write_ifc4(*args, **kwargs):
+            nonlocal ifc_called
+            ifc_called = True
+            return original_write_ifc4(*args, **kwargs)
+
+        monkeypatch.setattr(bem_export, "write_gbxml", mock_write_gbxml)
+        monkeypatch.setattr(bem_export, "write_ifc4", mock_write_ifc4)
+
+        try:
+            run_pipeline.main(ns)
+        except SystemExit:
+            pass
+
+        assert not gbxml_called, "write_gbxml should not be called when export_gate blocks"
+        assert not ifc_called, "write_ifc4 should not be called when export_gate blocks"

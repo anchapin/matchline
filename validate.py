@@ -887,6 +887,63 @@ def _check_elevation_placement_consistency(ctx) -> CheckResult:
     )
 
 
+def _check_window_double_link(ctx) -> CheckResult:
+    """Detect windows in the same space that share a tag and overlapping center.
+
+    Two elevation runs of the same facade can produce duplicate SpaceOpening
+    entries before `_dedupe_space_openings()` runs. This check catches them
+    by looking for same-tag windows on the same facade whose s_center_m
+    positions are within OPENING_DEDUP_TOL_M (0.15 m) of each other.
+    """
+    OPENING_DEDUP_TOL_M = 0.15
+    bad = []
+    for sid, sp in ctx.model.spaces.items():
+        by_tag: dict = {}
+        for o in sp.openings:
+            if o.category != "window" or not o.tag:
+                continue
+            by_tag.setdefault((o.tag, o.host_facade), []).append(o)
+        for (tag, facade), ops in by_tag.items():
+            if len(ops) < 2:
+                continue
+            ops_sorted = sorted(ops, key=lambda x: x.s_center_m or 0.0)
+            for i in range(len(ops_sorted) - 1):
+                c1 = ops_sorted[i].s_center_m or 0.0
+                c2 = ops_sorted[i + 1].s_center_m or 0.0
+                if abs(c2 - c1) < OPENING_DEDUP_TOL_M:
+                    bad.append((sid, tag, ops_sorted[i].id, ops_sorted[i + 1].id))
+    if bad:
+        sid, tag, id1, id2 = bad[0]
+        return CheckResult(
+            "window_double_link",
+            "Window double-link detection",
+            "error",
+            f"space '{sid}': windows '{id1}' and '{id2}' share tag '{tag}' "
+            f"and are within {OPENING_DEDUP_TOL_M} m center-distance — "
+            f"possible double-link before dedupe",
+            entities=[id1, id2],
+        )
+    n = sum(
+        1
+        for sp in ctx.model.spaces.values()
+        for o in sp.openings
+        if o.category == "window" and o.tag
+    )
+    if n == 0:
+        return CheckResult(
+            "window_double_link",
+            "Window double-link detection",
+            "skip",
+            "no tagged windows linked",
+        )
+    return CheckResult(
+        "window_double_link",
+        "Window double-link detection",
+        "pass",
+        f"{n} tagged window(s): no double-links detected",
+    )
+
+
 def _check_window_tag_coverage(ctx) -> CheckResult:
     bad = [o.id for sp in ctx.model.spaces.values() for o in sp.openings if not o.tag]
     if bad:
@@ -974,6 +1031,26 @@ def _check_review_queue_sound(ctx) -> CheckResult:
         "pass",
         f"{len(ctx.model.review_queue)} review item(s), all well-formed; "
         f"{n_open} still open (queued for humans, nothing dropped)",
+    )
+
+
+def _check_review_queue_acknowledged(ctx) -> CheckResult:
+    unacknowledged = [i.id for i in ctx.model.review_queue if i.needs_review and not i.acknowledged]
+    if unacknowledged:
+        return CheckResult(
+            "review_queue_acknowledged",
+            "Review queue acknowledged",
+            "error",
+            f"{len(unacknowledged)} unacknowledged review item(s) with "
+            f"needs_review=True: must acknowledge before export",
+            entities=unacknowledged[:20],
+        )
+    return CheckResult(
+        "review_queue_acknowledged",
+        "Review queue acknowledged",
+        "pass",
+        f"{len(ctx.model.review_queue)} review item(s): all needs_review "
+        f"items have been acknowledged",
     )
 
 
@@ -1158,9 +1235,11 @@ BATTERY = [
     _check_space_id_hygiene,
     _check_elevation_placement_consistency,
     _check_window_tag_coverage,
+    _check_window_double_link,
     # provenance / auditability
     _check_provenance_complete,
     _check_review_queue_sound,
+    _check_review_queue_acknowledged,
     _check_revision_log_present,
     # export (skipped unless paths given)
     _check_gbxml_spaces,

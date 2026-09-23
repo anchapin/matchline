@@ -7,7 +7,17 @@ Architectural decisions, core beliefs, and indexed design references.
 | File | Status | Description |
 |---|---|---|
 | `core-beliefs.md` | active | Agent-first operating principles for this project |
-| `open-issues.md` | active | Open technical questions with known workarounds |
+| `open-issues.md` | active | Genuinely open technical questions only |
+
+## Completed design decisions (CFG-*)
+
+Located in `docs/plans/designs/`:
+
+| ID | Title |
+|---|---|
+| [CFG-01](../plans/designs/cfg-01-cross-sheet-window-deduplication.md) | Cross-sheet window deduplication |
+| [CFG-02](../plans/designs/cfg-02-thick-stroke-skeleton.md) | Thick-stroke skeleton pre-processing |
+| [CFG-03](../plans/designs/cfg-03-complex-gdt-invariant-rows.md) | Complex GD&T invariant rows |
 
 ## Design decisions embedded in module docs
 

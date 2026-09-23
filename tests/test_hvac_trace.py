@@ -59,6 +59,14 @@ class TestDuctSkeleton:
         center_row = 49
         assert skel[center_row, :].sum() > 0
 
+    def test_dark_vertical_bar_produces_skeleton(self):
+        gray = np.full((100, 100), 255, dtype=np.uint8)
+        gray[:, 40:60] = 0
+        skel = duct_skeleton(gray)
+        assert skel.dtype == np.uint8
+        # Centerline of the bar is at column 49 (shoelace gives integer center)
+        assert skel[:, 49].sum() > 0
+
 
 class TestExtractZones:
     """extract_zones builds zone graph from skeleton and VAV detections."""
@@ -75,6 +83,15 @@ class TestExtractZones:
             "ncc_cls": ncc_cls or label,
             "margin": margin,
         }
+
+    def test_one_vav_produces_one_zone(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[30:170, 100] = 1
+        dets = [self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0)]
+        rooms = [self._room(0, 0, 10, 10, "R1")]
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert len(zones) == 1
+        assert zones[0]["zone_id"] == "Z1"
 
     def test_vav_cuts_skeleton_and_zones_one_vav_one_diffuser(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
@@ -137,6 +154,16 @@ class TestExtractZones:
         _, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
         assert "n_skel_px" in dbg
         assert dbg["n_skel_px"] > 0
+
+    def test_zone_audit_trail_is_populated(self):
+        skel = np.zeros((200, 200), dtype=np.uint8)
+        skel[30:170, 100] = 1
+        dets = [self._det(100, 100, "vav", ncc=0.9, ncc_cls="vav", margin=10.0)]
+        rooms = [self._room(0, 0, 10, 10, "R1")]
+        zones, dbg = extract_zones(skel, dets, rooms, px_per_m=PX_PER_M)
+        assert len(zones) == 1
+        assert len(zones[0]["audit"]) > 0
+        assert any("VAV" in entry for entry in zones[0]["audit"])
 
     def test_sensor_in_served_room_associates_with_zone(self):
         skel = np.zeros((200, 200), dtype=np.uint8)
