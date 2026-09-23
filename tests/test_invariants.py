@@ -32,6 +32,9 @@ def test_property_no_errors_across_random_buildings(capsys):
         ekey = "elev_nogrid" if (i % 3 == 2) else "elev_grid"
         bldg = generate_building(seed, open_office_span=span)
         model, _ = build_model(bldg, elevation_key=ekey, building_name=bldg["building_id"])
+        # Acknowledge any review items — _check_review_queue_acknowledged gates on explicit ack
+        for item in model.review_queue:
+            item.acknowledged = True
         sres = _sres_for(model)
         report = run_checks(model, sres=sres)
         n_checked += 1

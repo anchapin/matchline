@@ -1,218 +1,227 @@
 {
- "building_name": "test_bldg",
- "ok": false,
- "summary": {
-  "n_checks": 27,
-  "errors": 2,
-  "warnings": 3,
-  "passes": 18,
-  "skipped": 4
- },
- "results": [
-  {
-   "check_id": "space_area_matches_polygon",
-   "name": "Space area equals shoelace(polygon)",
-   "severity": "warn",
-   "message": "1 space(s) whose area_m2 disagrees with their polygon (>0.1%): drift between recorded area and geometry",
-   "entities": [
-    "L1-101"
-   ]
+  "building_name": "test_bldg",
+  "ok": false,
+  "summary": {
+    "n_checks": 28,
+    "errors": 3,
+    "warnings": 3,
+    "passes": 18,
+    "skipped": 4
   },
-  {
-   "check_id": "area_conservation",
-   "name": "Area conservation (sum rooms ~= footprint)",
-   "severity": "error",
-   "message": "level L1: sum of space areas 50.00 m^2 vs footprint 60.00 m^2 (rel err 16.7%, tol 3%). Rooms should tile the floor plate minus wall thickness.",
-   "entities": [
-    "L1"
-   ],
-   "expected": 60.0,
-   "actual": 50.0
-  },
-  {
-   "check_id": "space_volume_matches_area_height",
-   "name": "Space volume = area x height",
-   "severity": "pass",
-   "message": "2 spaces consistent",
-   "entities": []
-  },
-  {
-   "check_id": "volume_conservation",
-   "name": "Volume conservation",
-   "severity": "error",
-   "message": "level L1: sum of space volumes 150.00 m^3 vs footprint x height 180.00 m^3 (rel err 16.7%, tol 3%)",
-   "entities": [
-    "L1"
-   ],
-   "expected": 180.0,
-   "actual": 150.0
-  },
-  {
-   "check_id": "envelope_area_matches_perimeter",
-   "name": "Envelope area matches perimeter x height",
-   "severity": "pass",
-   "message": "envelope wall areas match perimeter x height within 1%",
-   "entities": []
-  },
-  {
-   "check_id": "simplify_budget",
-   "name": "Simplification within area budget",
-   "severity": "skip",
-   "message": "no SimplifyResult passed; pass sres= to check the 1-5% envelope area budget",
-   "entities": []
-  },
-  {
-   "check_id": "facade_opening_closure",
-   "name": "Facade opening closure",
-   "severity": "pass",
-   "message": "openings fit within gross wall area per facade; opaque m^2: {'south': 26.4, 'north': 30.0, 'east': 18.0, 'west': 18.0}",
-   "entities": []
-  },
-  {
-   "check_id": "takeoff_counts_reconcile",
-   "name": "Takeoff counts reconcile",
-   "severity": "pass",
-   "message": "1 window tag(s): count x dims matches recorded areas",
-   "entities": []
-  },
-  {
-   "check_id": "fixture_schedule_join",
-   "name": "Fixture schedule join",
-   "severity": "warn",
-   "message": "1 fixture(s) missing schedule watts but flagged for review (0 W, not silent)",
-   "entities": [
-    "F9"
-   ]
-  },
-  {
-   "check_id": "opening_schedule_join",
-   "name": "Opening schedule join",
-   "severity": "pass",
-   "message": "every opening resolves to schedule dims",
-   "entities": []
-  },
-  {
-   "check_id": "no_negative_areas",
-   "name": "No negative areas",
-   "severity": "pass",
-   "message": "all areas and dimensions non-negative",
-   "entities": []
-  },
-  {
-   "check_id": "lpd_bounds",
-   "name": "LPD plausibility",
-   "severity": "warn",
-   "message": "space L1-101: LPD 200.0 W/m^2 exceeds 25.0 W/m^2 -- smells like a ft^2/m^2 unit slip or double-counted fixtures (1 space(s) affected)",
-   "entities": [
-    "L1-101"
-   ],
-   "expected": "<= 25.0 W/m^2",
-   "actual": 200.0
-  },
-  {
-   "check_id": "lpd_unit_consistency",
-   "name": "LPD unit consistency",
-   "severity": "pass",
-   "message": "W/m^2 <-> W/ft^2 conversions consistent",
-   "entities": []
-  },
-  {
-   "check_id": "sill_head_sanity",
-   "name": "Sill/head sanity",
-   "severity": "pass",
-   "message": "2 opening(s) with sane vertical placement",
-   "entities": []
-  },
-  {
-   "check_id": "assignment_uniqueness",
-   "name": "Component assignment uniqueness",
-   "severity": "pass",
-   "message": "6 component assignments, all unique",
-   "entities": []
-  },
-  {
-   "check_id": "zone_nonempty",
-   "name": "Zones non-empty",
-   "severity": "pass",
-   "message": "1 zones each serve >=1 diffuser and >=1 space",
-   "entities": []
-  },
-  {
-   "check_id": "zone_space_referential",
-   "name": "Zone<->space referential integrity",
-   "severity": "pass",
-   "message": "all zone<->space links resolve both ways",
-   "entities": []
-  },
-  {
-   "check_id": "space_id_hygiene",
-   "name": "Space id hygiene",
-   "severity": "pass",
-   "message": "2 spaces, ids well-formed",
-   "entities": []
-  },
-  {
-   "check_id": "elevation_placement_consistency",
-   "name": "Elevation placement consistency",
-   "severity": "pass",
-   "message": "2 exactly-placed openings self-consistent",
-   "entities": []
-  },
-  {
-   "check_id": "window_tag_coverage",
-   "name": "Window tag coverage",
-   "severity": "pass",
-   "message": "2 openings all carry schedule tags",
-   "entities": []
-  },
-  {
-   "check_id": "window_double_link",
-   "name": "Window double-link detection",
-   "severity": "pass",
-   "message": "2 tagged window(s): no double-links detected",
-   "entities": []
-  },
-  {
-   "check_id": "provenance_complete",
-   "name": "Provenance complete",
-   "severity": "pass",
-   "message": "16 facts, every one cites sheet/revision/method",
-   "entities": []
-  },
-  {
-   "check_id": "review_queue_sound",
-   "name": "Review queue sound",
-   "severity": "pass",
-   "message": "1 review item(s), all well-formed; 1 still open (queued for humans, nothing dropped)",
-   "entities": []
-  },
-  {
-   "check_id": "revision_log_present",
-   "name": "Revision log present",
-   "severity": "pass",
-   "message": "4 revision events: {'ingest': 4}",
-   "entities": []
-  },
-  {
-   "check_id": "gbxml_space_areas",
-   "name": "gbXML space areas",
-   "severity": "skip",
-   "message": "no gbXML path given",
-   "entities": []
-  },
-  {
-   "check_id": "gbxml_opening_refs",
-   "name": "gbXML opening refs",
-   "severity": "skip",
-   "message": "no gbXML path given",
-   "entities": []
-  },
-  {
-   "check_id": "ifc_entity_counts",
-   "name": "IFC entity counts",
-   "severity": "skip",
-   "message": "no IFC path given",
-   "entities": []
-  }
- ]
+  "results": [
+    {
+      "check_id": "space_area_matches_polygon",
+      "name": "Space area equals shoelace(polygon)",
+      "severity": "warn",
+      "message": "1 space(s) whose area_m2 disagrees with their polygon (>0.1%): drift between recorded area and geometry",
+      "entities": [
+        "L1-101"
+      ]
+    },
+    {
+      "check_id": "area_conservation",
+      "name": "Area conservation (sum rooms ~= footprint)",
+      "severity": "error",
+      "message": "level L1: sum of space areas 50.00 m^2 vs footprint 60.00 m^2 (rel err 16.7%, tol 3%). Rooms should tile the floor plate minus wall thickness.",
+      "entities": [
+        "L1"
+      ],
+      "expected": 60.0,
+      "actual": 50.0
+    },
+    {
+      "check_id": "space_volume_matches_area_height",
+      "name": "Space volume = area x height",
+      "severity": "pass",
+      "message": "2 spaces consistent",
+      "entities": []
+    },
+    {
+      "check_id": "volume_conservation",
+      "name": "Volume conservation",
+      "severity": "error",
+      "message": "level L1: sum of space volumes 150.00 m^3 vs footprint x height 180.00 m^3 (rel err 16.7%, tol 3%)",
+      "entities": [
+        "L1"
+      ],
+      "expected": 180.0,
+      "actual": 150.0
+    },
+    {
+      "check_id": "envelope_area_matches_perimeter",
+      "name": "Envelope area matches perimeter x height",
+      "severity": "pass",
+      "message": "envelope wall areas match perimeter x height within 1%",
+      "entities": []
+    },
+    {
+      "check_id": "simplify_budget",
+      "name": "Simplification within area budget",
+      "severity": "skip",
+      "message": "no SimplifyResult passed; pass sres= to check the 1-5% envelope area budget",
+      "entities": []
+    },
+    {
+      "check_id": "facade_opening_closure",
+      "name": "Facade opening closure",
+      "severity": "pass",
+      "message": "openings fit within gross wall area per facade; opaque m^2: {'south': 26.4, 'north': 30.0, 'east': 18.0, 'west': 18.0}",
+      "entities": []
+    },
+    {
+      "check_id": "takeoff_counts_reconcile",
+      "name": "Takeoff counts reconcile",
+      "severity": "pass",
+      "message": "1 window tag(s): count x dims matches recorded areas",
+      "entities": []
+    },
+    {
+      "check_id": "fixture_schedule_join",
+      "name": "Fixture schedule join",
+      "severity": "warn",
+      "message": "1 fixture(s) missing schedule watts but flagged for review (0 W, not silent)",
+      "entities": [
+        "F9"
+      ]
+    },
+    {
+      "check_id": "opening_schedule_join",
+      "name": "Opening schedule join",
+      "severity": "pass",
+      "message": "every opening resolves to schedule dims",
+      "entities": []
+    },
+    {
+      "check_id": "no_negative_areas",
+      "name": "No negative areas",
+      "severity": "pass",
+      "message": "all areas and dimensions non-negative",
+      "entities": []
+    },
+    {
+      "check_id": "lpd_bounds",
+      "name": "LPD plausibility",
+      "severity": "warn",
+      "message": "space L1-101: LPD 200.0 W/m^2 exceeds 25.0 W/m^2 -- smells like a ft^2/m^2 unit slip or double-counted fixtures (1 space(s) affected)",
+      "entities": [
+        "L1-101"
+      ],
+      "expected": "<= 25.0 W/m^2",
+      "actual": 200.0
+    },
+    {
+      "check_id": "lpd_unit_consistency",
+      "name": "LPD unit consistency",
+      "severity": "pass",
+      "message": "W/m^2 <-> W/ft^2 conversions consistent",
+      "entities": []
+    },
+    {
+      "check_id": "sill_head_sanity",
+      "name": "Sill/head sanity",
+      "severity": "pass",
+      "message": "2 opening(s) with sane vertical placement",
+      "entities": []
+    },
+    {
+      "check_id": "assignment_uniqueness",
+      "name": "Component assignment uniqueness",
+      "severity": "pass",
+      "message": "6 component assignments, all unique",
+      "entities": []
+    },
+    {
+      "check_id": "zone_nonempty",
+      "name": "Zones non-empty",
+      "severity": "pass",
+      "message": "1 zones each serve >=1 diffuser and >=1 space",
+      "entities": []
+    },
+    {
+      "check_id": "zone_space_referential",
+      "name": "Zone<->space referential integrity",
+      "severity": "pass",
+      "message": "all zone<->space links resolve both ways",
+      "entities": []
+    },
+    {
+      "check_id": "space_id_hygiene",
+      "name": "Space id hygiene",
+      "severity": "pass",
+      "message": "2 spaces, ids well-formed",
+      "entities": []
+    },
+    {
+      "check_id": "elevation_placement_consistency",
+      "name": "Elevation placement consistency",
+      "severity": "pass",
+      "message": "2 exactly-placed openings self-consistent",
+      "entities": []
+    },
+    {
+      "check_id": "window_tag_coverage",
+      "name": "Window tag coverage",
+      "severity": "pass",
+      "message": "2 openings all carry schedule tags",
+      "entities": []
+    },
+    {
+      "check_id": "window_double_link",
+      "name": "Window double-link detection",
+      "severity": "pass",
+      "message": "2 tagged window(s): no double-links detected",
+      "entities": []
+    },
+    {
+      "check_id": "provenance_complete",
+      "name": "Provenance complete",
+      "severity": "pass",
+      "message": "16 facts, every one cites sheet/revision/method",
+      "entities": []
+    },
+    {
+      "check_id": "review_queue_sound",
+      "name": "Review queue sound",
+      "severity": "pass",
+      "message": "1 review item(s), all well-formed; 1 still open (queued for humans, nothing dropped)",
+      "entities": []
+    },
+    {
+      "check_id": "review_queue_acknowledged",
+      "name": "Review queue acknowledged",
+      "severity": "error",
+      "message": "1 unacknowledged review item(s) with needs_review=True: must acknowledge before export",
+      "entities": [
+        "RVW-001"
+      ]
+    },
+    {
+      "check_id": "revision_log_present",
+      "name": "Revision log present",
+      "severity": "pass",
+      "message": "4 revision events: {'ingest': 4}",
+      "entities": []
+    },
+    {
+      "check_id": "gbxml_space_areas",
+      "name": "gbXML space areas",
+      "severity": "skip",
+      "message": "no gbXML path given",
+      "entities": []
+    },
+    {
+      "check_id": "gbxml_opening_refs",
+      "name": "gbXML opening refs",
+      "severity": "skip",
+      "message": "no gbXML path given",
+      "entities": []
+    },
+    {
+      "check_id": "ifc_entity_counts",
+      "name": "IFC entity counts",
+      "severity": "skip",
+      "message": "no IFC path given",
+      "entities": []
+    }
+  ]
 }

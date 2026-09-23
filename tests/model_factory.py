@@ -378,6 +378,24 @@ def break_review_queue_sound(m: BuildingModel):
     )
 
 
+def break_review_queue_acknowledged(m: BuildingModel):
+    """Review queue item needs_review=True but not acknowledged."""
+    from building_model import ReviewItem
+
+    m.review_queue.append(
+        ReviewItem(
+            id="RX-ACK",
+            kind="window_room_link",
+            description="unacknowledged review item",
+            status="open",
+            confidence=0.5,
+            provenance=P(),
+            needs_review=True,
+            acknowledged=False,
+        )
+    )
+
+
 def break_revision_log_present(m: BuildingModel):
     """Revision log is empty."""
     m.revision_log.clear()
