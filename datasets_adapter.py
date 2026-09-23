@@ -652,7 +652,18 @@ def load_aec_bench(
     aec-geometric-bench/dataset.
     """
     root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(
+            f"AEC Bench dataset root not found: {root}\n"
+            "Hint: Ensure --aec-bench points to the dataset directory containing "
+            "annotations_15.xml and a pdf/ subdirectory."
+        )
     xml_path = root / "annotations_15.xml"
+    if not xml_path.exists():
+        raise FileNotFoundError(
+            f"AEC Bench annotations file not found: {xml_path}\n"
+            "Hint: The dataset directory should contain 'annotations_15.xml' and a 'pdf/' subdirectory."
+        )
     tree = etree.parse(str(xml_path), safe_xml_parser())
     samples: list[SymbolSample] = []
     regions: list[Region] = []
