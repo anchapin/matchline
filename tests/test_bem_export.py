@@ -190,7 +190,7 @@ def test_provenance_carried_through_export_boundary():
         model=FakeBuildingModel(),
         simplified_ring=[[0, 0], [10, 0], [10, 10], [0, 10]],
         wall_height_m=3.0,
-        simplify_tol_pct=1.0,
+        simplify_tolerance=0.01,
     )
 
     # Verify BEMSpace provenance

@@ -1190,7 +1190,11 @@ def _check_review_queue_sound(ctx) -> CheckResult:
 
 
 def _check_review_queue_acknowledged(ctx) -> CheckResult:
-    unacknowledged = [i.id for i in ctx.model.review_queue if i.needs_review and not i.acknowledged]
+    unacknowledged = [
+        i.id
+        for i in ctx.model.review_queue
+        if i.needs_review and not i.acknowledged and i.status not in ("confirmed", "rejected")
+    ]
     if unacknowledged:
         return CheckResult(
             "review_queue_acknowledged",
