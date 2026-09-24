@@ -175,7 +175,9 @@ class TestGBXMLRoundtripConservation:
         )
 
         total_vol_before = sum(sp.volume_m3 for sp in bem.spaces)
-        total_vol_after = sum(sp["volume_m3"] for sp in parsed.values() if sp["volume_m3"] is not None)
+        total_vol_after = sum(
+            sp["volume_m3"] for sp in parsed.values() if sp["volume_m3"] is not None
+        )
         rel_err_vol = abs(total_vol_before - total_vol_after) / total_vol_before
         assert rel_err_vol < TOL, (
             f"Total volume mismatch: got {total_vol_after}, expected {total_vol_before} "
