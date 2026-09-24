@@ -18,6 +18,7 @@ Located in `docs/plans/designs/`:
 | [CFG-01](../plans/designs/cfg-01-cross-sheet-window-deduplication.md) | Cross-sheet window deduplication |
 | [CFG-02](../plans/designs/cfg-02-thick-stroke-skeleton.md) | Thick-stroke skeleton pre-processing |
 | [CFG-03](../plans/designs/cfg-03-complex-gdt-invariant-rows.md) | Complex GD&T invariant rows |
+| [CFG-04](../plans/designs/cfg-04-provenance-tracking.md) | Provenance Tracking System |
 
 ## Design decisions embedded in module docs
 
