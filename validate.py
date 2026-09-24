@@ -31,7 +31,7 @@ from lxml import etree
 
 from building_model import BuildingModel
 from datasets_adapter import polygon_area_px2
-from safe_xml import safe_xml_parser
+from safe_xml import safe_xml_parse
 
 try:
     from geometry_simplify import footprint_from_regions, simplify_ring
@@ -1134,7 +1134,7 @@ def _check_gbxml_spaces(ctx) -> CheckResult:
     if not path:
         return CheckResult("gbxml_space_areas", "gbXML space areas", "skip", "no gbXML path given")
     try:
-        root = etree.parse(str(path), safe_xml_parser()).getroot()
+        root = safe_xml_parse(path).getroot()
     except etree.XMLSyntaxError as e:
         return CheckResult(
             "gbxml_space_areas", "gbXML space areas", "error", f"gbXML not well-formed: {e}"
@@ -1184,7 +1184,7 @@ def _check_gbxml_opening_refs(ctx) -> CheckResult:
             "gbxml_opening_refs", "gbXML opening refs", "skip", "no gbXML path given"
         )
     try:
-        root = etree.parse(str(path), safe_xml_parser()).getroot()
+        root = safe_xml_parse(path).getroot()
     except etree.XMLSyntaxError as e:
         return CheckResult(
             "gbxml_opening_refs", "gbXML opening refs", "error", f"gbXML not well-formed: {e}"
@@ -1232,7 +1232,7 @@ def _check_gbxml_wall_areas(ctx) -> CheckResult:
             "no gbXML path given",
         )
     try:
-        root = etree.parse(str(path), safe_xml_parser()).getroot()
+        root = safe_xml_parse(path).getroot()
     except etree.XMLSyntaxError as e:
         return CheckResult(
             "gbxml_wall_areas",

@@ -54,10 +54,9 @@ try:
 except ImportError:
     cv2 = None  # lazy import below; parse_schedule_table requires it
 import numpy as np
-from lxml import etree
 
 from detector.classes import CLASS_NAMES
-from safe_xml import safe_xml_parser
+from safe_xml import safe_xml_parse
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -664,7 +663,7 @@ def load_aec_bench(
             f"AEC Bench annotations file not found: {xml_path}\n"
             "Hint: The dataset directory should contain 'annotations_15.xml' and a 'pdf/' subdirectory."
         )
-    tree = etree.parse(str(xml_path), safe_xml_parser())
+    tree = safe_xml_parse(xml_path)
     samples: list[SymbolSample] = []
     regions: list[Region] = []
 

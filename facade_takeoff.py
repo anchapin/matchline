@@ -37,6 +37,7 @@ import numpy as np
 from PIL import Image
 
 from building_model import Provenance
+from limits import MAX_IMAGE_SIZE_MB, check_file_size
 
 DATASET_NAME = "CMP Facade Database (Tylecek & Sara)"
 DATASET_LICENSE = "CC BY-SA (share-alike)"
@@ -75,6 +76,7 @@ REVIEW_SCALE_DISAGREE = 0.05  # warn if width- and height-derived scales differ
 
 def load_mask(path: str | Path) -> np.ndarray:
     """Load a CMP palette PNG; returns int array of class ids."""
+    check_file_size(path, MAX_IMAGE_SIZE_MB)
     return np.asarray(Image.open(path)).astype(np.int32)
 
 
