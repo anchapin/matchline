@@ -10,6 +10,7 @@ from datasets_adapter import (
     TakeoffLine,
     TakeoffResult,
 )
+from validate import export_gate, run_checks
 
 
 def _make_scale():
@@ -216,3 +217,52 @@ def test_provenance_carried_through_export_boundary():
     assert len(bem_opening.history) == 1, "BEMOpeningUnit.history was dropped"
     assert bem_opening.history[0].sheet_id == "arch_A201"
     assert bem_opening.history[0].revision == 0
+
+
+class TestBEMExportRoundtripBATTERY:
+    """Equivalent roundtrip tests using run_checks with full BATTERY validation.
+
+    Issue #312: The existing test_write_gbxml_and_validate_gbxml_roundtrip uses
+    validate_gbxml which only validates against XSD schema. These tests use
+    run_checks which validates against the full BATTERY including conservation laws.
+    """
+
+    def test_pipeline_e2e_bem_export_battery(self, tmp_path):
+        """Full pipeline with BEMModel export validated with full BATTERY.
+
+        Creates a BuildingModel via build_model, converts to BEMModel,
+        exports to gbXML, then validates with run_checks full BATTERY.
+        This is the equivalent of test_write_gbxml_and_validate_gbxml_roundtrip
+        but using full BATTERY validation instead of just validate_gbxml (XSD).
+        """
+        from geometry_simplify import footprint_from_regions, simplify_ring
+        from link import build_model as link_build_model
+        from run_pipeline import model_from_linked_model
+        from synth.multidiscipline import generate_building
+
+        seed = 101
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = link_build_model(
+            bldg, elevation_key="elev_grid", building_name=bldg["building_id"]
+        )
+
+        sres = simplify_ring(
+            footprint_from_regions([sp.polygon_m for sp in model.spaces.values()]),
+            tol=0.02,
+            wall_height=model.levels[0].wall_height_m,
+        )
+
+        bem_model = model_from_linked_model(
+            model=model,
+            simplified_ring=sres.ring,
+            wall_height_m=model.levels[0].wall_height_m,
+            simplify_tolerance=2.0,
+        )
+
+        gbxml_path = tmp_path / f"seed_{seed}.xml"
+        write_gbxml(bem_model, gbxml_path)
+        assert gbxml_path.exists(), "gbXML file was not produced"
+
+        check_report = run_checks(model, sres=sres, gbxml_path=str(gbxml_path))
+        assert check_report.ok, f"BATTERY checks failed: {[e.message for e in check_report.errors]}"
+        assert export_gate(check_report), "export gate closed with BATTERY validation"
