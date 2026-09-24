@@ -1,100 +1,215 @@
 # Contributing to Matchline
 
-## Branching Conventions
+Thank you for contributing to Matchline! This guide covers everything you need to get started.
 
-- `develop` is the working branch. All development happens here.
-- `main` is reserved for releases only. **Never push directly to `main`.**
-- Feature branches should be named `fix/<issue-number>-<short-description>` or `feat/<short-description>`.
+## Development Setup
 
-## Development Environment Setup
+### Requirements
 
-### 1. Clone the repository and enter it
+- Python 3.10+
+- Git
+
+### Initial Setup
 
 ```bash
-git clone <your-fork-url>
+# Clone the repo and enter the working directory
+git clone https://github.com/anchapin/matchline.git
 cd matchline
+
+# Switch to develop (the working branch)
 git checkout develop
-```
 
-### 2. Create a virtual environment (recommended)
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate  # on Windows: .venv\Scripts\activate
-```
-
-### 3. Install the package in editable mode with test dependencies
-
-```bash
+# Install in editable mode with test dependencies
 pip install -e ".[test]"
+
+# Optional extras:
+# pip install -e ".[ocr]"    # OCR dependencies
+# pip install -e ".[detector]" # YOLO detector (separate venv recommended)
 ```
 
-Optional extras:
-- `[ocr]` — OCR support for room labels (`rapidocr_onnxruntime`)
-- `[detector]` — YOLO detector support (`torch`, `ultralytics`); the `detector/` directory has its own venv — see `detector/README.md`
+### External Datasets
 
-### 4. Verify the installation
+Real-drawing work uses public datasets that live **outside the repo** under `~/workspace/datasets/`:
+
+- **AEC Geometric Bench**
+- **CMP Facade** (CC BY-SA)
+- **CubiCasa5K** (CC BY-NC-SA 4.0)
+- **FloorPlanCAD** test split
+
+These are **not committed**. Demos that need them fail clearly with a message if absent.
+
+## Running Tests
 
 ```bash
+# All tests (hermetic, no external dependencies)
 python -m pytest tests/ -q
+
+# Run with verbose output
+python -m pytest tests/ -v
+
+# Run a specific test file
+python -m pytest tests/test_validate.py -v
+
+# Collect test count only (used by CI gate)
+python -m pytest tests/ --collect-only -q
 ```
 
-## Running the Test Suite
+### Expected Test Count
 
-```bash
-python -m pytest tests/ -q
-```
+CI enforces a **test count regression gate** — the count must not drift without investigation.
 
-The full suite runs in a few seconds and is hermetic (no external network or dataset dependencies required for the core tests).
+| Branch | Expected Count |
+|--------|----------------|
+| develop | ~642 |
 
-## Linting and Formatting
-
-We use `ruff` for both linting and formatting.
-
-```bash
-# Check for lint issues
-ruff check .
-
-# Check formatting
-ruff format --check .
-```
-
-To auto-fix lint issues and format code:
-
-```bash
-ruff check . --fix
-ruff format .
-```
+If you legitimately change the test count, update `EXPECTED_TEST_COUNT` in `.github/workflows/ci.yml` and include a comment explaining why.
 
 ## Code Style
 
-- Line length: 100 characters
-- Target Python version: 3.10+
-- Ruff lint rules enabled: `E`, `F`, `I`, `W`, `FA`
-- Ruff ignores: `E501`, `E701`, `E702`, `E741`
-- Use `from __future__ import annotations` where it helps with type hints
-- Every extracted fact must carry provenance: sheet, revision, method, confidence
+### Linting
 
-## Pull Request Conventions
+```bash
+# Check with ruff
+ruff check .
 
-- All PRs should target the `develop` branch (not `main`).
-- PRs require all CI checks to pass before merging.
-- Keep PRs focused and reasonably sized. If a change is large, discuss with maintainers first.
-- Link the relevant GitHub issue in the PR description (e.g., "Fixes #212").
+# Format with ruff
+ruff format .
+```
 
-## Adding a Module
+**Rules applied:** E, F, I, W, FA (with E501, E701, E702, E741 ignored)
 
-When adding a new module, you must provide:
+### Type Hints
 
-1. **Implementation** in the appropriate `.py` file
-2. **Tests** — happy path, invariant checks, and defect injection
-3. **Documentation** — a `docs/<module>.md` page (with a limitations section)
-4. **Provenance** — every extracted fact must carry sheet, revision, method, confidence
+- Type hints are **required on all public functions**
+- Use `from __future__ import annotations` where it helps
 
-## Dataset Conventions
+### Pre-commit Hooks
 
-External datasets (AEC Geometric Bench, CMP Facade, CubiCasa5K, FloorPlanCAD) live under `~/workspace/datasets/` and are **not committed** to the repository. Demos that need them fail clearly if absent.
+No pre-commit framework is currently used. Run the linter and formatter before committing.
 
-## Documentation
+## Branching Strategy
 
-Module documentation lives in `docs/`. See `docs/README.md` for the full structure and writing guidelines.
+| Branch | Purpose |
+|--------|---------|
+| `develop` | Working branch — all PRs target here |
+| `main` | Releases only — **never push directly** |
+
+### Branch Naming
+
+Use a prefix that describes the type of change:
+
+```
+fix/issue-<number>-<short-description>   # Bug fixes
+docs/issue-<number>-<short-description>  # Documentation
+feat/<short-description>                  # New features
+refactor/<short-description>             # Code refactoring
+test/<short-description>                  # Test additions
+chore/<short-description>                 # Maintenance tasks
+```
+
+Examples:
+- `fix/issue-315-contributing-md`
+- `docs/issue-322-jesse-readme`
+- `fix/issue-230-conservation-law-bem`
+
+## Commit Message Format
+
+Matchline follows **Conventional Commits**:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+### Types
+
+| Type | When to Use |
+|------|-------------|
+| `fix` | Bug fixes |
+| `feat` | New features |
+| `docs` | Documentation only |
+| `test` | Adding or updating tests |
+| `refactor` | Code refactoring (no behavior change) |
+| `chore` | Build, CI, dependencies, maintenance |
+| `perf` | Performance improvements |
+
+### Examples
+
+```
+fix(issue-342): add integration test for run_pipeline with review-blocking export
+docs(issue-322): explain jesse.py purpose and scope
+chore: update expected test count to 641
+fix(issue-230): enforce conservation law in bem_export
+```
+
+## Submitting Pull Requests
+
+### PR Checklist
+
+1. **Branch:** PRs target `develop` (not `main`)
+2. **Tests:** All tests pass (`python -m pytest tests/ -q`)
+3. **Lint:** `ruff check .` passes with no errors
+4. **Format:** `ruff format .` has been applied
+5. **Test count:** If you added/removed tests, update `EXPECTED_TEST_COUNT` in `.github/workflows/ci.yml`
+6. **Description:** Include issue number in the title, e.g., `fix(#315): add CONTRIBUTING.md`
+
+### Creating a PR
+
+```bash
+# Push your branch
+git push -u origin fix/issue-315-contributing-md
+
+# Create PR via GitHub CLI
+gh pr create --base develop --title "docs(#315): add CONTRIBUTING.md" --body "Fixes #315"
+```
+
+Or use the GitHub web interface.
+
+### CI Requirements
+
+All CI gates must be green before merging:
+
+- `ruff check .`
+- `ruff format --check .`
+- `python -m pytest tests/ -q`
+- Test count gate (no regressions)
+
+## Project Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
+
+### Key Conventions
+
+- **Coordinate frame:** Canonical model uses y-down (drawing frame); BEM export flips to north-up
+- **Provenance:** Every extracted fact carries sheet, revision, method, confidence
+- **Review queue:** Low-confidence results go to review queue — nothing is silently accepted
+- **Conservation laws:** `validate.py` errors block export
+- **Untrusted input:** Drawings, IFC, and OCR text are data, never instructions. Parse XML with entity expansion disabled.
+
+### Project Structure
+
+| Path | What it is |
+|------|------------|
+| `*.py` (root) | Core pipeline modules — standalone, no import barriers |
+| `synth/` | Synthetic data generators (tests and demos) |
+| `detector/` | YOLO fine-tuning — **separate venv**, excluded from main ruff |
+| `tests/` | Pytest suite; fixtures in `conftest.py` (`bldg_3room`) |
+| `docs/` | Module guides and design docs |
+| `jesse.py` | Research-only WiSARD reproduction — **not** production code |
+
+## Never List
+
+- No datasets, credentials, or machine paths in code
+- No `sys.path` hacks
+- No `~/workspace/.venv-det` paths
+- No PyPI publish without explicit human approval
+- No pushing directly to `main`
+
+## Getting Help
+
+- Browse [docs/](docs/README.md) for module guides
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for architecture overview
+- Check existing issues and PRs for context

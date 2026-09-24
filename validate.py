@@ -1516,7 +1516,9 @@ def run_checks(
     # Filter review items by confidence if threshold is set
     if min_review_confidence is not None:
         model.review_queue = [
-            item for item in model.review_queue if item.confidence >= min_review_confidence
+            item
+            for item in model.review_queue
+            if item.needs_review or item.confidence >= min_review_confidence
         ]
     ctx = _build_ctx(
         model,
