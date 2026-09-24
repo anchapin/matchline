@@ -37,7 +37,11 @@ class TestVolumeConservationBattery:
         report = run_checks(m)
 
         # Filter to volume_conservation errors only
-        errors = [r for r in report.results if r.check_id == "volume_conservation" and r.severity == "error"]
+        errors = [
+            r
+            for r in report.results
+            if r.check_id == "volume_conservation" and r.severity == "error"
+        ]
         assert len(errors) == 0, f"volume_conservation error on clean model: {errors}"
 
     # ------------------------------------------------------------------
@@ -51,7 +55,11 @@ class TestVolumeConservationBattery:
 
         report = run_checks(m)
 
-        bad = [r for r in report.results if r.check_id == "volume_conservation" and r.severity == "error"]
+        bad = [
+            r
+            for r in report.results
+            if r.check_id == "volume_conservation" and r.severity == "error"
+        ]
         assert len(bad) == 1, (
             f"Expected exactly one volume_conservation error after break_volume_conservation, got "
             f"{[r.severity for r in report.results if r.check_id == 'volume_conservation']}"
@@ -69,7 +77,11 @@ class TestVolumeConservationBattery:
         report = run_checks(m)
 
         err = next(
-            (r for r in report.results if r.check_id == "volume_conservation" and r.severity == "error"),
+            (
+                r
+                for r in report.results
+                if r.check_id == "volume_conservation" and r.severity == "error"
+            ),
             None,
         )
         assert err is not None, "Expected a volume_conservation error"
@@ -90,5 +102,9 @@ class TestVolumeConservationBattery:
 
         report = run_checks(m)
 
-        warns = [r for r in report.results if r.check_id == "volume_conservation" and r.severity == "warn"]
+        warns = [
+            r
+            for r in report.results
+            if r.check_id == "volume_conservation" and r.severity == "warn"
+        ]
         assert len(warns) == 0, f"volume_conservation should emit 'error', not 'warn': {warns}"

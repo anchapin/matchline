@@ -50,7 +50,11 @@ class TestBEMAreaConservationBattery:
         report = run_checks(model)
 
         # Filter to bem_area_conservation errors only
-        errors = [r for r in report.results if r.check_id == "bem_area_conservation" and r.severity == "error"]
+        errors = [
+            r
+            for r in report.results
+            if r.check_id == "bem_area_conservation" and r.severity == "error"
+        ]
         assert len(errors) == 0, f"bem_area_conservation error on clean model: {errors}"
 
     # ------------------------------------------------------------------
