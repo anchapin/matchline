@@ -316,8 +316,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enable-auto-triage",
         action="store_true",
-        help="Enable auto-triage classifier when loading the model "
-        "(ENABLE_AUTO_TRIAGE env var also respected)",
+        help="Explicitly enable auto-triage classifier when loading the model "
+        "(enabled by default; flag is a no-op for backwards compatibility)",
     )
     p.add_argument(
         "--list",

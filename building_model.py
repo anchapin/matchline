@@ -42,9 +42,9 @@ MODEL_VERSION = "1.0"
 # accepted (review queue, not dropped).
 REVIEW_CONFIDENCE = 0.80
 
-# Feature flag: enable auto-triage via the local review_classifier TypedDecider.
-# When False (default), flag_for_review behaves as before (pure flagging).
-ENABLE_AUTO_TRIAGE = False
+# Auto-triage via the local review_classifier TypedDecider is ON by default.
+# Low-confidence results are automatically routed to the review queue.
+ENABLE_AUTO_TRIAGE = True
 
 
 # ---------------------------------------------------------------------------
