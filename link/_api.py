@@ -56,6 +56,12 @@ def build_model(
     _link_mech(bldg, model, spaces, report)
     if elevation_key is not None:
         _link_elevation(bldg, model, spaces, elevation_key, win_sched, report)
+        from elevation_windows import compute_daylit_zones
+
+        W = bldg["W_m"]
+        D = bldg["D_m"]
+        for sp in model.spaces.values():
+            compute_daylit_zones(sp, W, D)
 
     # Issue #1: cross-sheet window deduplication — dedupe after all elevation
     # linking so that two runs of the same facade produce one SpaceOpening

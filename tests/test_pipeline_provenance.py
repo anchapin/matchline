@@ -108,11 +108,6 @@ class TestProvenanceCompleteAllCategories:
                 )
 
     @pytest.mark.parametrize("seed", [101, 102, 103])
-    @pytest.mark.xfail(
-        reason="SpaceDaylight.provenance is set only by elevation_windows.compute_daylit_zones "
-        "which build_model does not call; build_model only links openings, not daylight zones. "
-        "The full build_model_with_elevations path sets daylight provenance correctly."
-    )
     def test_all_daylight_provenance_non_none(self, seed):
         """SpaceDaylight.provenance and DaylitZone provenance are non-None after pipeline."""
         bldg = generate_building(seed, open_office_span=False)
