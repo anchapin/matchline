@@ -89,3 +89,11 @@ Notes:
 - The module depends on shapely, vendored persistently at
   `~/workspace/vendor/pylibs` (system site-packages do not survive VM
   restarts); the import falls back to the vendored copy automatically.
+
+## Limitations
+
+- **Single-ring only**: The module accepts one exterior ring at a time. Buildings with courtyards (holes) or multi-wing campuses require per-part simplification with a shared area budget, which is not yet implemented.
+- **Uniform wall height**: All walls are assigned a single `wall_height` scalar; buildings with varying story heights will have incorrect envelope area.
+- **No opening reconciliation**: Window and door punched openings are handled separately by `datasets_adapter.rollup_takeoff`, not by this module. The two area streams must be manually reconciled before BEM export to avoid double-counting.
+- **Douglas-Peucker is not topology-preserving**: Simplified edges may cause tiny self-intersections or near-degenerate slivers that are cleaned by shapely but can affect downstream thin-polygon operations.
+- **Over-reduction on noisy CAD input**: The budget-based rejection can over-simplify raw CAD polylines with dense vertices; on pre-unioned room polygons the effect is milder.

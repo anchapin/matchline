@@ -29,7 +29,9 @@ import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional
 
+from building_model import Provenance
 from room_labels import point_in_polygon as _pip
 from safe_xml import safe_xml_parse, safe_xml_parser
 
@@ -75,6 +77,8 @@ class BEMSpace:
     area_m2: float
     volume_m3: float
     lighting_w: float = 0.0  # total lighting power (watts), from SpaceLighting
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 @dataclass
@@ -85,6 +89,8 @@ class BEMOpeningUnit:
     tag: str  # schedule tag, e.g. "A"
     width_m: float
     height_m: float
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 @dataclass
@@ -95,10 +101,12 @@ class BEMModel:
     ring_m: list  # simplified envelope ring, CCW, x=east/y=north
     wall_height_m: float
     area_delta_pct: float  # envelope area preservation, from simplifier
-    simplify_tol_pct: float
+    simplify_tolerance: float
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -217,13 +225,13 @@ def model_from_takeoff(
         f"{len(skipped)} tags skipped (see skipped_openings)."
     )
 
-    simplify_tol_pct = sres.tol * 100.0
-    # Validate simplify_tol_pct against maximum threshold (same as tol_area = 3%)
-    MAX_SIMPLIFY_TOL_PCT = 3.0
-    if simplify_tol_pct > MAX_SIMPLIFY_TOL_PCT:
+    simplify_tolerance = sres.tol * 100.0
+    # Validate simplify_tolerance against maximum threshold (same as tol_area = 3%)
+    MAX_SIMPLIFY_TOL = 3.0
+    if simplify_tolerance > MAX_SIMPLIFY_TOL:
         raise ValueError(
-            f"simplify_tol_pct={simplify_tol_pct:.2f}% exceeds maximum "
-            f"threshold {MAX_SIMPLIFY_TOL_PCT:.0f}% — geometry simplification "
+            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
+            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
             f"introduced too much distortion for reliable BEM export"
         )
 
@@ -234,7 +242,7 @@ def model_from_takeoff(
         ring_m=ring_m,
         wall_height_m=wall_height_m,
         area_delta_pct=sres.area_delta_pct,
-        simplify_tol_pct=simplify_tol_pct,
+        simplify_tolerance=simplify_tolerance,
         skipped_openings=skipped,
         notes=notes,
     )
@@ -376,7 +384,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         "Description",
         f"Exported by Jesse-Vision prototype. Envelope simplified "
         f"{model.area_delta_pct:+.3f}% area delta (tolerance "
-        f"{model.simplify_tol_pct:.1f}%).",
+        f"{model.simplify_tolerance:.1f}%).",
     )
     loc = _el(campus, "Location")
     _el(loc, "Name", "Unknown")
@@ -523,7 +531,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     comment = (
         f"Jesse-Vision BEM export. Simplification area delta "
-        f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tol_pct:.1f}%). "
+        f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tolerance:.1f}%). "
         f"Openings: {len(model.openings)} placed by largest-remainder "
         f"apportionment across {len(edges)} walls proportional to wall "
         f"length, evenly spaced per wall; window sill {WINDOW_SILL_M} m, "
