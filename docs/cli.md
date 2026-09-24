@@ -267,3 +267,10 @@ See [`building_model.md`](building_model.md) for the `ReviewItem` data model.
   `matchline run` Stage 4b). When set, every `ReviewItem` added to the
   review queue is scored by the `review_classifier` triage models, populating
   `needs_human` (P-needs-human, 0–1) and `urgency` (0–3) fields.
+
+## Limitations
+
+- **CLI is a thin orchestration wrapper**: It invokes the extraction and validation pipeline modules. Limitations of those underlying modules (see respective module docs) apply to all pipeline outputs.
+- **No incremental or watch-mode processing**: The CLI always runs the full pipeline from scratch; there is no way to resume from a partial stage or watch for file changes.
+- **External dataset paths are not validated**: Commands that require local datasets (`--data-root`, `~/workspace/datasets/`) fail silently if the dataset is absent rather than failing with a clear error.
+- **Exit code 0 does not guarantee export quality**: A successful run with exit code 0 means the validation gate passed, but does not validate that confidence scores are calibrated or that the BEM reflects actual building conditions.

@@ -81,3 +81,11 @@ still unvalidated — Alex's unredacted drawings (Monday) are the right corpus.
   and not merged — needs a line-grouping pass.
 - Schedule-table parsing (`parse_schedule_table`) is still a stub; room
   labels are independent of it.
+
+## Limitations
+
+- **OCR accuracy degrades with poor scan quality**: Low-resolution PDFs, skewed scans, and architectural fonts with ligatures will produce OCR errors that propagate to incorrect room label assignments.
+- **Multi-line labels are not merged**: Labels split across vertical stacked boxes (e.g., "OPEN", "OFFICE", "201") are read as separate text boxes and not merged into a single room label.
+- **No spatial disambiguation**: When two rooms share the same label (e.g., identical apartment units), the module assigns the same label to both without disambiguation. Downstream modules may need tie-breaking by polygon area or sheet location.
+- **Non-standard room labels are not caught**: The module maps known label types from the label vocabulary; non-standard or informal room names (e.g., "Jeff's office") are silently dropped unless they match known suffixes.
+- **Schedule table parsing is a stub**: `parse_schedule_table` does not yet extract room data from native drawing schedule tables; CSV input is required for v1.
