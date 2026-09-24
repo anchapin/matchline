@@ -106,7 +106,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         ring_m=ring_ccw,
         wall_height_m=wall_height,
         area_delta_pct=0.0,  # no simplification on export path
-        simplify_tol_pct=0.0,
+        simplify_tolerance=0.0,
         zones=[(z.id, z.space_ids) for z in model.zones.values()],
     )
 

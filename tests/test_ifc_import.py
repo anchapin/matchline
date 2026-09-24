@@ -68,7 +68,7 @@ def _bem_fixture():
         ring_m=ring,
         wall_height_m=H,
         area_delta_pct=0.0,
-        simplify_tol_pct=2.0,
+        simplify_tolerance=2.0,
     )
 
 

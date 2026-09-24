@@ -320,7 +320,7 @@ class TestProvenanceBEMExport:
         from run_pipeline import model_from_linked_model
 
         bem = model_from_linked_model(
-            model, simplified_ring=[], wall_height_m=3.0, simplify_tol_pct=1.0
+            model, simplified_ring=[], wall_height_m=3.0, simplify_tolerance=1.0
         )
         assert bem.building_name == model.name or bem.building_name == bldg["building_id"]
         assert len(bem.spaces) == len(model.spaces), (

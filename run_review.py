@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
+import warnings
 from typing import TextIO
 
 from building_model import BuildingModel, ReviewItem
@@ -116,7 +117,7 @@ def _format_item(item: ReviewItem, out: TextIO = sys.stdout) -> None:
         print(f"    needs_human: {item.needs_human:.2f}", file=out)
 
 
-def format_review_list(
+def list_review_items(
     model_path: str | pathlib.Path,
     show_all: bool = False,
 ) -> tuple[list[ReviewItem], bool]:
@@ -212,6 +213,23 @@ def format_review_list(
         print()
 
     return items, classifier_available
+
+
+def format_review_list(
+    model_path: str | pathlib.Path,
+    show_all: bool = False,
+) -> tuple[list[ReviewItem], bool]:
+    """Deprecated alias for list_review_items.
+
+    .. deprecated::
+        Use :func:`list_review_items` instead.
+    """
+    warnings.warn(
+        "format_review_list is deprecated, use list_review_items instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return list_review_items(model_path, show_all)
 
 
 def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
@@ -325,7 +343,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         sys.exit(0)
 
     # --- Interactive List ---
-    format_review_list(args.model, show_all=args.show_all)
+    list_review_items(args.model, show_all=args.show_all)
 
 
 def _review_item_to_dict(item: ReviewItem) -> dict:

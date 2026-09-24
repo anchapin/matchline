@@ -101,7 +101,7 @@ class BEMModel:
     ring_m: list  # simplified envelope ring, CCW, x=east/y=north
     wall_height_m: float
     area_delta_pct: float  # envelope area preservation, from simplifier
-    simplify_tol_pct: float
+    simplify_tolerance: float
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
@@ -232,7 +232,7 @@ def model_from_takeoff(
         ring_m=ring_m,
         wall_height_m=wall_height_m,
         area_delta_pct=sres.area_delta_pct,
-        simplify_tol_pct=sres.tol * 100.0,
+        simplify_tolerance=sres.tol * 100.0,
         skipped_openings=skipped,
         notes=notes,
     )
@@ -374,7 +374,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         "Description",
         f"Exported by Jesse-Vision prototype. Envelope simplified "
         f"{model.area_delta_pct:+.3f}% area delta (tolerance "
-        f"{model.simplify_tol_pct:.1f}%).",
+        f"{model.simplify_tolerance:.1f}%).",
     )
     loc = _el(campus, "Location")
     _el(loc, "Name", "Unknown")
@@ -521,7 +521,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     comment = (
         f"Jesse-Vision BEM export. Simplification area delta "
-        f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tol_pct:.1f}%). "
+        f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tolerance:.1f}%). "
         f"Openings: {len(model.openings)} placed by largest-remainder "
         f"apportionment across {len(edges)} walls proportional to wall "
         f"length, evenly spaced per wall; window sill {WINDOW_SILL_M} m, "

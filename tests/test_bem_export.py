@@ -106,7 +106,7 @@ class TestBEMExport:
             ring_m=[(0, 0), (20, 0), (20, 20), (0, 20)],
             wall_height_m=3.0,
             area_delta_pct=0.0,
-            simplify_tol_pct=0.1,
+            simplify_tolerance=0.1,
             skipped_openings=[],
             notes=[],
             zones=[],

@@ -93,7 +93,7 @@ def _run_auto_triage(model) -> None:
 
 
 def model_from_linked_model(
-    model, simplified_ring: list, wall_height_m: float, simplify_tol_pct: float
+    model, simplified_ring: list, wall_height_m: float, simplify_tolerance: float
 ) -> BEMModel:
     """Build a BEMModel from the canonical BuildingModel.
 
@@ -179,7 +179,7 @@ def model_from_linked_model(
         ring_m=ring_ccw,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
-        simplify_tol_pct=simplify_tol_pct,
+        simplify_tolerance=simplify_tolerance,
     )
 
 
@@ -413,7 +413,7 @@ def main(args, config: dict | None = None) -> None:
             model=model,
             simplified_ring=sres.ring,
             wall_height_m=wall_height,
-            simplify_tol_pct=simplify_tol * 100.0,
+            simplify_tolerance=simplify_tol * 100.0,
         )
 
         gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
