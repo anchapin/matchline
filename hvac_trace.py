@@ -385,7 +385,7 @@ def _match_detections(pred, gt_comps, cls, tol_px=25):
     return tp, len(pp) - tp, len(gg) - tp
 
 
-def validate(seeds, clf, templates):
+def validate_hvac_solution(seeds, clf, templates):
     from synth.mech import generate_mech_sheet
 
     rows = []
@@ -486,7 +486,7 @@ def main():
     print(f"train acc: {(tr == y).mean():.4f} ({len(y)} crops)")
     templates = {c: render_template(c) for c in MECH_CLASSES}
     seeds = [11, 22, 33, 44]
-    rows = validate(seeds, clf, templates)
+    rows = validate_hvac_solution(seeds, clf, templates)
     Path("synth/out").mkdir(exist_ok=True)
     with open("synth/out/mech_trace_results.json", "w") as f:
         json.dump(rows, f, indent=1)
