@@ -116,7 +116,11 @@ def test_battery_size_documented():
             "area_conservation",
             "error",
             marks=pytest.mark.xfail(
-                reason="Bug: area_conservation does not filter by poly_type - see issue #201"
+                reason="area_conservation sums ALL spaces' areas on each level "
+                "(poly_type is not filtered). break_room_number removes the room "
+                "number making poly_type='unassigned', but the space area is still "
+                "counted in the level sum. The conservation law never fires for "
+                "room-number defects. See issue #201."
             ),
         ),
     ],
