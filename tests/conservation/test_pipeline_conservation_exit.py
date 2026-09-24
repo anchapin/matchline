@@ -1,7 +1,6 @@
 """Integration test: conservation-violation in model_from_linked_model() raises StageError and skips stage_04_validation.json."""
 
 import argparse
-from pathlib import Path
 
 import pytest
 
