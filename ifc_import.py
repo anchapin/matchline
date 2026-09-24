@@ -30,6 +30,7 @@ out of scope here; see infer_adjacency() stub + docs/ifc_import.md.
 """
 
 import math
+import os
 import re
 from pathlib import Path
 
@@ -617,6 +618,14 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 f"the working directory '{cwd_resolved}'. "
                 "Rejecting to prevent path traversal."
             )
+    max_mb = int(os.environ.get("MATCHLINE_MAX_IFC_SIZE_MB", 200))
+    file_size_mb = path.stat().st_size / (1024 * 1024)
+    if file_size_mb > max_mb:
+        raise ValueError(
+            f"IFC file '{path}' is {file_size_mb:.1f} MB, "
+            f"exceeds the {max_mb} MB limit. "
+            "Set MATCHLINE_MAX_IFC_SIZE_MB to increase the limit."
+        )
     f = ifcopenshell.open(str(path))
     if f.schema != "IFC4":
         raise ValueError(f"expected IFC4 schema, got {f.schema}")
