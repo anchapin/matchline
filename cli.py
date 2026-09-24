@@ -63,7 +63,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     if config is None:
         config = {}
     config["review_confidence"] = confidence_threshold
-    run_pipeline.main(args, config=config)
+    try:
+        run_pipeline.main(args, config=config)
+    except run_pipeline.StageError:
+        sys.exit(1)
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
