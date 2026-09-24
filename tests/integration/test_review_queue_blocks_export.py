@@ -56,3 +56,96 @@ class TestReviewQueueBlocksExport:
             "export_gate should return True when all needs_review items "
             "in review_queue are acknowledged"
         )
+
+    def test_multiple_unacknowledged_items_block_export(self):
+        """export_gate returns False when multiple unacknowledged items in review_queue."""
+        model = make_clean_model()
+        model.review_queue.extend(
+            [
+                ReviewItem(
+                    id="rq-003",
+                    kind="window_room_link",
+                    description="Low-confidence window area extraction on sheet A101",
+                    status="open",
+                    confidence=0.5,
+                    provenance=P(),
+                    needs_review=True,
+                    acknowledged=False,
+                ),
+                ReviewItem(
+                    id="rq-004",
+                    kind="zone_assignment",
+                    description="Zone assignment inconsistency on sheet A102",
+                    status="open",
+                    confidence=0.6,
+                    provenance=P(),
+                    needs_review=True,
+                    acknowledged=False,
+                ),
+            ]
+        )
+        report = run_checks(model)
+        assert not export_gate(report), (
+            "export_gate should return False when multiple unacknowledged "
+            "needs_review items are present in review_queue"
+        )
+
+    def test_mixed_acknowledged_and_unacknowledged_items(self):
+        """export_gate returns False when any unacknowledged needs_review items exist."""
+        model = make_clean_model()
+        model.review_queue.extend(
+            [
+                ReviewItem(
+                    id="rq-005",
+                    kind="window_room_link",
+                    description="Low-confidence window area extraction on sheet A101",
+                    status="confirmed",
+                    confidence=0.5,
+                    provenance=P(),
+                    needs_review=True,
+                    acknowledged=True,
+                ),
+                ReviewItem(
+                    id="rq-006",
+                    kind="zone_assignment",
+                    description="Zone assignment inconsistency on sheet A102",
+                    status="open",
+                    confidence=0.6,
+                    provenance=P(),
+                    needs_review=True,
+                    acknowledged=False,
+                ),
+            ]
+        )
+        report = run_checks(model)
+        assert not export_gate(report), (
+            "export_gate should return False when any unacknowledged "
+            "needs_review item exists, even if others are acknowledged"
+        )
+
+    def test_pipeline_integration_blocks_export_with_unacknowledged(self):
+        """Integration test: pipeline flow with unacknowledged items blocks export.
+
+        This test simulates the pipeline behavior: run_checks populates
+        review_queue items, then export_gate checks if export is allowed.
+        """
+        from run_pipeline import run_checks as pipeline_run_checks
+
+        model = make_clean_model()
+        model.review_queue.append(
+            ReviewItem(
+                id="rq-007",
+                kind="envelope_area",
+                description="Envelope area mismatch detected",
+                status="open",
+                confidence=0.7,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+        report = pipeline_run_checks(model)
+        assert not export_gate(report), (
+            "Pipeline integration: export_gate should return False when "
+            "unacknowledged needs_review items are present"
+        )
