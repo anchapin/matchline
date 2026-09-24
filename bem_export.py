@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from room_labels import point_in_polygon as _pip
+from safe_xml import safe_xml_parser
 
 # ---------------------------------------------------------------------------
 # Intermediate BEM model (all metric, x=east / y=north / z=up)
@@ -555,7 +556,7 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
     try:
         # Harden against entity-expansion / XXE: user-supplied gbXML and XSD
         # files are untrusted input (see AGENTS.md untrusted-input policy).
-        safe_parser = etree.XMLParser(resolve_entities=False, no_network=True)
+        safe_parser = safe_xml_parser()
         schema = etree.XMLSchema(etree.parse(str(xsd_path), safe_parser))
         doc = etree.parse(path, safe_parser)
         if doc.docinfo.internalDTD is not None:
@@ -580,7 +581,7 @@ def _gbxml_smoke_check(path: str, errors: list) -> tuple[bool, list]:
     try:
         from lxml import etree as lxml_etree
 
-        safe_parser = lxml_etree.XMLParser(resolve_entities=False, no_network=True)
+        safe_parser = safe_xml_parser()
         root = lxml_etree.parse(path, safe_parser).getroot()
     except ImportError:
         return False, errors + ["lxml not available; cannot parse gbXML"]
