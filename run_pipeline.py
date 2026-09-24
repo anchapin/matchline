@@ -264,51 +264,186 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 
+def _stage_1_generate(args, out_dir: Path):
+    """Stage 1: Generate building or load real-sheet detections.
+
+    Returns:
+        tuple: (model, link_report, bldg) for synthetic seed path,
+               or (model, None, None) for aec_bench path.
+    """
+    if args.image:
+        dets = detections_from_yolo_json(args.detections, args.image.stem)
+        schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
+        takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
+        bldg = {
+            "building_id": args.image.stem,
+            "seed": None,
+            "detections": [d.__dict__ for d in dets],
+            "schedule": {k: v.__dict__ for k, v in schedule.items()},
+            "takeoff": takeoff,
+        }
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.image),
+                "n_detections": len(dets),
+                "n_scheduled": len(schedule),
+            },
+        )
+        raise NotImplementedError(
+            "Stage 2 (build_model) for real sheets requires an architectural "
+            "plan sheet and the link step. For real-sheet processing, run "
+            "the full pipeline: matchline run --image <sheet> --detections <preds.json> "
+            "with a linked building model instead of this simplified path."
+        )
+    elif args.aec_bench:
+        samples, takeoff_result = load_aec_bench(args.aec_bench)
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.aec_bench),
+                "n_samples": len(samples),
+                "n_regions": len(takeoff_result.regions),
+            },
+        )
+        model = _build_minimal_model_from_regions(takeoff_result, bldg_id="aec-bench")
+        return model, None, None
+    else:
+        bldg = generate_building(args.seed, open_office_span=args.open_office_span)
+        write_json(out_dir / "stage_01_building.json", bldg)
+        return None, None, bldg
+
+
+def _stage_2_build_model(bldg, args, out_dir: Path):
+    """Stage 2: Build linked model from building data.
+
+    Returns:
+        tuple: (model, link_report)
+    """
+    if args.aec_bench:
+        link_report = None
+        return None, link_report
+    else:
+        model, link_report = build_model(
+            bldg, elevation_key=args.elevation_key, building_name=bldg["building_id"]
+        )
+        write_json(
+            out_dir / "stage_02_model.json",
+            {
+                "model": json.loads(model.to_json())
+                if hasattr(model, "to_json")
+                else _model_to_dict(model),
+                "link_report": asdict(link_report) if link_report else None,
+            },
+        )
+        return model, link_report
+
+
+def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out_dir: Path):
+    """Stage 3: Simplify building geometry.
+
+    Returns:
+        tuple: (simplify_result, wall_height)
+    """
+    if wall_height is None:
+        wall_height = model.levels[0].wall_height_m
+    ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
+    sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
+    write_json(
+        out_dir / "stage_03_simplified.json",
+        {
+            "original_count": sres.original_count,
+            "simplified_count": sres.simplified_count,
+            "simplified_ring": sres.ring,
+            "area_delta_pct": sres.area_delta_pct,
+            "tolerance_pct": sres.tol * 100.0,
+        },
+    )
+    return sres, wall_height
+
+
+def _stage_4_validation(model, sres, min_review_confidence, out_dir: Path):
+    """Stage 4: Run validation checks on the model.
+
+    Returns:
+        ValidationReport
+    """
+    report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
+    write_json(out_dir / "stage_04_validation.json", report.to_dict())
+    return report
+
+
+def _stage_4b_auto_triage(model, out_dir: Path):
+    """Stage 4b: Run auto-triage on review queue items."""
+    import building_model
+
+    building_model.ENABLE_AUTO_TRIAGE = True
+    _run_auto_triage(model)
+    write_json(
+        out_dir / "stage_04b_auto_triage.json",
+        {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
+    )
+
+
+def _stage_5_fail_fast(report):
+    """Stage 5: Fail fast if validation errors exist."""
+    if not export_gate(report):
+        print(f"VALIDATION FAILED: {len(report.errors)} error(s)", file=sys.stderr)
+        for r in report.errors:
+            print(f"  - {r.check_id}: {r.message}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
+    """Stage 6: Export BEM model to gbXML and IFC4 formats."""
+    bem_dir = out_dir / "stage_06_bem"
+    bem_dir.mkdir(parents=True, exist_ok=True)
+
+    bem_model = model_from_linked_model(
+        model=model,
+        simplified_ring=sres.ring,
+        wall_height_m=wall_height,
+        simplify_tolerance=simplify_tol * 100.0,
+    )
+
+    gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
+    write_gbxml(bem_model, gbxml_path)
+
+    ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
+    write_ifc4(bem_model, ifc_path)
+
+    return gbxml_path, ifc_path
+
+
+def _print_pipeline_complete(out_dir: Path, report):
+    """Print completion summary of all pipeline stages."""
+    print(f"Pipeline complete: {out_dir}")
+    print("  stage_01_building.json")
+    print("  stage_02_model.json")
+    print("  stage_03_simplified.json")
+    print(f"  stage_04_validation.json (ok={report.ok})")
+    bem_dir = out_dir / "stage_06_bem"
+    if bem_dir.exists():
+        for f in bem_dir.iterdir():
+            print(f"  stage_06_bem/{f.name}")
+
+
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Config overrides from YAML
+    simplify_tol = args.simplify_tol
+    wall_height = None
+    min_review_confidence = None
+    if config:
+        simplify_tol = config.get("simplify_tolerance", simplify_tol)
+        wall_height = config.get("wall_height", None)
+        min_review_confidence = config.get("review_confidence", None)
+
     # --- Stage 1: generate building or load real-sheet detections ----------
     try:
-        if args.image:
-            dets = detections_from_yolo_json(args.detections, args.image.stem)
-            schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
-            takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
-            bldg = {
-                "building_id": args.image.stem,
-                "seed": None,
-                "detections": [d.__dict__ for d in dets],
-                "schedule": {k: v.__dict__ for k, v in schedule.items()},
-                "takeoff": takeoff,
-            }
-            write_json(
-                out_dir / "stage_01_building.json",
-                {
-                    "source": str(args.image),
-                    "n_detections": len(dets),
-                    "n_scheduled": len(schedule),
-                },
-            )
-            raise NotImplementedError(
-                "Stage 2 (build_model) for real sheets requires an architectural "
-                "plan sheet and the link step. For real-sheet processing, run "
-                "the full pipeline: matchline run --image <sheet> --detections <preds.json> "
-                "with a linked building model instead of this simplified path."
-            )
-        elif args.aec_bench:
-            samples, takeoff_result = load_aec_bench(args.aec_bench)
-            write_json(
-                out_dir / "stage_01_building.json",
-                {
-                    "source": str(args.aec_bench),
-                    "n_samples": len(samples),
-                    "n_regions": len(takeoff_result.regions),
-                },
-            )
-            model = _build_minimal_model_from_regions(takeoff_result, bldg_id="aec-bench")
-        else:
-            bldg = generate_building(args.seed, open_office_span=args.open_office_span)
-            write_json(out_dir / "stage_01_building.json", bldg)
+        bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir)
     except StageError:
         raise
     except Exception as e:
@@ -322,21 +457,7 @@ def main(args, config: dict | None = None) -> None:
 
     # --- Stage 2: build model --------------------------------------------
     try:
-        if args.aec_bench:
-            link_report = None
-        else:
-            model, link_report = build_model(
-                bldg, elevation_key=args.elevation_key, building_name=bldg["building_id"]
-            )
-        write_json(
-            out_dir / "stage_02_model.json",
-            {
-                "model": json.loads(model.to_json())
-                if hasattr(model, "to_json")
-                else _model_to_dict(model),
-                "link_report": asdict(link_report) if link_report else None,
-            },
-        )
+        model, link_report = _stage_2_build_model(bldg, args, out_dir)
     except StageError:
         raise
     except Exception as e:
@@ -348,31 +469,9 @@ def main(args, config: dict | None = None) -> None:
             "and building detections contain required categories.",
         ) from e
 
-    # --- Config overrides (from YAML) ----------------------------------
-    simplify_tol = args.simplify_tol
-    wall_height = None
-    min_review_confidence = None
-    if config:
-        simplify_tol = config.get("simplify_tolerance", simplify_tol)
-        wall_height = config.get("wall_height", None)
-        min_review_confidence = config.get("review_confidence", None)
-
     # --- Stage 3: simplify geometry --------------------------------------
     try:
-        if wall_height is None:
-            wall_height = model.levels[0].wall_height_m
-        ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-        sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
-        write_json(
-            out_dir / "stage_03_simplified.json",
-            {
-                "original_count": sres.original_count,
-                "simplified_count": sres.simplified_count,
-                "simplified_ring": sres.ring,
-                "area_delta_pct": sres.area_delta_pct,
-                "tolerance_pct": sres.tol * 100.0,
-            },
-        )
+        sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
     except StageError:
         raise
     except Exception as e:
@@ -386,8 +485,7 @@ def main(args, config: dict | None = None) -> None:
 
     # --- Stage 4: validation checks --------------------------------------
     try:
-        report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
-        write_json(out_dir / "stage_04_validation.json", report.to_dict())
+        report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
     except StageError:
         raise
     except Exception as e:
@@ -400,47 +498,15 @@ def main(args, config: dict | None = None) -> None:
         ) from e
 
     # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
-    import building_model
-
-    building_model.ENABLE_AUTO_TRIAGE = True
-    _run_auto_triage(model)
-    write_json(
-        out_dir / "stage_04b_auto_triage.json",
-        {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
-    )
+    _stage_4b_auto_triage(model, out_dir)
 
     # --- Stage 5: fail-fast on validation errors ------------------------
-    if not export_gate(report):
-        print(f"VALIDATION FAILED: {len(report.errors)} error(s)", file=sys.stderr)
-        for r in report.errors:
-            print(f"  - {r.check_id}: {r.message}", file=sys.stderr)
-        sys.exit(1)
+    _stage_5_fail_fast(report)
 
     # --- Stage 6: BEM export ---------------------------------------------
     try:
-        bem_dir = out_dir / "stage_06_bem"
-        bem_dir.mkdir(parents=True, exist_ok=True)
-
-        bem_model = model_from_linked_model(
-            model=model,
-            simplified_ring=sres.ring,
-            wall_height_m=wall_height,
-            simplify_tolerance=simplify_tol * 100.0,
-        )
-
-        gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
-        write_gbxml(bem_model, gbxml_path)
-
-        ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
-        write_ifc4(bem_model, ifc_path)
-
-        print(f"Pipeline complete: {out_dir}")
-        print("  stage_01_building.json")
-        print("  stage_02_model.json")
-        print("  stage_03_simplified.json")
-        print(f"  stage_04_validation.json (ok={report.ok})")
-        print(f"  stage_06_bem/{gbxml_path.name}")
-        print(f"  stage_06_bem/{ifc_path.name}")
+        gbxml_path, ifc_path = _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir)
+        _print_pipeline_complete(out_dir, report)
     except StageError:
         raise
     except Exception as e:
