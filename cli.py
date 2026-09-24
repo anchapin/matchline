@@ -83,7 +83,10 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
 
 
 def cmd_elevation_windows(args: argparse.Namespace) -> None:
-    """Exact window placement from elevations + daylight zones (synthetic)."""
+    """Generates SYNTHETIC window placement data for testing.
+
+    Real extraction requires detector/YOLO pipeline.
+    """
     import run_elevation_windows
 
     run_elevation_windows.main()
