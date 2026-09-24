@@ -210,3 +210,29 @@ class TestDefectInjection:
         """envelope_area raises ValueError for degenerate ring."""
         with pytest.raises(ValueError, match="linearring"):
             envelope_area([[0, 0]], wall_height=3.0)
+
+    def test_simplify_ring_concave_polygon_area_never_grows(self):
+        """Concave vertex removal must not cause envelope area to grow.
+
+        An L-shaped polygon has a reflex (concave) vertex at (10, 10).  The
+        greedy algorithm removes the least-area-change vertex each step.  For a
+        concave vertex the removal technically *increases* area (removing a notch
+        fills it in), so the per-step area cap must block such removals when
+        they would exceed max_single_step, and the cumulative budget must block
+        them when the total delta would exceed tol.
+
+        Deterministic acceptance test: L-shape, tol=5%, max_single_step=0.25%.
+        """
+        L_SHAPE = [
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 20.0],
+            [0.0, 20.0],
+        ]
+        res = simplify_ring(L_SHAPE, tol=0.05, max_single_step=0.0025)
+        assert res.simplified_area <= res.original_area, (
+            f"area grew: {res.simplified_area} > {res.original_area}"
+        )
+        assert Polygon(res.ring).is_valid, "simplified ring must be valid"
