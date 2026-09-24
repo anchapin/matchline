@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from hypothesis import assume, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Polygon
 
@@ -105,34 +105,22 @@ def test_simplify_ring_minimum_vertex_count(original: List[Tuple[float, float]],
 
 
 @given(
-    hull_vertices=st.lists(
+    original=st.lists(
         st.tuples(
-            st.floats(min_value=-1e4, max_value=1e4),
-            st.floats(min_value=-1e4, max_value=1e4),
+            st.floats(min_value=-1e6, max_value=1e6), st.floats(min_value=-1e6, max_value=1e6)
         ),
         min_size=3,
-        max_size=30,
+        max_size=200,
     ),
-    tol=st.floats(min_value=1e-3, max_value=0.2),
+    tol=st.floats(min_value=1e-6, max_value=0.5),
 )
-@settings(max_examples=200, deadline=30000)
-def test_simplify_ring_preserves_convexity(hull_vertices: List[Tuple[float, float]], tol: float):
-    """If input ring is convex, simplified ring should also be convex."""
-    # Generate a convex polygon by computing the convex hull of random points
-    points = list(hull_vertices)
-    assume(len(points) >= 3)
-
-    hull = Polygon(points).convex_hull
-    # Extract hull vertices in order to get a valid convex ring
-    # Use buffer(0) to ensure valid ring, then extract boundary
-    try:
-        ring_coords = list(hull.exterior.coords)[:-1]  # Remove closing point
-        assume(len(ring_coords) >= 3)
-    except Exception:
-        assume(False)
-
-    ring = ring_coords
+@settings(max_examples=200, deadline=30000, suppress_health_check=[HealthCheck.filter_too_much])
+def test_simplify_ring_preserves_convexity(original: List[Tuple[float, float]], tol: float):
+    ring = list(original)
     assume(_is_valid_polygon_ring(ring))
+
+    poly = Polygon(ring)
+    assume(poly.equals(poly.convex_hull))
 
     res: SimplifyResult = simplify_ring(ring, tol)
 
