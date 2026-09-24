@@ -205,6 +205,38 @@ def break_provenance(m: BuildingModel):
     m.spaces["L1-101"].openings[0].provenance = None
 
 
+def break_space_core_provenance(m: BuildingModel):
+    m.spaces["L1-101"].core_provenance = None
+
+
+def break_opening_provenance(m: BuildingModel):
+    m.spaces["L1-101"].openings[0].provenance = None
+
+
+def break_lighting_fixture_provenance(m: BuildingModel):
+    m.spaces["L1-101"].lighting.fixtures[0].provenance = None
+
+
+def break_hvac_diffuser_provenance(m: BuildingModel):
+    m.spaces["L1-101"].hvac.diffusers[0].provenance = None
+
+
+def break_hvac_sensor_provenance(m: BuildingModel):
+    m.spaces["L1-101"].hvac.sensors[0].provenance = None
+
+
+def break_hvac_terminal_unit_provenance(m: BuildingModel):
+    m.spaces["L1-101"].hvac.terminal_units[0].provenance = None
+
+
+def break_zone_provenance(m: BuildingModel):
+    m.zones["L1-Z1"].provenance = None
+
+
+def break_envelope_wall_provenance(m: BuildingModel):
+    m.envelope[0].provenance = None
+
+
 def break_zone_empty(m: BuildingModel):
     m.zones["L1-Z1"].diffusers.clear()
     m.zones["L1-Z1"].space_ids.clear()
