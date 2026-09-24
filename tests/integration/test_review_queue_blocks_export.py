@@ -149,3 +149,55 @@ class TestReviewQueueBlocksExport:
             "Pipeline integration: export_gate should return False when "
             "unacknowledged needs_review items are present"
         )
+
+    def test_confirmed_review_items_do_not_block_export(self):
+        """export_gate returns True when review_queue has confirmed items (fixes #348).
+
+        When a review item is confirmed via the pipeline (status='confirmed'), it must
+        not block export even if needs_review=True and acknowledged=False --
+        the confirmed status itself indicates the item has been reviewed and resolved.
+        """
+        model = make_clean_model()
+        model.review_queue.append(
+            ReviewItem(
+                id="rq-003",
+                kind="window_room_link",
+                description="Low-confidence window area extraction on sheet A101",
+                status="confirmed",
+                confidence=0.85,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+        report = run_checks(model)
+        assert export_gate(report), (
+            "export_gate should return True when review_queue has confirmed items "
+            "(status='confirmed'), regardless of needs_review/acknowledged flags"
+        )
+
+    def test_rejected_review_items_do_not_block_export(self):
+        """export_gate returns True when review_queue has rejected items (fixes #348).
+
+        When a review item is rejected via the pipeline (status='rejected'), it must
+        not block export even if needs_review=True and acknowledged=False --
+        the rejected status itself indicates the item has been reviewed and resolved.
+        """
+        model = make_clean_model()
+        model.review_queue.append(
+            ReviewItem(
+                id="rq-004",
+                kind="window_room_link",
+                description="Low-confidence window area extraction on sheet A101",
+                status="rejected",
+                confidence=0.85,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+        report = run_checks(model)
+        assert export_gate(report), (
+            "export_gate should return True when review_queue has rejected items "
+            "(status='rejected'), regardless of needs_review/acknowledged flags"
+        )

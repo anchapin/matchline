@@ -236,3 +236,51 @@ class TestProvenanceCompleteValidationCheck:
             f"expected positive fact count in message: {result.message}"
         )
         assert "sheet" in result.message and "method" in result.message
+
+    def test_low_confidence_provenance_in_review_queue_after_run_checks(self):
+        """run_checks should retain low-confidence provenance items in review_queue.
+
+        When an entity has needs_review=True (insufficient provenance AND confidence
+        below threshold), it must remain in review_queue even when min_review_confidence
+        is set, because needs_review items explicitly require human review regardless
+        of their confidence score.
+        """
+        from building_model import Provenance, ReviewItem
+
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+
+        # Create a ReviewItem with low confidence and needs_review=True
+        prov = Provenance(
+            sheet_id="test_sheet",
+            revision=0,  # missing proper revision
+            method="",  # missing method
+            confidence=0.5,  # below 0.7 threshold
+        )
+        item = ReviewItem(
+            id="RVW-001",
+            kind="fixture_assignment",
+            description="Test low-confidence provenance item",
+            status="open",
+            confidence=0.5,  # below min_review_confidence of 0.8
+            provenance=prov,
+        )
+        # needs_review defaults to True
+        assert item.needs_review is True
+        model.review_queue.append(item)
+
+        # Verify it's in the queue before run_checks
+        assert len(model.review_queue) == 1
+        assert model.review_queue[0].id == "RVW-001"
+
+        # Call run_checks with min_review_confidence set higher than item's confidence
+        run_checks(model, min_review_confidence=0.8)
+
+        # The item should remain in review_queue because needs_review=True,
+        # even though its confidence (0.5) is below min_review_confidence (0.8)
+        assert len(model.review_queue) == 1, (
+            f"item with needs_review=True should remain in review_queue "
+            f"even with confidence (0.5) below min_review_confidence (0.8); "
+            f"got {len(model.review_queue)} items"
+        )
+        assert model.review_queue[0].id == "RVW-001"

@@ -428,6 +428,73 @@ class BuildingModel:
         confidence: float,
         provenance: Provenance,
     ) -> ReviewItem:
+        """Append a low-confidence extraction to the review queue.
+
+        Call this whenever an extraction result falls below a reliability threshold
+        and should not be silently accepted.  The item is assigned triage metadata
+        (``needs_human``, ``urgency``, ``resolution``) and appended to
+        :attr:`review_queue`.
+
+        **Confidence thresholds that trigger review** are set by the **caller**, not
+        by this method.  Typical thresholds used in the pipeline:
+
+        * ``REVIEW_CONFIDENCE`` (default **0.80**) — used by linkers and extractors
+          to flag results that are plausible but not confirmed.
+        * Hard fallbacks at **0.4** — used when geometry or assignment is entirely
+          absent (e.g. a diffuser falls in no space); these are always routed to
+          review regardless of :data:`ENABLE_AUTO_TRIAGE`.
+
+        **``kind`` values** — must be one of the :class:`ReviewItem` literal union:
+
+        :``"fixture_assignment"``: a fixture or appliance could not be placed in a
+            space.
+        :``"fixture_schedule"``: the schedule/group assignment for a fixture is
+            ambiguous or missing.
+        :``"diffuser_assignment"``: an HVAC diffuser could not be assigned to a
+            thermal zone.
+        :``"sensor_assignment"``: a sensor falls in no space or is unassigned.
+        :``"window_room_link"``: a window/door glazing unit could not be linked
+            to a room.
+        :``"space_no_geometry"``: a space has no usable geometry for envelope or
+            internal load calculations.
+        :``"elevation_conflict"``: conflicting information between elevation and plan
+            views for the same element.
+        :``"window_reconciliation"``: multiple elevation views give different
+            placements for the same window.
+        :``"gd_complex_row"``: a complex row in the geometry diary could not be
+            parsed unambiguously.
+
+        **Relationship to :data:`ENABLE_AUTO_TRIAGE`**: when
+        ``model.auto_triage`` is not explicitly set on the model, the module-level
+        ``ENABLE_AUTO_TRIAGE`` setting governs whether :meth:`_triage_item` is
+        called.  If auto-triage is **disabled**, triage fields keep their safe
+        defaults (``needs_human=1.0``, ``urgency=1``) and the item enters the
+        queue as an unconditional human-review request.  If auto-triage is
+        **enabled**, the triage classifier estimates ``needs_human`` and ``urgency``
+        and may set ``auto_resolved=True`` for items that meet the safety
+        guardrails, allowing them to be exported without blocking the pipeline.
+
+        Parameters
+        ----------
+        kind:
+            The category of review concern, used by reviewers to prioritise and
+            route the queue.
+        description:
+            Human-readable explanation of why review is needed, referencing the
+            specific element (e.g. component ID) and the failure mode.
+        confidence:
+            Extractor confidence in the result, on ``[0.0, 1.0]``.  Lower values
+            indicate less certainty; values below the caller's threshold trigger
+            this method.
+        provenance:
+            The :class:`Provenance` record (sheet, revision, method) that sourced
+            this extraction, used for auditability.
+
+        Returns
+        -------
+        ReviewItem
+            The created queue item, already appended to :attr:`review_queue`.
+        """
         rid = f"RVW-{len(self.review_queue) + 1:03d}"
         item = ReviewItem(
             id=rid,

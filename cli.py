@@ -83,7 +83,10 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
 
 
 def cmd_elevation_windows(args: argparse.Namespace) -> None:
-    """Exact window placement from elevations + daylight zones (synthetic)."""
+    """Generates SYNTHETIC window placement data for testing.
+
+    Real extraction requires detector/YOLO pipeline.
+    """
     import run_elevation_windows
 
     run_elevation_windows.main()
@@ -210,7 +213,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = ap.add_subparsers(dest="command", required=True, metavar="<command>")
 
-    p = sub.add_parser("validate", help="validation battery demo (synthetic)")
+    p = sub.add_parser(
+        "validate",
+        help="run validate.py battery of checks on a BEM model",
+    )
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser(

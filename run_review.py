@@ -1,10 +1,61 @@
 """Review queue CLI: list, confirm, or reject open review items.
 
+Overview
+--------
+The review queue holds extraction decisions that fall below the confidence
+threshold or that the pipeline could not auto-resolve. A review item
+captures the provenance (sheet, revision, method), the extraction kind
+(window_room_link, fixture_assignment, schedule_mismatch, extraction_type),
+the raw confidence, and any triage metadata (urgency, auto-resolution).
+
+Items pending review block BEM export via ``validate.py`` until they are
+confirmed or rejected.
+
 Usage:
     matchline review <model.json>                        # list open items
     matchline review <model.json> --show-all             # list all items
     matchline review <model.json> --confirm <id>         # confirm item
     matchline review <model.json> --reject <id>          # reject item
+
+Triage flow
+-----------
+Each open item is evaluated by a task-specific TypedDecider loaded from
+``.npz`` (never from ``.pkl``). The classifier returns a typed_decision
+(``CONFIRM`` or ``REJECT``) and a confidence score.
+
+Auto-triage resolves items automatically when:
+
+* ``model.auto_triage`` is True (set via ``--auto-triage`` flag), and
+* the item's ``needs_human`` value is less than 1.0, and
+* the classifier confidence meets or exceeds the confidence threshold
+  (default 0.75; also controllable via ``--confidence``).
+
+Auto-resolved items are marked ``status = "confirmed"`` or
+``status = "rejected"`` and carry ``auto_resolved = True`` with
+``resolution`` set to ``"CONFIRM"`` or ``"REJECT"``. Items that cannot be
+auto-resolved are left ``open`` for human review.
+
+Urgency
+~~~~~~~
+Items with ``urgency > 0`` are highlighted as higher-priority. When
+listing items, the sort key is ``(-urgency, auto_resolved)`` so that
+high-urgency items needing human attention appear first.
+
+Security model
+--------------
+Pickle deserialization is a supply-chain attack vector: a malicious
+``.pkl`` file can execute arbitrary code on load. For this reason,
+``run_review.py`` ships with ``_check_no_pkl_in_review_classifier()``,
+a startup guard that walks the ``review_classifier/`` directory and
+raises ``SecurityError`` if any ``.pkl`` files are present. Only
+``.npz`` (safe numpy archive) format is permitted for model files.
+``TypedDecider`` models are loaded via ``TypedDecider.from_npz()`` only.
+
+Exit codes
+----------
+:0: Success (list printed, item confirmed/rejected, or validation passed)
+:1: Error (file not found, validation failure, classifier error, or
+   SecurityError from a blocked pickle file)
 """
 
 from __future__ import annotations
@@ -240,6 +291,8 @@ def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, st
     if item.status != "open":
         raise ValueError(f"Item {item_id} is already {item.status}.")
     item.status = "confirmed"
+    item.needs_review = False
+    item.acknowledged = True
     return model, f"Confirmed {item_id}."
 
 
@@ -251,6 +304,8 @@ def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str
     if item.status != "open":
         raise ValueError(f"Item {item_id} is already {item.status}.")
     item.status = "rejected"
+    item.needs_review = False
+    item.acknowledged = True
     return model, f"Rejected {item_id}."
 
 

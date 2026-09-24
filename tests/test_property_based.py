@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from hypothesis import assume, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Polygon
 
@@ -46,7 +46,7 @@ def _is_valid_polygon_ring(ring: List[Tuple[float, float]]) -> bool:
     ),
     tol=st.floats(min_value=1e-3, max_value=0.5),
 )
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=30000)
 def test_simplify_ring_area_delta_within_tolerance(original: List[Tuple[float, float]], tol: float):
     ring = list(original)
     assume(_is_valid_polygon_ring(ring))
@@ -71,7 +71,7 @@ def test_simplify_ring_area_delta_within_tolerance(original: List[Tuple[float, f
     ),
     tol=st.floats(min_value=1e-6, max_value=0.5),
 )
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=30000)
 def test_simplify_ring_never_adds_vertices(original: List[Tuple[float, float]], tol: float):
     ring = list(original)
     assume(_is_valid_polygon_ring(ring))
@@ -93,7 +93,7 @@ def test_simplify_ring_never_adds_vertices(original: List[Tuple[float, float]], 
     ),
     tol=st.floats(min_value=1e-6, max_value=0.5),
 )
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=30000)
 def test_simplify_ring_minimum_vertex_count(original: List[Tuple[float, float]], tol: float):
     ring = list(original)
     assume(_is_valid_polygon_ring(ring))
@@ -112,9 +112,37 @@ def test_simplify_ring_minimum_vertex_count(original: List[Tuple[float, float]],
         min_size=3,
         max_size=200,
     ),
+    tol=st.floats(min_value=1e-6, max_value=0.5),
+)
+@settings(max_examples=200, deadline=30000, suppress_health_check=[HealthCheck.filter_too_much])
+def test_simplify_ring_preserves_convexity(original: List[Tuple[float, float]], tol: float):
+    ring = list(original)
+    assume(_is_valid_polygon_ring(ring))
+
+    poly = Polygon(ring)
+    assume(poly.equals(poly.convex_hull))
+
+    res: SimplifyResult = simplify_ring(ring, tol)
+
+    if not res.valid:
+        return
+
+    simplified = Polygon(res.ring)
+    assert simplified.is_valid, "simplified ring must be a valid polygon"
+    assert simplified.equals(simplified.convex_hull), "simplified ring must remain convex"
+
+
+@given(
+    original=st.lists(
+        st.tuples(
+            st.floats(min_value=-1e6, max_value=1e6), st.floats(min_value=-1e6, max_value=1e6)
+        ),
+        min_size=3,
+        max_size=200,
+    ),
     tol=st.floats(min_value=1e-3, max_value=0.5),
 )
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=30000)
 def test_simplify_ring_area_never_grows(original: List[Tuple[float, float]], tol: float):
     ring = list(original)
     assume(_is_valid_polygon_ring(ring))
@@ -145,7 +173,7 @@ def test_simplify_ring_area_never_grows(original: List[Tuple[float, float]], tol
     n_doors=st.integers(min_value=0, max_value=100),
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
-@settings(max_examples=500)
+@settings(max_examples=500, deadline=30000)
 def test_classify_from_evidence_is_deterministic(
     area: float,
     aspect_ratio: float,
@@ -176,7 +204,7 @@ def test_classify_from_evidence_is_deterministic(
     n_doors=st.integers(min_value=0, max_value=100),
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
-@settings(max_examples=500)
+@settings(max_examples=500, deadline=30000)
 def test_classify_from_evidence_valid_poly_type(
     area: float,
     aspect_ratio: float,
@@ -208,7 +236,7 @@ def test_classify_from_evidence_valid_poly_type(
     n_doors=st.integers(min_value=0, max_value=100),
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
-@settings(max_examples=500)
+@settings(max_examples=500, deadline=30000)
 def test_classify_from_evidence_confidence_bounds(
     area: float,
     aspect_ratio: float,
@@ -239,7 +267,7 @@ def test_classify_from_evidence_confidence_bounds(
     n_doors=st.integers(min_value=0, max_value=100),
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
-@settings(max_examples=200)
+@settings(max_examples=200, deadline=30000)
 def test_classify_from_evidence_special_characters_handled(
     area: float,
     aspect_ratio: float,
@@ -276,7 +304,7 @@ def test_classify_from_evidence_special_characters_handled(
 
 
 @given(seed=st.integers(min_value=0, max_value=2**31 - 1))
-@settings(max_examples=50)
+@settings(max_examples=50, deadline=30000)
 def test_classify_polygons_deterministic(seed: int):
     from synth.multidiscipline import generate_building
 

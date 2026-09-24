@@ -216,3 +216,70 @@ class TestValidateBlocksExport:
             pass
 
         assert not exit_called, "warnings-only should not cause sys.exit"
+
+    def test_review_queue_unacknowledged_blocks_pipeline(self, tmp_path, monkeypatch):
+        """run_pipeline.main() must not export when an unacknowledged review item is present.
+
+        This is a regression test for issue #342: the review queue mechanism was not
+        exercised end-to-end through run_pipeline.main(). The _check_review_queue_acknowledged
+        check returns an error when any review item has needs_review=True and
+        acknowledged=False. This test confirms the full pipeline respects that gate.
+        """
+        import run_pipeline
+
+        out_dir = tmp_path / "run_review_blocked"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        ns = argparse.Namespace(
+            seed=101,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=out_dir,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+        )
+
+        review_error_report = ValidationReport(building_name="review_blocked")
+        review_error_report.results.append(
+            CheckResult(
+                check_id="review_queue_acknowledged",
+                name="Review queue acknowledged",
+                severity="error",
+                message="1 unacknowledged review item(s) with needs_review=True: must acknowledge before export",
+                entities=["review_item_001"],
+            )
+        )
+
+        def mock_run_checks(model, **kwargs):
+            return review_error_report
+
+        monkeypatch.setattr("run_pipeline.run_checks", mock_run_checks)
+
+        exit_called = False
+        exit_code = None
+
+        def mock_exit(code=0):
+            nonlocal exit_called, exit_code
+            exit_called = True
+            exit_code = code
+            raise SystemExit(code)
+
+        monkeypatch.setattr(sys, "exit", mock_exit)
+
+        try:
+            run_pipeline.main(ns)
+        except SystemExit:
+            pass
+
+        assert exit_called, "pipeline should call sys.exit when review queue blocks export"
+        assert exit_code == 1, f"expected exit(1), got exit({exit_code})"
+
+        bem_dir = out_dir / "stage_06_bem"
+        assert not bem_dir.exists(), (
+            "stage_06_bem/ should NOT be created when review queue blocks export; "
+            "this confirms 'review items with needs_review=True block export'"
+        )
