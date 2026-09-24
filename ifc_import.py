@@ -24,9 +24,6 @@ files this is a documented handedness choice, recorded in provenance.
 
 Every fact carries Provenance (method="ifc_import:tier0:<aspect>") and the
 source GlobalId, so IFC -> model -> gbXML/IFC round-trips stay traceable.
-
-Tier 1 (geometric space<->element adjacency inference) is intentionally
-out of scope here; see infer_adjacency() stub + docs/ifc_import.md.
 """
 
 import math
@@ -961,24 +958,4 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         host_global_id=host_gid,
         fill_global_id=fgid,
         provenance=p,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Tier 1 (out of scope for this module version): geometric adjacency
-# ---------------------------------------------------------------------------
-
-
-def infer_adjacency(model: BuildingModel):
-    """Tier 1 (NOT IMPLEMENTED): geometric space<->element adjacency.
-
-    Planned: for each space solid, find wall faces within tolerance of its
-    boundary (proximity/clash queries); classify interior vs exterior via
-    outward ray tests; attach BimOpenings to Spaces as SpaceOpenings;
-    classify envelope facades. Every inference carries method + confidence
-    and ambiguous cases go to the review queue. See docs/ifc_import.md.
-    """
-    raise NotImplementedError(
-        "Tier 1 geometric adjacency inference is not implemented yet; "
-        "see docs/ifc_import.md for the plan."
     )
