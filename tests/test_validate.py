@@ -18,16 +18,22 @@ from tests.model_factory import (
     break_dupe_fixture,
     break_elevation_placement_consistency,
     break_envelope_area_matches_perimeter,
+    break_envelope_wall_provenance,
     break_fixture_no_schedule,
     break_fixture_no_schedule_flagged,
     break_gbxml_opening_refs,
     break_gbxml_spaces,
     break_gbxml_wall_areas,
+    break_hvac_diffuser_provenance,
+    break_hvac_sensor_provenance,
+    break_hvac_terminal_unit_provenance,
     break_ifc_counts,
+    break_lighting_fixture_provenance,
     break_lpd_absurd,
     break_lpd_unit_slip,
     break_negative_area,
     break_opening_oversize,
+    break_opening_provenance,
     break_opening_schedule_join,
     break_provenance,
     break_review_queue_acknowledged,
@@ -37,6 +43,7 @@ from tests.model_factory import (
     break_sill_head_sanity,
     break_simplify_budget,
     break_simplify_invalid,
+    break_space_core_provenance,
     break_space_id_hygiene,
     break_space_volume_matches_area_height,
     break_takeoff_counts_reconcile,
@@ -44,6 +51,7 @@ from tests.model_factory import (
     break_volume_conservation,
     break_window_double_link,
     break_zone_empty,
+    break_zone_provenance,
     make_clean_model,
 )
 from validate import N_CHECKS, export_gate, run_checks
@@ -123,6 +131,32 @@ def test_defect_fires_expected_check(breaker, check_id, severity):
     )
     if severity == "error":
         assert not export_gate(report), f"{breaker.__name__}: error should close the export gate"
+
+
+@pytest.mark.parametrize(
+    "breaker,entity_desc",
+    [
+        (break_space_core_provenance, "Space.core_provenance"),
+        (break_opening_provenance, "SpaceOpening.provenance"),
+        (break_lighting_fixture_provenance, "Lighting fixture.provenance"),
+        (break_hvac_diffuser_provenance, "HVAC diffuser.provenance"),
+        (break_hvac_sensor_provenance, "HVAC sensor.provenance"),
+        (break_hvac_terminal_unit_provenance, "HVAC terminal_unit.provenance"),
+        (break_zone_provenance, "Zone.provenance"),
+        (break_envelope_wall_provenance, "EnvelopeWall.provenance"),
+    ],
+)
+def test_break_provenance_all_entities(breaker, entity_desc):
+    """Each entity type's provenance break fires provenance_complete error.
+
+    Downstream symptom: provenance_complete blocks the export gate.
+    """
+    m = make_clean_model()
+    breaker(m)
+    report = run_checks(m)
+    result = _by_id(report, "provenance_complete")
+    assert result.severity == "error"
+    assert not export_gate(report), f"{entity_desc}: error should close the export gate"
 
 
 def test_warnings_do_not_close_gate():
