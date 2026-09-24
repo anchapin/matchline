@@ -45,8 +45,8 @@ jobs:
       - name: Check test count
         run: |
           # Record the test count; a drift of ±1 or more requires investigation before merging.
-          # Expected: ~447 tests (442 base + 3 XXE tests from PR#253 + 2 provenance tests).
-          EXPECTED_TEST_COUNT=447
+          # Expected: ~457 tests (442 base + 3 XXE tests + 2 provenance tests + 10 IFC detector tests).
+          EXPECTED_TEST_COUNT=457
           ACTUAL_TEST_COUNT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1 | awk '{print $1}')
           echo "Expected: $EXPECTED_TEST_COUNT, Actual: $ACTUAL_TEST_COUNT"
           if [ "$ACTUAL_TEST_COUNT" != "$EXPECTED_TEST_COUNT" ]; then
