@@ -9,13 +9,8 @@ causes the pipeline to exit with code 1 and that stage_04_validation.json is pre
 with the error recorded.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
