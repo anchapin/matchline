@@ -5,7 +5,7 @@ Chains all pipeline stages:
   Stage 2: build_model()                 -> stage_02_model.json
   Stage 3: simplify_ring()               -> stage_03_simplified.json
   Stage 4: run_checks()                  -> stage_04_validation.json
-  Stage 4b: _run_auto_triage()           -> stage_04b_auto_triage.json  [opt-in via ENABLE_AUTO_TRIAGE=1]
+  Stage 4b: _run_auto_triage()           -> stage_04b_auto_triage.json  [always runs]
   Stage 5: (fail-fast on validation)
   Stage 6: BEM export (gbXML + IFC4)     -> stage_06_bem/
 
@@ -16,7 +16,6 @@ Validation errors block export (exit code 1, not silent).
 from __future__ import annotations
 
 import json
-import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -400,16 +399,15 @@ def main(args, config: dict | None = None) -> None:
             "fields are populated in the BuildingModel.",
         ) from e
 
-    # --- Stage 4b: auto-triage (respects ENABLE_AUTO_TRIAGE env var) -------
-    if os.environ.get("ENABLE_AUTO_TRIAGE", "").lower() in ("1", "true", "yes"):
-        import building_model
+    # --- Stage 4b: auto-triage (always runs; no opt-in gate) -------
+    import building_model
 
-        building_model.ENABLE_AUTO_TRIAGE = True
-        _run_auto_triage(model)
-        write_json(
-            out_dir / "stage_04b_auto_triage.json",
-            {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
-        )
+    building_model.ENABLE_AUTO_TRIAGE = True
+    _run_auto_triage(model)
+    write_json(
+        out_dir / "stage_04b_auto_triage.json",
+        {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
+    )
 
     # --- Stage 5: fail-fast on validation errors ------------------------
     if not export_gate(report):

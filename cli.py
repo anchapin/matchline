@@ -198,7 +198,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     ):
         args.auto_triage = True
     else:
-        args.auto_triage = False
+        args.auto_triage = True
 
     run_review.main(args)
 
@@ -316,8 +316,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--enable-auto-triage",
         action="store_true",
-        help="Enable auto-triage classifier when loading the model "
-        "(ENABLE_AUTO_TRIAGE env var also respected)",
+        help="Explicitly enable auto-triage classifier when loading the model "
+        "(enabled by default; ENABLE_AUTO_TRIAGE env var also respected for opt-out)",
     )
     p.add_argument(
         "--list",

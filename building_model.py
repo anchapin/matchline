@@ -43,8 +43,9 @@ MODEL_VERSION = "1.0"
 REVIEW_CONFIDENCE = 0.80
 
 # Feature flag: enable auto-triage via the local review_classifier TypedDecider.
-# When False (default), flag_for_review behaves as before (pure flagging).
-ENABLE_AUTO_TRIAGE = False
+# Default is True (auto-triage runs automatically).
+# Set to False to restore pre-CFG-04 opt-in behavior.
+ENABLE_AUTO_TRIAGE = True
 
 
 # ---------------------------------------------------------------------------
