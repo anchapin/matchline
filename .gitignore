@@ -11,5 +11,27 @@ synth/out/
 bem_out/
 *_results.json
 
+# ML model artifacts (reproducible via review_classifier/train.py)
+# -- triage.py loads these; npz is required, pkl raises ValueError --
+/review_classifier/trained_model.pkl
+/review_classifier/trained_model_extraction_type.pkl
+/review_classifier/trained_model_needs_human.pkl
+/review_classifier/trained_model_urgency.pkl
+/review_classifier/trained_model_resolution.pkl
+# -- laya_experiment.py loads these; npz is required, pkl raises ValueError --
+/review_classifier/trained_model_route_to_review.pkl
+/review_classifier/trained_model_urgency.pkl
+/review_classifier/trained_model_schedule_match.pkl
+
+# Agent runtimes & MCP server state
+.agents/
+.foreman/
+
+# Planning docs (personal/dynamic — not project source)
+/.planning/NEXT_SESSION.md
+/.planning/PROJECT.md
+/.planning/REQUIREMENTS.md
+/.planning/phases/
+
 # OS
 .DS_Store

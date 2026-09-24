@@ -13,6 +13,7 @@ Glyph functions are also reused by ``synth.sheets`` to draw door/window
 symbols onto synthetic floor plans at drawing scale, keeping the sheet
 distribution matched to the training distribution.
 """
+
 from __future__ import annotations
 
 import csv
@@ -22,11 +23,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-import sys as _sys
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in _sys.path:
-    _sys.path.insert(0, sys_path)
-from datasets_adapter import normalize_crop  # noqa: E402
+from datasets_adapter import normalize_crop
 
 CANVAS = 128
 
@@ -50,28 +47,25 @@ ALL_CLASSES = AEC_CLASSES + EXTRA_CLASSES
 # characteristic width in px and lw the stroke width. y grows downward.
 # ---------------------------------------------------------------------------
 
-def glyph_single_door(d: ImageDraw.ImageDraw, cx, cy, w, lw,
-                      wall: bool = True, rng=None):
+
+def glyph_single_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, rng=None):
     """Plan door: wall line with gap, leaf + quarter swing arc below."""
-    wt = max(6, int(w * 0.22))          # wall thickness
-    if wall:                            # wall stubs across the canvas
+    wt = max(6, int(w * 0.22))  # wall thickness
+    if wall:  # wall stubs across the canvas
         d.line([0, cy, CANVAS, cy], fill=0, width=wt)
-        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2],
-                    fill=255)
-    hx, hy = cx - w / 2, cy            # hinge at left jamb
+        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
+    hx, hy = cx - w / 2, cy  # hinge at left jamb
     ang = math.radians(58)
     ex, ey = hx + w * math.cos(ang), hy + w * math.sin(ang)
     d.line([hx, hy, ex, ey], fill=0, width=lw)
     d.arc([hx - w, hy - w, hx + w, hy + w], start=0, end=58, fill=0, width=lw)
 
 
-def glyph_double_door(d: ImageDraw.ImageDraw, cx, cy, w, lw,
-                      wall: bool = True, rng=None):
+def glyph_double_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, rng=None):
     wt = max(6, int(w * 0.22))
     if wall:
         d.line([0, cy, CANVAS, cy], fill=0, width=wt)
-        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2],
-                    fill=255)
+        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
     ang = math.radians(58)
     for sgn, hx in ((-1, cx - w / 2), (1, cx + w / 2)):
         ex = hx + sgn * (w / 2) * math.cos(ang)
@@ -79,22 +73,18 @@ def glyph_double_door(d: ImageDraw.ImageDraw, cx, cy, w, lw,
         d.line([hx, cy, ex, ey], fill=0, width=lw)
         r = w / 2
         if sgn < 0:
-            d.arc([hx - r, cy - r, hx + r, cy + r], start=0, end=58,
-                  fill=0, width=lw)
+            d.arc([hx - r, cy - r, hx + r, cy + r], start=0, end=58, fill=0, width=lw)
         else:
-            d.arc([hx - r, cy - r, hx + r, cy + r], start=122, end=180,
-                  fill=0, width=lw)
+            d.arc([hx - r, cy - r, hx + r, cy + r], start=122, end=180, fill=0, width=lw)
 
 
-def glyph_window_plan(d: ImageDraw.ImageDraw, cx, cy, w, lw,
-                      wall: bool = True, rng=None):
+def glyph_window_plan(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, rng=None):
     """Plan window: double wall line, 3 glass lines + end caps in the gap."""
     wt = max(8, int(w * 0.30))
     if wall:
         d.line([0, cy - wt / 2, CANVAS, cy - wt / 2], fill=0, width=max(3, lw))
         d.line([0, cy + wt / 2, CANVAS, cy + wt / 2], fill=0, width=max(3, lw))
-        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2],
-                    fill=255)
+        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
     for yy in (cy - wt / 2, cy, cy + wt / 2):
         d.line([cx - w / 2, yy, cx + w / 2, yy], fill=0, width=max(2, lw - 1))
     d.line([cx - w / 2, cy - wt / 2, cx - w / 2, cy + wt / 2], fill=0, width=lw)
@@ -104,39 +94,50 @@ def glyph_window_plan(d: ImageDraw.ImageDraw, cx, cy, w, lw,
 def glyph_sink(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     hw, hh = w / 2, w * 0.38
     d.rectangle([cx - hw, cy - hh, cx + hw, cy + hh], outline=0, width=lw)
-    if rng is not None and rng.random() < 0.35:      # double basin
+    if rng is not None and rng.random() < 0.35:  # double basin
         for sgn in (-1, 1):
             bx = cx + sgn * hw / 2
-            d.rectangle([bx - hw / 2 + 5, cy - hh + 5, bx + hw / 2 - 5,
-                         cy + hh - 5], outline=0, width=max(2, lw - 1))
+            d.rectangle(
+                [bx - hw / 2 + 5, cy - hh + 5, bx + hw / 2 - 5, cy + hh - 5],
+                outline=0,
+                width=max(2, lw - 1),
+            )
     else:
-        d.rectangle([cx - hw + 6, cy - hh + 6, cx + hw - 6, cy + hh - 6],
-                    outline=0, width=max(2, lw - 1))
+        d.rectangle(
+            [cx - hw + 6, cy - hh + 6, cx + hw - 6, cy + hh - 6], outline=0, width=max(2, lw - 1)
+        )
 
 
 def glyph_toilet(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
-    tw, th = w * 0.62, w * 0.26                       # tank
-    d.rectangle([cx - tw / 2, cy - w / 2, cx + tw / 2, cy - w / 2 + th],
-                outline=0, width=lw)
-    d.ellipse([cx - w * 0.28, cy - w / 2 + th + 2,     # bowl
-               cx + w * 0.28, cy + w / 2], outline=0, width=lw)
+    tw, th = w * 0.62, w * 0.26  # tank
+    d.rectangle([cx - tw / 2, cy - w / 2, cx + tw / 2, cy - w / 2 + th], outline=0, width=lw)
+    d.ellipse(
+        [
+            cx - w * 0.28,
+            cy - w / 2 + th + 2,  # bowl
+            cx + w * 0.28,
+            cy + w / 2,
+        ],
+        outline=0,
+        width=lw,
+    )
 
 
 def glyph_bathtub(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     hw, hh = w * 0.62, w * 0.34
-    d.rounded_rectangle([cx - hw, cy - hh, cx + hw, cy + hh], radius=8,
-                        outline=0, width=lw)
-    d.rectangle([cx - hw + 7, cy - hh + 7, cx + hw - 7, cy + hh - 7],
-                outline=0, width=max(2, lw - 1))
+    d.rounded_rectangle([cx - hw, cy - hh, cx + hw, cy + hh], radius=8, outline=0, width=lw)
+    d.rectangle(
+        [cx - hw + 7, cy - hh + 7, cx + hw - 7, cy + hh - 7], outline=0, width=max(2, lw - 1)
+    )
 
 
 def glyph_shower(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     h = w * 0.44
     d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
-    if rng is not None and rng.random() < 0.5:         # X drain
+    if rng is not None and rng.random() < 0.5:  # X drain
         d.line([cx - h, cy - h, cx + h, cy + h], fill=0, width=max(2, lw - 1))
         d.line([cx - h, cy + h, cx + h, cy - h], fill=0, width=max(2, lw - 1))
-    else:                                             # single diagonal
+    else:  # single diagonal
         d.line([cx - h, cy - h, cx + h, cy + h], fill=0, width=max(2, lw - 1))
 
 
@@ -147,22 +148,25 @@ def glyph_cooktop(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     for sx in (-1, 1):
         for sy in (-1, 1):
             bx, by = cx + sx * hw * 0.5, cy + sy * hh * 0.45
-            d.ellipse([bx - r, by - r, bx + r, by + r], outline=0,
-                      width=max(2, lw - 1))
+            d.ellipse([bx - r, by - r, bx + r, by + r], outline=0, width=max(2, lw - 1))
 
 
-def glyph_sliding_door(d: ImageDraw.ImageDraw, cx, cy, w, lw,
-                       wall: bool = True, rng=None):
+def glyph_sliding_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, rng=None):
     wt = max(6, int(w * 0.22))
     if wall:
         d.line([0, cy, CANVAS, cy], fill=0, width=wt)
-        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2],
-                    fill=255)
-    ph = w * 0.58                                     # panel length
-    d.rectangle([cx - ph / 2 - 6, cy - wt / 2 - 5, cx + ph / 2 - 6,
-                 cy - wt / 2 - 1], outline=0, width=max(2, lw - 1))
-    d.rectangle([cx - ph / 2 + 6, cy + wt / 2 + 1, cx + ph / 2 + 6,
-                 cy + wt / 2 + 5], outline=0, width=max(2, lw - 1))
+        d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
+    ph = w * 0.58  # panel length
+    d.rectangle(
+        [cx - ph / 2 - 6, cy - wt / 2 - 5, cx + ph / 2 - 6, cy - wt / 2 - 1],
+        outline=0,
+        width=max(2, lw - 1),
+    )
+    d.rectangle(
+        [cx - ph / 2 + 6, cy + wt / 2 + 1, cx + ph / 2 + 6, cy + wt / 2 + 5],
+        outline=0,
+        width=max(2, lw - 1),
+    )
 
 
 GLYPHS = {
@@ -182,9 +186,10 @@ GLYPHS = {
 # Rendering with parametric variation
 # ---------------------------------------------------------------------------
 
-def render_symbol(label: str, rng: np.random.Generator,
-                  out_size: int = 28,
-                  glyphs: dict | None = None) -> np.ndarray:
+
+def render_symbol(
+    label: str, rng: np.random.Generator, out_size: int = 28, glyphs: dict | None = None
+) -> np.ndarray:
     """Render one labeled symbol crop: (out_size, out_size) float64 0..255,
     dark ink on light background -- the classifier input contract.
 
@@ -194,16 +199,18 @@ def render_symbol(label: str, rng: np.random.Generator,
     img = Image.new("L", (CANVAS, CANVAS), 255)
     d = ImageDraw.Draw(img)
     s = rng.uniform(0.85, 1.12)
-    w = 84.0 * s          # fill the frame: tight crops match real ann. boxes
+    w = 84.0 * s  # fill the frame: tight crops match real ann. boxes
     lw = int(rng.choice([3, 4, 5]))
     cx = CANVAS / 2 + rng.uniform(-7, 7)
     cy = CANVAS / 2 + rng.uniform(-7, 7)
-    glyph_map[label](d, cx, cy, w, lw, rng=rng)    # orientation augmentation: real drawings show doors/windows in all
+    glyph_map[label](
+        d, cx, cy, w, lw, rng=rng
+    )  # orientation augmentation: real drawings show doors/windows in all
     # four wall orientations; the base glyphs are drawn axis-aligned.
     k90 = int(rng.integers(0, 4))
     if k90:
         img = img.rotate(90 * k90, expand=False)
-    if rng.random() < 0.5:                       # mirror: both chiralities
+    if rng.random() < 0.5:  # mirror: both chiralities
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
     ang = rng.uniform(-5, 5)
     if abs(ang) > 0.5:
@@ -214,8 +221,9 @@ def render_symbol(label: str, rng: np.random.Generator,
     return normalize_crop(arr, size=out_size)
 
 
-def make_symbol_dataset(class_names: list[str], n_per_class: int,
-                        seed: int) -> tuple[np.ndarray, np.ndarray]:
+def make_symbol_dataset(
+    class_names: list[str], n_per_class: int, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
     """(X, y): X (N,28,28) float64, y int labels into class_names."""
     rng = np.random.default_rng(seed)
     X, y = [], []
@@ -229,8 +237,9 @@ def make_symbol_dataset(class_names: list[str], n_per_class: int,
     return X[perm], y[perm]
 
 
-def save_crops(X: np.ndarray, y: np.ndarray, class_names: list[str],
-               outdir: str | Path, source: str = "synth") -> Path:
+def save_crops(
+    X: np.ndarray, y: np.ndarray, class_names: list[str], outdir: str | Path, source: str = "synth"
+) -> Path:
     """Write crops as PNGs + a manifest CSV. Returns the manifest path."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)

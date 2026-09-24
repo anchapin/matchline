@@ -8,17 +8,12 @@ geometric-fallback elevation path) and score every link type against GT:
   window->room (per elevation path), plus LPD and window-area rollups
   and a BuildingModel JSON round-trip.
 """
+
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from synth.multidiscipline import generate_building  # noqa: E402
-from link import build_model  # noqa: E402
 from building_model import BuildingModel  # noqa: E402
+from link import build_model  # noqa: E402
+from synth.multidiscipline import generate_building  # noqa: E402
 
 
 def _index_model(model):
@@ -58,8 +53,7 @@ def score_building(bldg, elevation_key):
     rows["sensor_room"] = acc(sen2sp, gt["sensor_room"])
     rows["diffuser_room"] = acc(dif2sp, gt["diffuser_room"])
     # diffuser->zone: model zid "L1-Z1" vs GT "Z1"
-    dz_pred = {k: v.split("-", 1)[1] if "-" in v else v
-               for k, v in dif2zone.items()}
+    dz_pred = {k: v.split("-", 1)[1] if "-" in v else v for k, v in dif2zone.items()}
     rows["diffuser_zone"] = acc(dz_pred, gt["diffuser_zone"])
     # space->zones set equality (many-to-many)
     zr_ok = zr_tot = 0
@@ -67,9 +61,8 @@ def score_building(bldg, elevation_key):
         mz = model.zones.get(f"{lvl}-{zid}")
         pred = {model.spaces[s].number for s in (mz.space_ids if mz else [])}
         zr_tot += 1
-        zr_ok += (pred == set(rnums))
-    rows["zone_spaces_set"] = (zr_ok, zr_tot,
-                               zr_ok / max(1, zr_tot))
+        zr_ok += pred == set(rnums)
+    rows["zone_spaces_set"] = (zr_ok, zr_tot, zr_ok / max(1, zr_tot))
     sp_ok = sp_tot = 0
     # invert GT zone_rooms -> room -> zones
     gt_sp_zones = {}
@@ -80,7 +73,7 @@ def score_building(bldg, elevation_key):
         if sp.number in gt_sp_zones:
             sp_tot += 1
             pred = {z.split("-", 1)[1] for z in sp.hvac.zone_ids}
-            sp_ok += (pred == gt_sp_zones[sp.number])
+            sp_ok += pred == gt_sp_zones[sp.number]
     rows["space_zones_set"] = (sp_ok, sp_tot, sp_ok / max(1, sp_tot))
     rows["window_room"] = acc(open2sp, gt["window_room"])
 
@@ -89,8 +82,7 @@ def score_building(bldg, elevation_key):
     exp_watts = {}
     for f in bldg["fixtures"]:
         rn = gt["fixture_room"][f["id"]]
-        w = next(r["watts"] for r in bldg["lighting_schedule"]
-                 if r["tag"] == f["tag"])
+        w = next(r["watts"] for r in bldg["lighting_schedule"] if r["tag"] == f["tag"])
         exp_watts[rn] = exp_watts.get(rn, 0.0) + w
     for sid, sp in model.spaces.items():
         if abs(sp.lighting.total_w - exp_watts.get(sp.number, 0.0)) > 1e-6:
@@ -98,8 +90,9 @@ def score_building(bldg, elevation_key):
     exp_win = {}
     for i, w in enumerate(bldg["south_windows"]):
         se = next(r for r in bldg["window_schedule"] if r["tag"] == w["tag"])
-        exp_win[w["room_number"]] = (exp_win.get(w["room_number"], 0.0)
-                                     + se["width_m"] * se["height_m"])
+        exp_win[w["room_number"]] = (
+            exp_win.get(w["room_number"], 0.0) + se["width_m"] * se["height_m"]
+        )
     for sid, sp in model.spaces.items():
         if abs(sp.window_area_m2 - exp_win.get(sp.number, 0.0)) > 1e-6:
             win_ok = False
@@ -109,10 +102,11 @@ def score_building(bldg, elevation_key):
     # JSON round-trip
     js = model.to_json()
     m2 = BuildingModel.from_json(js)
-    rows["json_roundtrip"] = (len(m2.spaces) == len(model.spaces)
-                              and len(m2.zones) == len(model.zones)
-                              and len(m2.review_queue)
-                              == len(model.review_queue))
+    rows["json_roundtrip"] = (
+        len(m2.spaces) == len(model.spaces)
+        and len(m2.zones) == len(model.zones)
+        and len(m2.review_queue) == len(model.review_queue)
+    )
     return model, report, rows
 
 
@@ -121,12 +115,13 @@ def main():
     all_ok = True
     for seed, span in configs:
         bldg = generate_building(seed, open_office_span=span)
-        print(f"=== bldg_{seed:03d} span={span}: "
-              f"{len(bldg['rooms'])} rooms, {len(bldg['fixtures'])} fixt, "
-              f"{len(bldg['components'])} mech comps, "
-              f"{len(bldg['south_windows'])} south windows ===")
-        for ekey, pname in (("elev_grid", "GRID path"),
-                            ("elev_nogrid", "GEOMETRIC path")):
+        print(
+            f"=== bldg_{seed:03d} span={span}: "
+            f"{len(bldg['rooms'])} rooms, {len(bldg['fixtures'])} fixt, "
+            f"{len(bldg['components'])} mech comps, "
+            f"{len(bldg['south_windows'])} south windows ==="
+        )
+        for ekey, pname in (("elev_grid", "GRID path"), ("elev_nogrid", "GEOMETRIC path")):
             model, report, rows = score_building(bldg, ekey)
             print(f"  [{pname}]")
             for k, v in rows.items():
@@ -134,15 +129,12 @@ def main():
                     ok, tot, frac = v
                     flag = "" if frac == 1.0 else "  <-- MISMATCH"
                     print(f"    {k:18s} {ok}/{tot} = {frac:.3f}{flag}")
-                    all_ok &= (frac == 1.0)
+                    all_ok &= frac == 1.0
                 else:
-                    print(f"    {k:18s} {v}"
-                          + ("" if v else "  <-- FAIL"))
+                    print(f"    {k:18s} {v}" + ("" if v else "  <-- FAIL"))
                     all_ok &= bool(v)
-            rev = [(i.kind, round(i.confidence, 2)) for i in
-                   model.review_queue]
-            print(f"    review_queue: {len(rev)} items "
-                  f"{rev[:6]}{'...' if len(rev) > 6 else ''}")
+            rev = [(i.kind, round(i.confidence, 2)) for i in model.review_queue]
+            print(f"    review_queue: {len(rev)} items {rev[:6]}{'...' if len(rev) > 6 else ''}")
             mc = report.mean_confidence_by_method
             print(f"    mean window-link confidence: {mc}")
         print()

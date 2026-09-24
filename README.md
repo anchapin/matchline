@@ -1,6 +1,7 @@
-# WiSARD-BEM
+# Matchline
 
-Deterministic, auditable extraction of building energy modeling (BEM) inputs from
+Cross-sheet entity resolution for construction drawings: deterministic, auditable
+extraction of building energy modeling (BEM) inputs from
 architectural drawings: floor plans, elevations, lighting plans, and mechanical plans.
 
 The pipeline turns clean digital construction drawings into quantity takeoffs,
@@ -9,6 +10,39 @@ with every extracted fact carrying sheet, revision, bounding box, method,
 confidence, and provenance.
 
 Branching: `develop` is the working branch. `main` is reserved for releases.
+
+## Install
+
+```bash
+git checkout develop
+pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
+python -m pytest tests/ -q   # 324 tests, hermetic, a few seconds
+```
+
+Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
+FloorPlanCAD) live outside the repo under `~/workspace/datasets/`
+(see `CONTRIBUTING.md` for the full convention); demos that need them
+say so and fail clearly without them.
+
+## CLI
+
+Every demo script is a subcommand (the old `python3 run_*.py` scripts still
+work as thin wrappers):
+
+```bash
+matchline validate              # validation battery demo (synthetic)
+matchline run --seed S         # unified pipeline: generate + link + validate + export
+matchline bem-export --sheet-id sheet_007
+matchline elevation-windows     # exact window placement + daylight (synthetic)
+matchline room-labels          # OCR room labeling (synthetic)
+matchline symbols              # symbol eval + GD&T invariant check
+matchline facade-takeoff --n 5 # CMP Facade area takeoffs
+matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
+matchline ifc-export model.json out.ifc  # IFC4 export
+matchline review model.json     # review queue: list/confirm/reject
+matchline multidiscipline       # 3 synthetic buildings
+matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
+```
 
 ## Pipeline
 
@@ -39,17 +73,21 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `elevation_windows.py` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
-| `validate.py` | 26-check invariant battery; errors block export |
+| `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
+| `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
+| `validate.py` | 28-check invariant battery; errors block export |
 
 ## Quickstart
 
 ```bash
-python3 -m pytest tests/ -q        # 44 tests: units, invariants, defect injection, goldens
+python3 -m pytest tests/ -q        # 324 tests: units, invariants, defect injection, goldens
+matchline validate                 # invariant battery demo  (canonical)
+matchline run --seed 0            # unified pipeline: generate + link + validate + export
+# Legacy wrappers (still work, but matchline CLI is canonical):
 python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
 python3 run_validation.py          # invariant battery demo
 python3 run_bem_export.py          # gbXML + IFC export demos
-python3 run_facade_takeoff.py      # facade area takeoffs on CMP Facade
-```
+python3 run_facade_takeoff.py      # facade takeoffs — needs --data-root
 
 ## Validation
 
@@ -63,7 +101,7 @@ See `docs/validation.md` for the full invariant catalog and tolerance rationales
 
 Real-data work uses public sets under `~/workspace/datasets/` (not committed):
 AEC Geometric Bench, CMP Facade (CC BY-SA), CubiCasa5K (CC BY-NC-SA 4.0),
-FloorPlanCAD test split. See `DATASETS.md` there.
+FloorPlanCAD test split — see `CONTRIBUTING.md` for the full setup convention.
 
 ## Status
 
@@ -74,4 +112,4 @@ follows a fine-tuned YOLO + tiling/legend-learning pattern.
 
 ## License
 
-TBD.
+BSD-3-Clause. See [LICENSE](LICENSE).

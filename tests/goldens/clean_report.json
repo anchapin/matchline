@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 26,
+  "n_checks": 29,
   "errors": 0,
   "warnings": 0,
-  "passes": 22,
-  "skipped": 4
+  "passes": 24,
+  "skipped": 5
  },
  "results": [
   {
@@ -154,17 +154,48 @@
    "entities": []
   },
   {
+   "check_id": "window_double_link",
+   "name": "Window double-link detection",
+   "severity": "pass",
+   "message": "2 tagged window(s): no double-links detected",
+   "entities": []
+  },
+  {
    "check_id": "provenance_complete",
    "name": "Provenance complete",
    "severity": "pass",
    "message": "15 facts, every one cites sheet/revision/method",
-   "entities": []
+   "entities": [],
+   "needs_review": {
+    "L1-101": false,
+    "south-W1": false,
+    "south-W2": false,
+    "F1": false,
+    "F2": false,
+    "L1-101:D1": false,
+    "L1-101:T1": false,
+    "L1-101:VAV-1": false,
+    "L1-102": false,
+    "F3": false,
+    "L1-Z1": false,
+    "L1-EW1": false,
+    "L1-EW2": false,
+    "L1-EW3": false,
+    "L1-EW4": false
+   }
   },
   {
    "check_id": "review_queue_sound",
    "name": "Review queue sound",
    "severity": "pass",
    "message": "0 review item(s), all well-formed; 0 still open (queued for humans, nothing dropped)",
+   "entities": []
+  },
+  {
+   "check_id": "review_queue_acknowledged",
+   "name": "Review queue acknowledged",
+   "severity": "pass",
+   "message": "0 review item(s): all needs_review items have been acknowledged",
    "entities": []
   },
   {
@@ -184,6 +215,13 @@
   {
    "check_id": "gbxml_opening_refs",
    "name": "gbXML opening refs",
+   "severity": "skip",
+   "message": "no gbXML path given",
+   "entities": []
+  },
+  {
+   "check_id": "gbxml_wall_areas",
+   "name": "gbXML wall area cross-pipeline reconciliation",
    "severity": "skip",
    "message": "no gbXML path given",
    "entities": []

@@ -34,7 +34,7 @@ that diffs cleanly across drawing revisions.
 
 import json
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import List, Dict, Optional, Union, get_type_hints, get_origin, get_args
+from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
 MODEL_VERSION = "1.0"
 
@@ -42,19 +42,25 @@ MODEL_VERSION = "1.0"
 # accepted (review queue, not dropped).
 REVIEW_CONFIDENCE = 0.80
 
+# Auto-triage via the local review_classifier TypedDecider is ON by default.
+# Low-confidence results are automatically routed to the review queue.
+ENABLE_AUTO_TRIAGE = True
+
 
 # ---------------------------------------------------------------------------
 # Provenance + revisions
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Provenance:
     """Where one fact came from. Attached to EVERY derived fact."""
-    sheet_id: str        # e.g. "arch_A101", "elev_A201"
-    revision: int        # sheet revision this fact was extracted from
-    method: str          # e.g. "grid_registration", "geometric_fallback",
-                         # "point_in_polygon", "duct_tracing", "schedule_join"
-    confidence: float    # 0..1
+
+    sheet_id: str  # e.g. "arch_A101", "elev_A201"
+    revision: int  # sheet revision this fact was extracted from
+    method: str  # e.g. "grid_registration", "geometric_fallback",
+    # "point_in_polygon", "duct_tracing", "schedule_join"
+    confidence: float  # 0..1
     bbox: Optional[list] = None  # [xtl,ytl,xbr,ybr] in sheet px, if applicable
     note: str = ""
 
@@ -62,10 +68,11 @@ class Provenance:
 @dataclass
 class RevisionEvent:
     """One entry in the model's revision log."""
+
     seq: int
     sheet_id: str
     revision: int
-    action: str          # "ingest" | "relink" | "supersede"
+    action: str  # "ingest" | "relink" | "supersede"
     note: str = ""
 
 
@@ -73,15 +80,17 @@ class RevisionEvent:
 # Component references (sheet-detected equipment, registered to canonical m)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ComponentRef:
     """One detected equipment instance, in canonical meters."""
-    id: str              # stable within its sheet, e.g. "VAV-1", "D3", "A-12"
-    type: str            # "vav" | "ahu" | "diffuser" | "grille" | "sensor" |
-                         # "fixture" | "window"
+
+    id: str  # stable within its sheet, e.g. "VAV-1", "D3", "A-12"
+    type: str  # "vav" | "ahu" | "diffuser" | "grille" | "sensor" |
+    # "fixture" | "window"
     x_m: float
     y_m: float
-    tag: str = ""        # schedule tag, e.g. "A", "VAV-1"
+    tag: str = ""  # schedule tag, e.g. "A", "VAV-1"
     provenance: Provenance = None
     history: List[Provenance] = field(default_factory=list)
 
@@ -90,19 +99,21 @@ class ComponentRef:
 # Space sub-records
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SpaceOpening:
     """One window/door on this space's walls (from an elevation)."""
+
     id: str
     tag: str
-    category: str        # "window" | "door"
+    category: str  # "window" | "door"
     width_m: float
     height_m: float
     sill_m: Optional[float] = None
-    head_m: Optional[float] = None      # sill + height; drives daylighting
-    host_facade: str = ""       # e.g. "south"
+    head_m: Optional[float] = None  # sill + height; drives daylighting
+    host_facade: str = ""  # e.g. "south"
     host_interval_m: Optional[list] = None  # [s0, s1] along facade, meters
-    s_center_m: Optional[float] = None      # exact along-wall position
+    s_center_m: Optional[float] = None  # exact along-wall position
     area_m2: Optional[float] = None
     provenance: Provenance = None
     needs_review: bool = False
@@ -112,6 +123,7 @@ class SpaceOpening:
 @dataclass
 class FixtureInstance:
     """One light fixture assigned to this space."""
+
     id: str
     tag: str
     fixture_class: str
@@ -144,6 +156,7 @@ class SpaceHVAC:
 # Daylighting: sidelighted zones per ASHRAE 90.1 (from exact window placement)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DaylitZone:
     """One sidelighted area polygon inside a space, per ASHRAE 90.1.
@@ -154,9 +167,10 @@ class DaylitZone:
     Exact factors live in DaylightParams (elevation_windows.py); they
     vary by 90.1 version, so the standard + factors are recorded here.
     """
+
     id: str
-    zone_class: str          # "primary" | "secondary"
-    window_id: str           # the SpaceOpening this derives from
+    zone_class: str  # "primary" | "secondary"
+    window_id: str  # the SpaceOpening this derives from
     polygon_m: List[list] = field(default_factory=list)
     area_m2: float = 0.0
     head_height_m: Optional[float] = None
@@ -167,7 +181,7 @@ class DaylitZone:
 class SpaceDaylight:
     primary: List[DaylitZone] = field(default_factory=list)
     secondary: List[DaylitZone] = field(default_factory=list)
-    params_note: str = ""    # e.g. "90.1-2019 approx: P=1.0xH, S=2.0xH"
+    params_note: str = ""  # e.g. "90.1-2019 approx: P=1.0xH, S=2.0xH"
     provenance: Provenance = None
 
     @property
@@ -183,12 +197,13 @@ class SpaceDaylight:
 # Space: the primary key of the whole model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Space:
-    id: str                    # "{level}-{number}" or "{level}-UNLABELED-{k}"
+    id: str  # "{level}-{number}" or "{level}-UNLABELED-{k}"
     level_id: str
-    name: str = ""             # human label, e.g. "OPEN OFFICE"
-    number: str = ""           # room number, e.g. "101"
+    name: str = ""  # human label, e.g. "OPEN OFFICE"
+    number: str = ""  # room number, e.g. "101"
     polygon_m: List[list] = field(default_factory=list)  # [[x,y],...] y-down
     area_m2: Optional[float] = None
     volume_m3: Optional[float] = None
@@ -196,14 +211,14 @@ class Space:
     lighting: SpaceLighting = field(default_factory=SpaceLighting)
     hvac: SpaceHVAC = field(default_factory=SpaceHVAC)
     daylight: "SpaceDaylight" = field(default_factory=lambda: SpaceDaylight())
-    core_provenance: Provenance = None   # polygon + name/number source
+    core_provenance: Provenance = None  # polygon + name/number source
     label_confidence: float = 0.0
+    poly_type: str = "room"  # "room" | "shaft" | "closet" | "elevator_core" | "unassigned"
     history: List[Provenance] = field(default_factory=list)
 
     @property
     def window_area_m2(self) -> float:
-        return sum(o.area_m2 or 0.0 for o in self.openings
-                   if o.category == "window")
+        return sum(o.area_m2 or 0.0 for o in self.openings if o.category == "window")
 
     @property
     def label(self) -> str:
@@ -214,6 +229,7 @@ class Space:
 class Zone:
     """One HVAC zone. MANY-TO-MANY with spaces: zone.space_ids and
     Space.hvac.zone_ids are both lists; neither is a tree."""
+
     id: str
     level_id: str
     space_ids: List[str] = field(default_factory=list)
@@ -230,8 +246,9 @@ class EnvelopeWall:
     """One exterior wall run (per facade segment). The detailed
     area-budgeted simplification lives in geometry_simplify.py; this is
     the canonical record it feeds."""
+
     id: str
-    facade: str               # "south" | "north" | "east" | "west"
+    facade: str  # "south" | "north" | "east" | "west"
     from_m: List[float] = field(default_factory=list)  # [x, y] canonical m
     to_m: List[float] = field(default_factory=list)
     length_m: Optional[float] = None
@@ -241,8 +258,55 @@ class EnvelopeWall:
 
 
 @dataclass
+class BimOpening:
+    """One window/door hosted in a BIM element (IFC Tier 0).
+
+    Tier 0 recovers the opening, its dimensions, and its host wall WITHOUT
+    IfcRelSpaceBoundary -- so openings are NOT attached to spaces yet.
+    Space attachment is Tier 1 (geometric adjacency inference).
+    """
+
+    id: str  # GlobalId of the IfcOpeningElement
+    category: str  # "window" | "door" | "unknown"
+    tag: str = ""
+    width_m: Optional[float] = None
+    height_m: Optional[float] = None
+    sill_m: Optional[float] = None  # above host wall base
+    s_center_m: Optional[float] = None  # along host wall from wall start
+    host_global_id: str = ""  # the IfcWall / host element
+    fill_global_id: str = ""  # the IfcWindow / IfcDoor
+    provenance: Provenance = None
+
+
+@dataclass
+class BimElement:
+    """Raw BIM element inventory (IFC Tier 0).
+
+    Walls are ALSO mirrored into ``BuildingModel.envelope`` for the BEM
+    path; everything else lives here until Tier 1 assigns it a role.
+    """
+
+    global_id: str
+    ifc_class: str  # "IfcWall", "IfcSlab", ...
+    name: str = ""
+    level_id: str = ""
+    length_m: Optional[float] = None
+    width_m: Optional[float] = None
+    height_m: Optional[float] = None
+    thickness_m: Optional[float] = None  # geometry or material layers
+    area_m2: Optional[float] = None
+    volume_m3: Optional[float] = None
+    material_layers: List[dict] = field(default_factory=list)
+    # [{"material": str, "thickness_m": float}] -- the analytical
+    # wall-thickness answer (roadmap item 1 on the BIM path)
+    placement_m: Optional[list] = None  # [x, y, z], canonical frame
+    openings: List["BimOpening"] = field(default_factory=list)
+    provenance: Provenance = None
+
+
+@dataclass
 class Level:
-    id: str                    # "L1"
+    id: str  # "L1"
     name: str = ""
     elevation_z_m: float = 0.0
     wall_height_m: float = 3.0
@@ -253,28 +317,57 @@ class Level:
 # accepted (and never silently dropped).
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ReviewItem:
     id: str
-    kind: str            # e.g. "window_room_link", "fixture_assignment"
+    kind: Literal[
+        "fixture_assignment",
+        "fixture_schedule",
+        "diffuser_assignment",
+        "sensor_assignment",
+        "window_room_link",
+        "space_no_geometry",
+        "elevation_conflict",
+        "window_reconciliation",
+        "gd_complex_row",
+    ]
     description: str
     confidence: float
     provenance: Provenance = None
     status: str = "open"  # "open" | "confirmed" | "rejected"
+    needs_human: float = 1.0  # P(needs human) — set by triage
+    urgency: int = 1  # 0-3; set by triage
+    auto_resolved: bool = False  # True if auto-resolved per guardrails
+    resolution: str = ""  # "accept" | "drop" | "reassign" — set by triage
+    needs_review: bool = True  # True = awaiting human review; False = reviewed
+    acknowledged: bool = False  # True = human explicitly acknowledged this item
+
+    def __post_init__(self):
+        if not self.needs_review and self.confidence >= 1.0:
+            raise ValueError(
+                f"ReviewItem '{self.id}' has confidence={self.confidence} but is marked "
+                f"needs_review=False. A reviewed item cannot carry confidence=1.0 "
+                f"(fully confirmed). Use confidence < 1.0 for known limitations."
+            )
 
 
 # ---------------------------------------------------------------------------
 # BuildingModel
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BuildingModel:
     name: str = ""
     model_version: str = MODEL_VERSION
+    auto_triage: Optional[bool] = None
     levels: List[Level] = field(default_factory=list)
     spaces: Dict[str, Space] = field(default_factory=dict)
     zones: Dict[str, Zone] = field(default_factory=dict)
     envelope: List[EnvelopeWall] = field(default_factory=list)
+    bim_elements: List[BimElement] = field(default_factory=list)
+    # raw BIM element inventory (IFC frontend, Tier 0+)
     schedules: Dict[str, dict] = field(default_factory=dict)
     # schedules: tag -> ScheduleEntry as plain dict (revived on load)
     revision_log: List[RevisionEvent] = field(default_factory=list)
@@ -282,21 +375,25 @@ class BuildingModel:
     _rev_seq: int = 0
 
     # -- revision log ----------------------------------------------------
-    def log_revision(self, sheet_id: str, revision: int, action: str,
-                     note: str = "") -> RevisionEvent:
+    def log_revision(
+        self, sheet_id: str, revision: int, action: str, note: str = ""
+    ) -> RevisionEvent:
         self._rev_seq += 1
-        ev = RevisionEvent(seq=self._rev_seq, sheet_id=sheet_id,
-                           revision=revision, action=action, note=note)
+        ev = RevisionEvent(
+            seq=self._rev_seq, sheet_id=sheet_id, revision=revision, action=action, note=note
+        )
         self.revision_log.append(ev)
         return ev
 
-    def supersede(self, old: Provenance, new: Provenance,
-                  history: List[Provenance]) -> None:
+    def supersede(self, old: Provenance, new: Provenance, history: List[Provenance]) -> None:
         """Record that `new` replaces `old`; the old fact stays in history."""
         history.append(old)
-        self.log_revision(new.sheet_id, new.revision, "supersede",
-                          f"{old.method} r{old.revision} -> "
-                          f"{new.method} r{new.revision}")
+        self.log_revision(
+            new.sheet_id,
+            new.revision,
+            "supersede",
+            f"{old.method} r{old.revision} -> {new.method} r{new.revision}",
+        )
 
     # -- lookups ----------------------------------------------------------
     def space_by_number(self, number: str, level_id: str = "L1") -> Optional[Space]:
@@ -314,17 +411,66 @@ class BuildingModel:
             return []
         return [self.spaces[s] for s in z.space_ids if s in self.spaces]
 
-    def flag_for_review(self, kind: str, description: str, confidence: float,
-                        provenance: Provenance) -> ReviewItem:
+    def flag_for_review(
+        self,
+        kind: Literal[
+            "fixture_assignment",
+            "fixture_schedule",
+            "diffuser_assignment",
+            "sensor_assignment",
+            "window_room_link",
+            "space_no_geometry",
+            "elevation_conflict",
+            "window_reconciliation",
+            "gd_complex_row",
+        ],
+        description: str,
+        confidence: float,
+        provenance: Provenance,
+    ) -> ReviewItem:
         rid = f"RVW-{len(self.review_queue) + 1:03d}"
-        item = ReviewItem(id=rid, kind=kind, description=description,
-                          confidence=confidence, provenance=provenance)
+        item = ReviewItem(
+            id=rid,
+            kind=kind,
+            description=description,
+            confidence=confidence,
+            provenance=provenance,
+        )
+        if self.auto_triage if self.auto_triage is not None else ENABLE_AUTO_TRIAGE:
+            self._triage_item(item)
         self.review_queue.append(item)
         return item
+
+    def _triage_item(self, item: ReviewItem) -> None:
+        """Run the triage classifier on ``item`` and populate triage fields.
+
+        Silently skips if the triage classifier is unavailable (all fields keep
+        their safe defaults: ``needs_human=1.0``, ``urgency=1``).
+        This method never invents geometry — it only sets metadata on the flag.
+        """
+        try:
+            from review_classifier.data import Example
+            from review_classifier.triage import get_triage
+
+            text = f"[{item.kind}] {item.description} (conf={item.confidence:.2f})"
+            example = Example(
+                task="route_to_review",
+                text=text,
+                numeric={"det_conf": item.confidence},
+            )
+            triage = get_triage()
+            decision = triage.triage(example)
+            item.needs_human = decision.needs_human
+            item.urgency = decision.urgency
+            item.auto_resolved = decision.auto_resolved
+            item.resolution = decision.resolution
+        except Exception:
+            pass  # classifier unavailable — leave safe defaults
 
     # -- JSON --------------------------------------------------------------
     def to_dict(self) -> dict:
         from dataclasses import asdict
+
         d = asdict(self)
         d.pop("_rev_seq", None)
         return {"model_version": MODEL_VERSION, "model": d}
@@ -348,6 +494,7 @@ class BuildingModel:
 # Generic dataclass revival for from_dict (keeps every nested Provenance,
 # ComponentRef, etc. as real dataclass instances, not raw dicts).
 # ---------------------------------------------------------------------------
+
 
 def _conv(t, v):
     if v is None:

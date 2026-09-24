@@ -28,35 +28,43 @@ takeoffs inherit share-alike obligations; the code in this file is ours.
 
 from __future__ import annotations
 
-import json
 import math
 import re
-import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from building_model import Provenance
+from limits import MAX_IMAGE_SIZE_MB, check_file_size
 
 DATASET_NAME = "CMP Facade Database (Tylecek & Sara)"
 DATASET_LICENSE = "CC BY-SA (share-alike)"
 DATASET_URL = "http://cmp.felk.cvut.cz/~tylecr1/facade/"
 
 CLASS_NAMES = {
-    1: "background", 2: "facade", 3: "window", 4: "door",
-    5: "cornice", 6: "sill", 7: "balcony", 8: "blind",
-    9: "deco", 10: "molding", 11: "pillar", 12: "shop",
+    1: "background",
+    2: "facade",
+    3: "window",
+    4: "door",
+    5: "cornice",
+    6: "sill",
+    7: "balcony",
+    8: "blind",
+    9: "deco",
+    10: "molding",
+    11: "pillar",
+    12: "shop",
 }
 
 # --- class groupings -------------------------------------------------------
-GLAZING = frozenset({3, 8, 12})          # window + shuttered window + storefront
+GLAZING = frozenset({3, 8, 12})  # window + shuttered window + storefront
 WALL_PLANE = frozenset({2, 3, 4, 8, 12})  # the wall itself incl. its openings
-OPAQUE = frozenset({2})                   # plain wall
+OPAQUE = frozenset({2})  # plain wall
 DOOR = frozenset({4})
-TRIM = frozenset({5, 6, 9, 10, 11})        # cornice, sill, deco, molding, pillar
-PROJECTION = frozenset({7})               # balcony
+TRIM = frozenset({5, 6, 9, 10, 11})  # cornice, sill, deco, molding, pillar
+PROJECTION = frozenset({7})  # balcony
 
 REVIEW_SCALE_DISAGREE = 0.05  # warn if width- and height-derived scales differ
 
@@ -65,8 +73,10 @@ REVIEW_SCALE_DISAGREE = 0.05  # warn if width- and height-derived scales differ
 # Loading
 # ---------------------------------------------------------------------------
 
+
 def load_mask(path: str | Path) -> np.ndarray:
     """Load a CMP palette PNG; returns int array of class ids."""
+    check_file_size(path, MAX_IMAGE_SIZE_MB)
     return np.asarray(Image.open(path)).astype(np.int32)
 
 
@@ -87,18 +97,19 @@ def facade_bbox(mask: np.ndarray) -> tuple[int, int, int, int] | None:
 # Core takeoff
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FacadeTakeoff:
     facade_id: str
-    image_size_px: tuple[int, int]          # (W, H)
-    class_px: dict[int, int]                # raw pixel counts per class id
+    image_size_px: tuple[int, int]  # (W, H)
+    class_px: dict[int, int]  # raw pixel counts per class id
     wall_plane_px: int
-    facade_region_px: int                   # all non-background px
+    facade_region_px: int  # all non-background px
     # fractions over the wall plane (sum of opaque+glazing+door == 1.0)
     frac_opaque: float | None
-    frac_glazing: float | None              # == WWR
+    frac_glazing: float | None  # == WWR
     frac_door: float | None
-    frac_blind_of_glazing: float | None     # how much glazing is shuttered
+    frac_blind_of_glazing: float | None  # how much glazing is shuttered
     frac_shop_of_glazing: float | None
     wwr: float | None
     # absolute areas (None unless a real-world dimension was supplied)
@@ -137,10 +148,13 @@ def _frac(num: int, den: int) -> float | None:
     return num / den if den > 0 else None
 
 
-def facade_takeoff(mask: np.ndarray, facade_id: str,
-                   width_m: float | None = None,
-                   height_m: float | None = None,
-                   sheet_id: str | None = None) -> FacadeTakeoff:
+def facade_takeoff(
+    mask: np.ndarray,
+    facade_id: str,
+    width_m: float | None = None,
+    height_m: float | None = None,
+    sheet_id: str | None = None,
+) -> FacadeTakeoff:
     """Compute the takeoff for one facade mask.
 
     width_m / height_m: optional known real-world facade dimensions. Scale is
@@ -158,8 +172,7 @@ def facade_takeoff(mask: np.ndarray, facade_id: str,
     if width_m is not None:
         bb = facade_bbox(mask)
         if bb is None or width_m <= 0:
-            warnings.append("no facade region or non-positive width; "
-                            "absolute areas unavailable")
+            warnings.append("no facade region or non-positive width; absolute areas unavailable")
         else:
             x0, _, x1, _ = bb
             px_per_m = (x1 - x0) / width_m
@@ -171,10 +184,11 @@ def facade_takeoff(mask: np.ndarray, facade_id: str,
                         f"width-derived scale ({px_per_m:.1f} px/m) and "
                         f"height-derived scale ({ppm_h:.1f} px/m) disagree "
                         f"by >{REVIEW_SCALE_DISAGREE:.0%}; photo may not be "
-                        f"perfectly rectified or bbox includes projections")
+                        f"perfectly rectified or bbox includes projections"
+                    )
 
     def abs_area(px: int) -> float | None:
-        return px / px_per_m ** 2 if px_per_m else None
+        return px / px_per_m**2 if px_per_m else None
 
     opaque_px = counts.get(2, 0)
     door_px = counts.get(4, 0)
@@ -183,9 +197,11 @@ def facade_takeoff(mask: np.ndarray, facade_id: str,
         revision=1,
         method="mask_pixel_takeoff",
         confidence=0.90,
-        note=(f"{DATASET_NAME}; license {DATASET_LICENSE}. "
-              f"{'Scaled by supplied facade width'
-                  if width_m else 'SCALE-FREE: fractions only'}."))
+        note=(
+            f"{DATASET_NAME}; license {DATASET_LICENSE}. "
+            f"{'Scaled by supplied facade width' if width_m else 'SCALE-FREE: fractions only'}."
+        ),
+    )
 
     return FacadeTakeoff(
         facade_id=facade_id,
@@ -199,7 +215,9 @@ def facade_takeoff(mask: np.ndarray, facade_id: str,
         frac_blind_of_glazing=_frac(counts.get(8, 0), glazing_px),
         frac_shop_of_glazing=_frac(counts.get(12, 0), glazing_px),
         wwr=_frac(glazing_px, wall_plane_px),
-        width_m=width_m, height_m=height_m, px_per_m=px_per_m,
+        width_m=width_m,
+        height_m=height_m,
+        px_per_m=px_per_m,
         area_wall_plane_m2=abs_area(wall_plane_px),
         area_glazing_m2=abs_area(glazing_px),
         area_door_m2=abs_area(door_px),
@@ -213,8 +231,8 @@ def facade_takeoff(mask: np.ndarray, facade_id: str,
 # XML cross-check: coarse rectangles vs precise mask
 # ---------------------------------------------------------------------------
 
-def parse_xml_boxes(xml_path: str | Path) -> list[tuple[int, float, float,
-                                                        float, float]]:
+
+def parse_xml_boxes(xml_path: str | Path) -> list[tuple[int, float, float, float, float]]:
     """Parse CMP XML objects -> [(label, x0, y0, x1, y1)] normalized coords."""
     txt = Path(xml_path).read_text(encoding="utf-8", errors="replace")
     boxes = []
@@ -226,19 +244,18 @@ def parse_xml_boxes(xml_path: str | Path) -> list[tuple[int, float, float,
         xs = [float(v) for v in re.findall(r"<x>\s*([\d.eE+-]+)\s*</x>", o)]
         ys = [float(v) for v in re.findall(r"<y>\s*([\d.eE+-]+)\s*</y>", o)]
         if len(xs) >= 2 and len(ys) >= 2:
-            boxes.append((int(lab.group(1)),
-                          min(xs), min(ys), max(xs), max(ys)))
+            boxes.append((int(lab.group(1)), min(xs), min(ys), max(xs), max(ys)))
     return boxes
 
 
-def rasterize_boxes(boxes: list[tuple[int, float, float, float, float]],
-                    H: int, W: int) -> dict[int, np.ndarray]:
+def rasterize_boxes(
+    boxes: list[tuple[int, float, float, float, float]], H: int, W: int
+) -> dict[int, np.ndarray]:
     """Union-rasterize boxes per class label -> {label: bool array}."""
     out: dict[int, np.ndarray] = {}
     for lab, x0, y0, x1, y1 in boxes:
         arr = out.setdefault(lab, np.zeros((H, W), dtype=bool))
-        arr[int(y0 * H):int(math.ceil(y1 * H)),
-            int(x0 * W):int(math.ceil(x1 * W))] = True
+        arr[int(y0 * H) : int(math.ceil(y1 * H)), int(x0 * W) : int(math.ceil(x1 * W))] = True
     return out
 
 
@@ -247,9 +264,17 @@ def _dilate(arr: np.ndarray, iters: int) -> np.ndarray:
     out = arr.copy()
     for _ in range(iters):
         pad = np.pad(out, 1)
-        out = (pad[1:-1, 1:-1] | pad[:-2, :-2] | pad[:-2, 1:-1]
-               | pad[:-2, 2:] | pad[1:-1, :-2] | pad[1:-1, 2:]
-               | pad[2:, :-2] | pad[2:, 1:-1] | pad[2:, 2:])
+        out = (
+            pad[1:-1, 1:-1]
+            | pad[:-2, :-2]
+            | pad[:-2, 1:-1]
+            | pad[:-2, 2:]
+            | pad[1:-1, :-2]
+            | pad[1:-1, 2:]
+            | pad[2:, :-2]
+            | pad[2:, 1:-1]
+            | pad[2:, 2:]
+        )
     return out
 
 
@@ -257,9 +282,8 @@ def _components(arr: np.ndarray) -> int:
     """Count 4-connected components (scipy if available, else flood fill)."""
     try:
         from scipy.ndimage import label
-        _, n = label(arr, structure=np.array([[0, 1, 0],
-                                              [1, 1, 1],
-                                              [0, 1, 0]]))
+
+        _, n = label(arr, structure=np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]]))
         return int(n)
     except ImportError:
         pass
@@ -274,16 +298,15 @@ def _components(arr: np.ndarray) -> int:
             cy, cx = stack.pop()
             for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 ny, nx = cy + dy, cx + dx
-                if (0 <= ny < H and 0 <= nx < W
-                        and arr[ny, nx] and not seen[ny, nx]):
+                if 0 <= ny < H and 0 <= nx < W and arr[ny, nx] and not seen[ny, nx]:
                     seen[ny, nx] = True
                     stack.append((ny, nx))
     return n
 
 
-def xml_agreement(mask: np.ndarray,
-                  boxes: list[tuple[int, float, float, float, float]],
-                  slop_frac: float = 0.02) -> dict:
+def xml_agreement(
+    mask: np.ndarray, boxes: list[tuple[int, float, float, float, float]], slop_frac: float = 0.02
+) -> dict:
     """Compare XML coarse boxes against the precise mask, per class.
 
     Because the XML boxes are loosely drawn (verified: they are offset from
@@ -311,23 +334,19 @@ def xml_agreement(mask: np.ndarray,
         return {
             "mask_px": int(m.sum()),
             "xml_px": int(x.sum()),
-            "ratio_xml_over_mask": (x.sum() / m.sum()
-                                    if m.sum() > 0 else None),
+            "ratio_xml_over_mask": (x.sum() / m.sum() if m.sum() > 0 else None),
             "iou": inter / union if union > 0 else None,
-            "coverage_mask_in_xml": ((m & xd).sum() / m.sum()
-                                     if m.sum() > 0 else None),
-            "coverage_xml_in_mask": ((x & md).sum() / x.sum()
-                                     if x.sum() > 0 else None),
+            "coverage_mask_in_xml": ((m & xd).sum() / m.sum() if m.sum() > 0 else None),
+            "coverage_xml_in_mask": ((x & md).sum() / x.sum() if x.sum() > 0 else None),
             "n_xml_boxes": n_boxes,
             "n_mask_components": _components(m),
         }
 
     for lab in (3, 4, 8, 12):
-        m = (mask == lab)
+        m = mask == lab
         x = xml_maps.get(lab, np.zeros((H, W), dtype=bool))
         n_boxes = sum(1 for b in boxes if b[0] == lab)
-        result["per_class"][lab] = {"name": CLASS_NAMES[lab],
-                                    **entry(m, x, n_boxes)}
+        result["per_class"][lab] = {"name": CLASS_NAMES[lab], **entry(m, x, n_boxes)}
     mg = np.isin(mask, [3, 8, 12])
     xg = np.zeros((H, W), dtype=bool)
     n_boxes = 0
@@ -341,6 +360,7 @@ def xml_agreement(mask: np.ndarray,
 # ---------------------------------------------------------------------------
 # Dataset sweep + priors
 # ---------------------------------------------------------------------------
+
 
 def iter_facades(root: str | Path):
     """Yield (facade_id, mask_path, xml_path) for all 606 facades."""
@@ -369,6 +389,7 @@ def dataset_priors(takeoffs: list[FacadeTakeoff]) -> dict:
     These are the plausibility priors the validation layer's sanity guards
     can be calibrated against.
     """
+
     def col(fn):
         return [v for v in (fn(t) for t in takeoffs) if v is not None]
 
@@ -393,8 +414,9 @@ def dataset_priors(takeoffs: list[FacadeTakeoff]) -> dict:
     }
 
 
-def sweep(root: str | Path, with_xml: bool = True) -> tuple[
-        list[FacadeTakeoff], list[dict], list[str]]:
+def sweep(
+    root: str | Path, with_xml: bool = True
+) -> tuple[list[FacadeTakeoff], list[dict], list[str]]:
     """Run takeoffs (+ optional XML agreement) over the whole dataset.
 
     Returns (takeoffs, agreements, skipped_ids). Never raises on a bad file;

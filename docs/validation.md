@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (26 checks)
+## The battery (29 checks)
 
 ### Conservation laws (error)
 
@@ -136,9 +136,19 @@ are consistent with each other but implausible for a real building).
 - **Envelope 1%:** assumes exterior runs and room faces differ only by
   wall thickness. Curtain-wall buildings with deep mullion zones may
   need more.
-- **`simplify_budget`** currently only checks the simplifier's
-  self-reported delta. A stronger check — re-running the simplifier from
-  the raw footprint and comparing — is future work.
-- Export checks are structural (counts, refs, positivity), not semantic:
-  they don't verify the gbXML wall areas match the canonical model's.
-  Cross-pipeline numeric reconciliation is the next check to write.
+- **`simplify_budget`** re-runs the simplifier from the raw footprint
+  to verify the self-reported delta. If the re-verified original area
+  differs from the stored value by more than 0.1 m², an error is raised.
+- **`gbxml_wall_areas`** (new) verifies that gbXML-exported wall areas
+  match the canonical model's envelope wall areas. Cross-pipeline numeric
+  reconciliation closes the gap between structural-only export checks and
+  semantic verification.
+
+## Limitations
+
+- **Conservation laws are not checked for HVAC, plumbing, or electrical**: Only envelope, lighting, and vertical transport are validated. HVAC sizing, duct/pipe routing, and electrical load conservation are out of scope.
+- **Tolerance thresholds are not calibrated against real buildings**: The 3% area/volume, 1% envelope, and 25 W/m² LPD thresholds are based on ASHRAE standards and engineering judgment, not validated against a corpus of real buildings.
+- **No cross-sheet reconciliation**: `check_area_balance` and `check_volume_balance` validate sheets independently; errors that cancel across sheets are not detected.
+- **Simplification delta is checked only against itself**: `simplify_budget` verifies the simplified polygon against itself; it does not verify that the simplified polygon is geometrically close to the original un-simplified polygon.
+- **gbXML export must exist for `gbxml_wall_areas`**: The check requires a prior `bem-export --format gbxml` run; if that step is skipped, the check silently passes.
+- **No validation of occupancy or operational schedules**: The validator does not check whether occupancy schedules, internal gain profiles, or setpoint schedules are realistic or compliant.

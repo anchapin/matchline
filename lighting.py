@@ -24,12 +24,12 @@ Output contract
   unmatched detections (tag with no schedule entry -- reported, never
   dropped), unassigned detections (matched tag, but centroid in no room).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from datasets_adapter import (Detection, DrawingScale, ScheduleEntry,
-                              TAKEOFF_CATEGORIES)
+from datasets_adapter import TAKEOFF_CATEGORIES, Detection, DrawingScale, ScheduleEntry
 from room_labels import LabeledSpace, point_in_polygon, polygon_area_px2
 
 assert "lighting" in TAKEOFF_CATEGORIES  # adapter extended for this module
@@ -41,35 +41,37 @@ FT2_PER_M2 = 1.0 / M2_PER_FT2  # 10.7639
 @dataclass
 class LightingLine:
     """Stage-3 output: count x scheduled watts for one fixture tag."""
+
     tag: str
     description: str
     count: int
     watts_each: float | None
-    total_w: float | None      # count * watts_each (None if watts unknown)
+    total_w: float | None  # count * watts_each (None if watts unknown)
 
 
 @dataclass
 class RoomLighting:
     """Per-space lighting rollup."""
+
     name: str
     number: str
     area_m2: float | None
     fixture_count: int
     watts: float
-    lpd_w_m2: float | None     # watts / area_m2
+    lpd_w_m2: float | None  # watts / area_m2
     lpd_w_ft2: float | None
 
 
 @dataclass
 class LightingResult:
     drawing_type: str = "floor_plan"
-    lines: list = field(default_factory=list)        # LightingLine per tag
-    rooms: list = field(default_factory=list)        # RoomLighting per space
-    total_w: float = 0.0                             # building installed watts
+    lines: list = field(default_factory=list)  # LightingLine per tag
+    rooms: list = field(default_factory=list)  # RoomLighting per space
+    total_w: float = 0.0  # building installed watts
     total_fixtures: int = 0
-    unmatched: list = field(default_factory=list)    # Detection: tag not in schedule
-    unassigned: list = field(default_factory=list)   # Detection: tag ok, no room found
-    no_watts: list = field(default_factory=list)     # Detection: schedule entry lacks watts
+    unmatched: list = field(default_factory=list)  # Detection: tag not in schedule
+    unassigned: list = field(default_factory=list)  # Detection: tag ok, no room found
+    no_watts: list = field(default_factory=list)  # Detection: schedule entry lacks watts
 
 
 def _detection_centroid(d: Detection) -> tuple:
@@ -77,8 +79,9 @@ def _detection_centroid(d: Detection) -> tuple:
     return ((xtl + xbr) / 2.0, (ytl + ybr) / 2.0)
 
 
-def assign_fixtures_to_spaces(detections: list[Detection],
-                              spaces: list[LabeledSpace]) -> dict[int, list[Detection]]:
+def assign_fixtures_to_spaces(
+    detections: list[Detection], spaces: list[LabeledSpace]
+) -> dict[int, list[Detection]]:
     """Map each detection to a space index by centroid point-in-polygon.
 
     Returns {space_idx: [detections]}; detections whose centroid falls in no
@@ -97,12 +100,14 @@ def assign_fixtures_to_spaces(detections: list[Detection],
     return out
 
 
-def lighting_takeoff(detections: list[Detection],
-                     schedule: dict[str, ScheduleEntry],
-                     spaces: list[LabeledSpace],
-                     scale: DrawingScale,
-                     space_areas_m2: list[float | None] | None = None,
-                     drawing_type: str = "floor_plan") -> LightingResult:
+def lighting_takeoff(
+    detections: list[Detection],
+    schedule: dict[str, ScheduleEntry],
+    spaces: list[LabeledSpace],
+    scale: DrawingScale,
+    space_areas_m2: list[float | None] | None = None,
+    drawing_type: str = "floor_plan",
+) -> LightingResult:
     """Stage 3 for lighting: join detections to the fixture schedule.
 
     * ``detections`` -- fixture Detections with schedule tags (stage 1).
@@ -138,23 +143,26 @@ def lighting_takeoff(detections: list[Detection],
             total = n * w
             res.total_w += total
         res.total_fixtures += n
-        res.lines.append(LightingLine(tag=tag, description=entry.description,
-                                      count=n, watts_each=w, total_w=total))
+        res.lines.append(
+            LightingLine(
+                tag=tag, description=entry.description, count=n, watts_each=w, total_w=total
+            )
+        )
         tag_watts[tag] = w
 
     # -- per-space assignment -------------------------------------------------
     assignment = assign_fixtures_to_spaces(
-        [d for ds in by_tag.values() for d in ds if d.tag in schedule], spaces)
+        [d for ds in by_tag.values() for d in ds if d.tag in schedule], spaces
+    )
     res.unassigned = assignment.pop(-1, [])
 
     for i, s in enumerate(spaces):
         ds = assignment.get(i, [])
-        watts = sum(tag_watts.get(d.tag) or 0.0 for d in ds
-                    if tag_watts.get(d.tag) is not None)
+        watts = sum(tag_watts.get(d.tag) or 0.0 for d in ds if tag_watts.get(d.tag) is not None)
         if space_areas_m2 is not None:
             area = space_areas_m2[i]
         elif scale.m_per_px:
-            area = polygon_area_px2(s.polygon_px) * scale.m_per_px ** 2
+            area = polygon_area_px2(s.polygon_px) * scale.m_per_px**2
         else:
             area = None
         if area:
@@ -162,10 +170,17 @@ def lighting_takeoff(detections: list[Detection],
             lpd_ft2 = lpd_m2 / FT2_PER_M2
         else:
             lpd_m2 = lpd_ft2 = None
-        res.rooms.append(RoomLighting(name=s.name, number=s.number,
-                                      area_m2=area, fixture_count=len(ds),
-                                      watts=watts, lpd_w_m2=lpd_m2,
-                                      lpd_w_ft2=lpd_ft2))
+        res.rooms.append(
+            RoomLighting(
+                name=s.name,
+                number=s.number,
+                area_m2=area,
+                fixture_count=len(ds),
+                watts=watts,
+                lpd_w_m2=lpd_m2,
+                lpd_w_ft2=lpd_ft2,
+            )
+        )
     return res
 
 

@@ -15,6 +15,7 @@ Fixture glyphs are the SAME functions used for classifier training crops
 (synth.lighting.LIGHTING_GLYPHS), pasted via the temp-canvas technique from
 synth.sheets, so the sheet distribution matches the training distribution.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,15 +24,16 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-import sys as _sys
-sys_path = str(Path(__file__).resolve().parent.parent)
-if sys_path not in _sys.path:
-    _sys.path.insert(0, sys_path)
-
-from synth.sheets import (_layout_footprint, _rect_edges, PX_PER_M,
-                          WALL_T_M, MARGIN_M, ROOM_NAMES, _font)  # noqa: E402
-from synth.lighting import (LIGHTING_GLYPHS, LIGHTING_SCHEDULE,
-                            LIGHTING_SCHED_BY_TAG, CLASS_TO_TAG)  # noqa: E402
+from synth.lighting import CLASS_TO_TAG, LIGHTING_GLYPHS, LIGHTING_SCHED_BY_TAG, LIGHTING_SCHEDULE
+from synth.sheets import (
+    MARGIN_M,
+    PX_PER_M,
+    ROOM_NAMES,
+    WALL_T_M,
+    _font,
+    _layout_footprint,
+    _rect_edges,
+)
 
 # fixture class -> nominal width in meters (plan size, for paste scale)
 FIXTURE_WIDTH_M = {
@@ -74,10 +76,12 @@ def _paste_glyph(img, glyph_fn, w_px, cpx, cpy, rng):
     td = ImageDraw.Draw(tmp)
     lw = int(rng.choice([3, 4, 5]))
     glyph_fn(td, 64, 64, 84.0, lw, rng=rng)
-    if rng.random() < 0.75:                       # wall-mount orientations
-        tmp = tmp.transpose(rng.choice(
-            [Image.FLIP_LEFT_RIGHT, Image.FLIP_TOP_BOTTOM,
-             Image.ROTATE_90, Image.ROTATE_270]))
+    if rng.random() < 0.75:  # wall-mount orientations
+        tmp = tmp.transpose(
+            rng.choice(
+                [Image.FLIP_LEFT_RIGHT, Image.FLIP_TOP_BOTTOM, Image.ROTATE_90, Image.ROTATE_270]
+            )
+        )
     T = max(10, int(round(w_px * 128 / 84)))
     small = tmp.resize((T, T), Image.LANCZOS)
     Wp, Hp = img.size
@@ -94,8 +98,6 @@ def generate_lighting_sheet(seed: int):
     rng = np.random.default_rng(seed)
     S = PX_PER_M
     wt_px = int(round(WALL_T_M * S))
-    lw = 4
-
     rects, rooms = _layout_footprint(rng)
     fx1 = max(r[2] for r in rects)
     fy1 = max(r[3] for r in rects)
@@ -103,8 +105,11 @@ def generate_lighting_sheet(seed: int):
     plan_h_px = int(round((fy1 + 2 * MARGIN_M) * S))
     ox, oy = int(MARGIN_M * S) + 40, 150
 
-    def X(m): return ox + m * S
-    def Y(m): return oy + m * S
+    def X(m):
+        return ox + m * S
+
+    def Y(m):
+        return oy + m * S
 
     sheet_w = plan_w_px + 80 + 900
     sheet_h = oy + plan_h_px + 80
@@ -116,11 +121,9 @@ def generate_lighting_sheet(seed: int):
         for (ax, ay), (bx, by) in _rect_edges(r):
             x0, y0, x1, y1 = X(ax), Y(ay), X(bx), Y(by)
             if abs(y0 - y1) < 1e-9:
-                d.rectangle([min(x0, x1), y0 - wt_px / 2,
-                             max(x0, x1), y0 + wt_px / 2], fill=0)
+                d.rectangle([min(x0, x1), y0 - wt_px / 2, max(x0, x1), y0 + wt_px / 2], fill=0)
             else:
-                d.rectangle([x0 - wt_px / 2, min(y0, y1),
-                             x0 + wt_px / 2, max(y0, y1)], fill=0)
+                d.rectangle([x0 - wt_px / 2, min(y0, y1), x0 + wt_px / 2, max(y0, y1)], fill=0)
 
     # ---- room labels first: fixture placement must avoid the text ------------
     # (label strokes inside a fixture crop corrupt it; sheets.py avoids this
@@ -140,7 +143,7 @@ def generate_lighting_sheet(seed: int):
 
     def _clear_of_labels(px_m, py_m, rooms=rooms):
         cxp, cyp = X(px_m), Y(py_m)
-        for (_, lx, ly, lx1, ly1, _) in label_boxes:
+        for _, lx, ly, lx1, ly1, _ in label_boxes:
             if lx - 40 <= cxp <= lx1 + 40 and ly - 40 <= cyp <= ly1 + 40:
                 return False
         return True
@@ -163,25 +166,35 @@ def generate_lighting_sheet(seed: int):
             for _try in range(60):
                 px = rng.uniform(x0 + 0.8, x1 - 0.8)
                 py = rng.uniform(y0 + 0.8, y1 - 0.8)
-                if all(abs(px - qx) > 1.1 or abs(py - qy) > 1.1
-                       for qx, qy in placed) and _clear_of_labels(px, py):
+                if all(
+                    abs(px - qx) > 1.1 or abs(py - qy) > 1.1 for qx, qy in placed
+                ) and _clear_of_labels(px, py):
                     placed.append((px, py))
                     break
-        for (px, py) in placed:
-            bbox = _paste_glyph(img, LIGHTING_GLYPHS[fclass], w_px,
-                                X(px), Y(py), rng)
-            fixtures.append({"type": fclass, "tag": tag, "bbox_px": bbox,
-                             "room_idx": i, "drawing": "floor_plan"})
+        for px, py in placed:
+            bbox = _paste_glyph(img, LIGHTING_GLYPHS[fclass], w_px, X(px), Y(py), rng)
+            fixtures.append(
+                {
+                    "type": fclass,
+                    "tag": tag,
+                    "bbox_px": bbox,
+                    "room_idx": i,
+                    "drawing": "floor_plan",
+                }
+            )
 
         poly_m = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-        gt_rooms.append({
-            "name": name, "number": number,
-            "polygon_m": poly_m,
-            "polygon_px": [[X(px), Y(py)] for px, py in poly_m],
-            "area_m2": area,
-        })
+        gt_rooms.append(
+            {
+                "name": name,
+                "number": number,
+                "polygon_m": poly_m,
+                "polygon_px": [[X(px), Y(py)] for px, py in poly_m],
+                "area_m2": area,
+            }
+        )
 
-    for (text, lx, ly, _lx1, _ly1, fnt) in label_boxes:
+    for text, lx, ly, _lx1, _ly1, fnt in label_boxes:
         d.text((lx, ly), text, fill=0, font=fnt)
 
     # ---- exit signs: ~1 per 3 rooms, near a random wall ----------------------
@@ -190,23 +203,35 @@ def generate_lighting_sheet(seed: int):
         x0, y0, x1, y1 = r
         for _try in range(30):
             side = rng.integers(4)
-            px = {0: x0 + 0.6, 1: x1 - 0.6, 2: rng.uniform(x0 + 1, x1 - 1),
-                  3: rng.uniform(x0 + 1, x1 - 1)}[side]
-            py = {0: rng.uniform(y0 + 1, y1 - 1),
-                  1: rng.uniform(y0 + 1, y1 - 1),
-                  2: y0 + 0.6, 3: y1 - 0.6}[side]
+            px = {
+                0: x0 + 0.6,
+                1: x1 - 0.6,
+                2: rng.uniform(x0 + 1, x1 - 1),
+                3: rng.uniform(x0 + 1, x1 - 1),
+            }[side]
+            py = {
+                0: rng.uniform(y0 + 1, y1 - 1),
+                1: rng.uniform(y0 + 1, y1 - 1),
+                2: y0 + 0.6,
+                3: y1 - 0.6,
+            }[side]
             if _clear_of_labels(px, py):
                 break
         w_px = FIXTURE_WIDTH_M["Exit Sign"] * S
-        bbox = _paste_glyph(img, LIGHTING_GLYPHS["Exit Sign"], w_px,
-                            X(px), Y(py), rng)
-        fixtures.append({"type": "Exit Sign", "tag": "X", "bbox_px": bbox,
-                         "room_idx": i % len(rooms), "drawing": "floor_plan"})
+        bbox = _paste_glyph(img, LIGHTING_GLYPHS["Exit Sign"], w_px, X(px), Y(py), rng)
+        fixtures.append(
+            {
+                "type": "Exit Sign",
+                "tag": "X",
+                "bbox_px": bbox,
+                "room_idx": i % len(rooms),
+                "drawing": "floor_plan",
+            }
+        )
 
     # ---- lighting schedule table ---------------------------------------------
     tx = ox + plan_w_px + 70
-    d.text((tx, 60), f"SYNTHETIC LIGHTING -- sheet_{seed:03d}", fill=0,
-           font=_font(30))
+    d.text((tx, 60), f"SYNTHETIC LIGHTING -- sheet_{seed:03d}", fill=0, font=_font(30))
     cw = [90, 520, 150]
     rh = 42
     fnt = _font(24)
@@ -219,8 +244,7 @@ def generate_lighting_sheet(seed: int):
         d.text((x0c + 10, y + 8), htxt, fill=0, font=fnt)
     y += rh
     for s in LIGHTING_SCHEDULE:
-        for ci, txt in enumerate([s["tag"], s["description"],
-                                  f"{s['watts']:.0f}"]):
+        for ci, txt in enumerate([s["tag"], s["description"], f"{s['watts']:.0f}"]):
             x0c = tx + sum(cw[:ci])
             d.rectangle([x0c, y, x0c + cw[ci], y + rh], outline=0, width=2)
             d.text((x0c + 10, y + 8), txt, fill=0, font=fnt)
@@ -230,12 +254,17 @@ def generate_lighting_sheet(seed: int):
     per_room = []
     total_w = 0.0
     for i, gr in enumerate(gt_rooms):
-        w = sum(LIGHTING_SCHED_BY_TAG[f["tag"]]["watts"] for f in fixtures
-                if f["room_idx"] == i)
+        w = sum(LIGHTING_SCHED_BY_TAG[f["tag"]]["watts"] for f in fixtures if f["room_idx"] == i)
         total_w += w
-        per_room.append({"name": gr["name"], "number": gr["number"],
-                         "area_m2": gr["area_m2"], "watts": w,
-                         "lpd_w_m2": w / gr["area_m2"]})
+        per_room.append(
+            {
+                "name": gr["name"],
+                "number": gr["number"],
+                "area_m2": gr["area_m2"],
+                "watts": w,
+                "lpd_w_m2": w / gr["area_m2"],
+            }
+        )
     gt = {
         "sheet_id": f"lighting_{seed:03d}",
         "seed": seed,
@@ -244,8 +273,7 @@ def generate_lighting_sheet(seed: int):
         "rooms": gt_rooms,
         "fixtures": fixtures,
         "schedule": LIGHTING_SCHEDULE,
-        "expected": {"total_w": total_w, "per_room": per_room,
-                     "n_fixtures": len(fixtures)},
+        "expected": {"total_w": total_w, "per_room": per_room, "n_fixtures": len(fixtures)},
     }
     return np.asarray(img), gt
 

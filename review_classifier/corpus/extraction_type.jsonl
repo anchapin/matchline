@@ -1,0 +1,30 @@
+{"task": "extraction_type", "text": "extraction: opening in wall; north arrow; hinge jamb; door leaf", "numeric": {"aspect_ratio": 0.45758703205358064}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: wattage tag; ceiling grid; north arrow; dimension string", "numeric": {"aspect_ratio": 0.8405799450972951}, "label": "fixture"}
+{"task": "extraction_type", "text": "extraction: grid bubble; hinge jamb; fenestration; door leaf", "numeric": {"aspect_ratio": 0.4868076929850144}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: glass pane; glazing", "numeric": {"aspect_ratio": 1.1993038289100673}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: fenestration; sill head; mullion", "numeric": {"aspect_ratio": 0.7483211603086583}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: north arrow; hinge jamb; grid bubble; opening in wall", "numeric": {"aspect_ratio": 0.38085765585401476}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: ceiling grid; luminaire symbol; north arrow", "numeric": {"aspect_ratio": 0.8771305092783573}, "label": "fixture"}
+{"task": "extraction_type", "text": "extraction: north arrow; recessed can; ceiling grid; sheet border; wattage tag", "numeric": {"aspect_ratio": 0.8252069140393969}, "label": "fixture"}
+{"task": "extraction_type", "text": "extraction: room number; dimension string; room name; occupancy label", "numeric": {"aspect_ratio": 2.8671471064710046}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: mullion; sill head", "numeric": {"aspect_ratio": 0.6875355158682726}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: mullion; glazing; door leaf", "numeric": {"aspect_ratio": 0.6873846092179738}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: threshold; sheet border; swing arc; opening in wall; room number; scale bar", "numeric": {"aspect_ratio": 0.3591807857500462}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: hinge jamb; opening in wall; north arrow; threshold; grid bubble", "numeric": {"aspect_ratio": 0.3683165421322643}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: area tag; room number", "numeric": {"aspect_ratio": 2.3922377500775447}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: room name; area tag", "numeric": {"aspect_ratio": 2.657674888938124}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: luminaire symbol; scale bar; door leaf; hinge jamb; opening in wall; grid bubble", "numeric": {"aspect_ratio": 0.4728082372742085}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: glazing; sill head; room name; dimension string; glass pane", "numeric": {"aspect_ratio": 1.071899589185121}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: occupancy label; sheet border; door leaf; dimension string; threshold", "numeric": {"aspect_ratio": 0.4298282546442124}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: threshold; opening in wall; sheet border", "numeric": {"aspect_ratio": 0.4983176122273646}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: north arrow; luminaire symbol; light fixture", "numeric": {"aspect_ratio": 1.0277550138235532}, "label": "fixture"}
+{"task": "extraction_type", "text": "extraction: room number; text label; area tag", "numeric": {"aspect_ratio": 3.461100921198284}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: room number; area tag; occupancy label", "numeric": {"aspect_ratio": 1.5248266284769971}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: fenestration; glazing", "numeric": {"aspect_ratio": 0.6132623836353934}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: light fixture; dimension string; wattage tag", "numeric": {"aspect_ratio": 1.0770478304436113}, "label": "fixture"}
+{"task": "extraction_type", "text": "extraction: room name; north arrow; grid bubble; text label", "numeric": {"aspect_ratio": 3.5894473739306907}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: threshold; hinge jamb; scale bar; opening in wall; sheet border", "numeric": {"aspect_ratio": 0.4088535457525239}, "label": "door"}
+{"task": "extraction_type", "text": "extraction: fenestration; scale bar; dimension string; hinge jamb; sill head", "numeric": {"aspect_ratio": 1.0716913264216572}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: room name; grid bubble; area tag", "numeric": {"aspect_ratio": 3.847269306408401}, "label": "room_label"}
+{"task": "extraction_type", "text": "extraction: glass pane; north arrow; grid bubble; glazing", "numeric": {"aspect_ratio": 1.2021688267405455}, "label": "window"}
+{"task": "extraction_type", "text": "extraction: light fixture; grid bubble; recessed can; luminaire symbol", "numeric": {"aspect_ratio": 1.0219333015800398}, "label": "fixture"}

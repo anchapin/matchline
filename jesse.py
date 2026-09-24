@@ -11,7 +11,10 @@ Paper spec (Section 2):
   160 * 1024 = 163,840 integer slots per class; training = one streaming pass
   incrementing counters (no gradients, no floats).
 """
+
 from __future__ import annotations
+
+import re
 
 import numpy as np
 
@@ -63,7 +66,6 @@ def make_tuple_indices(h: int, w: int, seed: int = 42) -> np.ndarray:
     Returns int array of shape (K, n) indexing into the flat thermometer vector.
     """
     rng = np.random.default_rng(seed)
-    n_chan = 2
     rows = np.linspace(NEIGHBORHOOD_RADIUS // 2 + 1, h - 2, 10)
     cols = np.linspace(NEIGHBORHOOD_RADIUS // 2 + 1, w - 2, 16)
     centers = [(r, c) for r in rows for c in cols]
@@ -78,8 +80,8 @@ def make_tuple_indices(h: int, w: int, seed: int = 42) -> np.ndarray:
         for r in range(r0, r1 + 1):
             for c in range(c0, c1 + 1):
                 base = r * w + c
-                cand.append(base)            # low-threshold channel bit
-                cand.append(base + h * w)    # high-threshold channel bit
+                cand.append(base)  # low-threshold channel bit
+                cand.append(base + h * w)  # high-threshold channel bit
         cand = np.asarray(cand, dtype=np.int64)
         idx[k] = rng.choice(cand, size=N_BITS, replace=False)
     return idx
@@ -105,8 +107,14 @@ class WisardClassifier:
     predict(): argmax over class response scores.
     """
 
-    def __init__(self, n_classes: int, tuple_idx: np.ndarray | None = None,
-                 h: int = 28, w: int = 28, seed: int = 42):
+    def __init__(
+        self,
+        n_classes: int,
+        tuple_idx: np.ndarray | None = None,
+        h: int = 28,
+        w: int = 28,
+        seed: int = 42,
+    ):
         self.n_classes = n_classes
         self.h, self.w = h, w
         self.tuple_idx = tuple_idx if tuple_idx is not None else make_tuple_indices(h, w, seed)
@@ -188,8 +196,8 @@ class WisardClassifier:
         k = self.tuple_idx.shape[0]
         c = self.n_classes
         kk = np.arange(k)
-        log_ram = np.zeros((c, n))   # [c, n] = sum_k log(ram_c[k,a]+alpha)
-        sum_ram = np.zeros((n, k))   # [n, k] = sum_c ram_c[k,a]
+        log_ram = np.zeros((c, n))  # [c, n] = sum_k log(ram_c[k,a]+alpha)
+        sum_ram = np.zeros((n, k))  # [n, k] = sum_c ram_c[k,a]
         for cc in range(c):
             # (N, K) orientation: contiguous reduction axis for the log-sum
             g = self.ram[cc][kk[:, None], addrs.T].T
@@ -207,8 +215,8 @@ class WisardClassifier:
         out = np.full(n, -1)
         pending = np.arange(n)
         while len(pending):
-            v = vals[:, pending, :]                      # (C, P, K)
-            scores = (v > b).sum(axis=2)                 # (C, P)
+            v = vals[:, pending, :]  # (C, P, K)
+            scores = (v > b).sum(axis=2)  # (C, P)
             best = scores.argmax(axis=0)
             top = scores.max(axis=0)
             # unique winner?
@@ -218,8 +226,11 @@ class WisardClassifier:
             pending = pending[nunique > 1]
             b += 1
             if b > vals.max():
-                out[pending] = best[(scores == top[None, :]).argmax(axis=0)][nunique > 1] \
-                    if len(pending) else out[pending]
+                out[pending] = (
+                    best[(scores == top[None, :]).argmax(axis=0)][nunique > 1]
+                    if len(pending)
+                    else out[pending]
+                )
                 break
         return out
 
@@ -236,7 +247,7 @@ def com_normalize(img: np.ndarray, size: int = 28) -> np.ndarray:
     total = img.sum()
     if total == 0:
         return img
-    yy, xx = np.mgrid[0:img.shape[0], 0:img.shape[1]]
+    yy, xx = np.mgrid[0 : img.shape[0], 0 : img.shape[1]]
     cx = (xx * img).sum() / total
     cy = (yy * img).sum() / total
     dx = int(round(size / 2 - cx))
@@ -284,27 +295,126 @@ def zhang_suen(binary: np.ndarray) -> np.ndarray:
 
 
 # --- Section 9.2: topological invariants ----------------------------------------------
+
+# Thresholds for "simple" Table 9.4 glyphs.
+# Simple glyphs: endpoints ≤ 4, t_junctions ≤ 1, x_junctions ≤ 1, holes ≤ 2.
+# Anything exceeding these bounds, or with both t_junctions AND x_junctions
+# non-zero, is a complex row whose signature cannot be automatically classified
+# under the paper's underspecified junction convention.
+_SIMPLE_MAX_ENDPOINTS = 4
+_SIMPLE_MAX_T_JUNCTIONS = 1
+_SIMPLE_MAX_X_JUNCTIONS = 1
+_SIMPLE_MAX_HOLES = 2
+
+
+def is_complex_invariant(inv: dict) -> bool:
+    """Return True if ``inv`` (a skeleton_invariants dict) represents a complex
+    GD&T row that cannot be automatically classified.
+
+    Complex rows exceed the simple Table 9.4 envelope in at least one
+    invariant, or combine both T- and X-junctions (compound glyphs such as
+    True Position with multiple datum references). The paper's junction
+    convention is underspecified for these cases — they must go to the review
+    queue as ``gd_complex_row`` rather than being silently accepted or
+    rejected.
+
+    Parameters
+    ----------
+    inv : dict
+        Output of ``skeleton_invariants()`` — keys:
+        ``endpoints``, ``t_junctions``, ``x_junctions``, ``holes``.
+
+    Returns
+    -------
+    bool
+        True if the row is complex and should be flagged for review.
+    """
+    e = inv.get("endpoints", 0)
+    t = inv.get("t_junctions", 0)
+    x = inv.get("x_junctions", 0)
+    h = inv.get("holes", 0)
+    if e > _SIMPLE_MAX_ENDPOINTS:
+        return True
+    if t > _SIMPLE_MAX_T_JUNCTIONS:
+        return True
+    if x > _SIMPLE_MAX_X_JUNCTIONS:
+        return True
+    if h > _SIMPLE_MAX_HOLES:
+        return True
+    if t > 0 and x > 0:
+        return True  # compound: both T and X junctions
+    return False
+
+
+def complex_invariant_review_item(
+    inv: dict,
+    glyph_name: str,
+    provenance: object,
+) -> "ReviewItem":  # noqa: F821 — ReviewItem resolved at runtime via lazy import inside function
+    """Build a ``gd_complex_row`` review item for a complex GD&T invariant.
+
+    Parameters
+    ----------
+    inv : dict
+        Output of ``skeleton_invariants()``.
+    glyph_name : str
+        Human-readable name of the glyph that produced these invariants.
+    provenance : Provenance
+        Provenance record for this observation.
+
+    Returns
+    -------
+    ReviewItem
+        A review queue item with kind ``gd_complex_row``.
+    """
+    e = inv.get("endpoints", 0)
+    t = inv.get("t_junctions", 0)
+    x = inv.get("x_junctions", 0)
+    h = inv.get("holes", 0)
+    desc = (
+        f"Complex GD&T row ({glyph_name}): "
+        f"E={e}, J_T={t}, J_X={x}, b₁={h}. "
+        f"Signature exceeds Table 9.4 simple-glyph envelope; "
+        f"junction convention is underspecified for compound glyphs. "
+        f"Treat as indicative — validate against known-good reference drawings."
+    )
+    # Import here to avoid circular import at module load time.
+    from building_model import ReviewItem
+
+    rid = f"GD-CPX-{e}{t}{x}{h}"
+    return ReviewItem(
+        id=rid, kind="gd_complex_row", description=desc, confidence=0.5, provenance=provenance
+    )
+
+
 def skeleton_invariants(skel: np.ndarray) -> dict:
     """d(p) = sum of active 8-neighbors; endpoints d=1, T-junctions d=3,
     cross d>=4; holes b_1 via background flood fill; chi = 1 - b_1 for a
     single connected foreground component."""
     from collections import deque
+
     sk = (np.asarray(skel) > 0).astype(np.uint8)
     h, w = sk.shape
     padded = np.pad(sk, 1)
     # 8-connectivity degree keeps digital curves (e.g. Bresenham circles)
     # continuous; diagonal-only contacts would read as endpoints under
     # 4-connectivity.
-    deg = (padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:] +
-           padded[1:-1, :-2] + padded[1:-1, 2:] +
-           padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:])
+    deg = (
+        padded[:-2, :-2]
+        + padded[:-2, 1:-1]
+        + padded[:-2, 2:]
+        + padded[1:-1, :-2]
+        + padded[1:-1, 2:]
+        + padded[2:, :-2]
+        + padded[2:, 1:-1]
+        + padded[2:, 2:]
+    )
     deg = deg * sk
     endpoints = int(((deg == 1) & (sk == 1)).sum())
     # Merge 8-connected clusters of junction pixels (deg>=3) into single
     # junction nodes; classify by number of curve branches leaving the
     # cluster. [UNSPECIFIED in paper: no junction-counting convention given;
     # this is the convention that reproduces Table 9.4 for simple glyphs.]
-    from collections import deque
     is_j = (deg >= 3) & (sk == 1)
     seen = np.zeros_like(is_j, bool)
     t_junctions = x_junctions = 0
@@ -325,7 +435,7 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                                 q.append((ny, nx))
                 cset = set(cluster)
                 branches = 0
-                for (y, x) in cluster:
+                for y, x in cluster:
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dy == 0 and dx == 0:
@@ -337,7 +447,7 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                 # by 2 cluster pixels double-counts -> use distinct directions
                 # per cluster instead
                 dirs = set()
-                for (y, x) in cluster:
+                for y, x in cluster:
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dy == 0 and dx == 0:
@@ -373,5 +483,67 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
                             q.append((ny, nx))
                 if not touches_border:
                     holes += 1
-    return {"endpoints": endpoints, "t_junctions": t_junctions, "x_junctions": x_junctions,
-            "holes": holes, "chi": 1 - holes}
+    return {
+        "endpoints": endpoints,
+        "t_junctions": t_junctions,
+        "x_junctions": x_junctions,
+        "holes": holes,
+        "chi": 1 - holes,
+    }
+
+
+def sliding_window_tag_extract(
+    image: np.ndarray,
+    detections: list,
+    window_px: int = 80,
+    stride_px: int = 20,
+    ocr_lang: str = "eng",
+) -> dict[int, str]:
+    """Extract schedule tag text adjacent to each detected symbol.
+
+    For each detection bbox, crops a window to the LEFT of the symbol
+    (where schedule tags typically appear on drawings) and runs OCR.
+    Returns {detection_index: tag_str}.
+
+    Returns empty string for detections where no tag was read.
+    """
+    import pytesseract
+
+    tags = {}
+    for i, det in enumerate(detections):
+        x0, y0, x1, y1 = det.bbox
+
+        # Crop: left of symbol, same height, up to window_px wide
+        tag_x0 = max(0, int(x0) - window_px)
+        tag_y0 = max(0, int(y0))
+        tag_x1 = max(0, int(x0) - 2)  # 2px gap from symbol edge
+        tag_y1 = min(image.shape[1], int(y1))
+
+        if tag_x1 <= tag_x0 or tag_y1 <= tag_y0:
+            tags[i] = ""
+            continue
+
+        crop = image[tag_y0:tag_y1, tag_x0:tag_x1]
+        if crop.size == 0:
+            tags[i] = ""
+            continue
+
+        text = pytesseract.image_to_string(crop, lang=ocr_lang, config="--psm 6").strip()
+        # Normalize: uppercase, remove spaces, extract tag pattern
+        m = re.search(r"[A-Z]\d*-\d+|[A-Z]\d+", text.upper())
+        tags[i] = m.group(0) if m else ""
+    return tags
+
+
+def tag_detections(
+    detections: list,
+    image: np.ndarray,
+) -> list:
+    """Fill .tag field on Detection objects using sliding-window OCR.
+
+    Modifies detections in place and also returns them.
+    """
+    tags = sliding_window_tag_extract(image, detections)
+    for i, det in enumerate(detections):
+        det.tag = tags.get(i, "")
+    return detections
