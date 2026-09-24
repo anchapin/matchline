@@ -7,7 +7,7 @@ import pytest
 import run_pipeline
 
 
-def test_conservation_violation_in_model_from_linked_model_raises_stage_error(tmp_path, monkeypatch):
+def test_conservation_violation_in_model_from_linked_model_raises(tmp_path, monkeypatch):
     """Conservation failure inside model_from_linked_model() raises StageError before run_checks() is called.
 
     When conservation check fails inside model_from_linked_model(), StageError is raised before
