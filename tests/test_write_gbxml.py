@@ -25,7 +25,7 @@ def _minimal_bem_model() -> BEMModel:
         ring_m=[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
         wall_height_m=3.0,
         area_delta_pct=0.0,
-        simplify_tol_pct=2.0,
+        simplify_tolerance=2.0,
     )
 
 
@@ -71,7 +71,7 @@ def test_write_gbxml_multiple_spaces(tmp_path):
         ring_m=[(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)],
         wall_height_m=3.0,
         area_delta_pct=0.1,
-        simplify_tol_pct=2.0,
+        simplify_tolerance=2.0,
     )
 
     gbxml_path = tmp_path / "multi_space.xml"

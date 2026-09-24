@@ -59,7 +59,7 @@ def test_pipeline_e2e_bem_export_roundtrip(seed, tmp_path):
         model=model,
         simplified_ring=sres.ring,
         wall_height_m=model.levels[0].wall_height_m,
-        simplify_tol_pct=2.0,
+        simplify_tolerance=2.0,
     )
 
     gbxml_path = tmp_path / f"seed_{seed}.xml"
@@ -84,7 +84,7 @@ def test_pipeline_e2e_bldg_3room_full(bldg_3room, tmp_path):
         model=model,
         simplified_ring=sres.ring,
         wall_height_m=model.levels[0].wall_height_m,
-        simplify_tol_pct=2.0,
+        simplify_tolerance=2.0,
     )
 
     gbxml_path = tmp_path / "bldg_3room.xml"
