@@ -42,6 +42,8 @@ except Exception:
 
 FT2_PER_M2 = 10.7639
 
+MIN_CONFIDENCE_THRESHOLD: float = 0.7
+
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ class CheckResult:
     entities: list = field(default_factory=list)  # offending entity ids
     expected: object = None
     actual: object = None
+    needs_review: dict = field(default_factory=dict)  # fact_id -> bool
 
     def to_dict(self) -> dict:
         d = {
@@ -71,6 +74,8 @@ class CheckResult:
             d["expected"] = _round(self.expected)
         if self.actual is not None:
             d["actual"] = _round(self.actual)
+        if self.needs_review:
+            d["needs_review"] = {str(k): v for k, v in self.needs_review.items()}
         return d
 
 
@@ -1020,7 +1025,20 @@ def _all_facts(ctx):
 
 
 def _check_provenance_complete(ctx) -> CheckResult:
-    missing = [eid for eid, p in _all_facts(ctx) if p is None or not getattr(p, "sheet_id", "")]
+    all_facts = list(_all_facts(ctx))
+    missing = [eid for eid, p in all_facts if p is None or not getattr(p, "sheet_id", "")]
+
+    needs_review: dict = {}
+    for eid, p in all_facts:
+        if p is None:
+            continue
+        has_sufficient_provenance = all(
+            getattr(p, attr, None) for attr in ("method", "revision", "sheet_id")
+        )
+        confidence = getattr(p, "confidence", 1.0)
+        # A fact needs review if it has insufficient provenance AND low confidence
+        needs_review[eid] = not has_sufficient_provenance and confidence < MIN_CONFIDENCE_THRESHOLD
+
     if missing:
         return CheckResult(
             "provenance_complete",
@@ -1028,13 +1046,15 @@ def _check_provenance_complete(ctx) -> CheckResult:
             "error",
             f"{len(missing)} fact(s) with no provenance -- unauditable numbers",
             entities=missing[:20],
+            needs_review=needs_review,
         )
-    n = sum(1 for _ in _all_facts(ctx))
+    n = sum(1 for _ in all_facts)
     return CheckResult(
         "provenance_complete",
         "Provenance complete",
         "pass",
         f"{n} facts, every one cites sheet/revision/method",
+        needs_review=needs_review,
     )
 
 

@@ -179,6 +179,50 @@ class TestProvenanceCompleteValidationCheck:
         result = _provenance_check(model)
         assert result.severity == "error"
 
+    def test_low_confidence_fact_needs_review(self):
+        """A fact with provenance but missing method/revision and confidence < 0.7 needs review."""
+        from building_model import Provenance
+
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        opening = next((o for sp in model.spaces.values() for o in sp.openings), None)
+        assert opening is not None, "test requires a model with at least one opening"
+        # Set provenance with missing method/revision and low confidence
+        opening.provenance = Provenance(
+            sheet_id="test_sheet",
+            revision=0,  # missing proper revision
+            method="",  # missing method
+            confidence=0.5,  # below threshold
+        )
+        result = _provenance_check(model)
+        # Since sheet_id is present, severity is pass, but needs_review should be True
+        assert result.severity == "pass"
+        assert opening.id in result.needs_review, (
+            f"opening {opening.id} with low confidence should need review"
+        )
+        assert result.needs_review[opening.id] is True
+
+    def test_high_confidence_insufficient_provenance_no_review(self):
+        """A fact with provenance but missing method/revision and confidence >= 0.7 does not need review."""
+        from building_model import Provenance
+
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        opening = next((o for sp in model.spaces.values() for o in sp.openings), None)
+        assert opening is not None, "test requires a model with at least one opening"
+        # Set provenance with missing method/revision but high confidence
+        opening.provenance = Provenance(
+            sheet_id="test_sheet",
+            revision=0,  # missing proper revision
+            method="",  # missing method
+            confidence=0.85,  # above threshold
+        )
+        result = _provenance_check(model)
+        assert result.severity == "pass"
+        assert opening.id not in result.needs_review or not result.needs_review.get(opening.id), (
+            f"opening {opening.id} with high confidence should not need review"
+        )
+
     def test_all_entity_categories_covered(self):
         """Verify provenance_complete check accounts for all entity categories.
 

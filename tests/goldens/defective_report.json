@@ -177,7 +177,25 @@
    "name": "Provenance complete",
    "severity": "pass",
    "message": "16 facts, every one cites sheet/revision/method",
-   "entities": []
+   "entities": [],
+   "needs_review": {
+    "L1-101": false,
+    "south-W1": false,
+    "south-W2": false,
+    "F1": false,
+    "F2": false,
+    "L1-101:D1": false,
+    "L1-101:T1": false,
+    "L1-101:VAV-1": false,
+    "L1-102": false,
+    "F3": false,
+    "F9": false,
+    "L1-Z1": false,
+    "L1-EW1": false,
+    "L1-EW2": false,
+    "L1-EW3": false,
+    "L1-EW4": false
+   }
   },
   {
    "check_id": "review_queue_sound",
