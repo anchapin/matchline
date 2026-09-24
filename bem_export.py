@@ -29,7 +29,9 @@ import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List, Optional
 
+from building_model import Provenance
 from room_labels import point_in_polygon as _pip
 from safe_xml import safe_xml_parse, safe_xml_parser
 
@@ -75,6 +77,8 @@ class BEMSpace:
     area_m2: float
     volume_m3: float
     lighting_w: float = 0.0  # total lighting power (watts), from SpaceLighting
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 @dataclass
@@ -85,6 +89,8 @@ class BEMOpeningUnit:
     tag: str  # schedule tag, e.g. "A"
     width_m: float
     height_m: float
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 @dataclass
@@ -99,6 +105,8 @@ class BEMModel:
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
+    provenance: Optional["Provenance"] = None
+    history: List["Provenance"] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
