@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 # OCR for room labels (lazy import; helpful error if missing)
 ocr = ["rapidocr_onnxruntime"]
-test = ["pytest", "hypothesis", "opencv-python", "scikit-learn", "pyyaml"]
+test = ["pytest", "pytest-timeout", "hypothesis", "opencv-python", "scikit-learn", "pyyaml"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
 # (see detector/README.md); this extra is for real hardware / CI images.
 detector = ["torch", "ultralytics"]
@@ -71,6 +71,7 @@ packages = ["synth"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+timeout = 300
 
 [tool.ruff]
 line-length = 100
