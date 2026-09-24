@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from hypothesis import assume, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Polygon
 
@@ -102,6 +102,34 @@ def test_simplify_ring_minimum_vertex_count(original: List[Tuple[float, float]],
 
     if res.valid:
         assert res.simplified_count >= 3, f"simplified_count={res.simplified_count} < 3"
+
+
+@given(
+    original=st.lists(
+        st.tuples(
+            st.floats(min_value=-1e6, max_value=1e6), st.floats(min_value=-1e6, max_value=1e6)
+        ),
+        min_size=3,
+        max_size=200,
+    ),
+    tol=st.floats(min_value=1e-6, max_value=0.5),
+)
+@settings(max_examples=200, deadline=30000, suppress_health_check=[HealthCheck.filter_too_much])
+def test_simplify_ring_preserves_convexity(original: List[Tuple[float, float]], tol: float):
+    ring = list(original)
+    assume(_is_valid_polygon_ring(ring))
+
+    poly = Polygon(ring)
+    assume(poly.equals(poly.convex_hull))
+
+    res: SimplifyResult = simplify_ring(ring, tol)
+
+    if not res.valid:
+        return
+
+    simplified = Polygon(res.ring)
+    assert simplified.is_valid, "simplified ring must be a valid polygon"
+    assert simplified.equals(simplified.convex_hull), "simplified ring must remain convex"
 
 
 @given(
