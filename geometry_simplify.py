@@ -261,94 +261,24 @@ def simplify_ring(
     prev = [(i - 1) % nv for i in range(nv)]
     nxt = [(i + 1) % nv for i in range(nv)]
     ver = [0] * nv  # generation counter vs stale heap entries
-    removed_area = 0.0  # cumulative triangle-area proxy (approximation only)
+    removed_area = 0.0  # cumulative absolute area change
     single_cap = (min_feature if min_feature is not None else max_single_step) * orig_area
     over_cap: set[int] = set()  # vertices currently too costly per step
     over_budget: set[int] = set()  # vertices currently too costly for budget
-
-    # Last valid state for rollback when actual area exceeds tolerance
-    last_valid_work: list | None = None
-    last_valid_orig_idx: list | None = None
-    last_valid_alive: list | None = None
-    last_valid_alive_count: int = nv
-    last_valid_prev: list | None = None
-    last_valid_nxt: list | None = None
-    last_valid_removed_area: float = 0.0
 
     def push(i):
         a, b, c = work[prev[i]], work[i], work[nxt[i]]
         ver[i] += 1
         heapq.heappush(heap, (_tri_area(a, b, c), ver[i], i))
 
-    def save_last_valid():
-        nonlocal last_valid_work, last_valid_orig_idx, last_valid_alive
-        nonlocal last_valid_alive_count, last_valid_prev, last_valid_nxt
-        nonlocal last_valid_removed_area
-        last_valid_work = [tuple(v) for v in work]
-        last_valid_orig_idx = list(orig_idx)
-        last_valid_alive = list(alive)
-        last_valid_alive_count = alive_count
-        last_valid_prev = list(prev)
-        last_valid_nxt = list(nxt)
-        last_valid_removed_area = removed_area
-
-    def rollback():
-        nonlocal work, orig_idx, alive, alive_count, prev, nxt, removed_area
-        work = [tuple(v) for v in last_valid_work]
-        orig_idx = list(last_valid_orig_idx)
-        alive = list(last_valid_alive)
-        alive_count = last_valid_alive_count
-        prev = list(last_valid_prev)
-        nxt = list(last_valid_nxt)
-        removed_area = last_valid_removed_area
-
-    def current_polygon_area() -> float:
-        """Recompute actual polygon area from alive vertices."""
-        order = []
-        start = next((i for i in range(nv) if alive[i]), -1)
-        if start == -1:
-            return 0.0
-        i = start
-        while True:
-            order.append(work[i])
-            i = nxt[i]
-            if i == start:
-                break
-        if len(order) < 3:
-            return 0.0
-        return envelope_area(order, wall_height)
-
     heap: list = []
     for i in range(nv):
         push(i)
 
-    # Compute original polygon area sign once, before any removals.
-    # Using the live-polygon state during iteration can give wrong results
-    # if the polygon has already become concave.
-    original_area_sign = 1 if envelope_area(work, wall_height) > 0 else -1
-
     while heap and alive_count > 4:
-        save_last_valid()  # save state before each removal attempt
         c, v, i = heapq.heappop(heap)
         if not alive[i] or v != ver[i]:
             continue  # stale entry
-        a, b, cur = prev[i], i, nxt[i]
-        if not alive[a] or not alive[cur]:
-            continue
-        area_sign = original_area_sign
-        cross = (work[b][0] - work[a][0]) * (work[cur][1] - work[b][1]) - (
-            work[b][1] - work[a][1]
-        ) * (work[cur][0] - work[b][0])
-        if cross * area_sign <= 0:
-            if i not in over_cap:
-                over_cap.add(i)
-                skipped.append(
-                    {
-                        "op": "vertex_removal",
-                        "reason": f"vertex {orig_idx[i]}: concave vertex removal would grow area",
-                    }
-                )
-            continue
         if c > single_cap:
             if i not in over_cap:
                 over_cap.add(i)
@@ -362,7 +292,22 @@ def simplify_ring(
                 )
             continue
         over_cap.discard(i)
+        if (removed_area + c) / orig_area > tol:
+            if i not in over_budget:
+                over_budget.add(i)
+                skipped.append(
+                    {
+                        "op": "vertex_removal",
+                        "reason": f"vertex {orig_idx[i]}: removal "
+                        f"would breach tol {tol:.1%} "
+                        f"(cumulative "
+                        f"{(removed_area + c) / orig_area:.3%})",
+                    }
+                )
+            continue
+        over_budget.discard(i)
         p, q = prev[i], nxt[i]
+        # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
             skipped.append(
@@ -371,15 +316,9 @@ def simplify_ring(
                     "reason": f"vertex {orig_idx[i]}: removal would self-intersect",
                 }
             )
-            over_cap.add(i)
+            over_cap.add(i)  # do not reconsider
             continue
-        _work_snapshot = [tuple(v) for v in work]
-        _orig_idx_snapshot = list(orig_idx)
-        _alive_snapshot = list(alive)
-        _alive_count_snapshot = alive_count
-        _prev_snapshot = list(prev)
-        _nxt_snapshot = list(nxt)
-        _removed_area_snapshot = removed_area
+        # apply removal
         alive[i] = False
         alive_count -= 1
         removed_area += c
@@ -389,28 +328,6 @@ def simplify_ring(
             push(p)
         if alive[q]:
             push(q)
-        _new_ring = [work[j] for j in range(nv) if alive[j]]
-        _new_envelope_area = envelope_area(_new_ring, wall_height)
-        _cumulative_delta = abs(_new_envelope_area - orig_area) / orig_area
-        if _cumulative_delta > tol:
-            work = _work_snapshot
-            orig_idx = _orig_idx_snapshot
-            alive = _alive_snapshot
-            alive_count = _alive_count_snapshot
-            prev = _prev_snapshot
-            nxt = _nxt_snapshot
-            removed_area = _removed_area_snapshot
-            if i not in over_budget:
-                over_budget.add(i)
-                skipped.append(
-                    {
-                        "op": "vertex_removal",
-                        "reason": f"vertex {orig_idx[i]}: cumulative "
-                        f"area delta {_cumulative_delta:.3%} "
-                        f"exceeds tol {tol:.1%}",
-                    }
-                )
-            continue
 
     # re-walk the ring in order from the first alive vertex
     start = next(i for i in range(nv) if alive[i])
