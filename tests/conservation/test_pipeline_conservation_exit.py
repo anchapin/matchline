@@ -1,21 +1,29 @@
-"""Integration test: conservation-violation in model_from_linked_model() raises StageError and skips stage_04_validation.json."""
+"""Integration test: conservation-violation in model_from_linked_model() causes pipeline to exit 1.
+
+When validate_bem_conservation raises StageError, run_checks() catches it and adds it
+as an error result to the ValidationReport. The pipeline then exits with code 1 via
+export_gate returning False.
+
+This test verifies that a conservation violation in the BEM model transformation
+causes the pipeline to exit with code 1 and that stage_04_validation.json is present
+with the error recorded.
+"""
+
+from __future__ import annotations
 
 import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 import run_pipeline
 
 
-def test_conservation_violation_in_model_from_linked_model_raises(tmp_path, monkeypatch):
-    """Conservation failure inside model_from_linked_model() raises StageError before run_checks() is called.
-
-    When conservation check fails inside model_from_linked_model(), StageError is raised before
-    run_checks() is called, so stage_04_validation.json is never written.
-
-    This test verifies that a conservation violation in the BEM model transformation
-    (inside model_from_linked_model) raises StageError and stage_04_validation.json is absent.
-    """
+def test_conservation_violation_exit_code(tmp_path, monkeypatch):
+    """Conservation failure in validate_bem_conservation causes pipeline to exit 1."""
     out_dir = tmp_path / "out"
     out_dir.mkdir()
 
@@ -45,12 +53,19 @@ def test_conservation_violation_in_model_from_linked_model_raises(tmp_path, monk
         export_gate=True,
     )
 
-    with pytest.raises(run_pipeline.StageError) as exc_info:
+    with pytest.raises(SystemExit) as exc_info:
         run_pipeline.main(ns)
 
-    assert "Conservation law violation" in str(exc_info.value)
+    assert exc_info.value.code == 1, "Pipeline should exit with code 1 on conservation violation"
+
     stage_04 = out_dir / "stage_04_validation.json"
-    assert not stage_04.exists(), (
-        f"stage_04_validation.json should be absent when conservation fails in model_from_linked_model, "
-        f"but found at {stage_04}"
+    assert stage_04.exists(), (
+        f"stage_04_validation.json should be present when conservation check "
+        f"fails, but not found at {stage_04}"
+    )
+
+    report = json.loads(stage_04.read_text())
+    errors = [r for r in report.get("results", []) if r.get("severity") == "error"]
+    assert any("Conservation law violation" in r.get("msg", "") for r in errors), (
+        f"Expected conservation-violation error in report, got: {errors}"
     )
