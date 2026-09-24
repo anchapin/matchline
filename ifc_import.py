@@ -618,7 +618,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 f"the working directory '{cwd_resolved}'. "
                 "Rejecting to prevent path traversal."
             )
-    max_mb = int(os.environ.get("MATCHLINE_MAX_IFC_SIZE_MB", 200))
+    max_mb = int(os.environ.get("MATCHLINE_MAX_IFC_SIZE_MB", 100))
     file_size_mb = path.stat().st_size / (1024 * 1024)
     if file_size_mb > max_mb:
         raise ValueError(
@@ -627,6 +627,18 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             "Set MATCHLINE_MAX_IFC_SIZE_MB to increase the limit."
         )
     f = ifcopenshell.open(str(path))
+
+    max_elements = int(os.environ.get("MATCHLINE_MAX_IFC_ELEMENTS", 500_000))
+    try:
+        total_elements = len(f.wrapped_data)
+    except TypeError:
+        total_elements = len(f.by_type("IfcProduct"))
+    if total_elements > max_elements:
+        raise ValueError(
+            f"IFC file '{path}' has {total_elements} elements, "
+            f"exceeds the {max_elements} element limit. "
+            "Set MATCHLINE_MAX_IFC_ELEMENTS to increase the limit."
+        )
     if f.schema != "IFC4":
         raise ValueError(f"expected IFC4 schema, got {f.schema}")
     sheet = sheet_id or path.name

@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from room_labels import point_in_polygon as _pip
-from safe_xml import safe_xml_parser
+from safe_xml import safe_xml_parse, safe_xml_parser
 
 # ---------------------------------------------------------------------------
 # Intermediate BEM model (all metric, x=east / y=north / z=up)
@@ -558,9 +558,10 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
         # files are untrusted input (see AGENTS.md untrusted-input policy).
         safe_parser = safe_xml_parser()
         schema = etree.XMLSchema(etree.parse(str(xsd_path), safe_parser))
-        doc = etree.parse(path, safe_parser)
-        if doc.docinfo.internalDTD is not None:
-            entities = list(doc.docinfo.internalDTD.iterentities())
+        tree = safe_xml_parse(path)
+        doc = tree.getroot()
+        if tree.docinfo.internalDTD is not None:
+            entities = list(tree.docinfo.internalDTD.iterentities())
             if entities:
                 return False, [
                     f"DOCTYPE with entity declaration rejected for security "
@@ -571,22 +572,25 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
             errors.append(f"line {e.line}: {e.message}")
         if ok:
             # semantic spot checks beyond the XSD
-            errors.extend(_gbxml_semantic_checks(doc))
+            errors.extend(_gbxml_semantic_checks(tree))
         return ok and not errors, errors
     except etree.XMLSyntaxError as e:
         return False, [f"not well-formed: {e}"]
+    except ValueError as e:
+        return False, [f"file rejected: {e}"]
 
 
 def _gbxml_smoke_check(path: str, errors: list) -> tuple[bool, list]:
     try:
         from lxml import etree as lxml_etree
 
-        safe_parser = safe_xml_parser()
-        root = lxml_etree.parse(path, safe_parser).getroot()
+        root = safe_xml_parse(path).getroot()
     except ImportError:
         return False, errors + ["lxml not available; cannot parse gbXML"]
     except lxml_etree.XMLSyntaxError as e:
         return False, errors + [f"not well-formed: {e}"]
+    except ValueError as e:
+        return False, errors + [f"file rejected: {e}"]
     ns = {"g": GBXML_NS}
     for tag in ("Campus", "Building", "Space", "Surface"):
         if not root.findall(f".//g:{tag}", ns):
