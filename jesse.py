@@ -1,8 +1,27 @@
-"""Jesse-Vision prototype: zero-weight n-tuple (WiSARD) classifier.
+"""Jesse-Vision: zero-weight n-tuple (WiSARD) classifier — research asset only.
 
-Implements the core of https://jesse.solidsf.com/paper ("Zero-Weight Optical
-Recognition ... via One-Hot Pixel String Tuple Addressing and Empirical
-Bayesian Beliefs") from the paper text alone. numpy only, no torch.
+STATUS: This module is a WiSARD paper reproduction. It is NOT production code.
+For production symbol spotting, use the YOLO fine-tuning in detector/ instead.
+
+Purpose:
+  Reproduces the zero-weight n-tuple classifier from the WiSARD paper
+  (https://jesse.solidsf.com/paper — "Zero-Weight Optical Recognition via
+  One-Hot Pixel String Tuple Addressing and Empirical Bayesian Beliefs").
+  It exists to validate the paper's claims independently and to explore
+  whether a gradient-free RAM-based approach could rival learned classifiers
+  on synthetic symbol tasks.
+
+Scope:
+  - Research / academic exploration (WiSARD paper claims)
+  - Synthetic MNIST-like digit experiments
+  - NOT production symbol spotting on architectural drawings
+  - NOT integrated into the matchline pipeline
+
+Relationship to detector/:
+  - detector/ contains YOLO fine-tuning — the production approach for symbol
+    detection on real drawings. YOLO is what actually runs in the pipeline.
+  - jesse.py sits alongside as an independent research artifact; it is not
+    imported by any pipeline module and has no CI coverage requirement.
 
 Paper spec (Section 2):
   B(x,y) = (I[I(x,y) > 35], I[I(x,y) > 120])            (thermometer encoding)
