@@ -11,7 +11,8 @@ from __future__ import annotations
 import pytest
 
 from building_model import REVIEW_CONFIDENCE, BuildingModel, Space, SpaceOpening
-from link import _dedupe_space_openings, build_model
+from link import build_model
+from link._dedupe import _dedupe_space_openings
 from synth.multidiscipline import generate_building
 
 
