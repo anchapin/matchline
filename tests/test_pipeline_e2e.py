@@ -44,7 +44,7 @@ def test_pipeline_e2e_area_tolerance(seed):
 
 @pytest.mark.parametrize("seed", [101, 102, 103])
 def test_pipeline_e2e_bem_export_roundtrip(seed, tmp_path):
-    """Pipeline -> BEMModel -> write_gbxml -> validate_gbxml returns (True, [])."""
+    """Pipeline -> BEMModel -> write_gbxml -> validate_gbxml -> run_checks passes BATTERY."""
     from bem_export import validate_gbxml, write_gbxml
 
     bldg = generate_building(seed, open_office_span=False)
@@ -68,6 +68,12 @@ def test_pipeline_e2e_bem_export_roundtrip(seed, tmp_path):
     ok, errors = validate_gbxml(gbxml_path)
     assert ok, f"seed={seed}: gbXML validation errors: {errors}"
     assert errors == [], f"seed={seed}: expected no errors, got {errors}"
+
+    check_report = run_checks(bem_model, sres=sres)
+    assert check_report.ok, (
+        f"seed={seed}: BEM validation errors: {[e.message for e in check_report.errors]}"
+    )
+    assert export_gate(check_report), f"seed={seed}: export gate closed"
 
 
 def test_pipeline_e2e_bldg_3room_full(bldg_3room, tmp_path):

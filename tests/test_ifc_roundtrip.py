@@ -21,7 +21,7 @@ from building_model import (
     Zone,
 )
 from ifc_export import _export_ifc
-from validate import run_checks  # noqa: F401 - used in test
+from validate import export_gate, run_checks  # noqa: F401 - used in test
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
 _ensure_ifc()
@@ -371,6 +371,13 @@ def test_ifc_import_export_round_trip(tmp_path):
 
     # ── Schema validity: IFC must pass validate_ifc4 ────────────────────────
     assert valid, f"Round-tripped IFC failed schema validation: {errs}"
+
+    # ── Full BEM validation: imported model must pass BATTERY ──────────────
+    check_report = run_checks(m1)
+    assert check_report.ok, (
+        f"Imported model validation errors: {[e.message for e in check_report.errors]}"
+    )
+    assert export_gate(check_report), "Imported model failed export gate"
 
 
 def _build_realistic_2room_model() -> BuildingModel:
