@@ -122,6 +122,8 @@ def model_from_linked_model(
                 polygon_m=poly,
                 area_m2=area,
                 volume_m3=area * wall_height_m,
+                provenance=sp.core_provenance,
+                history=list(sp.history),
             )
         )
 
@@ -140,6 +142,8 @@ def model_from_linked_model(
                     tag=op.tag or "",
                     width_m=op.width_m,
                     height_m=op.height_m,
+                    provenance=op.provenance,
+                    history=list(op.history),
                 )
             )
 
