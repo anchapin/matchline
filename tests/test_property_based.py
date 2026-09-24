@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Polygon
@@ -146,6 +147,7 @@ def test_simplify_ring_area_never_grows(original: List[Tuple[float, float]], tol
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
 @settings(max_examples=500)
+@pytest.mark.timeout(300)
 def test_classify_from_evidence_is_deterministic(
     area: float,
     aspect_ratio: float,
@@ -177,6 +179,7 @@ def test_classify_from_evidence_is_deterministic(
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
 @settings(max_examples=500)
+@pytest.mark.timeout(300)
 def test_classify_from_evidence_valid_poly_type(
     area: float,
     aspect_ratio: float,
@@ -209,6 +212,7 @@ def test_classify_from_evidence_valid_poly_type(
     n_adjacent=st.integers(min_value=0, max_value=50),
 )
 @settings(max_examples=500)
+@pytest.mark.timeout(300)
 def test_classify_from_evidence_confidence_bounds(
     area: float,
     aspect_ratio: float,

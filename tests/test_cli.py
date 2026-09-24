@@ -16,6 +16,7 @@ except ImportError:
 ROOT = Path(__file__).parent.parent
 
 
+@pytest.mark.timeout(60)
 def _run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)

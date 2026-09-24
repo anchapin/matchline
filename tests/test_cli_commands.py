@@ -12,9 +12,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
+@pytest.mark.timeout(60)
 def _run(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     """Invoke the matchline CLI as a subprocess."""
     return subprocess.run(

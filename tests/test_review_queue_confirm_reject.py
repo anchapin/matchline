@@ -21,6 +21,7 @@ from building_model import BuildingModel, Provenance, ReviewItem
 from run_review import _confirm_item, _reject_item
 
 
+@pytest.mark.timeout(60)
 def _run_cli(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
