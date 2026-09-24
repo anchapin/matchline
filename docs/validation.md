@@ -143,3 +143,12 @@ are consistent with each other but implausible for a real building).
   match the canonical model's envelope wall areas. Cross-pipeline numeric
   reconciliation closes the gap between structural-only export checks and
   semantic verification.
+
+## Limitations
+
+- **Conservation laws are not checked for HVAC, plumbing, or electrical**: Only envelope, lighting, and vertical transport are validated. HVAC sizing, duct/pipe routing, and electrical load conservation are out of scope.
+- **Tolerance thresholds are not calibrated against real buildings**: The 3% area/volume, 1% envelope, and 25 W/m² LPD thresholds are based on ASHRAE standards and engineering judgment, not validated against a corpus of real buildings.
+- **No cross-sheet reconciliation**: `check_area_balance` and `check_volume_balance` validate sheets independently; errors that cancel across sheets are not detected.
+- **Simplification delta is checked only against itself**: `simplify_budget` verifies the simplified polygon against itself; it does not verify that the simplified polygon is geometrically close to the original un-simplified polygon.
+- **gbXML export must exist for `gbxml_wall_areas`**: The check requires a prior `bem-export --format gbxml` run; if that step is skipped, the check silently passes.
+- **No validation of occupancy or operational schedules**: The validator does not check whether occupancy schedules, internal gain profiles, or setpoint schedules are realistic or compliant.

@@ -78,3 +78,12 @@ Two synthetic lighting sheets (seeds 201–202), full pipeline:
    comparison is downstream work.
 6. LPD uses a single area per space; multi-use spaces and atria need
    sub-area handling later.
+
+## Limitations
+
+- **Fixture classification has not been validated on real drawings**: Training used synthetic symbols only; real architectural drafting styles, manufacturer-specific fixture glyphs, and non-standard notation will degrade classification accuracy.
+- **No OCR-based tag reading**: Fixture labels are currently read from annotated CSV schedules; callout text adjacent to fixtures on the drawing is not parsed. Tag extraction is deferred to v2.
+- **Emergency and exit fixtures are on separate life-safety plans**: A production system must ingest both the lighting plan and life-safety plan and de-duplicate fixture types to avoid over-counting.
+- **No controls or daylighting modeling**: The module reports installed power and LPD only. Dimming controls, occupancy sensors, daylight zones, and ASHRAE 90.1 LPD allowances are not modeled.
+- **Single area per space**: Multi-use spaces and atrium geometries use a single area scalar; sub-area zoning is not yet supported.
+- **Schedule table parsing is a stub**: `parse_schedule_table` does not yet extract from native drawing schedule tables; a CSV input is required for v1.

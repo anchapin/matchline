@@ -260,3 +260,12 @@ Runs `run_symbols.py`:
 For real sheets with thick strokes, call `preprocess_for_invariants(gray, ...)`
 from `jesse.py` directly in your integration code, then pass the resulting
 invariants to `skeleton_invariants()`.
+
+## Limitations
+
+- **Thick-stroke degradation**: The Zhang-Suen skeleton and derived invariants assume 1px clean line work. Strokes thicker than ~2px at the imaging DPI produce distorted skeletons that generate false junctions and endpoints, leading to misclassification.
+- **DPI-dependent parameter tuning**: Adaptive threshold `blockSize` and morphological kernel sizes are DPI-sensitive. The documented defaults (300 DPI: 11–21, 600 DPI: 21–41) are starting points, not universal guarantees.
+- **Compound GD&T symbols not supported**: Complex GD&T annotations with multiple datum references produce high endpoint/junction counts that do not cleanly map to any Table 9.4 class. These must be flagged for human review rather than classified automatically.
+- **No 3D pose invariance**: The method operates on 2D projected skeleton invariants; it does not handle symbols rotated in plane or viewed from non-standard angles without pre-alignment.
+- **Training is synthetic-only**: WiSARD is trained on jittered synthetic symbols; real architectural symbol glyphs with slight stylistic variations may fall below classification confidence thresholds.
+- **Invariant tables are brittle**: Changes to the GD&T standard table (Table 9.4) require code updates; there is no external data-driven lookup.

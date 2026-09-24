@@ -111,3 +111,12 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 6. **IfcSpace has no solid geometry** in v1 (placement + quantities only).
 7. Window/door opening areas are not yet reconciled against the simplified
    envelope (double-count risk noted in `docs/geometry_simplify.md`).
+
+## Limitations
+
+- **Incomplete schema coverage**: The IDF template covers residential and small commercial U-values, window SHGC, and lighting power density only. Large commercial HVAC systems (VAV, RTU, chiller) are not yet templated.
+- **No load balancing or thermal zone network solving**: EnergyPlus is called in direct-simulation mode only; no iterative zone-balance passes are made.
+- **Geometry assumptions**: All spaces are treated as rectangular with uniform internal gains. Non-rectangular rooms, indentations, and re-entrant corners are approximated, which affects envelope area and aspect-ratio-dependent infiltration estimates.
+- **Weather data**: Simulations use a single representative climate file; mixed-mode or adaptive comfort strategies are not modeled.
+- **No occupancy schedule derivation**: Schedules are synthetic defaults; actual operational patterns are not extracted from drawings.
+- **Confidence reflects template fidelity, not ground truth**: A high-confidence envelope does not mean the BEM matches the as-built building—it means the extraction pipeline found sufficient inputs to populate the template.
