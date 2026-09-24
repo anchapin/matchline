@@ -185,12 +185,12 @@ def model_from_linked_model(
     conservation_results = validate_bem_conservation(bem)
     failed = [r for r in conservation_results if r.severity != "pass"]
     if failed:
-        msgs = "; ".join(f"{r.name}: {r.detail}" for r in failed)
+        msgs = "; ".join(f"{r.name}: {r.message}" for r in failed)
         raise StageError(
             stage_name="model_from_linked_model",
             stage_index=0,
             msg=f"Conservation law violation in BEM transformation: {msgs}",
-            hint="Check area_delta_pct and simplify_tol_pct thresholds",
+            hint="Check area_delta_pct and simplify_tolerance thresholds",
         )
 
     return bem

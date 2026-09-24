@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 
+from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
 
@@ -319,8 +320,13 @@ class TestProvenanceBEMExport:
         model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
         from run_pipeline import model_from_linked_model
 
+        sres = simplify_ring(
+            footprint_from_regions([sp.polygon_m for sp in model.spaces.values()]),
+            tol=0.02,
+            wall_height=3.0,
+        )
         bem = model_from_linked_model(
-            model, simplified_ring=[], wall_height_m=3.0, simplify_tolerance=1.0
+            model, simplified_ring=sres.ring, wall_height_m=3.0, simplify_tolerance=0.02
         )
         assert bem.building_name == model.name or bem.building_name == bldg["building_id"]
         assert len(bem.spaces) == len(model.spaces), (

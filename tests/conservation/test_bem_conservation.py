@@ -29,7 +29,7 @@ def _linked(seed: int, open_office_span: bool = False, elevation_key: str = "ele
     return bldg, model, report
 
 
-def _build_bem(seed: int = 101, simplify_tol_pct: float = 0.5):
+def _build_bem(seed: int = 101, simplify_tolerance: float = 0.5):
     """Build a BEMModel from the 3-room building."""
     _bldg, model, _report = _linked(seed)
     sres = simplify_ring(
@@ -41,7 +41,7 @@ def _build_bem(seed: int = 101, simplify_tol_pct: float = 0.5):
         model=model,
         simplified_ring=sres.ring,
         wall_height_m=model.levels[0].wall_height_m,
-        simplify_tol_pct=simplify_tol_pct,
+        simplify_tolerance=simplify_tolerance,
     )
     return bem
 
@@ -113,21 +113,21 @@ class TestModelFromLinkedModelConservationChecks:
             model=model,
             simplified_ring=sres.ring,
             wall_height_m=model.levels[0].wall_height_m,
-            simplify_tol_pct=0.5,
+            simplify_tolerance=0.5,
         )
         assert bem is not None
         assert bem.area_delta_pct is not None
 
 
 class TestModelFromTakeoffSimplifyTolValidation:
-    """Verify model_from_takeoff validates simplify_tol_pct."""
+    """Verify model_from_takeoff validates simplify_tolerance."""
 
-    def test_model_from_takeoff_validates_simplify_tol_in_bem(self):
-        """model_from_takeoff sets simplify_tol_pct on the BEMModel."""
+    def test_model_from_takeoff_validates_simplify_tolerance_in_bem(self):
+        """model_from_takeoff sets simplify_tolerance on the BEMModel."""
         # Create a minimal valid input for model_from_takeoff
         # We need proper TakeoffResult and LabeledRooms objects
         # For unit testing, we verify that the validation logic exists
-        # by checking that simplify_tol_pct is set correctly
+        # by checking that simplify_tolerance is set correctly
         sres = SimplifyResult(
             ring=[[0, 0], [10, 0], [10, 10], [0, 10]],
             original_count=4,
@@ -139,9 +139,9 @@ class TestModelFromTakeoffSimplifyTolValidation:
             valid=True,
         )
         # The validation check is in model_from_linked_model
-        # Here we just verify the simplify_tol_pct computation
-        simplify_tol_pct = sres.tol * 100.0
-        assert simplify_tol_pct == 2.0  # 0.02 * 100 = 2.0
+        # Here we just verify the simplify_tolerance matches the tol
+        simplify_tolerance = sres.tol
+        assert simplify_tolerance == 0.02
 
 
 class TestValidateBEMConservationIntegration:
