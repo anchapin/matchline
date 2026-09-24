@@ -101,12 +101,12 @@ class TestBEMVolumeConservation:
     @pytest.mark.parametrize(
         "vol_inject,expected_severity",
         [
-            (0.0, "pass"),    # no injection - clean baseline
-            (0.05, "pass"),   # small positive - below detection threshold
+            (0.0, "pass"),  # no injection - clean baseline
+            (0.05, "pass"),  # small positive - below detection threshold
             (0.15, "error"),  # 15% over first space - exceeds 3% total tolerance
             (0.20, "error"),  # 20% over - well above tolerance
-            (-0.20, "error"), # -20% under - exceeds tolerance
-            (-0.50, "error"), # -50% under - far below tolerance
+            (-0.20, "error"),  # -20% under - exceeds tolerance
+            (-0.50, "error"),  # -50% under - far below tolerance
         ],
     )
     def test_bem_volume_conservation_parametrized_defect_injection(
