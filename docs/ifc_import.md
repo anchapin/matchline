@@ -147,3 +147,12 @@ layer sets, opening/fill solids, an `IfcZone`, a placement-only duct, one
 geometry-less space). Round-trip fidelity: space areas/volumes exact to
 1e-6, wall lengths exact, opening dims/sills/tags exact, material layers
 exact, zone membership exact.
+
+## Limitations
+
+- **Schema coverage is partial**: The importer handles `IfcSpace`, `IfcWall`, `IfcDoor`, `IfcWindow`, `IfcSlab`, `IfcZone`, and basic material layer sets. Structural elements (beams, columns, foundations), MEP systems, and custom property sets are not parsed.
+- **Polygon-based adjacency inference**: `infer_adjacency` uses 2D polygon containment for opening attachment and space adjacency. Non-planar walls, curved geometry, and complex openings may produce incorrect attachments.
+- **Facade classification threshold is heuristic**: Walls within ~45° of diagonal are flagged `facade_unclear`. The 0.7 dot-product threshold is not validated against real buildings with oblique facade orientations.
+- **No IfcOpenShell geometry for Tier 1**: Opening attachment in Tier 1 uses a fallback polygon-containment test; proper 3D clash detection is deferred to future tiers.
+- **Geometry-less spaces are not handled**: Spaces without geometry are currently skipped; they do not appear in the BIM model output.
+- **No IFC4 multi-level spatial structure**: The importer flattens the spatial hierarchy into a single building model; site, building, and floor levels are not preserved as separate entities.

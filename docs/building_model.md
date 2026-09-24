@@ -122,3 +122,11 @@ revision logged.
      adjacency evidence, and excluded from area rollups before computation.
 4. Interior partitions are still omitted from BEM export; do you need them
    for zone adjacency, or is space→zone mapping sufficient for now?
+
+## Limitations
+
+- **Cross-sheet linkage is probabilistic**: `link.py` uses room label matching and polygon adjacency, but does not parse actual door swing or connectivity annotations. Spaces separated by an unlabeled partition may not be linked.
+- **No multi-storey vertical reasoning**: The linker treats each floor as an independent graph; stairwell and riser connections are not yet modeled.
+- **Polygon classification is heuristic**: `polygon_classify.py` excludes shafts, elevator cores, and closets by area/aspect/label heuristics; unusual room shapes or mislabeled spaces may be misclassified.
+- **Confidence is not calibrated**: The 0.80 threshold and nominal confidence values have not been validated against a corpus of real drawings.
+- **No zone boundary reconciliation**: Adjacent spaces assigned to different zones are not checked for thermal boundary consistency.
