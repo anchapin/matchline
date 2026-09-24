@@ -30,6 +30,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 | `detector/` | YOLO fine-tuning — **separate venv**, excluded from main ruff |
 | `tests/` | Pytest suite; fixtures in `conftest.py` (`bldg_3room`) |
 | `docs/` | Module guides; see `docs/README.md` |
+| `jesse.py` | Research-only WiSARD paper reproduction; **not** production symbol spotting |
 
 **Entry point:** `matchline` CLI (`cli.py:main`).
 
@@ -73,7 +74,7 @@ Implementation + tests (happy path, invariant, defect injection) + `docs/` page 
 
 ## Notable quirks
 
-- `jesse.py` is a research asset (WiSARD paper reproduction), not production symbol spotting (YOLO in `detector/`).
+- `jesse.py` is a research asset (WiSARD paper reproduction), NOT production symbol spotting. The production symbol detection path is YOLO fine-tuning in `detector/`. jesse.py is not imported by any pipeline module and has no CI coverage requirement.
 - Coordinate frame: canonical model uses y-down (drawing frame); BEM export flips to north-up.
 - Use `matchline` CLI.
 
