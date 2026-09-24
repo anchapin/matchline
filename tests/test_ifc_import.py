@@ -339,10 +339,3 @@ def test_model_json_roundtrip(model):
     assert w0 is not None, "No element with material_layers found"
     assert w0.openings is not None
     assert m2.spaces["L1-101"].area_m2 == pytest.approx(80.0, rel=1e-6)
-
-
-def test_tier1_stub():
-    from ifc_import import infer_adjacency
-
-    with pytest.raises(NotImplementedError):
-        infer_adjacency(None)
