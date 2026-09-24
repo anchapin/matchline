@@ -30,9 +30,7 @@ class TestSpaceAreaMatchesPolygonBattery:
             for r in report.results
             if r.check_id == "space_area_matches_polygon" and r.severity == "warn"
         ]
-        assert len(bad) == 0, (
-            f"space_area_matches_polygon warn on clean model: {bad}"
-        )
+        assert len(bad) == 0, f"space_area_matches_polygon warn on clean model: {bad}"
 
     def test_area_mismatch_fires_warning(self):
         """Mismatched space area triggers space_area_matches_polygon warning."""
@@ -62,9 +60,7 @@ class TestAreaConservationBattery:
         m = make_clean_model()
         report = run_checks(m)
         bad = [
-            r
-            for r in report.results
-            if r.check_id == "area_conservation" and r.severity == "error"
+            r for r in report.results if r.check_id == "area_conservation" and r.severity == "error"
         ]
         assert len(bad) == 0, f"area_conservation error on clean model: {bad}"
 
@@ -74,9 +70,7 @@ class TestAreaConservationBattery:
         break_area(m)
         report = run_checks(m)
         errors = [
-            r
-            for r in report.results
-            if r.check_id == "area_conservation" and r.severity == "error"
+            r for r in report.results if r.check_id == "area_conservation" and r.severity == "error"
         ]
         assert len(errors) == 1, (
             f"Expected area_conservation error after break_area, got "
