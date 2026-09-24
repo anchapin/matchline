@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import math
 
-import link  # noqa: E402
 from building_model import BuildingModel  # noqa: E402
 from elevation_windows import (  # noqa: E402
     DaylightParams,
@@ -32,6 +31,7 @@ from elevation_windows import (  # noqa: E402
     observations_to_facade,
     reconcile_window_counts,
 )
+from link._schedules import _schedules  # noqa: E402
 from registration import (  # noqa: E402
     Facade,
     point_in_polygon,
@@ -123,7 +123,7 @@ def score_detection(bldg):
                     abs(f.head_m - g["head"]),
                 )
             )
-            win_sched, _ = link._schedules(bldg)
+            win_sched, _ = _schedules(bldg)
             tag_ok += assign_window_tag(f.width_m, f.height_m, win_sched) == g["tag"]
         fp = len(fw) - matched
         rows[key] = {

@@ -47,6 +47,8 @@ import link
 from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
 from detector.classes import CLASS_NAMES
 from detector.sahi_infer import infer_sheet
+from link._elevation import south_wall_segments
+from link._schedules import _schedules
 from registration import (
     Facade,
     FacadeRegistration,
@@ -645,7 +647,7 @@ def attach_merged_windows(
     Returns (attached, unlinked). Unlinked windows are flagged for
     review, never dropped.
     """
-    segments = link.south_wall_segments(bldg)  # v1: south facade
+    segments = south_wall_segments(bldg)  # v1: south facade
     space_of_num = {s.number: s for s in spaces}
     attached, unlinked = [], []
     for m in merged:
@@ -1084,7 +1086,7 @@ def build_model_with_elevations(
     """
     model, _ = link.build_model(bldg, elevation_key=None, building_name=building_name)
     spaces = list(model.spaces.values())
-    win_sched, _ = link._schedules(bldg)
+    win_sched, _ = _schedules(bldg)
     report = link_elevations(
         model, bldg, spaces, elevation_keys, win_sched, detector_backend, daylight_params
     )
