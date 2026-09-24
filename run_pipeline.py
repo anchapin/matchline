@@ -39,7 +39,7 @@ from datasets_adapter import (
 from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
-from validate import export_gate, run_checks
+from validate import export_gate, run_checks, validate_bem_conservation
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -172,7 +172,7 @@ def model_from_linked_model(
 
     area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
-    return BEMModel(
+    bem = BEMModel(
         building_name=model.name,
         spaces=bem_spaces,
         openings=bem_openings,
@@ -181,6 +181,20 @@ def model_from_linked_model(
         area_delta_pct=area_delta_pct,
         simplify_tolerance=simplify_tolerance,
     )
+
+    # Conservation law checks on BEMModel before returning
+    conservation_results = validate_bem_conservation(bem)
+    failed = [r for r in conservation_results if r.severity != "pass"]
+    if failed:
+        msgs = "; ".join(f"{r.name}: {r.detail}" for r in failed)
+        raise StageError(
+            stage_name="model_from_linked_model",
+            stage_index=0,
+            msg=f"Conservation law violation in BEM transformation: {msgs}",
+            hint="Check area_delta_pct and simplify_tol_pct thresholds",
+        )
+
+    return bem
 
 
 # ---------------------------------------------------------------------------

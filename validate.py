@@ -29,6 +29,7 @@ from typing import Optional
 
 from lxml import etree
 
+from bem_export import BEMModel, _shoelace
 from building_model import BuildingModel
 from datasets_adapter import polygon_area_px2
 from safe_xml import safe_xml_parse
@@ -352,6 +353,109 @@ def _check_volume_conservation(ctx) -> CheckResult:
         expected=exp_all,
         actual=total_all,
     )
+
+
+def _check_bem_area_conservation(bem: BEMModel, tol_area: float) -> CheckResult:
+    """BEM envelope area preservation within tolerance?
+
+    The BEMModel's area_delta_pct is pre-computed during model_from_linked_model
+    or model_from_takeoff as the percentage change in envelope area due to
+    polygon simplification. This check validates that delta stays within tolerance.
+    """
+    # area_delta_pct is pre-computed by model_from_linked_model/model_from_takeoff
+    area_delta = getattr(bem, "area_delta_pct", None)
+    if area_delta is not None:
+        if abs(area_delta) > tol_area * 100:
+            return CheckResult(
+                "bem_area_conservation",
+                "BEM area conservation",
+                "error",
+                f"area_delta_pct={area_delta:.2f}% exceeds {tol_area * 100:.0f}% tolerance",
+            )
+        return CheckResult(
+            "bem_area_conservation",
+            "BEM area conservation",
+            "pass",
+            f"area_delta_pct={area_delta:.2f}% within {tol_area * 100:.0f}% tolerance",
+        )
+    # Fallback: compute delta from space areas and ring area
+    space_total = sum(sp.area_m2 for sp in bem.spaces)
+    ring_area = abs(_shoelace(bem.ring_m)) if bem.ring_m else 0.0
+    if ring_area <= 0:
+        return CheckResult(
+            "bem_area_conservation",
+            "BEM area conservation",
+            "error",
+            "ring area is zero or negative",
+        )
+    delta_pct = abs(space_total - ring_area) / ring_area * 100
+    if delta_pct > tol_area * 100:
+        return CheckResult(
+            "bem_area_conservation",
+            "BEM area conservation",
+            "error",
+            f"space total ({space_total:.1f}) differs from ring area "
+            f"({ring_area:.1f}) by {delta_pct:.2f}%",
+        )
+    return CheckResult(
+        "bem_area_conservation",
+        "BEM area conservation",
+        "pass",
+        f"space total ({space_total:.1f}) matches ring area ({ring_area:.1f})",
+    )
+
+
+def _check_bem_volume_conservation(bem: BEMModel, tol_volume: float) -> CheckResult:
+    """BEM space volumes consistent with expected volumes?
+
+    For BEMModel, space volumes are stored in BEMSpace.volume_m3 and
+    the total is computed from wall_height_m * ring_area.
+    """
+    mismatches: list[str] = []
+    total_space_vol = sum(sp.volume_m3 for sp in bem.spaces)
+    # Compute expected volume from ring area and wall height
+    ring_area = abs(_shoelace(bem.ring_m)) if bem.ring_m else 0.0
+    expected_vol = ring_area * bem.wall_height_m if ring_area > 0 and bem.wall_height_m else 0.0
+    if expected_vol > 0:
+        vol_delta_pct = abs(total_space_vol - expected_vol) / expected_vol * 100
+        if vol_delta_pct > tol_volume * 100:
+            mismatches.append(
+                f"total vol={total_space_vol:.1f} vs "
+                f"ring×height={expected_vol:.1f} ({vol_delta_pct:.2f}% delta)"
+            )
+    if mismatches:
+        return CheckResult(
+            "bem_volume_conservation",
+            "BEM volume conservation",
+            "error",
+            f"{len(mismatches)} volume(s) exceed {tol_volume * 100:.0f}% "
+            "tolerance:\n" + "\n".join(mismatches),
+        )
+    return CheckResult(
+        "bem_volume_conservation",
+        "BEM volume conservation",
+        "pass",
+        "all space volumes consistent",
+    )
+
+
+def validate_bem_conservation(
+    bem: BEMModel,
+    tol_area: float = 0.03,
+    tol_volume: float = 0.03,
+) -> list[CheckResult]:
+    """Run conservation law checks on a BEMModel.
+
+    Returns a list of CheckResult objects. An empty list means no conservation
+    checks were applicable. A failed CheckResult indicates a violation.
+
+    Use at export time or after model_from_linked_model / model_from_takeoff
+    to catch violations introduced by BEM transformations.
+    """
+    results: list[CheckResult] = []
+    results.append(_check_bem_area_conservation(bem, tol_area))
+    results.append(_check_bem_volume_conservation(bem, tol_volume))
+    return results
 
 
 def _check_envelope_area_matches_perimeter(ctx) -> CheckResult:
