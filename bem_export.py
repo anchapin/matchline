@@ -217,6 +217,16 @@ def model_from_takeoff(
         f"{len(skipped)} tags skipped (see skipped_openings)."
     )
 
+    simplify_tol_pct = sres.tol * 100.0
+    # Validate simplify_tol_pct against maximum threshold (same as tol_area = 3%)
+    MAX_SIMPLIFY_TOL_PCT = 3.0
+    if simplify_tol_pct > MAX_SIMPLIFY_TOL_PCT:
+        raise ValueError(
+            f"simplify_tol_pct={simplify_tol_pct:.2f}% exceeds maximum "
+            f"threshold {MAX_SIMPLIFY_TOL_PCT:.0f}% — geometry simplification "
+            f"introduced too much distortion for reliable BEM export"
+        )
+
     return BEMModel(
         building_name=building_name,
         spaces=spaces,
@@ -224,7 +234,7 @@ def model_from_takeoff(
         ring_m=ring_m,
         wall_height_m=wall_height_m,
         area_delta_pct=sres.area_delta_pct,
-        simplify_tol_pct=sres.tol * 100.0,
+        simplify_tol_pct=simplify_tol_pct,
         skipped_openings=skipped,
         notes=notes,
     )
