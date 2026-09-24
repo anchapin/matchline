@@ -1,5 +1,14 @@
 """Validation battery tests: the clean model is green; each injected defect
-fires the right check with the right severity."""
+fires the right check with the right severity.
+
+Conservation law correctness tests (Issue #263):
+- floor-area ratio: total floor area matches sum of spaces
+- aspect ratio: envelope area matches perimeter-derived area
+- volume consistency: total volume matches sum of space volumes
+- window-wall-ratio: opening area does not exceed facade area
+- infiltration integrity: envelope simplification budget is respected
+- zone adjacency: every space references a zone and vice versa
+"""
 
 import pytest
 
@@ -121,6 +130,68 @@ def test_warnings_do_not_close_gate():
     break_lpd_absurd(m)
     report = run_checks(m)
     assert report.warnings and export_gate(report)
+
+
+class TestConservationLaws:
+    """Correctness tests for each conservation law (Issue #263).
+
+    Each test constructs a model that violates the conservation law,
+    calls the validation function, and asserts the correct error code is raised.
+    """
+
+    def test_conservation_law_floor_area_ratio(self):
+        """floor-area ratio: sum of space areas must match building footprint * floors."""
+        m = make_clean_model()
+        break_area(m)
+        report = run_checks(m)
+        result = _by_id(report, "area_conservation")
+        assert result.severity == "error"
+        assert not export_gate(report)
+
+    def test_conservation_law_aspect_ratio(self):
+        """aspect ratio: envelope area must be consistent with perimeter * height."""
+        m = make_clean_model()
+        break_envelope_area_matches_perimeter(m)
+        report = run_checks(m)
+        result = _by_id(report, "envelope_area_matches_perimeter")
+        assert result.severity == "error"
+        assert not export_gate(report)
+
+    def test_conservation_law_volume_consistency(self):
+        """volume consistency: sum of space volumes must match building gross volume."""
+        m = make_clean_model()
+        break_volume_conservation(m)
+        report = run_checks(m)
+        result = _by_id(report, "volume_conservation")
+        assert result.severity == "error"
+        assert not export_gate(report)
+
+    def test_conservation_law_window_wall_ratio(self):
+        """window-wall-ratio: opening area must not exceed the facade area it occupies."""
+        m = make_clean_model()
+        break_opening_oversize(m)
+        report = run_checks(m)
+        result = _by_id(report, "facade_opening_closure")
+        assert result.severity == "error"
+        assert not export_gate(report)
+
+    def test_conservation_law_infiltration_integrity(self):
+        """infiltration integrity: envelope simplification must stay within budget."""
+        m = make_clean_model()
+        break_simplify_budget(m)
+        report = run_checks(m)
+        result = _by_id(report, "simplify_budget")
+        assert result.severity == "error"
+        assert not export_gate(report)
+
+    def test_conservation_law_zone_adjacency(self):
+        """zone adjacency: every space must reference a zone, and every zone must be referenced."""
+        m = make_clean_model()
+        break_dangling_zone(m)
+        report = run_checks(m)
+        result = _by_id(report, "zone_space_referential")
+        assert result.severity == "error"
+        assert not export_gate(report)
 
 
 def test_export_gate_blocks_errors_explicitly():
