@@ -9,6 +9,8 @@ Tests verify that violations introduced by BEM transformation are caught
 at model_from_linked_model / model_from_takeoff time.
 """
 
+import pytest
+
 from geometry_simplify import SimplifyResult, footprint_from_regions, simplify_ring
 from link import build_model
 from run_pipeline import model_from_linked_model
@@ -95,6 +97,36 @@ class TestBEMVolumeConservation:
             bem.spaces[0].volume_m3 = 100000.0  # Way different from expected
         result = _check_bem_volume_conservation(bem, tol_volume=0.03)
         assert result.severity == "error", "Expected fail on volume mismatch"
+
+    @pytest.mark.parametrize(
+        "vol_inject,expected_severity",
+        [
+            (0.0, "pass"),    # no injection - clean baseline
+            (0.05, "pass"),   # small positive - below detection threshold
+            (0.15, "error"),  # 15% over first space - exceeds 3% total tolerance
+            (0.20, "error"),  # 20% over - well above tolerance
+            (-0.20, "error"), # -20% under - exceeds tolerance
+            (-0.50, "error"), # -50% under - far below tolerance
+        ],
+    )
+    def test_bem_volume_conservation_parametrized_defect_injection(
+        self, vol_inject: float, expected_severity: str
+    ):
+        """Parametrized defect-injection: volume mismatch via proportional delta.
+
+        vol_inject is a fractional delta applied to the first space's original
+        volume (e.g. 0.20 = inflate that space's volume by 20%).
+        The resulting total-vs-expected delta is checked against tol_volume=0.03.
+        """
+        bem = _build_bem()
+        if bem.spaces:
+            original = bem.spaces[0].volume_m3
+            bem.spaces[0].volume_m3 = original * (1 + vol_inject)
+        result = _check_bem_volume_conservation(bem, tol_volume=0.03)
+        assert result.severity == expected_severity, (
+            f"vol_inject={vol_inject}: expected {expected_severity}, "
+            f"got {result.severity} (message: {result.message})"
+        )
 
 
 class TestModelFromLinkedModelConservationChecks:
