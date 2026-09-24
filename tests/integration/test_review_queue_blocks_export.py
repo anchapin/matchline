@@ -56,3 +56,93 @@ class TestReviewQueueBlocksExport:
             "export_gate should return True when all needs_review items "
             "in review_queue are acknowledged"
         )
+
+    def test_write_functions_not_called_when_review_queue_blocks(self, tmp_path, monkeypatch):
+        """write_gbxml and write_ifc4 must never be called when review queue blocks export."""
+        import argparse
+        import sys
+
+        import bem_export
+        import run_pipeline
+        from building_model import ReviewItem
+        from tests.model_factory import P, make_clean_model
+
+        out_dir = tmp_path / "run_review_block"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        ns = argparse.Namespace(
+            seed=101,
+            image=None,
+            aec_bench=None,
+            detections=None,
+            schedule_csv=None,
+            weights=None,
+            out_dir=out_dir,
+            open_office_span=False,
+            elevation_key="elev_grid",
+            simplify_tol=0.02,
+        )
+
+        model = make_clean_model()
+        model.review_queue.append(
+            ReviewItem(
+                id="rq-003",
+                kind="window_room_link",
+                description="Low-confidence window area extraction on sheet A101",
+                status="open",
+                confidence=0.5,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+
+        report = run_checks(model)
+        assert not export_gate(report), "precondition: export_gate should be False"
+
+        def mock_run_checks(model, **kwargs):
+            return report
+
+        monkeypatch.setattr("run_pipeline.run_checks", mock_run_checks)
+
+        gbxml_called = False
+        ifc_called = False
+
+        original_write_gbxml = bem_export.write_gbxml
+        original_write_ifc4 = bem_export.write_ifc4
+
+        def mock_write_gbxml(*args, **kwargs):
+            nonlocal gbxml_called
+            gbxml_called = True
+            return original_write_gbxml(*args, **kwargs)
+
+        def mock_write_ifc4(*args, **kwargs):
+            nonlocal ifc_called
+            ifc_called = True
+            return original_write_ifc4(*args, **kwargs)
+
+        monkeypatch.setattr(bem_export, "write_gbxml", mock_write_gbxml)
+        monkeypatch.setattr(bem_export, "write_ifc4", mock_write_ifc4)
+
+        exit_called = False
+
+        def mock_exit(code=0):
+            nonlocal exit_called
+            exit_called = True
+            raise SystemExit(code)
+
+        monkeypatch.setattr(sys, "exit", mock_exit)
+
+        try:
+            run_pipeline.main(ns)
+        except SystemExit:
+            pass
+
+        assert not gbxml_called, (
+            "write_gbxml must NOT be called when review_queue blocks export; "
+            "unacknowledged needs_review items must block export"
+        )
+        assert not ifc_called, (
+            "write_ifc4 must NOT be called when review_queue blocks export; "
+            "unacknowledged needs_review items must block export"
+        )
