@@ -671,8 +671,13 @@ def load_aec_bench(
     for img_el in tree.getroot().findall(".//image"):
         name = img_el.attrib["name"]  # sheet_01.png
         stem = Path(name).stem
+        stem = re.sub(r"[^\w\-.]", "_", stem)  # prevent path traversal via name attr
         W, H = int(img_el.attrib["width"]), int(img_el.attrib["height"])
         pdf = root / "pdf" / f"{stem}.pdf"
+        try:
+            pdf.resolve().relative_to(root / "pdf")
+        except ValueError:
+            continue  # drops items that escape the pdf subdirectory
         if not pdf.exists():
             continue
         page = _rasterize_pdf(pdf, dpi)
