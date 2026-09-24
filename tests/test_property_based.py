@@ -105,6 +105,46 @@ def test_simplify_ring_minimum_vertex_count(original: List[Tuple[float, float]],
 
 
 @given(
+    hull_vertices=st.lists(
+        st.tuples(
+            st.floats(min_value=-1e4, max_value=1e4),
+            st.floats(min_value=-1e4, max_value=1e4),
+        ),
+        min_size=3,
+        max_size=30,
+    ),
+    tol=st.floats(min_value=1e-3, max_value=0.2),
+)
+@settings(max_examples=200, deadline=30000)
+def test_simplify_ring_preserves_convexity(hull_vertices: List[Tuple[float, float]], tol: float):
+    """If input ring is convex, simplified ring should also be convex."""
+    # Generate a convex polygon by computing the convex hull of random points
+    points = list(hull_vertices)
+    assume(len(points) >= 3)
+
+    hull = Polygon(points).convex_hull
+    # Extract hull vertices in order to get a valid convex ring
+    # Use buffer(0) to ensure valid ring, then extract boundary
+    try:
+        ring_coords = list(hull.exterior.coords)[:-1]  # Remove closing point
+        assume(len(ring_coords) >= 3)
+    except Exception:
+        assume(False)
+
+    ring = ring_coords
+    assume(_is_valid_polygon_ring(ring))
+
+    res: SimplifyResult = simplify_ring(ring, tol)
+
+    if not res.valid:
+        return
+
+    simplified = Polygon(res.ring)
+    assert simplified.is_valid, "simplified ring must be a valid polygon"
+    assert simplified.equals(simplified.convex_hull), "simplified ring must remain convex"
+
+
+@given(
     original=st.lists(
         st.tuples(
             st.floats(min_value=-1e6, max_value=1e6), st.floats(min_value=-1e6, max_value=1e6)

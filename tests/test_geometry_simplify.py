@@ -1,5 +1,6 @@
 """Tests for geometry_simplify.py: happy-path, invariant, and defect-injection."""
 
+import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
@@ -148,6 +149,22 @@ def test_simplify_report_within_tolerance_for_small_tol():
     res = simplify_ring(SQUARE, tol=0.001)
     report = simplify_report(res)
     assert report["within_tolerance"] is True
+
+
+def _is_convex(poly: Polygon) -> bool:
+    """Check if polygon is convex using convex_hull comparison."""
+    return poly.equals(poly.convex_hull)
+
+
+def test_simplify_ring_preserves_convexity():
+    """If input ring is convex, simplified ring should also be convex."""
+    # Use a known convex polygon: regular hexagon
+    angles = np.linspace(0, 2 * np.pi, 7)[:-1]
+    convex_ring = [[5 + 4 * np.cos(a), 5 + 4 * np.sin(a)] for a in angles]  # regular hexagon
+    res = simplify_ring(convex_ring, tol=0.01)
+    poly = Polygon(res.ring)
+    assert poly.is_valid, "simplified ring must form a valid polygon"
+    assert _is_convex(poly), "simplified ring must remain convex, got concave or self-intersecting"
 
 
 # ---------------------------------------------------------------------------
