@@ -12,10 +12,7 @@ The roundtrip pattern:
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from bem_export import write_gbxml
 from geometry_simplify import footprint_from_regions, simplify_ring
