@@ -240,6 +240,8 @@ def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, st
     if item.status != "open":
         raise ValueError(f"Item {item_id} is already {item.status}.")
     item.status = "confirmed"
+    item.needs_review = False
+    item.acknowledged = True
     return model, f"Confirmed {item_id}."
 
 
@@ -251,6 +253,8 @@ def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str
     if item.status != "open":
         raise ValueError(f"Item {item_id} is already {item.status}.")
     item.status = "rejected"
+    item.needs_review = False
+    item.acknowledged = True
     return model, f"Rejected {item_id}."
 
 
