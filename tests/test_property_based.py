@@ -56,8 +56,10 @@ def test_simplify_ring_area_delta_within_tolerance(original: List[Tuple[float, f
     if not res.valid:
         return
 
-    assert res.area_delta_pct <= tol, (
-        f"area_delta_pct={res.area_delta_pct:.4f} exceeds tol={tol:.4f}"
+    # area_delta_pct is a percentage (e.g., 5.0 = 5%), tol is a fraction (e.g., 0.1 = 10%)
+    # Convert tol to percentage for comparison
+    assert res.area_delta_pct <= tol * 100, (
+        f"area_delta_pct={res.area_delta_pct:.4f} exceeds tol%={tol * 100:.4f}"
     )
 
 
