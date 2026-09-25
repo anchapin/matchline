@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from building_model import Provenance
 from datasets_adapter import TAKEOFF_CATEGORIES, Detection, DrawingScale, ScheduleEntry
 from room_labels import LabeledSpace, point_in_polygon, polygon_area_px2
 
@@ -47,6 +48,7 @@ class LightingLine:
     count: int
     watts_each: float | None
     total_w: float | None  # count * watts_each (None if watts unknown)
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -60,6 +62,7 @@ class RoomLighting:
     watts: float
     lpd_w_m2: float | None  # watts / area_m2
     lpd_w_ft2: float | None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -72,6 +75,7 @@ class LightingResult:
     unmatched: list = field(default_factory=list)  # Detection: tag not in schedule
     unassigned: list = field(default_factory=list)  # Detection: tag ok, no room found
     no_watts: list = field(default_factory=list)  # Detection: schedule entry lacks watts
+    provenance: Provenance | None = None
 
 
 def _detection_centroid(d: Detection) -> tuple:

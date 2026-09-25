@@ -37,6 +37,7 @@ from scipy.ndimage import binary_opening
 from scipy.ndimage import label as clabel
 from scipy.signal import fftconvolve
 
+from building_model import Provenance
 from jesse import WisardClassifier, zhang_suen
 from synth.mech import (
     MECH_CLASSES,
@@ -308,7 +309,13 @@ _VAV_BOX_H = int(0.6 * PX_PER_M)  # VAV_H
 _VAV_CUT_DILATE = 10
 
 
-def trace_sheet(gray: np.ndarray, gt: dict, clf: WisardClassifier, templates: dict):
+def trace_sheet(
+    gray: np.ndarray,
+    gt: dict,
+    clf: WisardClassifier,
+    templates: dict,
+    provenance: Provenance | None = None,
+):
     detections = detect_components(gray, templates, clf)
     # VAV-vs-small-symbol suppression: the VAV template fires on grilles
     # (box+diagonal on the return main) and diffusers (drop+spine behind
@@ -356,6 +363,7 @@ def trace_sheet(gray: np.ndarray, gt: dict, clf: WisardClassifier, templates: di
         "skel_px": dbg["n_skel_px"],
         "ncc_wisard_agreement": f"{agree}/{len(detections)}",
         "n_vav_suppressed": n_suppressed,
+        "provenance": provenance,
     }
 
 
