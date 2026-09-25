@@ -34,6 +34,13 @@ except Exception:
 # Import check functions from submodules (before _Ctx to satisfy E402)
 # ---------------------------------------------------------------------------
 
+from .ashrae90_1 import (
+    _check_hvac_efficiency,
+    _check_lighting_power_density,
+    _check_roof_u_factor,
+    _check_wall_u_factor,
+    _check_window_u_factor,
+)
 from .conservation import (
     _check_area_conservation,
     _check_bem_area_conservation,
@@ -73,13 +80,6 @@ from .invariants import (
     _check_sill_head_sanity,
     _check_simplify_budget,
     _check_takeoff_counts_reconcile,
-)
-from .ashrae90_1 import (
-    _check_wall_u_factor,
-    _check_roof_u_factor,
-    _check_window_u_factor,
-    _check_lighting_power_density,
-    _check_hvac_efficiency,
 )
 
 # ---------------------------------------------------------------------------
