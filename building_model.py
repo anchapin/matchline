@@ -521,13 +521,15 @@ class BuildingModel:
         description: str,
         confidence: float,
         provenance: Provenance,
-    ) -> ReviewItem:
+    ) -> Optional[ReviewItem]:
         """Append a low-confidence extraction to the review queue.
 
         Call this whenever an extraction result falls below a reliability threshold
-        and should not be silently accepted.  The item is assigned triage metadata
-        (``needs_human``, ``urgency``, ``resolution``) and appended to
-        :attr:`review_queue`.
+        and should not be silently accepted.  High-confidence items
+        (``confidence >= REVIEW_CONFIDENCE``) are silently accepted and this
+        method returns ``None`` without adding anything to :attr:`review_queue`.
+        The item is assigned triage metadata (``needs_human``, ``urgency``,
+        ``resolution``) and appended to :attr:`review_queue`.
 
         **Confidence thresholds that trigger review** are set by the **caller**, not
         by this method.  Typical thresholds used in the pipeline:
@@ -589,6 +591,8 @@ class BuildingModel:
         ReviewItem
             The created queue item, already appended to :attr:`review_queue`.
         """
+        if confidence >= REVIEW_CONFIDENCE:
+            return None
         rid = f"RVW-{len(self.review_queue) + 1:03d}"
         item = ReviewItem(
             id=rid,

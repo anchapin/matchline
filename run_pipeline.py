@@ -39,6 +39,7 @@ from datasets_adapter import (
 )
 from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
+from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
 from validate import export_gate, run_checks, validate_bem_conservation
 
@@ -617,7 +618,21 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     volume = area * wall_height
 
     level = Level(id="L1", name="Level 1", wall_height_m=wall_height)
-    prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
+    labeled = attach_room_labels(takeoff_result, None)
+    if labeled.spaces:
+        first_labeled = labeled.spaces[0]
+        lconf = first_labeled.label_confidence
+        lsrc = first_labeled.label_source or "room_label_parse"
+        note = f"room_label: name={first_labeled.name}, number={first_labeled.number}"
+        prov = Provenance(
+            sheet_id=bldg_id,
+            revision=0,
+            method=lsrc,
+            confidence=lconf,
+            note=note,
+        )
+    else:
+        prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
 
     # --- Space with minimal openings ---
     openings: list[SpaceOpening] = []
@@ -732,6 +747,26 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
         schedules={},  # empty: review queue suppresses errors
         review_queue=review_queue,
     )
+
+    # Route low-confidence labels to review queue
+    if labeled.spaces:
+        for ls in labeled.spaces:
+            if ls.label_confidence < 0.80:
+                model.flag_for_review(
+                    kind="space_no_geometry",
+                    description=f"Low-confidence room label: name={ls.name}, number={ls.number}",
+                    confidence=ls.label_confidence,
+                    provenance=prov,
+                )
+    for ul in labeled.unmatched_labels:
+        if ul.confidence < 0.80:
+            model.flag_for_review(
+                kind="window_room_link",
+                description=f"Low-confidence unmatched label: text={ul.text}",
+                confidence=ul.confidence,
+                provenance=prov,
+            )
+
     return model
 
 
