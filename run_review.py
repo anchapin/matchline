@@ -84,6 +84,12 @@ _KIND_TO_TASK: dict[str, str] = {
     "fixture_assignment": "route_to_review",
     "schedule_mismatch": "schedule_match",
     "extraction_type": "extraction_type",
+    "lighting_extraction": "route_to_review",
+    "hvac_extraction": "route_to_review",
+    "room_label_extraction": "route_to_review",
+    "window_extraction": "route_to_review",
+    "elevation_extraction": "route_to_review",
+    "facade_takeoff": "route_to_review",
 }
 
 
