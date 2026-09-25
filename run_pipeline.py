@@ -436,7 +436,6 @@ def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
-
         # Config overrides from YAML
         simplify_tol = args.simplify_tol
         wall_height = None
@@ -510,7 +509,9 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 6: BEM export ---------------------------------------------
         try:
-            gbxml_path, ifc_path = _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir)
+            gbxml_path, ifc_path = _stage_6_bem_export(
+                model, sres, wall_height, simplify_tol, out_dir
+            )
             _print_pipeline_complete(out_dir, report)
         except StageError:
             raise
