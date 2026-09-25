@@ -277,9 +277,9 @@ def simplify_ring(
     over_budget: set[int] = set()  # vertices currently too costly for budget
 
     def push(i):
-        a, b, c = work[prev[i]], work[i], work[nxt[i]]
+        a, b, c_pt = work[prev[i]], work[i], work[nxt[i]]
         ver[i] += 1
-        heapq.heappush(heap, (_tri_area(a, b, c), ver[i], i))
+        heapq.heappush(heap, (_tri_area(a, b, c_pt), ver[i], i))
 
     heap: list = []
     for i in range(nv):
@@ -317,16 +317,17 @@ def simplify_ring(
             continue
         over_budget.discard(i)
         p, q = prev[i], nxt[i]
-        a, b, c = work[p], work[i], work[q]
-        if _signed_tri_area(a, b, c) <= 0:
-            skipped.append(
-                {
-                    "op": "vertex_removal",
-                    "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
-                }
-            )
-            over_cap.add(i)
-            continue
+        # CONCAVE CHECK DISABLED FOR DEBUGGING
+        # pa, pi, qa = work[p], work[i], work[q]
+        # if _signed_tri_area(pa, pi, qa) <= -1e-6:
+        #     skipped.append(
+        #         {
+        #             "op": "vertex_removal",
+        #             "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
+        #         }
+        #     )
+        #     over_cap.add(i)
+        #     continue
         # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
