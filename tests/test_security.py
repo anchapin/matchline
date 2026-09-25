@@ -9,16 +9,12 @@ are properly rejected.
 
 from __future__ import annotations
 
-import os
-import tempfile
-from io import BytesIO
 from pathlib import Path
 
 import pytest
 from lxml import etree
 
 from safe_xml import safe_xml_fromstring, safe_xml_parse, safe_xml_parser
-
 
 # ---------------------------------------------------------------------------
 # Attack payloads
@@ -81,6 +77,7 @@ WELL_FORMED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
 # ---------------------------------------------------------------------------
 # safe_xml_parser — core security primitive
 # ---------------------------------------------------------------------------
+
 
 class TestSafeXmlParserSecurity:
     """Tests for the safe_xml_parser() security primitive."""
@@ -150,6 +147,7 @@ class TestSafeXmlParserSecurity:
 # safe_xml_parse — file parsing with size + complexity limits
 # ---------------------------------------------------------------------------
 
+
 class TestSafeXmlParseSecurity:
     """Tests for safe_xml_parse() file-parsing function."""
 
@@ -199,6 +197,7 @@ class TestSafeXmlParseSecurity:
 # safe_xml_fromstring — string/bytes parsing with complexity limits
 # ---------------------------------------------------------------------------
 
+
 class TestSafeXmlFromstringSecurity:
     """Tests for safe_xml_fromstring() string-parsing function."""
 
@@ -231,6 +230,7 @@ class TestSafeXmlFromstringSecurity:
 # ---------------------------------------------------------------------------
 # Integration: actual production code paths
 # ---------------------------------------------------------------------------
+
 
 class TestProductionXmlParsingPaths:
     """Verify production code paths use safe XML parsing."""
@@ -287,6 +287,7 @@ class TestProductionXmlParsingPaths:
 # ---------------------------------------------------------------------------
 # Verify no raw stdlib ElementTree parsing for untrusted input
 # ---------------------------------------------------------------------------
+
 
 class TestNoUnprotectedXmlParsing:
     """Verify that stdlib ElementTree is never used for untrusted XML parsing.
