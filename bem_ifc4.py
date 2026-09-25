@@ -20,8 +20,16 @@ def _ensure_ifc():
     import importlib.util
 
     if importlib.util.find_spec("ifcopenshell") is None:
-        raise RuntimeError("IfcOpenShell is not installed; install with `pip install ifcopenshell`")
-    import ifcopenshell  # noqa: F401
+        raise PipelineDependencyError(
+            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
+        )
+    try:
+        import ifcopenshell  # noqa: F401
+    except OSError as e:
+        raise PipelineDependencyError(
+            "ifcopenshell is installed but failed to import (broken binary or missing "
+            "system library). Reinstall with: pip install ifcopenshell --force-reinstall"
+        ) from e
 
 
 def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:

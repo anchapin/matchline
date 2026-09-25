@@ -48,9 +48,27 @@ from building_model import (
 def _ensure_ifc():
     import importlib.util
 
-    if importlib.util.find_spec("ifcopenshell") is None:
-        raise RuntimeError("IfcOpenShell is not installed; install with `pip install ifcopenshell`")
-    import ifcopenshell  # noqa: F401
+    try:
+        import ifcopenshell  # noqa: F401
+    except OSError as e:
+        raise PipelineDependencyError(
+            "ifcopenshell is installed but failed to import (likely a broken binary or "
+            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
+        ) from e
+    try:
+        import ifcopenshell  # noqa: F401
+    except OSError as e:
+        raise PipelineDependencyError(
+            "ifcopenshell is installed but failed to import (likely a broken binary or "
+            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
+        ) from e
+    try:
+        import ifcopenshell  # noqa: F401
+    except OSError as e:
+        raise PipelineDependencyError(
+            "ifcopenshell is installed but failed to import (likely a broken binary or "
+            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
+        ) from e
 
 
 # ---------------------------------------------------------------------------
