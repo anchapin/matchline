@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 29,
+  "n_checks": 34,
   "errors": 3,
-  "warnings": 3,
-  "passes": 18,
-  "skipped": 5
+  "warnings": 4,
+  "passes": 19,
+  "skipped": 8
  },
  "results": [
   {
@@ -247,6 +247,46 @@
    "severity": "skip",
    "message": "no IFC path given",
    "entities": []
+  },
+  {
+   "check_id": "ashrae_wall_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Wall U-factor",
+   "severity": "skip",
+   "message": "No walls with u_factor set on model",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_roof_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Roof U-factor",
+   "severity": "skip",
+   "message": "No roof_u_factor or roofs list on model",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_window_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Window U-factor & SHGC",
+   "severity": "skip",
+   "message": "No windows list found on model",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_lighting_power_density",
+   "name": "ASHRAE 90.1-2019 Table 9.5.1 \u2014 Lighting Power Density",
+   "severity": "warn",
+   "message": "LPD violations: L1-101 (office): 200.0 > 10.5 W/m\u00b2 (limit=0.98 W/ft\u00b2)",
+   "entities": [
+    "L1-101",
+    "L1-102"
+   ]
+  },
+  {
+   "check_id": "ashrae_hvac_efficiency",
+   "name": "ASHRAE 90.1-2019 Tables 6.8.1-6.8.3 \u2014 HVAC efficiency",
+   "severity": "pass",
+   "message": "All 1 space(s) comply",
+   "entities": [
+    "L1-101"
+   ]
   }
  ]
 }

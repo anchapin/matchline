@@ -174,7 +174,7 @@ class TestLightingPowerDensity:
 
         result = _check_lighting_power_density(_ctx(model))
         assert result.check_id == "ashrae_lighting_power_density"
-        assert result.severity == "error"
+        assert result.severity == "warn"
         assert "LPD violations" in result.message
 
     def test_lpd_classroom(self):
@@ -202,7 +202,7 @@ class TestLightingPowerDensity:
         }
 
         result = _check_lighting_power_density(_ctx(model))
-        assert result.severity == "error"
+        assert result.severity == "warn"
 
 
 # ---------------------------------------------------------------------------
