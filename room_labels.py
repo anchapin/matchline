@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from building_model import Provenance
+
 # ---------------------------------------------------------------------------
 # Output contract
 # ---------------------------------------------------------------------------
@@ -49,6 +51,7 @@ class LabeledSpace:
     label_confidence: float = 0.0  # 0.0 -> unlabeled
     label_source: str = ""  # "enclosed" | "nearest" | ""
     label_bbox: tuple | None = None
+    core_provenance: Provenance | None = None
 
 
 @dataclass
