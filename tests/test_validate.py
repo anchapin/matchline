@@ -399,3 +399,46 @@ class TestExportGateIntegration:
 
         assert not gbxml_called, "write_gbxml should not be called when export_gate blocks"
         assert not ifc_called, "write_ifc4 should not be called when export_gate blocks"
+
+
+def test_run_checks_exception_surfaces_to_cli():
+    """Regression test for issue #308: run_checks should print exceptions to stderr."""
+    import io
+    import sys
+
+    import validate
+    from tests.model_factory import make_clean_model
+    from validate import run_checks
+
+    original_check = validate._check_area_conservation
+
+    def raising_wrapper(model):
+        raise ValueError("deliberate test failure")
+
+    validate._check_area_conservation = raising_wrapper
+
+    for i, check in enumerate(validate.BATTERY):
+        if check.__name__ == "_check_area_conservation":
+            validate.BATTERY[i] = raising_wrapper
+            break
+
+    captured_stderr = io.StringIO()
+    old_stderr = sys.stderr
+    sys.stderr = captured_stderr
+    try:
+        m = make_clean_model()
+        report = run_checks(m)
+    finally:
+        sys.stderr = old_stderr
+        validate._check_area_conservation = original_check
+        for i, check in enumerate(validate.BATTERY):
+            if check.__name__ == "_check_area_conservation":
+                validate.BATTERY[i] = original_check
+                break
+
+    stderr_output = captured_stderr.getvalue()
+    assert "ERROR in check 'raising_wrapper': ValueError: deliberate test failure" in stderr_output
+    error_results = [r for r in report.results if r.severity == "error"]
+    assert len(error_results) == 1
+    assert "ValueError" in error_results[0].message
+    assert "deliberate test failure" in error_results[0].message

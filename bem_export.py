@@ -27,23 +27,50 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import List, Optional
 
-from building_model import Provenance
-from room_labels import point_in_polygon as _pip
+# bem_export — unified entry point for gbXML and IFC4 BEM export.
+# bem_export focuses purely on serialization and export format handling.
+# Intermediate model classes: bem_geometry.py
+# Shared helpers: bem_helpers.py
+# IFC helpers: bem_ifc4.py
+from pathlib import Path
+
+from bem_geometry import (
+    BEMModel,
+    BEMOpeningUnit,  # noqa: F401
+    BEMSpace,  # noqa: F401
+    _ensure_ccw,  # noqa: F401
+    _shoelace,  # noqa: F401
+    model_from_takeoff,  # noqa: F401
+)
+from bem_helpers import (
+    DOOR_SILL_M,
+    GBXML_NS,
+    WINDOW_SILL_M,
+    _assign_wall_to_space,
+    _cartesian,
+    _distribute_openings,
+    _el,
+    _fmt,
+    _opening_type,
+    _place_openings_on_wall,
+    _wall_edges,
+)
+from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
 from safe_xml import safe_xml_parse, safe_xml_parser
 
-# ---------------------------------------------------------------------------
-# Intermediate BEM model (all metric, x=east / y=north / z=up)
-# ---------------------------------------------------------------------------
+__all__ = [
+    "BEMModel",
+    "BEMOpeningUnit",
+    "BEMSpace",
+    "model_from_takeoff",
+    "validate_gbxml",
+    "write_gbxml",
+    "validate_ifc4",
+    "write_ifc4",
+]
 
-GBXML_NS = "http://www.gbxml.org/schema"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver6.01.xsd"
-
-WINDOW_SILL_M = 0.9  # placement assumption, documented
-DOOR_SILL_M = 0.0
 
 
 def _validate_out_path(path: str | Path) -> Path:
@@ -54,312 +81,22 @@ def _validate_out_path(path: str | Path) -> Path:
     """
     path = Path(path)
     if not path.is_absolute():
-        resolved = (Path.cwd() / path).resolve()
-        cwd_resolved = Path.cwd().resolve()
-        try:
-            resolved.relative_to(cwd_resolved)
-        except ValueError:
-            raise ValueError(
-                f"Output path '{path}' resolves to '{resolved}' which escapes "
-                f"the working directory '{cwd_resolved}'. Rejecting to prevent "
-                "path traversal."
-            )
-    path.parent.mkdir(parents=True, exist_ok=True)
+        resolved = path.resolve()
+        if not str(resolved).startswith(str(Path.cwd())):
+            raise ValueError(f"Path escapes working directory: {path}")
     return path
 
 
-@dataclass
-class BEMSpace:
-    sid: str
-    name: str  # e.g. "OPEN OFFICE 101"
-    number: str
-    polygon_m: list  # [(x, y), ...] CCW, x=east, y=north
-    area_m2: float
-    volume_m3: float
-    lighting_w: float = 0.0  # total lighting power (watts), from SpaceLighting
-    provenance: Optional["Provenance"] = None
-    history: List["Provenance"] = field(default_factory=list)
+# ---- gbXML helpers ----
 
 
-@dataclass
-class BEMOpeningUnit:
-    """One physical opening instance (expanded from count x schedule)."""
-
-    category: str  # "window" | "door"
-    tag: str  # schedule tag, e.g. "A"
-    width_m: float
-    height_m: float
-    provenance: Optional["Provenance"] = None
-    history: List["Provenance"] = field(default_factory=list)
+def centroid(sp: BEMSpace):
+    xs = [p[0] for p in sp.polygon_m]
+    ys = [p[1] for p in sp.polygon_m]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
-@dataclass
-class BEMModel:
-    building_name: str
-    spaces: list  # BEMSpace
-    openings: list  # BEMOpeningUnit, one per physical opening
-    ring_m: list  # simplified envelope ring, CCW, x=east/y=north
-    wall_height_m: float
-    area_delta_pct: float  # envelope area preservation, from simplifier
-    simplify_tolerance: float
-    skipped_openings: list = field(default_factory=list)  # tags w/o dims
-    notes: list = field(default_factory=list)
-    zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
-    provenance: Optional["Provenance"] = None
-    history: List["Provenance"] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# Geometry helpers
-# ---------------------------------------------------------------------------
-
-
-def _shoelace(poly) -> float:
-    s = 0.0
-    n = len(poly)
-    for i in range(n):
-        x0, y0 = poly[i]
-        x1, y1 = poly[(i + 1) % n]
-        s += x0 * y1 - x1 * y0
-    return 0.5 * s
-
-
-def _ensure_ccw(ring):
-    return list(reversed(ring)) if _shoelace(ring) < 0 else list(ring)
-
-
-def _fmt(v: float) -> str:
-    return f"{v:.4f}"
-
-
-# ---------------------------------------------------------------------------
-# model_from_takeoff
-# ---------------------------------------------------------------------------
-
-
-def model_from_takeoff(
-    takeoff, labeled, sres, wall_height_m: float = 3.0, building_name: str = "Jesse Building"
-) -> BEMModel:
-    """Assemble a unit-clean BEMModel from the pipeline output contracts."""
-    s = takeoff.scale.m_per_px
-    if not s:
-        raise ValueError(
-            "BEM export needs a drawing scale (m/px) for spaces and envelope; "
-            "takeoff.scale.m_per_px is None."
-        )
-    notes = []
-
-    # --- coordinate transform provenance ------------------------------------
-    # All geometry (spaces + envelope ring) enters as drawing pixels
-    # (x-right, y-DOWN) and is converted to canonical BEM meters
-    # (x-east, y-NORTH, z-up) via:  x_m = x_px * s,  y_m = -y_px * s
-    src_conf = max((sp.label_confidence for sp in labeled.spaces), default=1.0)
-    coord_conf = min(1.0, src_conf)
-    notes.append(
-        f"Coordinate transform: drawing px -> m (scale={s:.4f} m/px), "
-        f"y-down -> north-up flip applied to {len(labeled.spaces)} space(s) "
-        f"and envelope ring ({len(sres.ring)} vertices, simplified "
-        f"from {sres.original_count} original edges, "
-        f"area_delta={sres.area_delta_pct:.2f}%). "
-        f"Transform confidence={coord_conf:.2f} (geometrically exact, "
-        f"bounded by source geometry confidence={src_conf:.2f})."
-    )
-
-    # --- spaces -----------------------------------------------------------
-    spaces = []
-    for i, sp in enumerate(labeled.spaces):
-        poly_m = [(x * s, -y * s) for x, y in sp.polygon_px]
-        poly_m = _ensure_ccw(poly_m)
-        area = abs(_shoelace(poly_m))
-        name = f"{sp.name} {sp.number}".strip() or f"SPACE-{i + 1:02d}"
-        spaces.append(
-            BEMSpace(
-                sid=f"sp-{i + 1:03d}",
-                name=name,
-                number=sp.number,
-                polygon_m=poly_m,
-                area_m2=area,
-                volume_m3=area * wall_height_m,
-            )
-        )
-    if not spaces:
-        raise ValueError("no labeled spaces to export")
-
-    # --- envelope ring ----------------------------------------------------
-    ring_m = _ensure_ccw([(x * s, -y * s) for x, y in sres.ring])
-    if len(ring_m) < 3:
-        raise ValueError("simplified envelope ring is degenerate")
-
-    # --- openings: expand count x schedule dims ---------------------------
-    openings, skipped = [], []
-    for line in takeoff.lines:
-        if line.width_m is None or line.height_m is None:
-            skipped.append(
-                {
-                    "tag": line.tag,
-                    "category": line.category,
-                    "count": line.count,
-                    "reason": "schedule dimensions missing",
-                }
-            )
-            continue
-        cat = line.category.lower()
-        if cat not in ("window", "door"):
-            skipped.append(
-                {
-                    "tag": line.tag,
-                    "category": line.category,
-                    "count": line.count,
-                    "reason": f"category '{line.category}' not window/door; not placed as opening",
-                }
-            )
-            continue
-        openings.extend(
-            BEMOpeningUnit(cat, line.tag, line.width_m, line.height_m) for _ in range(line.count)
-        )
-    # deterministic order: windows then doors, sorted by tag
-    openings.sort(key=lambda o: (o.category, o.tag))
-    notes.append(
-        f"{len(openings)} openings expanded from "
-        f"{len(takeoff.lines)} schedule lines; "
-        f"{len(skipped)} tags skipped (see skipped_openings)."
-    )
-
-    simplify_tolerance = sres.tol * 100.0
-    # Validate simplify_tolerance against maximum threshold (same as tol_area = 3%)
-    MAX_SIMPLIFY_TOL = 3.0
-    if simplify_tolerance > MAX_SIMPLIFY_TOL:
-        raise ValueError(
-            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
-            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
-            f"introduced too much distortion for reliable BEM export"
-        )
-
-    return BEMModel(
-        building_name=building_name,
-        spaces=spaces,
-        openings=openings,
-        ring_m=ring_m,
-        wall_height_m=wall_height_m,
-        area_delta_pct=sres.area_delta_pct,
-        simplify_tolerance=simplify_tolerance,
-        skipped_openings=skipped,
-        notes=notes,
-    )
-
-
-# ---------------------------------------------------------------------------
-# gbXML 6.01 writer
-# ---------------------------------------------------------------------------
-
-
-def _el(parent, tag, text=None, **attrib):
-    el = ET.SubElement(parent, f"{{{GBXML_NS}}}{tag}", attrib)
-    if text is not None:
-        el.text = str(text)
-    return el
-
-
-def _cartesian(parent, x, y, z=None):
-    pt = _el(parent, "CartesianPoint")
-    _el(pt, "Coordinate", _fmt(x))
-    _el(pt, "Coordinate", _fmt(y))
-    if z is not None:
-        _el(pt, "Coordinate", _fmt(z))
-    return pt
-
-
-def _wall_edges(ring_m):
-    n = len(ring_m)
-    return [(ring_m[i], ring_m[(i + 1) % n]) for i in range(n)]
-
-
-def _assign_wall_to_space(p0, p1, spaces):
-    """Which space does this exterior wall belong to?
-
-    Midpoint nudged inward along the inward normal; point-in-polygon wins.
-    Falls back to nearest space centroid. Deterministic.
-    """
-    mx, my = (p0[0] + p1[0]) / 2.0, (p0[1] + p1[1]) / 2.0
-    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-    L = math.hypot(dx, dy) or 1.0
-    # outward normal for CCW ring: right of direction
-    nx, ny = dy / L, -dx / L
-    ix, iy = mx - nx * 0.3, my - ny * 0.3  # 0.3 m inward
-    for sp in spaces:
-        if _pip((ix, iy), sp.polygon_m):
-            return sp
-
-    # fallback: nearest centroid
-    def centroid(sp):
-        n = len(sp.polygon_m)
-        return (sum(p[0] for p in sp.polygon_m) / n, sum(p[1] for p in sp.polygon_m) / n)
-
-    return min(spaces, key=lambda sp: math.hypot(centroid(sp)[0] - ix, centroid(sp)[1] - iy))
-
-
-def _distribute_openings(openings, edges):
-    """Assign opening units to walls proportional to wall length.
-
-    Largest-remainder apportionment per category, so per-category totals are
-    exact and the assignment is deterministic. Returns {wall_idx: [units]}.
-    """
-    lengths = [math.hypot(p1[0] - p0[0], p1[1] - p0[1]) for p0, p1 in edges]
-    total_L = sum(lengths) or 1.0
-    assign = {i: [] for i in range(len(edges))}
-    for cat in ("window", "door"):
-        units = [u for u in openings if u.category == cat]
-        n = len(units)
-        if not n:
-            continue
-        shares = [n * L / total_L for L in lengths]
-        base = [int(math.floor(sh)) for sh in shares]
-        rem = n - sum(base)
-        order = sorted(
-            range(len(edges)), key=lambda i: (shares[i] - base[i], -lengths[i]), reverse=True
-        )
-        for i in order[:rem]:
-            base[i] += 1
-        k = 0
-        for i, cnt in enumerate(base):
-            assign[i].extend(units[k : k + cnt])
-            k += cnt
-    for i in assign:
-        assign[i].sort(key=lambda u: (u.category, u.tag))
-    return assign
-
-
-def _opening_type(category: str) -> str:
-    # openingTypeEnum has no generic "Door": NonSlidingDoor is the closest.
-    return "FixedWindow" if category == "window" else "NonSlidingDoor"
-
-
-def _place_openings_on_wall(units, L: float, h: float):
-    """Deterministic opening layout on one wall.
-
-    Evenly spaces the wall's units along its length (centers at
-    (j+0.5)*L/k). Returns (placements, notes); placements are dicts
-    {unit, s0, s1, sill, height} with s measured from the wall START point
-    p0 along the ring edge direction. Widths/heights are clamped to fit
-    the wall; every clamp is reported in notes (never silent).
-    """
-    placements, notes = [], []
-    k = len(units)
-    for j, u in enumerate(units):
-        sill = WINDOW_SILL_M if u.category == "window" else DOOR_SILL_M
-        oh = u.height_m
-        if sill + oh > h:
-            oh = h - sill
-            notes.append(f"{u.tag}: height clamped to {oh:.2f} m (wall {h:.2f} m)")
-        c = (j + 0.5) * L / k
-        s0 = max(0.05, c - u.width_m / 2)
-        s1 = min(L - 0.05, c + u.width_m / 2)
-        if s1 - s0 < u.width_m * 0.5:
-            notes.append(
-                f"{u.tag}: width clamped ({u.width_m:.2f} -> {s1 - s0:.2f} m, wall {L:.2f} m)"
-            )
-        placements.append({"unit": u, "s0": s0, "s1": s1, "sill": sill, "height": oh})
-    return placements, notes
+# ---- write_gbxml ----
 
 
 def write_gbxml(model: BEMModel, path: str | Path) -> Path:
@@ -598,6 +335,9 @@ def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tupl
         return False, [f"file rejected: {e}"]
 
 
+# ---- gbXML validation helpers ----
+
+
 def _gbxml_smoke_check(path: str, errors: list) -> tuple[bool, list]:
     try:
         from lxml import etree as lxml_etree
@@ -632,263 +372,3 @@ def _gbxml_semantic_checks(doc) -> list:
             if ref and ref not in ids:
                 errs.append(f"{el.tag} references unknown id '{ref}' ({attr})")
     return errs
-
-
-# ---------------------------------------------------------------------------
-# IFC4 writer (via IfcOpenShell)
-# ---------------------------------------------------------------------------
-
-
-def _ensure_ifc():
-    """Import IfcOpenShell via importlib.util.find_spec probe."""
-    import importlib.util
-
-    if importlib.util.find_spec("ifcopenshell") is None:
-        raise RuntimeError("IfcOpenShell is not installed; install with `pip install ifcopenshell`")
-    import ifcopenshell  # noqa: F401
-
-
-def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:
-    """Write a minimal but structurally valid IFC4 file.
-
-    Contents: IfcProject/Site/Building/BuildingStorey hierarchy, one IfcWall
-    per simplified envelope edge (real SweptSolid geometry, 0.2 m thick),
-    one IfcSpace per room (placement at centroid; no solid geometry in v1),
-    and per opening an IfcOpeningElement hosted in its wall
-    (IfcRelVoidsElement) filled by an IfcWindow/IfcDoor (IfcRelFillsElement).
-
-    Opening placement reuses _place_openings_on_wall, so IFC and gbXML agree
-    on positions (s measured from the wall start point p0 along the edge).
-    """
-    _ensure_ifc()
-    import ifcopenshell
-    import ifcopenshell.api.aggregate as _Ag
-    import ifcopenshell.api.context as _C
-    import ifcopenshell.api.geometry as _Gm
-    import ifcopenshell.api.group as _Grp
-    import ifcopenshell.api.project as _P
-    import ifcopenshell.api.root as _R
-    import ifcopenshell.api.spatial as _Sp
-    import ifcopenshell.api.unit as _U
-
-    h = model.wall_height_m
-    f = _P.create_file("IFC4")
-    proj = _R.create_entity(f, ifc_class="IfcProject", name=model.building_name)
-    length = _U.add_si_unit(f, unit_type="LENGTHUNIT")  # metre
-    area = _U.add_si_unit(f, unit_type="AREAUNIT")
-    volume = _U.add_si_unit(f, unit_type="VOLUMEUNIT")
-    _U.assign_unit(f, units=[length, area, volume])
-
-    ctx = _C.add_context(f, context_type="Model")
-    body = _C.add_context(
-        f, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=ctx
-    )
-
-    def placement(xyz, ref_dir=None, parent=None):
-        pt = f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in xyz))
-        kw = {"Location": pt}
-        if ref_dir is not None:
-            kw["Axis"] = f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0))
-            kw["RefDirection"] = f.create_entity(
-                "IfcDirection", DirectionRatios=tuple(float(v) for v in ref_dir)
-            )
-        ax = f.create_entity("IfcAxis2Placement3D", **kw)
-        return f.create_entity("IfcLocalPlacement", PlacementRelTo=parent, RelativePlacement=ax)
-
-    site = _R.create_entity(f, ifc_class="IfcSite", name="Site")
-    bldg = _R.create_entity(f, ifc_class="IfcBuilding", name=model.building_name)
-    storey = _R.create_entity(f, ifc_class="IfcBuildingStorey", name="Level 1")
-    storey.Elevation = 0.0
-    _Ag.assign_object(f, products=[site], relating_object=proj)
-    _Ag.assign_object(f, products=[bldg], relating_object=site)
-    _Ag.assign_object(f, products=[storey], relating_object=bldg)
-    storey_pl = placement((0.0, 0.0, 0.0))
-    storey.ObjectPlacement = storey_pl
-
-    # --- walls ------------------------------------------------------------
-    edges = _wall_edges(model.ring_m)
-    opening_assign = _distribute_openings(model.openings, edges)
-    walls = []
-    for i, (p0, p1) in enumerate(edges):
-        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-        L = math.hypot(dx, dy)
-        if L < 1e-6:
-            continue
-        wall = _R.create_entity(f, ifc_class="IfcWall", name=f"Wall-{i + 1}")
-        wall.ObjectPlacement = placement(
-            (p0[0], p0[1], 0.0), ref_dir=(dx / L, dy / L, 0.0), parent=storey_pl
-        )
-        rep = _Gm.add_wall_representation(
-            f, context=body, length=L, height=h, thickness=wall_thickness_m
-        )
-        _Gm.assign_representation(f, product=wall, representation=rep)
-        _Sp.assign_container(f, products=[wall], relating_structure=storey)
-        walls.append((wall, p0, p1, L))
-
-        # openings hosted in this wall
-        placements, _ = _place_openings_on_wall(opening_assign[i], L, h)
-        for pl_ in placements:
-            u = pl_["unit"]
-            s_mid = (pl_["s0"] + pl_["s1"]) / 2.0
-            opening = _R.create_entity(f, ifc_class="IfcOpeningElement", name=f"{u.tag} opening")
-            # opening local frame: wall frame translated along the wall
-            opening.ObjectPlacement = placement(
-                (s_mid, 0.0, pl_["sill"]), parent=wall.ObjectPlacement
-            )
-            f.create_entity(
-                "IfcRelVoidsElement",
-                GlobalId=ifcopenshell.guid.new(),
-                RelatingBuildingElement=wall,
-                RelatedOpeningElement=opening,
-            )
-            fill_class = "IfcWindow" if u.category == "window" else "IfcDoor"
-            fill = _R.create_entity(
-                f,
-                ifc_class=fill_class,
-                name=f"{u.tag} ({u.category} {u.width_m:.2f}x{u.height_m:.2f} m)",
-            )
-            fill.ObjectPlacement = placement((0.0, 0.0, 0.0), parent=opening.ObjectPlacement)
-            f.create_entity(
-                "IfcRelFillsElement",
-                GlobalId=ifcopenshell.guid.new(),
-                RelatingOpeningElement=opening,
-                RelatedBuildingElement=fill,
-            )
-            _Sp.assign_container(f, products=[fill], relating_structure=storey)
-
-    # --- spaces -----------------------------------------------------------
-    ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
-    for sp in model.spaces:
-        n = len(sp.polygon_m)
-        cx = sum(p[0] for p in sp.polygon_m) / n
-        cy = sum(p[1] for p in sp.polygon_m) / n
-        space = _R.create_entity(f, ifc_class="IfcSpace", name=sp.name)
-        space.ObjectPlacement = placement((cx, cy, 0.0), parent=storey_pl)
-        try:
-            space.PredefinedType = "SPACE"
-        except Exception:
-            pass
-        # spaces decompose the storey spatially (IfcRelAggregates), they are
-        # not "contained products" (IfcSpace has no ContainedInStructure)
-        _Ag.assign_object(f, products=[space], relating_object=storey)
-        # gross floor area as a quantity set (best effort)
-        try:
-            import ifcopenshell.api.pset as _Ps
-
-            qto = _Ps.add_qto(f, product=space, name="Qto_SpaceBaseQuantities")
-            _Ps.edit_qto(f, qto=qto, properties={"GrossFloorArea": sp.area_m2})
-        except Exception:
-            pass  # quantities are enrichment, not core validity
-        # footprint geometry: IfcGeometricCurveSet so the space polygon survives
-        # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
-        if len(sp.polygon_m) >= 3:
-            try:
-                pts = [
-                    f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
-                    for x, y in sp.polygon_m
-                ]
-                polyline = f.create_entity("IfcPolyline", Points=pts)
-                curve_set = f.create_entity("IfcGeometricCurveSet", Elements=[polyline])
-                footprint_shape = f.create_entity(
-                    "IfcShapeRepresentation",
-                    ContextOfItems=body,
-                    RepresentationIdentifier="FootPrint",
-                    RepresentationType="GeometricCurveSet",
-                    Items=[curve_set],
-                )
-                pds = f.create_entity(
-                    "IfcProductDefinitionShape",
-                    Representations=[footprint_shape],
-                )
-                space.Representation = pds
-            except Exception:
-                pass  # footprint is enrichment, not required for validity
-        # lighting power as a property (best effort)
-        if sp.lighting_w > 0:
-            try:
-                import ifcopenshell.api.pset as _Ps
-
-                pset = _Ps.add_pset(f, product=space, name="Pset_SpaceLighting")
-                _Ps.edit_pset(f, pset=pset, properties={"LightingPower": sp.lighting_w})
-            except Exception:
-                pass
-        ifc_space_by_sid[sp.sid] = space
-
-    # --- zones ------------------------------------------------------------
-    for zone_id, zone_space_ids in model.zones:
-        zone = f.create_entity("IfcZone", Name=zone_id)
-        zone_spaces = [ifc_space_by_sid[sid] for sid in zone_space_ids if sid in ifc_space_by_sid]
-        if zone_spaces:
-            _Grp.assign_group(f, products=zone_spaces, group=zone)
-
-    path = _validate_out_path(path)
-    f.write(str(path))
-    model.notes.append(
-        f"IFC4: {len(walls)} walls, {len(model.spaces)} "
-        f"spaces, {len(model.openings)} openings hosted, {len(model.zones)} zones."
-    )
-    return path
-
-
-def validate_ifc4(path: str | Path) -> tuple[bool, list]:
-    """Structural validation of an IFC4 file: round-trip parse + checks.
-
-    Verifies schema, entity counts, wall geometry presence, space
-    containment, and opening void/fill relationship integrity.
-    """
-    _ensure_ifc()
-    import ifcopenshell
-
-    errors: list[str] = []
-    try:
-        f = ifcopenshell.open(str(path))
-    except Exception as e:
-        return False, [f"could not parse IFC file: {e}"]
-    if f.schema != "IFC4":
-        errors.append(f"schema is {f.schema}, expected IFC4")
-
-    walls = f.by_type("IfcWall")
-    spaces = f.by_type("IfcSpace")
-    storeys = f.by_type("IfcBuildingStorey")
-    openings = f.by_type("IfcOpeningElement")
-    windows = f.by_type("IfcWindow")
-    doors = f.by_type("IfcDoor")
-    if not walls:
-        errors.append("no IfcWall entities")
-    if not spaces:
-        errors.append("no IfcSpace entities")
-    if not storeys:
-        errors.append("no IfcBuildingStorey entities")
-
-    for w in walls:
-        reps = w.Representation.Representations if w.Representation else []
-        if not any(r.RepresentationType == "SweptSolid" for r in reps):
-            errors.append(f"{w.Name or w.id()}: wall has no SweptSolid body")
-
-    contained = set()
-    for rel in f.by_type("IfcRelContainedInSpatialStructure"):
-        for el in rel.RelatedElements:
-            contained.add(el.id())
-    aggregated = set()
-    for rel in f.by_type("IfcRelAggregates"):
-        for el in rel.RelatedObjects:
-            aggregated.add(el.id())
-    for sp in spaces:
-        if sp.id() not in aggregated:
-            errors.append(f"space '{sp.Name}' not aggregated under a storey")
-
-    voided = {
-        r.RelatedOpeningElement.id(): r.RelatingBuildingElement.id()
-        for r in f.by_type("IfcRelVoidsElement")
-    }
-    filled = {r.RelatingOpeningElement.id() for r in f.by_type("IfcRelFillsElement")}
-    for o in openings:
-        if o.id() not in voided:
-            errors.append(f"opening '{o.Name}' voids no wall")
-        if o.id() not in filled:
-            errors.append(f"opening '{o.Name}' has no filling element")
-    for el in list(windows) + list(doors):
-        if not el.ContainedInStructure:
-            errors.append(f"{el.is_a()} '{el.Name}' not in a spatial container")
-
-    return not errors, errors

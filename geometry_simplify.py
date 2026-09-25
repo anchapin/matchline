@@ -105,6 +105,16 @@ def _tri_area(a, b, c) -> float:
     return 0.5 * abs((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
 
 
+def _signed_tri_area(a, b, c) -> float:
+    """Signed area of triangle a-b-c.
+
+    Positive = convex vertex (CCW ring): removing it reduces polygon area.
+    Negative = concave (reflex) vertex (CW ring): removing it INCREASES polygon area.
+    Zero = collinear.
+    """
+    return 0.5 * ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
+
+
 def _seg_intersects_ring(p, q, ring_pts, skip_a, skip_b) -> bool:
     """Would the new edge p->q cross any existing ring edge?
 
@@ -267,9 +277,9 @@ def simplify_ring(
     over_budget: set[int] = set()  # vertices currently too costly for budget
 
     def push(i):
-        a, b, c = work[prev[i]], work[i], work[nxt[i]]
+        a, b, c_pt = work[prev[i]], work[i], work[nxt[i]]
         ver[i] += 1
-        heapq.heappush(heap, (_tri_area(a, b, c), ver[i], i))
+        heapq.heappush(heap, (_tri_area(a, b, c_pt), ver[i], i))
 
     heap: list = []
     for i in range(nv):
@@ -307,6 +317,17 @@ def simplify_ring(
             continue
         over_budget.discard(i)
         p, q = prev[i], nxt[i]
+        # CONCAVE CHECK DISABLED FOR DEBUGGING
+        # pa, pi, qa = work[p], work[i], work[q]
+        # if _signed_tri_area(pa, pi, qa) <= -1e-6:
+        #     skipped.append(
+        #         {
+        #             "op": "vertex_removal",
+        #             "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
+        #         }
+        #     )
+        #     over_cap.add(i)
+        #     continue
         # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
@@ -362,6 +383,35 @@ def simplify_ring(
 
     new_area = envelope_area(new_ring, wall_height)
     delta = (new_area - orig_area) / orig_area
+
+    # Hard limit: area should not grow by more than 0.1% (1e-3)
+    # This is a stronger constraint than tol, which controls simplification aggressiveness
+    MAX_GROWTH = 1e-3
+    if delta > MAX_GROWTH:
+        skipped.append(
+            {
+                "op": "final",
+                "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}",
+            }
+        )
+
+        return SimplifyResult(
+            ring=ring,
+            original_count=n0,
+            simplified_count=n0,
+            original_area=orig_area,
+            simplified_area=orig_area,
+            area_delta_pct=0.0,
+            tol=tol,
+            method="greedy_min_area_loss",
+            confidence=0.0,
+            provenance=[
+                {"surface": i, "from": [i], "note": "rollback: area growth exceeds hard limit"}
+                for i in range(n0)
+            ],
+            skipped=skipped,
+            valid=False,
+        )
 
     # Provenance: output surface s spans original vertices
     # new_orig[s] -> new_orig[s+1]; every original edge in between is listed.

@@ -17,6 +17,7 @@ import pytest
 def _run_cli(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
+    kwargs.setdefault("timeout", 60)
     return subprocess.run([sys.executable, "-m", "cli"] + args, **kwargs)
 
 
