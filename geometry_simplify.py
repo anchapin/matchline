@@ -105,6 +105,16 @@ def _tri_area(a, b, c) -> float:
     return 0.5 * abs((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
 
 
+def _signed_tri_area(a, b, c) -> float:
+    """Signed area of triangle a-b-c.
+
+    Positive = convex vertex (CCW ring): removing it reduces polygon area.
+    Negative = concave (reflex) vertex (CW ring): removing it INCREASES polygon area.
+    Zero = collinear.
+    """
+    return 0.5 * ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
+
+
 def _seg_intersects_ring(p, q, ring_pts, skip_a, skip_b) -> bool:
     """Would the new edge p->q cross any existing ring edge?
 
@@ -279,6 +289,18 @@ def simplify_ring(
         c, v, i = heapq.heappop(heap)
         if not alive[i] or v != ver[i]:
             continue  # stale entry
+        a, b, c_pt = work[prev[i]], work[i], work[nxt[i]]
+        if _signed_tri_area(a, b, c_pt) < 0:
+            if i not in over_cap:
+                over_cap.add(i)
+                skipped.append(
+                    {
+                        "op": "vertex_removal",
+                        "reason": f"vertex {orig_idx[i]}: concave/reflex "
+                        f"vertex — removal would increase polygon area",
+                    }
+                )
+            continue
         if c > single_cap:
             if i not in over_cap:
                 over_cap.add(i)

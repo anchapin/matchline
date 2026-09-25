@@ -5,6 +5,7 @@ import pytest
 from shapely.geometry import Polygon
 
 from geometry_simplify import (
+    _signed_tri_area,
     _tri_area,
     envelope_area,
     footprint_from_regions,
@@ -236,3 +237,44 @@ class TestDefectInjection:
             f"area grew: {res.simplified_area} > {res.original_area}"
         )
         assert Polygon(res.ring).is_valid, "simplified ring must be valid"
+
+    def test_signed_tri_area_convex_vs_concave(self):
+        """_signed_tri_area: positive for convex, negative for concave (CCW ring)."""
+        convex = [0.0, 0.0], [2.0, 0.0], [1.0, 1.0]
+        assert _signed_tri_area(*convex) > 0, "convex vertex must give positive signed area"
+
+        concave = [0.0, 0.0], [1.0, 1.0], [2.0, 0.0]
+        assert _signed_tri_area(*concave) < 0, "concave vertex must give negative signed area"
+
+        collinear = [0.0, 0.0], [1.0, 0.0], [2.0, 0.0]
+        assert _signed_tri_area(*collinear) == 0, "collinear vertex must give zero"
+
+    def test_simplify_ring_concave_vertex_explicitly_skipped(self):
+        """Concave (reflex) vertices must be explicitly skipped regardless of cap.
+
+        The L-shaped polygon has a concave vertex at (10, 10) with
+        _tri_area = 50 (the notch area).  With a very large max_single_step
+        (100%), the per-step cap would NOT block the concave vertex.  The
+        cumulative budget would also NOT block it (tol=20%, c/orig_area=12.5%).
+        The concave vertex must still be skipped because removing it increases
+        polygon area — contradicting the greedy-min-area-loss goal.
+        """
+        L_SHAPE = [
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 20.0],
+            [0.0, 20.0],
+        ]
+        res = simplify_ring(L_SHAPE, tol=0.20, max_single_step=1.0)
+        assert res.simplified_area <= res.original_area
+        assert Polygon(res.ring).is_valid
+        concave_skipped = any(
+            "concave" in str(op.get("reason", "")).lower()
+            for op in res.skipped
+            if op.get("op") == "vertex_removal"
+        )
+        assert concave_skipped, (
+            f"concave vertex should be explicitly skipped; got skipped={res.skipped}"
+        )

@@ -807,6 +807,14 @@ def _clip_polygon(subject: list, clip: list) -> list:
     Both as [[x, y], ...] in y-down meters. Interior side of each clip
     edge is determined from the clip polygon's signed shoelace area
     (area > 0 in y-down = visually clockwise = interior right of edge).
+
+    .. note::
+        Sutherland-Hodgman clipping requires a CONVEX clip polygon. If the
+        clip polygon is non-convex (concave or self-intersecting), the
+        inside/outside determination for points near reflex vertices will
+        be incorrect, producing wrong clipping results. For non-convex clip
+        polygons, use :func:`shapely.ops.unary_union` or decompose into
+        convex pieces first.
     """
     area = sum(
         clip[i][0] * clip[(i + 1) % len(clip)][1] - clip[(i + 1) % len(clip)][0] * clip[i][1]
