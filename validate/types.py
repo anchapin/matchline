@@ -43,6 +43,30 @@ SEVERITIES = ("pass", "warn", "error", "skip")
 
 @dataclass
 class CheckResult:
+    """Result of a single validation check.
+
+    A CheckResult describes the outcome of an individual conservation-law
+    or invariant check. It carries the check identifier, severity level,
+    human-readable message, and any offending entities that triggered the
+    failure. Instances are collected into a ValidationReport.
+
+    Attributes:
+        check_id: Unique identifier for this check (e.g. ``"area_balance"``).
+        name: Short display name for the check.
+        severity: Outcome level — ``"pass"``, ``"warn"``, ``"error"``, or
+            ``"skip"``.
+        message: Human-readable explanation of the result.
+        entities: List of entity IDs that contributed to this result (e.g.
+            space IDs, element IDs). Empty for informational passes.
+        expected: Expected value for the measured quantity. None when the
+            check does not compare numeric values.
+        actual: Actual measured value. None when the check does not compare
+            numeric values.
+        needs_review: Dict mapping fact IDs to booleans indicating whether
+            the corresponding fact requires human review before the result
+            can be finalized.
+    """
+
     check_id: str
     name: str
     severity: str  # "pass" | "warn" | "error" | "skip"
