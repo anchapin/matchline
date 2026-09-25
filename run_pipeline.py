@@ -26,6 +26,8 @@ from bem_export import (
     BEMOpeningUnit,
     BEMSpace,
     _validate_out_path,
+    validate_gbxml,
+    validate_ifc4,
     write_gbxml,
     write_ifc4,
 )
@@ -408,9 +410,11 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
 
     gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
     write_gbxml(bem_model, gbxml_path)
+    validate_gbxml(gbxml_path)
 
     ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
     write_ifc4(bem_model, ifc_path)
+    validate_ifc4(ifc_path)
 
     return gbxml_path, ifc_path
 

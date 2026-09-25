@@ -257,6 +257,44 @@ def test_pipeline_fails_on_takeoff_counts_defect(tmp_path):
         with mock.patch.object(run_pipeline, "generate_building", return_value=building):
             with pytest.raises(SystemExit) as exc_info:
                 run_pipeline.main(ns)
+                assert exc_info.value.code == 1
 
     # The validation stage should fail with sys.exit(1)
-    assert exc_info.value.code == 1
+
+
+def test_pipeline_calls_validate_after_export(tmp_path):
+    """Regression test for issue #304: pipeline must call validate_gbxml/validate_ifc4
+    after writing export files to satisfy the conservation-law principle (validate.py
+    errors block export).
+
+    This test mocks validate_gbxml and validate_ifc4 so they are not no-ops,
+    then verifies each is called exactly once after the BEM export stage.
+    """
+    from unittest import mock
+
+    import run_pipeline
+    from link._report import LinkReport
+    from tests.model_factory import make_clean_model
+
+    m = make_clean_model()
+    building = {"building_id": "bldg_101"}
+    out_dir = tmp_path / "validate_after_export"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ns = _namespace(seed=101, out_dir=out_dir)
+    dummy_report = LinkReport(
+        building_id="bldg_101",
+        elevation_path="grid",
+        n_spaces=1,
+        n_zones=1,
+    )
+
+    with mock.patch.object(run_pipeline, "build_model", return_value=(m, dummy_report)):
+        with mock.patch.object(run_pipeline, "generate_building", return_value=building):
+            with mock.patch.object(run_pipeline, "validate_gbxml") as mock_vg:
+                with mock.patch.object(run_pipeline, "validate_ifc4") as mock_vi:
+                    run_pipeline.main(ns)
+
+                    assert mock_vg.call_count == 1, (
+                        "validate_gbxml must be called once after export"
+                    )
+                    assert mock_vi.call_count == 1, "validate_ifc4 must be called once after export"
