@@ -338,19 +338,34 @@ def label_spaces_from_sheet(
 
 
 def attach_room_labels(
-    takeoff_result, sheet_image: np.ndarray, min_conf: float = 0.30, max_nearest_px: float = 150.0
+    takeoff_result,
+    sheet_image: np.ndarray | None = None,
+    min_conf: float = 0.30,
+    max_nearest_px: float = 150.0,
+    sheet_id: str | None = None,
+    revision: str | None = None,
 ) -> LabeledTakeoff:
     """Label the 'room'-category regions of an existing TakeoffResult in place.
 
     Extends takeoff_result with `.spaces` (LabeledSpace list),
     `.unmatched_labels`, and returns the LabeledTakeoff.
     """
-    spaces = [
-        LabeledSpace(polygon_px=r.polygon_px, source=r.source)
-        for r in takeoff_result.regions
-        if getattr(r, "category", "") == "room"
-    ]
-    labeled = label_spaces_from_sheet(sheet_image, spaces, min_conf, max_nearest_px)
+    if sheet_image is None:
+        spaces = [
+            LabeledSpace(polygon_px=r.polygon_px, source=r.source)
+            for r in takeoff_result.regions
+            if getattr(r, "category", "") == "room"
+        ]
+        labeled = LabeledTakeoff(
+            spaces=spaces, labels=[], unmatched_labels=[], n_labeled=0, n_total=0
+        )
+    else:
+        spaces = [
+            LabeledSpace(polygon_px=r.polygon_px, source=r.source)
+            for r in takeoff_result.regions
+            if getattr(r, "category", "") == "room"
+        ]
+        labeled = label_spaces_from_sheet(sheet_image, spaces, min_conf, max_nearest_px)
     takeoff_result.spaces = labeled.spaces
     takeoff_result.unmatched_labels = labeled.unmatched_labels
     return labeled

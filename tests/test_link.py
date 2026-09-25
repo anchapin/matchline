@@ -139,4 +139,4 @@ class TestReviewQueueRouting:
         high_conf_count = sum(
             1 for item in model.review_queue if item.confidence >= REVIEW_CONFIDENCE
         )
-        assert high_conf_count >= 0
+        assert high_conf_count == 0
