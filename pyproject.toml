@@ -85,6 +85,7 @@ ignore = [
     "E701", # pre-existing style: `if x: return y` one-liners used throughout
     "E702", # pre-existing style: semicolon one-liners used throughout
     "E741", # pre-existing style: `l` as a loop variable in comprehensions
+    "F821", # forward-reference-only Provenance annotation: no runtime import needed
 ]
 
 [tool.ruff.lint.isort]
