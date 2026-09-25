@@ -15,10 +15,12 @@ from jesse import WisardClassifier, com_normalize, make_tuple_indices
 def main(data_dir: str = "data", out_path: str = "mnist_results.json"):
     """Run the Section 3 MNIST evaluation (needs data/mnist_X.npy + mnist_y.npy)."""
     data = Path(data_dir)
-    if not (data / "mnist_X.npy").exists() or not (data / "mnist_y.npy").exists():
-        raise SystemExit(
+    _mnist_x = data / "mnist_X.npy"
+    _mnist_y = data / "mnist_y.npy"
+    if not _mnist_x.exists() or not _mnist_y.exists():
+        raise FileNotFoundError(
             f"MNIST data not found in {data.resolve()}; expected mnist_X.npy and "
-            "mnist_y.npy. This demo is not part of the test suite."
+            "mnist_y.npy. This demo is not part of the test suite (see AGENTS.md Never-list)."
         )
     X = np.load(str(data / "mnist_X.npy")).astype(np.float64)  # (70000, 784)
     y = np.load(str(data / "mnist_y.npy")).astype(np.int64)
