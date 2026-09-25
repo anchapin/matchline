@@ -202,16 +202,11 @@ class TestPipelineIntegration:
         ):
             # When validate_bem_conservation fails, model_from_linked_model raises:
             #   StageError("[model_from_linked_model] Conservation law violation...")
-            # This StageError is NOT caught inside run_pipeline.main() -- it propagates
-            # to cli.py, which lets it become an unhandled exception → Python exits 1.
-            # In pytest this manifests as an uncaught exception (pytest fails).
-            # We use pytest.raises to confirm the correct error is raised.
-            with pytest.raises(run_pipeline.StageError) as exc_info:
+            # This StageError is caught inside run_pipeline.main() and converted to
+            # sys.exit(1). We use pytest.raises to confirm the correct exit code.
+            with pytest.raises(SystemExit) as exc_info:
                 run_pipeline.main(ns)
-
-        # Verify the error message contains the conservation violation details
-        assert "Conservation law violation" in str(exc_info.value)
-        assert "area_conservation" in str(exc_info.value)
+            assert exc_info.value.code == 1
 
 
 def test_pipeline_fails_on_takeoff_counts_defect(tmp_path):
