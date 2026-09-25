@@ -89,6 +89,9 @@ def _round(v: object, nd: int = 6) -> object:
 class ValidationReport:
     building_name: str
     results: list = field(default_factory=list)  # CheckResult
+    model: "BuildingModel | None" = field(
+        default=None
+    )  # stored for export_gate re-check after auto-triage
 
     @property
     def errors(self):
