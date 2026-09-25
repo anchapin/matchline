@@ -33,6 +33,7 @@ that diffs cleanly across drawing revisions.
 from __future__ import annotations
 
 import json
+import types
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
@@ -666,7 +667,7 @@ def _conv(t, v):
     if origin in (dict, Dict):
         _kt, vt = get_args(t)
         return {k: _conv(vt, x) for k, x in v.items()}
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:
         args = [a for a in get_args(t) if a is not type(None)]
         return _conv(args[0], v) if args else v
     if isinstance(t, type) and is_dataclass(t):
