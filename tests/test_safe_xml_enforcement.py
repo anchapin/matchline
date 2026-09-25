@@ -2,6 +2,7 @@
 
 Runs as a lint-level test in CI (FAILS if any module imports dangerous parsers).
 """
+
 from __future__ import annotations
 
 import ast
@@ -45,8 +46,7 @@ def _test_no_dangerous_xml():
     if not violations:
         return
     lines = "\n".join(
-        f"  {p.relative_to(Path('$WORKTREE'))}:{ln}: {msg}"
-        for p, ln, msg in violations
+        f"  {p.relative_to(Path('$WORKTREE'))}:{ln}: {msg}" for p, ln, msg in violations
     )
     raise AssertionError(f"Dangerous XML imports found:\n{lines}")
 
@@ -57,4 +57,5 @@ def test_no_dangerous_xml_imports():
 
 if __name__ == "__main__":
     import pytest
+
     sys.exit(pytest.main([__file__, "-v"]))
