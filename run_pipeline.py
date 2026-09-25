@@ -389,7 +389,7 @@ def _stage_4b_auto_triage(model, out_dir: Path):
 
 def _stage_5_fail_fast(report):
     """Stage 5: Fail fast if validation errors exist."""
-    if not export_gate(report):
+    if not export_gate(report, getattr(report, "model", None)):
         print(f"VALIDATION FAILED: {len(report.errors)} error(s)", file=sys.stderr)
         for r in report.errors:
             print(f"  - {r.check_id}: {r.message}", file=sys.stderr)

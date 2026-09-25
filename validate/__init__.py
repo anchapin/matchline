@@ -208,11 +208,30 @@ def run_checks(
                     f"check itself raised {type(e).__name__}: {e}",
                 )
             )
+    report.model = model
     return report
 
 
-def export_gate(report: ValidationReport) -> bool:
-    return report.ok
+def export_gate(report: ValidationReport, model: BuildingModel | None = None) -> bool:
+    """May this model be exported to gbXML/IFC? Errors block; warnings don't.
+
+    Re-checks the review queue after auto-triage has run to ensure low-confidence
+    results that were not auto-resolved are caught.
+    """
+    if not report.ok:
+        return False
+    check_model = model if model is not None else getattr(report, "model", None)
+    if check_model is not None:
+        unacknowledged = [
+            item
+            for item in check_model.review_queue
+            if item.needs_review
+            and not item.acknowledged
+            and item.status not in ("confirmed", "rejected")
+        ]
+        if unacknowledged:
+            return False
+    return True
 
 
 __all__ = [
