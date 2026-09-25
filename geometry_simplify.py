@@ -373,6 +373,7 @@ def simplify_ring(
                 "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}",
             }
         )
+
         return SimplifyResult(
             ring=ring,
             original_count=n0,
@@ -380,6 +381,7 @@ def simplify_ring(
             original_area=orig_area,
             simplified_area=orig_area,
             area_delta_pct=0.0,
+
             tol=tol,
             method="greedy_min_area_loss",
             confidence=0.0,
