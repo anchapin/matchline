@@ -43,6 +43,8 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
+from pipeline_exceptions import PipelineDependencyError
+from run_pipeline import StageError
 
 
 def _ensure_ifc():
@@ -497,8 +499,8 @@ def _try_curve_set_footprint(sp, scale):
     return []
 
 
-def _read_lighting(sp):
-    """Read Pset_SpaceLighting.LightingPower from sp. Returns SpaceLighting or None."""
+def _read_lighting(sp, model, provenance):
+    """Read Pset_SpaceLighting.LightingPower from sp. Adds ReviewItem on failure."""
     for rel in getattr(sp, "IsDefinedBy", None) or []:
         if not rel.is_a("IfcRelDefinesByProperties"):
             continue
@@ -516,6 +518,12 @@ def _read_lighting(sp):
                 return SpaceLighting(fixtures=[], total_w=float(prop.NominalValue.wrappedValue))
             except Exception:
                 pass
+    model.flag_for_review(
+        kind="fixture_schedule",
+        description=f"Could not parse lighting power for space {getattr(sp, 'Name', sp.id)}",
+        confidence=0.3,
+        provenance=provenance,
+    )
     return None
 
 
@@ -685,7 +693,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         try:
             return float(getattr(s, "Elevation", 0.0) or 0.0)
         except (RuntimeError, TypeError, ValueError):
-            return 0.0
+            raise StageError(
+                stage_name="ifc_import",
+                stage_index=1,
+                msg=f"Failed to read elevation from storey: {getattr(s, 'Name', 'unknown')}",
+                hint="Ensure storeys have a valid Elevation attribute in the IFC file",
+            )
 
     storeys.sort(key=_storey_elevation)
 
@@ -736,7 +749,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 core_provenance=prov(method, conf, note, gid),
                 label_confidence=0.9 if number else 0.6,
             )
-            space.lighting = _read_lighting(sp)
+            space.lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
             model.spaces[sid] = space
 
         # --- elements -----------------------------------------------------

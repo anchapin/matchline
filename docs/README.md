@@ -38,7 +38,7 @@ disclosed, not hidden.
 
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
-python -m pytest tests/ -q      # (2) smoke test — 324 tests, a few seconds
+python -m pytest tests/ -q      # (2) smoke test — 698 tests, a few seconds
 matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
 ```
 

@@ -116,7 +116,7 @@ class SpaceOpening:
     s_center_m: Optional[float] = None  # exact along-wall position
     area_m2: Optional[float] = None
     provenance: Provenance = None
-    needs_review: bool = False
+    needs_review: bool = True
     history: List[Provenance] = field(default_factory=list)
 
 

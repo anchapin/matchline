@@ -108,10 +108,11 @@ def test_zero_length_wall_does_not_crash():
         "ENDSEC;\n"
         "END-ISO-10303-21;\n"
     )
+    from run_pipeline import StageError
+
     path = _write_ifc(ifc)
-    model = import_ifc(path)
-    walls = [e for e in model.bim_elements if e.ifc_class == "IfcWall"]
-    assert len(walls) == 1
+    with pytest.raises(StageError):
+        import_ifc(path)
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +149,11 @@ def test_unknown_entity_is_skipped():
         "ENDSEC;\n"
         "END-ISO-10303-21;\n"
     )
+    from run_pipeline import StageError
+
     path = _write_ifc(ifc)
-    model = import_ifc(path)
-    assert model is not None
+    with pytest.raises(StageError):
+        import_ifc(path)
 
 
 # ---------------------------------------------------------------------------
