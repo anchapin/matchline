@@ -103,6 +103,23 @@ class TestMnist:
         out = r.stdout + r.stderr
         assert "data" in out.lower() or "not found" in out.lower()
 
+    def test_missing_npy_files_raises_FileNotFoundError(self, tmp_path):
+        """Regress: FileNotFoundError (not SystemExit) with clear message when .npy files absent."""
+        import subprocess
+        import sys
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        r = subprocess.run(
+            [sys.executable, "-m", "cli", "mnist", "--data-dir", str(tmp_path)],
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode != 0
+        out = r.stdout + r.stderr
+        assert "MNIST data not found" in out
+        assert "mnist_X.npy" in out and "mnist_y.npy" in out
+
 
 class TestSymbols:
     """Tests for `symbols` CLI command."""
