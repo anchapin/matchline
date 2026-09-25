@@ -280,10 +280,6 @@ def _geom_verts(el):
         # ifcopenshell geometry kernel failure — return None and let caller
         # degrade to no-volume fallback with provenance.
         return None
-    except Exception:
-        # Unexpected errors (KeyboardInterrupt, SystemExit, etc.) should
-        # not be silently swallowed — reraise so they are not masked.
-        raise
 
 
 def _local_extents(el, scale):

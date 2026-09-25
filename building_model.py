@@ -635,8 +635,10 @@ class BuildingModel:
             item.urgency = decision.urgency
             item.auto_resolved = decision.auto_resolved
             item.resolution = decision.resolution
-        except Exception:
-            pass  # classifier unavailable — leave safe defaults
+        except Exception as e:
+            import warnings
+
+            warnings.warn(f"Triage classifier unavailable for item {item.sheet_id}: {e}")
 
     # -- JSON --------------------------------------------------------------
     def to_dict(self) -> dict:

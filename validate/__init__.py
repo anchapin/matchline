@@ -230,7 +230,9 @@ def export_gate(
     if check_model is not None and hasattr(check_model, "area_delta_pct"):
         try:
             validate_bem_conservation(check_model)  # type: ignore[arg-type]
-        except Exception:
+        # Catch only BEM model structural errors (not all Exceptions) so that
+        # unexpected errors (KeyboardInterrupt, SystemExit, etc.) propagate.
+        except (AttributeError, TypeError):
             return False
     if check_model is not None:
         unacknowledged = [
