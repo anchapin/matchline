@@ -4,6 +4,7 @@ from building_model import (
     MODEL_VERSION,
     BuildingModel,
     Provenance,
+    ReviewItem,
     Space,
     SpaceOpening,
     Zone,
@@ -58,6 +59,40 @@ def test_space_opening_defaults():
     assert op.head_m is None
     assert op.needs_review is True
     assert op.provenance is None
+
+
+def test_review_item_needs_review_default():
+    """Regress: ReviewItem.needs_review defaults to True (not False).
+
+    This was broken in the original implementation — facts could silently bypass
+    the review queue when ReviewItem was instantiated without an explicit
+    needs_review flag. See issue #405.
+    """
+    item = ReviewItem(
+        id="test-regress",
+        kind="wall_area",
+        description="test",
+        confidence=0.5,
+    )
+    assert item.needs_review is True
+
+
+def test_review_item_confidence_invariant():
+    """Regress: ReviewItem with confidence=1.0 cannot have needs_review=False.
+
+    A high-confidence item marked as reviewed bypasses the review queue
+    entirely. The __post_init__ guard prevents this configuration. See issue #405.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="confidence=1.0.*needs_review=False"):
+        ReviewItem(
+            id="test-regress-2",
+            kind="wall_area",
+            description="test",
+            confidence=1.0,
+            needs_review=False,
+        )
 
 
 def test_building_model_empty():
