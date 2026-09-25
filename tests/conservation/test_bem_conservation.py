@@ -179,11 +179,11 @@ class TestModelFromTakeoffSimplifyTolValidation:
 class TestValidateBEMConservationIntegration:
     """Integration tests for validate_bem_conservation at export time."""
 
-    def test_validate_bem_conservation_returns_two_checks(self):
-        """validate_bem_conservation returns area and volume checks."""
+    def test_validate_bem_conservation_returns_five_checks(self):
+        """validate_bem_conservation returns area, volume, and zone reference checks."""
         bem = _build_bem()
         results = validate_bem_conservation(bem)
-        assert len(results) == 2  # area + volume checks
+        assert len(results) == 5  # area + volume + zone refs + hvac zone refs + symmetry
 
     def test_validate_bem_conservation_passes_on_clean_model(self):
         """validate_bem_conservation returns passing results on clean model."""

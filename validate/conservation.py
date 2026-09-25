@@ -245,12 +245,13 @@ def _check_bem_area_conservation(bem: BEMModel, tol_area: float) -> CheckResult:
 
 def _check_bem_zone_space_refs(bem: BEMModel) -> CheckResult:
     """Every zone.space_ids must reference an existing space in bem.spaces."""
-    space_ids = {sp.id for sp in bem.spaces}
+    space_ids = {sp.sid for sp in bem.spaces}
     bad = []
     for zone in bem.zones:
-        for sid in zone.space_ids:
+        zone_id, zone_space_ids = zone
+        for sid in zone_space_ids:
             if sid not in space_ids:
-                bad.append((zone.id, sid))
+                bad.append((zone_id, sid))
     if bad:
         zone_id, sid = bad[0]
         return CheckResult(
@@ -270,12 +271,15 @@ def _check_bem_zone_space_refs(bem: BEMModel) -> CheckResult:
 
 def _check_bem_hvac_zone_refs(bem: BEMModel) -> CheckResult:
     """Every space.hvac.zone_ids must reference an existing zone in bem.zones."""
-    zone_ids = {z.id for z in bem.zones}
+    zone_ids = {z[0] for z in bem.zones}
     bad = []
     for sp in bem.spaces:
-        for zid in sp.hvac.zone_ids:
+        hvac = getattr(sp, "hvac", None)
+        if hvac is None:
+            continue
+        for zid in hvac.zone_ids:
             if zid not in zone_ids:
-                bad.append((sp.id, zid))
+                bad.append((sp.sid, zid))
     if bad:
         space_id, zid = bad[0]
         return CheckResult(
@@ -297,12 +301,16 @@ def _check_bem_zone_space_symmetry(bem: BEMModel) -> CheckResult:
     """If zone includes space, the space must include that zone (bidirectional)."""
     bad = []
     for zone in bem.zones:
-        for sid in zone.space_ids:
-            sp = next((s for s in bem.spaces if s.id == sid), None)
+        zone_id, zone_space_ids = zone
+        for sid in zone_space_ids:
+            sp = next((s for s in bem.spaces if s.sid == sid), None)
             if sp is None:
                 continue
-            if zone.id not in sp.hvac.zone_ids:
-                bad.append((zone.id, sid))
+            hvac = getattr(sp, "hvac", None)
+            if hvac is None:
+                continue
+            if zone_id not in hvac.zone_ids:
+                bad.append((zone_id, sid))
     if bad:
         zone_id, space_id = bad[0]
         return CheckResult(
