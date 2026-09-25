@@ -188,6 +188,27 @@ def cmd_ifc_export(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}")
 
 
+def cmd_diff(args: argparse.Namespace) -> None:
+    """Compare two model revisions and report changed/unchanged zones."""
+    import json
+
+    from building_model import BuildingModel
+    from diff import diff_models
+
+    with open(args.old) as f:
+        old_model = BuildingModel.from_json(json.load(f))
+    with open(args.new) as f:
+        new_model = BuildingModel.from_json(json.load(f))
+
+    summary = diff_models(old_model, new_model)
+
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(summary.to_dict(), f, indent=2)
+    else:
+        print(json.dumps(summary.to_dict(), indent=2))
+
+
 def cmd_review(args: argparse.Namespace) -> None:
     """Review queue: list open review items, confirm or reject decisions."""
     import os
@@ -337,6 +358,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format for --list (default: text)",
     )
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser(
+        "diff",
+        help="diff two model JSON revisions at zone/space level",
+    )
+    p.add_argument(
+        "--old",
+        required=True,
+        dest="old",
+        help="Path to the baseline (old) revision model JSON",
+    )
+    p.add_argument(
+        "--new",
+        required=True,
+        dest="new",
+        help="Path to the new revision model JSON",
+    )
+    p.add_argument(
+        "--out",
+        default=None,
+        dest="out",
+        help="Write diff summary JSON here (default: stdout)",
+    )
+    p.set_defaults(func=cmd_diff)
 
     return ap
 
