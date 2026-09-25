@@ -56,7 +56,7 @@ def test_space_opening_defaults():
     op = SpaceOpening(id="w1", tag="A", category="window", width_m=1.2, height_m=1.5)
     assert op.sill_m is None
     assert op.head_m is None
-    assert op.needs_review is False
+    assert op.needs_review is True
     assert op.provenance is None
 
 

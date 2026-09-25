@@ -14,6 +14,7 @@ import pytest
 from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4
 from building_model import BuildingModel
 from ifc_import import _ensure_ifc, _length_scale, import_ifc
+from run_pipeline import StageError
 
 _ensure_ifc()  # bootstraps the vendored IfcOpenShell before these imports
 import ifcopenshell  # noqa: E402
@@ -324,9 +325,10 @@ def test_units_millimetre():
     assert _length_scale(f) == pytest.approx(0.001)
 
 
-def test_units_absent_defaults_to_metres():
+def test_units_absent_raises_stage_error():
     f = ifcopenshell.file(schema="IFC4")
-    assert _length_scale(f) == pytest.approx(1.0)
+    with pytest.raises(StageError):
+        _length_scale(f)
 
 
 def test_model_json_roundtrip(model):

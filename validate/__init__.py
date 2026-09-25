@@ -214,7 +214,11 @@ def run_checks(
     return report
 
 
-def export_gate(report: ValidationReport, model: BuildingModel | None = None) -> bool:
+def export_gate(
+    report: ValidationReport,
+    model: BuildingModel | None = None,
+    min_review_confidence: float | None = None,
+) -> bool:
     """May this model be exported to gbXML/IFC? Errors block; warnings don't.
 
     Re-checks the review queue after auto-triage has run to ensure low-confidence
@@ -223,6 +227,11 @@ def export_gate(report: ValidationReport, model: BuildingModel | None = None) ->
     if not report.ok:
         return False
     check_model = model if model is not None else getattr(report, "model", None)
+    if check_model is not None and hasattr(check_model, "area_delta_pct"):
+        try:
+            validate_bem_conservation(check_model)  # type: ignore[arg-type]
+        except Exception:
+            return False
     if check_model is not None:
         unacknowledged = [
             item
@@ -230,6 +239,7 @@ def export_gate(report: ValidationReport, model: BuildingModel | None = None) ->
             if item.needs_review
             and not item.acknowledged
             and item.status not in ("confirmed", "rejected")
+            and (min_review_confidence is None or (item.confidence or 1.0) >= min_review_confidence)
         ]
         if unacknowledged:
             return False

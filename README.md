@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # 324 tests, hermetic, a few seconds
+python -m pytest tests/ -q   # 698 tests, hermetic, a few seconds
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
@@ -80,7 +80,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 ## Quickstart
 
 ```bash
-python3 -m pytest tests/ -q        # 324 tests: units, invariants, defect injection, goldens
+python3 -m pytest tests/ -q        # 698 tests: units, invariants, defect injection, goldens
 matchline validate                 # invariant battery demo  (canonical)
 matchline run --seed 0            # unified pipeline: generate + link + validate + export
 # Legacy wrappers (still work, but matchline CLI is canonical):
