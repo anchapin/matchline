@@ -372,6 +372,12 @@ class ReviewItem:
         "elevation_conflict",
         "window_reconciliation",
         "gd_complex_row",
+        "lighting_extraction",
+        "hvac_extraction",
+        "room_label_extraction",
+        "window_extraction",
+        "elevation_extraction",
+        "facade_takeoff",
     ]
     description: str
     confidence: float
