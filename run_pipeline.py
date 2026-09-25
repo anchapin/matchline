@@ -435,92 +435,95 @@ def _print_pipeline_complete(out_dir: Path, report):
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Config overrides from YAML
-    simplify_tol = args.simplify_tol
-    wall_height = None
-    min_review_confidence = None
-    if config:
-        simplify_tol = config.get("simplify_tolerance", simplify_tol)
-        wall_height = config.get("wall_height", None)
-        min_review_confidence = config.get("review_confidence", None)
-
-    # --- Stage 1: generate building or load real-sheet detections ----------
     try:
-        bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir)
+
+        # Config overrides from YAML
+        simplify_tol = args.simplify_tol
+        wall_height = None
+        min_review_confidence = None
+        if config:
+            simplify_tol = config.get("simplify_tolerance", simplify_tol)
+            wall_height = config.get("wall_height", None)
+            min_review_confidence = config.get("review_confidence", None)
+
+        # --- Stage 1: generate building or load real-sheet detections ----------
+        try:
+            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 1: generate_building",
+                1,
+                str(e),
+                hint="Check input data format. For --aec-bench ensure dataset path is valid. "
+                "For --seed ensure the seed is an integer.",
+            ) from e
+
+        # --- Stage 2: build model --------------------------------------------
+        try:
+            model, link_report = _stage_2_build_model(bldg, args, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 2: build_model",
+                2,
+                str(e),
+                hint="Check that Stage 1 output is valid. Ensure elevation_key is correct "
+                "and building detections contain required categories.",
+            ) from e
+
+        # --- Stage 3: simplify geometry --------------------------------------
+        try:
+            sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 3: simplify_ring",
+                3,
+                str(e),
+                hint="Check simplify_tolerance setting. Try increasing --simplify-tol (default 0.02). "
+                "Ensure wall_height is valid (> 0).",
+            ) from e
+
+        # --- Stage 4: validation checks --------------------------------------
+        try:
+            report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 4: run_checks",
+                4,
+                str(e),
+                hint="Check model structure and validation rules. Ensure all required "
+                "fields are populated in the BuildingModel.",
+            ) from e
+
+        # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
+        _stage_4b_auto_triage(model, out_dir)
+
+        # --- Stage 5: fail-fast on validation errors ------------------------
+        _stage_5_fail_fast(report)
+
+        # --- Stage 6: BEM export ---------------------------------------------
+        try:
+            gbxml_path, ifc_path = _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir)
+            _print_pipeline_complete(out_dir, report)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 6: BEM_export",
+                6,
+                str(e),
+                hint="Check BEM export dependencies and output directory permissions. "
+                "Ensure write_gbxml and write_ifc4 can write to the output directory.",
+            ) from e
     except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 1: generate_building",
-            1,
-            str(e),
-            hint="Check input data format. For --aec-bench ensure dataset path is valid. "
-            "For --seed ensure the seed is an integer.",
-        ) from e
-
-    # --- Stage 2: build model --------------------------------------------
-    try:
-        model, link_report = _stage_2_build_model(bldg, args, out_dir)
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 2: build_model",
-            2,
-            str(e),
-            hint="Check that Stage 1 output is valid. Ensure elevation_key is correct "
-            "and building detections contain required categories.",
-        ) from e
-
-    # --- Stage 3: simplify geometry --------------------------------------
-    try:
-        sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 3: simplify_ring",
-            3,
-            str(e),
-            hint="Check simplify_tolerance setting. Try increasing --simplify-tol (default 0.02). "
-            "Ensure wall_height is valid (> 0).",
-        ) from e
-
-    # --- Stage 4: validation checks --------------------------------------
-    try:
-        report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 4: run_checks",
-            4,
-            str(e),
-            hint="Check model structure and validation rules. Ensure all required "
-            "fields are populated in the BuildingModel.",
-        ) from e
-
-    # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
-    _stage_4b_auto_triage(model, out_dir)
-
-    # --- Stage 5: fail-fast on validation errors ------------------------
-    _stage_5_fail_fast(report)
-
-    # --- Stage 6: BEM export ---------------------------------------------
-    try:
-        gbxml_path, ifc_path = _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir)
-        _print_pipeline_complete(out_dir, report)
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 6: BEM_export",
-            6,
-            str(e),
-            hint="Check BEM export dependencies and output directory permissions. "
-            "Ensure write_gbxml and write_ifc4 can write to the output directory.",
-        ) from e
+        sys.exit(1)
 
 
 def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
