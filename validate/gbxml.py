@@ -109,7 +109,7 @@ def _parse_cartesian_point(pt) -> Optional[tuple]:
     try:
         coords = [float(c.text) for c in pt]
         return (coords[0], coords[1]) if len(coords) >= 2 else None
-    except Exception:
+    except (ValueError, IndexError):
         return None
 
 

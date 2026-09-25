@@ -144,7 +144,7 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     if npz_path.exists():
         try:
             return TypedDecider.from_npz(npz_path)
-        except Exception:
+        except (OSError, EOFError):
             return None
     return None
 
@@ -240,7 +240,7 @@ def list_review_items(
                 decision = decider.decide(example)
                 classifier_label = decision.label
                 classifier_conf = decision.confidence
-            except Exception:
+            except (ValueError, TypeError):
                 classifier_label = "(classifier error)"
                 classifier_conf = None
 

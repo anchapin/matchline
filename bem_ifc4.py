@@ -150,7 +150,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         space.ObjectPlacement = placement((cx, cy, 0.0), parent=storey_pl)
         try:
             space.PredefinedType = "SPACE"
-        except Exception:
+        except AttributeError:
             pass
         # spaces decompose the storey spatially (IfcRelAggregates), they are
         # not "contained products" (IfcSpace has no ContainedInStructure)
@@ -161,7 +161,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
             qto = _Ps.add_qto(f, product=space, name="Qto_SpaceBaseQuantities")
             _Ps.edit_qto(f, qto=qto, properties={"GrossFloorArea": sp.area_m2})
-        except Exception:
+        except (AttributeError, TypeError, ValueError, RuntimeError):
             pass  # quantities are enrichment, not core validity
         # footprint geometry: IfcGeometricCurveSet so the space polygon survives
         # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
@@ -185,7 +185,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                     Representations=[footprint_shape],
                 )
                 space.Representation = pds
-            except Exception:
+            except (AttributeError, TypeError, ValueError, RuntimeError):
                 pass  # footprint is enrichment, not required for validity
         # lighting power as a property (best effort)
         if sp.lighting_w > 0:
@@ -194,7 +194,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
                 pset = _Ps.add_pset(f, product=space, name="Pset_SpaceLighting")
                 _Ps.edit_pset(f, pset=pset, properties={"LightingPower": sp.lighting_w})
-            except Exception:
+            except (AttributeError, TypeError, ValueError, RuntimeError):
                 pass
         ifc_space_by_sid[sp.sid] = space
 
