@@ -407,7 +407,7 @@ def _check_lighting_power_density(ctx: _Ctx) -> CheckResult:
         return CheckResult(
             "ashrae_lighting_power_density",
             "ASHRAE 90.1-2019 Table 9.5.1 — Lighting Power Density",
-            "error",
+            "warn",
             f"LPD violations: {msg}",
             entities=entity_ids,
         )
