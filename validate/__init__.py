@@ -74,6 +74,13 @@ from .invariants import (
     _check_simplify_budget,
     _check_takeoff_counts_reconcile,
 )
+from .ashrae90_1 import (
+    _check_wall_u_factor,
+    _check_roof_u_factor,
+    _check_window_u_factor,
+    _check_lighting_power_density,
+    _check_hvac_efficiency,
+)
 
 # ---------------------------------------------------------------------------
 # Check context: derived quantities shared across checks
@@ -155,6 +162,11 @@ BATTERY = [
     _check_gbxml_opening_refs,
     _check_gbxml_wall_areas,
     _check_ifc_counts,
+    _check_wall_u_factor,
+    _check_roof_u_factor,
+    _check_window_u_factor,
+    _check_lighting_power_density,
+    _check_hvac_efficiency,
 ]
 
 N_CHECKS = len(BATTERY)
