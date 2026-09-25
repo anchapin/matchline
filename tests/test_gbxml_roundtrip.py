@@ -55,9 +55,9 @@ def _parse_gbxml_areas_volumes(xml_path: Path):
 
     Returns dict mapping space sid -> {name, area_m2, volume_m3}
     """
-    import xml.etree.ElementTree as ET
+    from safe_xml import safe_xml_parse
 
-    tree = ET.parse(xml_path)
+    tree = safe_xml_parse(xml_path)
     root = tree.getroot()
 
     # gbXML 6.01 uses namespace

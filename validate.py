@@ -80,7 +80,7 @@ class CheckResult:
         return d
 
 
-def _round(v, nd=6):
+def _round(v: object, nd: int = 6) -> object:
     if isinstance(v, float):
         return round(v, nd)
     if isinstance(v, dict):
@@ -174,7 +174,7 @@ class _Ctx:
     wall_height: dict = field(default_factory=dict)  # level_id -> m
 
 
-def _build_ctx(model, **kw) -> _Ctx:
+def _build_ctx(model: BuildingModel, **kw: object) -> _Ctx:
     ctx = _Ctx(model=model, **kw)
     if ctx.sres is None:
         ctx.sres = getattr(model, "_sres", None)
@@ -193,7 +193,7 @@ def _build_ctx(model, **kw) -> _Ctx:
     return ctx
 
 
-def _rel_err(actual, expected) -> float:
+def _rel_err(actual: float, expected: float) -> float:
     if expected == 0:
         return 0.0 if actual == 0 else float("inf")
     return abs(actual - expected) / abs(expected)
@@ -204,7 +204,7 @@ def _rel_err(actual, expected) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _check_space_area_matches_polygon(ctx) -> CheckResult:
+def _check_space_area_matches_polygon(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         if not sp.polygon_m or len(sp.polygon_m) < 3:
@@ -242,7 +242,7 @@ def _check_space_area_matches_polygon(ctx) -> CheckResult:
     )
 
 
-def _check_area_conservation(ctx) -> CheckResult:
+def _check_area_conservation(ctx: _Ctx) -> CheckResult:
     """SUM(space areas) per level ~= footprint area. The 20x30 -> 600 check."""
     if not _HAS_SIMPLIFY:
         return CheckResult(
@@ -286,7 +286,7 @@ def _check_area_conservation(ctx) -> CheckResult:
     )
 
 
-def _check_space_volume_matches_area_height(ctx) -> CheckResult:
+def _check_space_volume_matches_area_height(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         h = ctx.wall_height.get(sp.level_id)
@@ -311,7 +311,7 @@ def _check_space_volume_matches_area_height(ctx) -> CheckResult:
     )
 
 
-def _check_volume_conservation(ctx) -> CheckResult:
+def _check_volume_conservation(ctx: _Ctx) -> CheckResult:
     """SUM(space volumes) ~= footprint x floor-to-floor height."""
     if not _HAS_SIMPLIFY:
         return CheckResult(
@@ -458,7 +458,7 @@ def validate_bem_conservation(
     return results
 
 
-def _check_envelope_area_matches_perimeter(ctx) -> CheckResult:
+def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
     """SUM(envelope wall areas) ~= footprint perimeter x height.
 
     The envelope records and the footprint union are built by different
@@ -507,7 +507,7 @@ def _check_envelope_area_matches_perimeter(ctx) -> CheckResult:
     )
 
 
-def _check_simplify_budget(ctx) -> CheckResult:
+def _check_simplify_budget(ctx: _Ctx) -> CheckResult:
     sres = ctx.sres
     if sres is None:
         return CheckResult(
@@ -573,7 +573,7 @@ def _check_simplify_budget(ctx) -> CheckResult:
     )
 
 
-def _check_facade_opening_closure(ctx) -> CheckResult:
+def _check_facade_opening_closure(ctx: _Ctx) -> CheckResult:
     """Per facade: SUM(opening areas) <= gross wall area; opaque >= 0."""
     gross = {}
     for w in ctx.model.envelope:
@@ -612,7 +612,7 @@ def _check_facade_opening_closure(ctx) -> CheckResult:
     )
 
 
-def _check_takeoff_counts_reconcile(ctx) -> CheckResult:
+def _check_takeoff_counts_reconcile(ctx: _Ctx) -> CheckResult:
     """Per tag: count x schedule dims == SUM(opening areas).
 
     The two independent paths to "window area per tag" -- the count x dims
@@ -657,7 +657,7 @@ def _review_kinds(ctx, kind: str) -> bool:
     return any(i.kind == kind for i in ctx.model.review_queue)
 
 
-def _check_fixture_schedule_join(ctx) -> CheckResult:
+def _check_fixture_schedule_join(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         for f in sp.lighting.fixtures:
@@ -691,7 +691,7 @@ def _check_fixture_schedule_join(ctx) -> CheckResult:
     )
 
 
-def _check_opening_schedule_join(ctx) -> CheckResult:
+def _check_opening_schedule_join(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         for o in sp.openings:
@@ -725,7 +725,7 @@ def _check_opening_schedule_join(ctx) -> CheckResult:
     )
 
 
-def _check_no_negative_areas(ctx) -> CheckResult:
+def _check_no_negative_areas(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         vals = [("area", sp.area_m2), ("volume", sp.volume_m3)]
@@ -751,7 +751,7 @@ def _check_no_negative_areas(ctx) -> CheckResult:
     )
 
 
-def _check_lpd_bounds(ctx) -> CheckResult:
+def _check_lpd_bounds(ctx: _Ctx) -> CheckResult:
     """Per-space LPD within sane bounds.
 
     ASHRAE 90.1 space-type allowances cluster ~5-16 W/m^2; >25 W/m^2 is
@@ -793,7 +793,7 @@ def _check_lpd_bounds(ctx) -> CheckResult:
     )
 
 
-def _check_lpd_unit_consistency(ctx) -> CheckResult:
+def _check_lpd_unit_consistency(ctx: _Ctx) -> CheckResult:
     """lpd_w_ft2 must equal lpd_w_m2 / 10.7639 -- internal unit hygiene."""
     bad = []
     for sid, sp in ctx.model.spaces.items():
@@ -820,7 +820,7 @@ def _check_lpd_unit_consistency(ctx) -> CheckResult:
     )
 
 
-def _check_sill_head_sanity(ctx) -> CheckResult:
+def _check_sill_head_sanity(ctx: _Ctx) -> CheckResult:
     bad = []
     for sid, sp in ctx.model.spaces.items():
         h = ctx.wall_height.get(sp.level_id, 0.0)
@@ -852,7 +852,7 @@ def _check_sill_head_sanity(ctx) -> CheckResult:
     )
 
 
-def _check_assignment_uniqueness(ctx) -> CheckResult:
+def _check_assignment_uniqueness(ctx: _Ctx) -> CheckResult:
     """Every fixture/diffuser/sensor lives in exactly one space."""
     seen = {}
     dupes = set()
@@ -888,7 +888,7 @@ def _check_assignment_uniqueness(ctx) -> CheckResult:
     )
 
 
-def _check_zone_nonempty(ctx) -> CheckResult:
+def _check_zone_nonempty(ctx: _Ctx) -> CheckResult:
     bad = [zid for zid, z in ctx.model.zones.items() if not z.diffusers or not z.space_ids]
     if bad:
         return CheckResult(
@@ -910,7 +910,7 @@ def _check_zone_nonempty(ctx) -> CheckResult:
     )
 
 
-def _check_zone_space_referential(ctx) -> CheckResult:
+def _check_zone_space_referential(ctx: _Ctx) -> CheckResult:
     """zone.space_ids <-> space.zone_ids: both directions resolve."""
     bad = []
     for zid, z in ctx.model.zones.items():
@@ -948,7 +948,7 @@ def _check_zone_space_referential(ctx) -> CheckResult:
     )
 
 
-def _check_space_id_hygiene(ctx) -> CheckResult:
+def _check_space_id_hygiene(ctx: _Ctx) -> CheckResult:
     """Space ids unique (dict) and shaped like '{level}-{number}'."""
     bad = [sid for sid in ctx.model.spaces if "-" not in sid or not sid.split("-", 1)[0]]
     if not ctx.model.spaces:
@@ -983,7 +983,7 @@ def _check_space_id_hygiene(ctx) -> CheckResult:
     )
 
 
-def _check_elevation_placement_consistency(ctx) -> CheckResult:
+def _check_elevation_placement_consistency(ctx: _Ctx) -> CheckResult:
     """Openings with exact placement: head == sill+height, s_center in
     interval, area == w x h. Duck-typed: works whether or not the
     elevation_windows stretch-goal module attached exact positions."""
@@ -1027,7 +1027,7 @@ def _check_elevation_placement_consistency(ctx) -> CheckResult:
     )
 
 
-def _check_window_double_link(ctx) -> CheckResult:
+def _check_window_double_link(ctx: _Ctx) -> CheckResult:
     """Detect windows in the same space that share a tag and overlapping center.
 
     Two elevation runs of the same facade can produce duplicate SpaceOpening
@@ -1084,7 +1084,7 @@ def _check_window_double_link(ctx) -> CheckResult:
     )
 
 
-def _check_window_tag_coverage(ctx) -> CheckResult:
+def _check_window_tag_coverage(ctx: _Ctx) -> CheckResult:
     bad = [o.id for sp in ctx.model.spaces.values() for o in sp.openings if not o.tag]
     if bad:
         return CheckResult(
@@ -1128,7 +1128,7 @@ def _all_facts(ctx):
         yield w.id, w.provenance
 
 
-def _check_provenance_complete(ctx) -> CheckResult:
+def _check_provenance_complete(ctx: _Ctx) -> CheckResult:
     all_facts = list(_all_facts(ctx))
     missing = [eid for eid, p in all_facts if p is None or not getattr(p, "sheet_id", "")]
 
@@ -1162,7 +1162,7 @@ def _check_provenance_complete(ctx) -> CheckResult:
     )
 
 
-def _check_review_queue_sound(ctx) -> CheckResult:
+def _check_review_queue_sound(ctx: _Ctx) -> CheckResult:
     bad = [
         i.id
         for i in ctx.model.review_queue
@@ -1189,7 +1189,7 @@ def _check_review_queue_sound(ctx) -> CheckResult:
     )
 
 
-def _check_review_queue_acknowledged(ctx) -> CheckResult:
+def _check_review_queue_acknowledged(ctx: _Ctx) -> CheckResult:
     unacknowledged = [
         i.id
         for i in ctx.model.review_queue
@@ -1213,7 +1213,7 @@ def _check_review_queue_acknowledged(ctx) -> CheckResult:
     )
 
 
-def _check_revision_log_present(ctx) -> CheckResult:
+def _check_revision_log_present(ctx: _Ctx) -> CheckResult:
     n = len(ctx.model.revision_log)
     if n == 0:
         return CheckResult(
@@ -1237,7 +1237,7 @@ def _check_revision_log_present(ctx) -> CheckResult:
 _GBXML_NS = "http://www.gbxml.org/schema"
 
 
-def _check_gbxml_spaces(ctx) -> CheckResult:
+def _check_gbxml_spaces(ctx: _Ctx) -> CheckResult:
     path = ctx.gbxml_path
     if not path:
         return CheckResult("gbxml_space_areas", "gbXML space areas", "skip", "no gbXML path given")
@@ -1285,7 +1285,7 @@ def _check_gbxml_spaces(ctx) -> CheckResult:
     )
 
 
-def _check_gbxml_opening_refs(ctx) -> CheckResult:
+def _check_gbxml_opening_refs(ctx: _Ctx) -> CheckResult:
     path = ctx.gbxml_path
     if not path:
         return CheckResult(
@@ -1330,7 +1330,7 @@ def _parse_cartesian_point(pt) -> Optional[tuple]:
         return None
 
 
-def _check_gbxml_wall_areas(ctx) -> CheckResult:
+def _check_gbxml_wall_areas(ctx: _Ctx) -> CheckResult:
     path = ctx.gbxml_path
     if not path:
         return CheckResult(
@@ -1407,7 +1407,7 @@ def _check_gbxml_wall_areas(ctx) -> CheckResult:
     )
 
 
-def _check_ifc_counts(ctx) -> CheckResult:
+def _check_ifc_counts(ctx: _Ctx) -> CheckResult:
     path = ctx.ifc_path
     if not path:
         return CheckResult("ifc_entity_counts", "IFC entity counts", "skip", "no IFC path given")
