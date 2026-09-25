@@ -326,7 +326,9 @@ class TestNoUnprotectedXmlParsing:
                 continue
             content = f.read_text()
             if "et.parse" in content or "ET.parse" in content or "ElementTree.parse" in content:
-                assert "safe_xml_parse" in content, f"{f} uses unsafe XML parsing without safe_xml_parse"
+                assert "safe_xml_parse" in content, (
+                    f"{f} uses unsafe XML parsing without safe_xml_parse"
+                )
 
     def test_no_et_parse_in_datasets_adapter(self):
         """datasets_adapter.py must not use unprotected XML parsing."""
