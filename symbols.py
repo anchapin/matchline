@@ -114,7 +114,9 @@ NAMES = [
 ]
 
 
-def make_dataset(n_train: int, n_test: int, seed: int):
+def make_dataset(
+    n_train: int, n_test: int, seed: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     Xtr, ytr, Xte, yte = [], [], [], []
     for cls in range(10):

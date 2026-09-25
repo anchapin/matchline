@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from scipy.ndimage import binary_opening
@@ -66,7 +67,9 @@ OPEN_PX = 13  # duct opening kernel (px) = 0.26 m
 # ---------------------------------------------------------------------------
 
 
-def ncc_locate(gray: np.ndarray, tmpl: np.ndarray, thresh: float = NCC_THRESH):
+def ncc_locate(
+    gray: np.ndarray, tmpl: np.ndarray, thresh: float = NCC_THRESH
+) -> list[tuple[int, int, float]]:
     """Normalized cross-correlation -> [(y, x, score)] top-left, NMS'd."""
     t = tmpl - tmpl.mean()
     tss = (t**2).sum()
@@ -117,7 +120,9 @@ def _logodds_scores(clf, images, alpha=1.0):
     return (log_ram - bg[None, :]).T
 
 
-def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
+def detect_components(
+    gray: np.ndarray, templates: dict, clf: WisardClassifier
+) -> list[dict[str, Any]]:
     """Cascade: NCC proposals (cross-class NMS) -> per-class decision.
     vav/diffuser/grille go through WiSARD (background = reject); ahu and
     sensor are NCC-only because their template scores separate cleanly
@@ -206,7 +211,9 @@ def _room_of(x_m, y_m, rooms):
     return None
 
 
-def extract_zones(skel: np.ndarray, detections: list, rooms: list, px_per_m: float = PX_PER_M):
+def extract_zones(
+    skel: np.ndarray, detections: list, rooms: list, px_per_m: float = PX_PER_M
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """VAV cut-vertex zoning. Returns (zones, debug)."""
     mask = skel.astype(bool).copy()
     vavs = [d for d in detections if d["label"] == "vav"]
@@ -308,7 +315,9 @@ _VAV_BOX_H = int(0.6 * PX_PER_M)  # VAV_H
 _VAV_CUT_DILATE = 10
 
 
-def trace_sheet(gray: np.ndarray, gt: dict, clf: WisardClassifier, templates: dict):
+def trace_sheet(
+    gray: np.ndarray, gt: dict, clf: WisardClassifier, templates: dict
+) -> dict[str, Any]:
     detections = detect_components(gray, templates, clf)
     # VAV-vs-small-symbol suppression: the VAV template fires on grilles
     # (box+diagonal on the return main) and diffusers (drop+spine behind
@@ -385,7 +394,7 @@ def _match_detections(pred, gt_comps, cls, tol_px=25):
     return tp, len(pp) - tp, len(gg) - tp
 
 
-def validate(seeds, clf, templates):
+def validate(seeds, clf, templates) -> list[dict[str, Any]]:
     from synth.mech import generate_mech_sheet
 
     rows = []
@@ -477,7 +486,7 @@ def validate(seeds, clf, templates):
     return rows
 
 
-def main():
+def main() -> None:
     print("training WiSARD on sheet-cut synthetic mech crops ...", flush=True)
     X, y, names = training_crops_from_sheets(n_per_class=200, seed=0, bg_per_sheet=8)
     clf = WisardClassifier(len(names), seed=42)

@@ -969,7 +969,7 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
 # ---------------------------------------------------------------------------
 
 
-def infer_adjacency(model: BuildingModel):
+def infer_adjacency(model: BuildingModel) -> None:
     """Tier 1 (NOT IMPLEMENTED): geometric space<->element adjacency.
 
     Planned: for each space solid, find wall faces within tolerance of its

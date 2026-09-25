@@ -15,6 +15,7 @@ Validation errors block export (exit code 1, not silent).
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from dataclasses import asdict
@@ -201,7 +202,7 @@ def model_from_linked_model(
 # ---------------------------------------------------------------------------
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     import argparse
 
     ap = argparse.ArgumentParser(

@@ -21,7 +21,7 @@ from jesse import (  # noqa: I001
 from symbols import NAMES, make_dataset
 
 
-def main(out_path: str = "symbols_results.json"):
+def main(out_path: str = "symbols_results.json") -> None:
     """Run the synthetic symbol evaluation (Experiment A) + GD&T invariant check (B)."""
     tidx = make_tuple_indices(28, 28, seed=42)
     Xtr, ytr, Xte, yte = make_dataset(n_train=400, n_test=100, seed=7)

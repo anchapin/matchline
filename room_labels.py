@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -72,7 +73,7 @@ _ENGINE = None
 _ENGINE_NAME = None
 
 
-def get_ocr_engine():
+def get_ocr_engine() -> Any:
     """Lazily construct the local OCR engine.
 
     Uses rapidocr_onnxruntime (PP-OCRv4 detection + recognition, ONNX,
@@ -359,7 +360,9 @@ def attach_room_labels(
 # ---------------------------------------------------------------------------
 
 
-def synthesize_test_plan(seed: int = 7):
+def synthesize_test_plan(
+    seed: int = 7,
+) -> tuple[np.ndarray, list[LabeledSpace], dict[int, tuple[str, str]]]:
     """Draw a labeled floor plan with PIL.
 
     Returns (image, spaces, expected) where expected maps space index ->

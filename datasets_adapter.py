@@ -164,7 +164,7 @@ def polygon_area_px2(poly) -> float:
     return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
 
 
-def box_to_polygon(xtl, ytl, xbr, ybr):
+def box_to_polygon(xtl: float, ytl: float, xbr: float, ybr: float) -> list[tuple[float, float]]:
     return [(xtl, ytl), (xbr, ytl), (xbr, ybr), (xtl, ybr)]
 
 

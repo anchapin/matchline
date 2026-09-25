@@ -11,7 +11,7 @@ from synth.multidiscipline import generate_building  # noqa: E402
 from validate import export_gate, run_checks  # noqa: E402
 
 
-def main():
+def main() -> None:
     configs = [(301, False, "elev_grid"), (302, True, "elev_nogrid")]
     for seed, span, ekey in configs:
         bldg = generate_building(seed, open_office_span=span)

@@ -10,11 +10,11 @@ import time
 import room_labels as rl
 
 
-def norm(s):
+def norm(s) -> str:
     return " ".join(s.upper().split())
 
 
-def main():
+def main() -> None:
     img, spaces, expected = rl.synthesize_test_plan()
     print(f"OCR engine: {rl.ocr_engine_name()}")
 

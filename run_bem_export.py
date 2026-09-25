@@ -35,7 +35,7 @@ def sheet_schedule_csv(gt) -> io.StringIO:
     return buf
 
 
-def main(sheet_id: str = "sheet_007"):
+def main(sheet_id: str = "sheet_007") -> bool:
     OUT.mkdir(exist_ok=True)
     gt = json.load(open(REPO_ROOT / "synth" / "out" / "sheets" / f"{sheet_id}.gt.json"))
     s = 1.0 / gt["scale_px_per_m"]
