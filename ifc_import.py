@@ -46,7 +46,6 @@ from building_model import (
 
 
 def _ensure_ifc():
-    import importlib.util
 
     try:
         import ifcopenshell  # noqa: F401
