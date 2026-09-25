@@ -220,6 +220,8 @@ __all__ = [
     "export_gate",
     "N_CHECKS",
     "validate_bem_conservation",
+    "_check_bem_area_conservation",
+    "_check_bem_volume_conservation",
     "CheckResult",
     "ValidationReport",
     "BATTERY",
