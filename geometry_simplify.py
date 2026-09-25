@@ -363,6 +363,28 @@ def simplify_ring(
     new_area = envelope_area(new_ring, wall_height)
     delta = (new_area - orig_area) / orig_area
 
+    # Hard limit: area should not grow by more than 0.1% (1e-3)
+    # This is a stronger constraint than tol, which controls simplification aggressiveness
+    MAX_GROWTH = 1e-3
+    if delta > MAX_GROWTH:
+        skipped.append({"op": "final", "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}"})
+        return SimplifyResult(
+            ring=ring,
+            original_count=n0,
+            simplified_count=n0,
+            original_area=orig_area,
+            simplified_area=orig_area,
+            area_delta_pct=0.0,
+            tol=tol,
+            method="greedy_min_area_loss",
+            confidence=0.0,
+            provenance=[
+                {"surface": i, "from": [i], "note": "rollback: area growth exceeds hard limit"} for i in range(n0)
+            ],
+            skipped=skipped,
+            valid=False,
+        )
+
     # Provenance: output surface s spans original vertices
     # new_orig[s] -> new_orig[s+1]; every original edge in between is listed.
     provenance = []
