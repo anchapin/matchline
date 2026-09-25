@@ -9,6 +9,7 @@ Public API:
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -208,6 +209,7 @@ def run_checks(
                     f"check itself raised {type(e).__name__}: {e}",
                 )
             )
+            print(f"ERROR in check '{check.__name__}': {type(e).__name__}: {e}", file=sys.stderr)
     return report
 
 
