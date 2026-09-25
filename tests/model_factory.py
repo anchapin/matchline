@@ -6,7 +6,6 @@ defect each so tests can assert the right check fires with the right
 severity.
 """
 
-from bem_export import BEMModel  # noqa: E402
 from building_model import (  # noqa: E402
     BuildingModel,
     ComponentRef,
@@ -591,25 +590,4 @@ def break_room_number(m: BuildingModel):
 
 # -------------------------------------------------------------------------------------------------
 # BEM conservation break helpers
-# -------------------------------------------------------------------------------------------------
 
-
-def break_bem_area_conservation(bem: BEMModel) -> None:
-    """Violate BEM area conservation by inflating area_delta_pct.
-
-    area_delta_pct is the percentage difference between the footprint area
-    (simplified ring) and the sum of space areas.  Setting it to 5.0
-    (> the default 4% tolerance) triggers _check_bem_area_conservation.
-    """
-    bem.area_delta_pct = 5.0
-
-
-def break_bem_volume_conservation(bem: BEMModel) -> None:
-    """Violate BEM volume conservation by inflating space volumes.
-
-    _check_bem_volume_conservation checks that sum(volume_m3) is close to
-    ring_area * wall_height.  Setting space volumes to 999999 triggers
-    the volume conservation check.
-    """
-    for space in bem.spaces:
-        space.volume_m3 = 999999.0
