@@ -11,11 +11,10 @@ from building_model import (
     Level,
     Provenance,
     Space,
-    SpaceLighting,
     SpaceHVAC,
+    SpaceLighting,
     Zone,
 )
-
 from validate import _Ctx
 from validate.ashrae90_1 import (
     _check_hvac_efficiency,
@@ -47,15 +46,20 @@ def make_model() -> BuildingModel:
 # Wall U-factor tests
 # ---------------------------------------------------------------------------
 
+
 class TestWallUFactor:
     def test_wall_u_compliant(self):
         model = make_model()
         model.climate_zone = "5A"
         model.building_type = "other"
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         wall.u_factor = 0.30  # Btu/h·ft²·°F (below 0.40 limit for 5A)
@@ -70,9 +74,13 @@ class TestWallUFactor:
         model.climate_zone = "5A"
         model.building_type = "other"
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         wall.u_factor = 0.60  # Btu/h·ft²·°F (above 0.40 limit)
@@ -88,9 +96,13 @@ class TestWallUFactor:
         model.climate_zone = "5A"
         model.building_type = "other"
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         model.envelope = [wall]
@@ -105,9 +117,13 @@ class TestWallUFactor:
         model.building_type = "other"
         # 6A max = 0.35 Btu/h·ft²·°F
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         wall.u_factor = 0.36  # above 0.35 -> fail
@@ -125,13 +141,19 @@ class TestWallUFactor:
 # Lighting Power Density tests
 # ---------------------------------------------------------------------------
 
+
 class TestLightingPowerDensity:
     def _make_space(self, space_id: str, name: str, lpd_w_m2: float) -> Space:
         space = Space(
-            id=space_id, level_id="L1", name=name, number="101",
+            id=space_id,
+            level_id="L1",
+            name=name,
+            number="101",
             polygon_m=[[0, 0], [5, 0], [5, 6], [0, 6]],
-            area_m2=30.0, volume_m3=30.0 * H,
-            core_provenance=_provenance(), label_confidence=1.0,
+            area_m2=30.0,
+            volume_m3=30.0 * H,
+            core_provenance=_provenance(),
+            label_confidence=1.0,
         )
         space.lighting = SpaceLighting(lpd_w_m2=lpd_w_m2)
         return space
@@ -187,6 +209,7 @@ class TestLightingPowerDensity:
 # Roof U-factor tests
 # ---------------------------------------------------------------------------
 
+
 class TestRoofUFactor:
     def test_roof_u_compliant(self):
         model = make_model()
@@ -216,6 +239,7 @@ class TestRoofUFactor:
 # Window U-factor tests
 # ---------------------------------------------------------------------------
 
+
 class TestWindowUFactor:
     def _window(self, wid: str, u_factor: float, shgc: float) -> Any:
         @dataclass
@@ -223,6 +247,7 @@ class TestWindowUFactor:
             id: str
             u_factor: float
             shgc: float
+
         return WindowStub(id=wid, u_factor=u_factor, shgc=shgc)
 
     def test_window_compliant(self):
@@ -263,6 +288,7 @@ class TestWindowUFactor:
 # HVAC efficiency tests
 # ---------------------------------------------------------------------------
 
+
 class TestHVACEfficiency:
     def _make_zone_space(
         self,
@@ -274,10 +300,15 @@ class TestHVACEfficiency:
     ) -> tuple[Zone, Space]:
         zone = Zone(id="Z1", level_id="L1", space_ids=["L1-101"])
         space = Space(
-            id="L1-101", level_id="L1", name="OFFICE", number="101",
+            id="L1-101",
+            level_id="L1",
+            name="OFFICE",
+            number="101",
             polygon_m=[[0, 0], [5, 0], [5, 6], [0, 6]],
-            area_m2=30.0, volume_m3=30.0 * H,
-            core_provenance=_provenance(), label_confidence=1.0,
+            area_m2=30.0,
+            volume_m3=30.0 * H,
+            core_provenance=_provenance(),
+            label_confidence=1.0,
         )
         space.lighting = SpaceLighting(lpd_w_m2=10.0)
         space.hvac = SpaceHVAC(zone_ids=["Z1"])
@@ -331,6 +362,7 @@ class TestHVACEfficiency:
 # Mixed compliance report
 # ---------------------------------------------------------------------------
 
+
 class TestComplianceReport:
     def test_mixed_compliance_all_pass(self):
         model = make_model()
@@ -338,19 +370,28 @@ class TestComplianceReport:
         model.building_type = "other"
 
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         wall.u_factor = 0.30
         model.envelope = [wall]
 
         space = Space(
-            id="L1-101", level_id="L1", name="OFFICE", number="101",
+            id="L1-101",
+            level_id="L1",
+            name="OFFICE",
+            number="101",
             polygon_m=[[0, 0], [5, 0], [5, 6], [0, 6]],
-            area_m2=30.0, volume_m3=30.0 * H,
-            core_provenance=_provenance(), label_confidence=1.0,
+            area_m2=30.0,
+            volume_m3=30.0 * H,
+            core_provenance=_provenance(),
+            label_confidence=1.0,
         )
         space.lighting = SpaceLighting(lpd_w_m2=8.0)
         model.spaces = {"L1-101": space}
@@ -371,19 +412,28 @@ class TestComplianceReport:
         model.building_type = "other"
 
         wall = EnvelopeWall(
-            id="W1", facade="north",
-            from_m=[0, 0], to_m=[10, 0],
-            length_m=10.0, height_m=H, area_m2=10.0 * H,
+            id="W1",
+            facade="north",
+            from_m=[0, 0],
+            to_m=[10, 0],
+            length_m=10.0,
+            height_m=H,
+            area_m2=10.0 * H,
             provenance=_provenance(),
         )
         wall.u_factor = 0.70  # fail
         model.envelope = [wall]
 
         space = Space(
-            id="L1-101", level_id="L1", name="OFFICE", number="101",
+            id="L1-101",
+            level_id="L1",
+            name="OFFICE",
+            number="101",
             polygon_m=[[0, 0], [5, 0], [5, 6], [0, 6]],
-            area_m2=30.0, volume_m3=30.0 * H,
-            core_provenance=_provenance(), label_confidence=1.0,
+            area_m2=30.0,
+            volume_m3=30.0 * H,
+            core_provenance=_provenance(),
+            label_confidence=1.0,
         )
         space.lighting = SpaceLighting(lpd_w_m2=8.0)  # pass
         model.spaces = {"L1-101": space}
