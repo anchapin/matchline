@@ -54,6 +54,42 @@ SEVERITIES = ("pass", "warn", "error", "skip")
 
 @dataclass
 class CheckResult:
+    """Result of a single validation check against the canonical building model.
+
+    CheckResult captures the outcome of running one named conservation-law
+    check or plausibility tripwire against the model. Each result carries
+    the check identifier, severity, human-readable message, and optionally
+    the numeric expected vs actual values that triggered the result.
+
+    Severity levels have distinct export semantics:
+
+      * ``error`` — conservation law violated or referential breakage detected.
+        Blocks BEM export. Must be resolved before the model can be exported.
+      * ``warn`` — plausibility tripwire (e.g. absurd LPD, sill/head mismatch).
+        Does not block export but must be acknowledged.
+      * ``skip`` — check not applicable for this model (e.g. no elevation
+        windows linked). Does not block export.
+      * ``pass`` — check ran and no issues were found.
+
+    Attributes:
+        check_id: Unique identifier for the check that produced this result.
+        name: Human-readable name of the check.
+        severity: Outcome severity: ``"error"``, ``"warn"``, ``"skip"``, or ``"pass"``.
+        message: Human-readable description of the finding.
+        entities: List of entity IDs (e.g. space IDs, zone IDs) involved in the
+            finding. Empty when the check applies to the model as a whole.
+        expected: Expected numeric value (e.g. sum of space areas, total volume).
+            None when the check does not produce a numeric comparison.
+        actual: Actual numeric value observed in the model.
+            None when the check does not produce a numeric comparison.
+        needs_review: Map from fact keys to booleans indicating whether each
+            fact involved in this check requires human review.
+
+    Methods:
+        to_dict: Serialise this result to a plain dict suitable for JSON
+            serialisation or logging.
+    """
+
     check_id: str
     name: str
     severity: str  # "pass" | "warn" | "error" | "skip"

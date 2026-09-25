@@ -320,6 +320,46 @@ class Level:
 
 @dataclass
 class ReviewItem:
+    """Low-confidence link flagged for human review.
+
+    A ReviewItem is created when the pipeline produces a result with
+    confidence below the auto-accept threshold, or when an invariant
+    violation is detected that requires human judgment to resolve.
+    Items are never silently dropped or silently accepted — every
+    item enters the review queue and awaits explicit confirmation or
+    rejection.
+
+    Attributes:
+        id: Unique identifier for this review item.
+        kind: Category of the review item (e.g. ``"window_room_link"``,
+            ``"fixture_assignment"``). Controls routing and triage logic.
+        description: Human-readable description of the issue or anomaly.
+        confidence: Extraction confidence of the underlying fact (0.0–1.0).
+            Values >= 1.0 are reserved for fully confirmed facts and
+            cannot be combined with ``needs_review=False``.
+        provenance: Provenance record carrying sheet ID, revision, method,
+            and source bounding box of the extracted fact.
+        status: Current workflow status: ``"open"`` (default), ``"confirmed"``,
+            or ``"rejected"``.
+        needs_human: Estimated probability that human judgment is required
+            to resolve this item (0.0–1.0). Set by the triage classifier.
+        urgency: Urgency tier in the range 0–3. Higher values indicate
+            items that should be resolved before export.
+        auto_resolved: True when the item was resolved automatically by
+            the pipeline without human input (e.g. disambiguation guardrails).
+        resolution: Triage outcome: ``"accept"``, ``"drop"``, or ``"reassign"``.
+            Empty string when no resolution has been set.
+        needs_review: True when the item is awaiting human review.
+            False when the item has been reviewed and closed.
+        acknowledged: True when a human has explicitly acknowledged this item
+            (distinct from resolution — acknowledgment indicates the human
+            has seen the item even if no action was taken).
+
+    Raises:
+        ValueError: If ``needs_review`` is False but ``confidence >= 1.0``.
+            A reviewed item cannot carry a fully-confirmed confidence score.
+    """
+
     id: str
     kind: Literal[
         "fixture_assignment",
@@ -359,6 +399,59 @@ class ReviewItem:
 
 @dataclass
 class BuildingModel:
+    """Canonical building model: cross-discipline linking layer.
+
+    The BuildingModel is the single source of truth for all extracted,
+    linked, and reconciled building data. It is the ONE model that
+    everything registers into. Disciplines (architectural floor plan,
+    lighting, mechanical, elevations) are parsed into sheet-local models,
+    registered into arch-plan coordinates, then linked via the
+    registration layer. The canonical model is what is validated,
+    exported, and reviewed.
+
+    The architectural floor plan is the reference frame. Rooms
+    (name + number) are the primary key: ``Space.id = "{level}-{number}"``.
+    Zones are many-to-many with spaces (an open office can span two zones).
+
+    Provenance is tracked on every derived fact. Facts from a newer
+    revision of the same sheet supersede older facts — they are kept in
+    ``history``, never silently overwritten.
+
+    Coordinate frame (canonical): metres, y growing downward (drawing frame).
+    BEM export flips y to north-up.
+
+    Attributes:
+        name: Display name of the building or project.
+        model_version: Schema version string for this model.
+        auto_triage: Whether to run automatic triage on the review queue.
+            None means triage has not been run yet.
+        levels: All building levels (floors) in the model.
+        spaces: All spaces (rooms) keyed by ``Space.id``.
+        zones: All thermal zones keyed by zone ID.
+        envelope: All envelope wall segments (walls, windows, doors).
+        bim_elements: All BIM elements from IFC import.
+        schedules: Lighting and other schedules as plain dicts, keyed by
+            schedule tag. Revived from plain dict on model load.
+        revision_log: Ordered log of all revisions applied to this model,
+            including supersession events.
+        review_queue: List of low-confidence items awaiting human review.
+        _rev_seq: Internal revision sequence counter.
+
+    Args:
+        name: Display name of the building or project.
+        model_version: Schema version string for this model.
+        auto_triage: Whether to run automatic triage on the review queue.
+        levels: All building levels (floors) in the model.
+        spaces: All spaces (rooms) keyed by ``Space.id``.
+        zones: All thermal zones keyed by zone ID.
+        envelope: All envelope wall segments (walls, windows, doors).
+        bim_elements: All BIM elements from IFC import.
+        schedules: Lighting and other schedules as plain dicts, keyed by
+            schedule tag.
+        revision_log: Ordered log of all revisions applied to this model.
+        review_queue: List of low-confidence items awaiting human review.
+    """
+
     name: str = ""
     model_version: str = MODEL_VERSION
     auto_triage: Optional[bool] = None
