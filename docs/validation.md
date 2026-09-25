@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (29 checks)
+## The battery (34 checks)
 
 ### Conservation laws (error)
 
@@ -107,6 +107,23 @@ are consistent with each other but implausible for a real building).
 - `gbxml_opening_refs` — every Opening is hosted on an identified Surface.
 - `ifc_entity_counts` — IfcSpace count matches the model; ≥1 IfcWall.
   Skipped when IfcOpenShell is unavailable.
+
+### ASHRAE 90.1-2019 envelope / lighting (warn)
+
+ASHRAE 90.1 compliance checks are diagnostic (severity: warn). They do not
+block export but surface code-compliance issues for human review.
+
+- `ashrae_wall_u_factor` — wall assembly U-factor ≤ 0.5 W/m²K (ASHRAE
+  90.1-2019 Table 5.5.4.2). Skipped when no walls in model.
+- `ashrae_roof_u_factor` — roof assembly U-factor ≤ 0.35 W/m²K (ASHRAE
+  90.1-2019 Table 5.5.4.2). Skipped when no roofs in model.
+- `ashrae_window_u_factor` — window U-factor ≤ 2.8 W/m²K (ASHRAE
+  90.1-2019 Table 5.5.4.2-1). Skipped when no windows in model.
+- `ashrae_window_shgc` — window SHGC ≤ 0.25 (ASHRAE 90.1-2019 Table
+  5.5.4.2-1). Skipped when no windows in model.
+- `ashrae_lighting_power_density` — space lighting power density ≤ 10.5
+  W/m² (ASHRAE 90.1-2019 Table 9.5.1). Skipped when no conditioned
+  spaces in model.
 
 ## How to add a check
 

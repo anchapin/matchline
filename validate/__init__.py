@@ -34,6 +34,13 @@ except Exception:
 # Import check functions from submodules (before _Ctx to satisfy E402)
 # ---------------------------------------------------------------------------
 
+from .ashrae90_1 import (
+    _check_hvac_efficiency,
+    _check_lighting_power_density,
+    _check_roof_u_factor,
+    _check_wall_u_factor,
+    _check_window_u_factor,
+)
 from .conservation import (
     _check_area_conservation,
     _check_bem_area_conservation,
@@ -155,6 +162,11 @@ BATTERY = [
     _check_gbxml_opening_refs,
     _check_gbxml_wall_areas,
     _check_ifc_counts,
+    _check_wall_u_factor,
+    _check_roof_u_factor,
+    _check_window_u_factor,
+    _check_lighting_power_density,
+    _check_hvac_efficiency,
 ]
 
 N_CHECKS = len(BATTERY)
