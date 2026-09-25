@@ -109,11 +109,16 @@ def _si_scale(unit) -> float:
 
 
 def _length_scale(f) -> float:
-    """File length unit -> meters. Defaults to 1.0 (meters assumed)."""
+    """File length unit -> meters."""
     try:
         ua = f.by_type("IfcUnitAssignment")[0]
     except IndexError:
-        return 1.0
+        raise StageError(
+            stage_name="ifc_import",
+            stage_index=1,
+            msg="No IfcUnitAssignment found in IFC file",
+            hint="IFC files should define a length unit via IfcUnitAssignment",
+        )
     for u in ua.Units or []:
         utype = getattr(u, "UnitType", None)
         if utype != "LENGTHUNIT":
@@ -121,13 +126,22 @@ def _length_scale(f) -> float:
         if u.is_a("IfcSIUnit"):
             return _SI_PREFIX.get((u.Prefix or ""), 1.0)
         if u.is_a("IfcConversionBasedUnit"):
-            # e.g. feet: factor * the SI unit it converts from
             cf = u.ConversionFactor
             try:
                 return float(cf.ValueComponent) * _si_scale(cf.UnitComponent)
-            except Exception:
-                return 1.0
-    return 1.0
+            except Exception as exc:
+                raise StageError(
+                    stage_name="ifc_import",
+                    stage_index=1,
+                    msg=f"Cannot read length unit conversion: {exc}",
+                    hint="Check that IfcConversionBasedUnit has a valid ConversionFactor",
+                )
+    raise StageError(
+        stage_name="ifc_import",
+        stage_index=1,
+        msg="No LENGTHUNIT found in IfcUnitAssignment",
+        hint="Ensure the IFC file defines a length unit (e.g. meters, feet)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -514,10 +528,7 @@ def _read_lighting(sp, model, provenance):
                 continue
             if prop.Name != "LightingPower":
                 continue
-            try:
-                return SpaceLighting(fixtures=[], total_w=float(prop.NominalValue.wrappedValue))
-            except Exception:
-                pass
+            return SpaceLighting(fixtures=[], total_w=float(prop.NominalValue.wrappedValue))
     model.flag_for_review(
         kind="fixture_schedule",
         description=f"Could not parse lighting power for space {getattr(sp, 'Name', sp.id)}",
@@ -716,10 +727,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
-        try:
-            elev = float(getattr(storey, "Elevation", 0.0) or 0.0) * scale
-        except (RuntimeError, TypeError, ValueError):
-            elev = 0.0
+        elev = _storey_elevation(storey) * scale
         level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
         model.levels.append(level)
 

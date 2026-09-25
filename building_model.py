@@ -29,8 +29,8 @@ JSON: BuildingModel.to_json() / from_json() round-trip the whole model
 (model_version included) so the canonical model is a versioned artifact
 that diffs cleanly across drawing revisions.
 """
-# NOTE: no `from __future__ import annotations` here -- from_dict revival
-# resolves real type objects via typing.get_type_hints.
+
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -91,7 +91,7 @@ class ComponentRef:
     x_m: float
     y_m: float
     tag: str = ""  # schedule tag, e.g. "A", "VAV-1"
-    provenance: Provenance = None
+    provenance: Provenance | None = None
     history: List[Provenance] = field(default_factory=list)
 
 
@@ -115,7 +115,7 @@ class SpaceOpening:
     host_interval_m: Optional[list] = None  # [s0, s1] along facade, meters
     s_center_m: Optional[float] = None  # exact along-wall position
     area_m2: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
     needs_review: bool = True
     history: List[Provenance] = field(default_factory=list)
 
@@ -130,7 +130,7 @@ class FixtureInstance:
     x_m: float
     y_m: float
     watts: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -139,7 +139,7 @@ class SpaceLighting:
     total_w: float = 0.0
     lpd_w_m2: Optional[float] = None
     lpd_w_ft2: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
     unmatched_tags: List[str] = field(default_factory=list)
 
 
@@ -149,7 +149,7 @@ class SpaceHVAC:
     diffusers: List[ComponentRef] = field(default_factory=list)
     sensors: List[ComponentRef] = field(default_factory=list)
     terminal_units: List[ComponentRef] = field(default_factory=list)
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ class DaylitZone:
     polygon_m: List[list] = field(default_factory=list)
     area_m2: float = 0.0
     head_height_m: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -182,7 +182,7 @@ class SpaceDaylight:
     primary: List[DaylitZone] = field(default_factory=list)
     secondary: List[DaylitZone] = field(default_factory=list)
     params_note: str = ""  # e.g. "90.1-2019 approx: P=1.0xH, S=2.0xH"
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
     @property
     def primary_m2(self) -> float:
@@ -211,7 +211,7 @@ class Space:
     lighting: SpaceLighting = field(default_factory=SpaceLighting)
     hvac: SpaceHVAC = field(default_factory=SpaceHVAC)
     daylight: "SpaceDaylight" = field(default_factory=lambda: SpaceDaylight())
-    core_provenance: Provenance = None  # polygon + name/number source
+    core_provenance: Provenance | None = None  # polygon + name/number source
     label_confidence: float = 0.0
     poly_type: str = "room"  # "room" | "shaft" | "closet" | "elevator_core" | "unassigned"
     history: List[Provenance] = field(default_factory=list)
@@ -237,7 +237,7 @@ class Zone:
     diffusers: List[ComponentRef] = field(default_factory=list)
     sensors: List[ComponentRef] = field(default_factory=list)
     duct_length_m: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
     history: List[Provenance] = field(default_factory=list)
 
 
@@ -254,7 +254,7 @@ class EnvelopeWall:
     length_m: Optional[float] = None
     height_m: Optional[float] = None
     area_m2: Optional[float] = None
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -275,7 +275,7 @@ class BimOpening:
     s_center_m: Optional[float] = None  # along host wall from wall start
     host_global_id: str = ""  # the IfcWall / host element
     fill_global_id: str = ""  # the IfcWindow / IfcDoor
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -301,7 +301,7 @@ class BimElement:
     # wall-thickness answer (roadmap item 1 on the BIM path)
     placement_m: Optional[list] = None  # [x, y, z], canonical frame
     openings: List["BimOpening"] = field(default_factory=list)
-    provenance: Provenance = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -374,7 +374,7 @@ class ReviewItem:
     ]
     description: str
     confidence: float
-    provenance: Provenance = None
+    provenance: Provenance | None = None
     status: str = "open"  # "open" | "confirmed" | "rejected"
     needs_human: float = 1.0  # P(needs human) — set by triage
     urgency: int = 1  # 0-3; set by triage
@@ -675,7 +675,7 @@ def _conv(t, v):
 
 
 def _revive(cls, data: dict):
-    hints = get_type_hints(cls)
+    hints = get_type_hints(cls, globals())
     init_kwargs = {}
     for f in fields(cls):
         if f.name.startswith("_") or f.name not in data:
