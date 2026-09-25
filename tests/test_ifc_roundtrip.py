@@ -437,6 +437,20 @@ def test_ifc_import_validate_export_battery(tmp_path):
     if not check_report.ok:
         _log_battery_errors(check_report.errors)
 
+    # ── Export validated model → IFC → re-import → verify ───────────────────
+    # Only export if validation passed (export_gate blocks on errors)
+    if check_report.ok:
+        ifc_path2 = tmp_path / "roundtrip_exported.ifc"
+        _export_ifc(m1, ifc_path2)
+        assert ifc_path2.exists(), "IFC export step did not produce a file"
+
+        # Re-import the exported IFC and verify zones survived the full cycle
+        m2 = import_ifc(str(ifc_path2))
+        assert len(m2.zones) == len(m1.zones), (
+            f"Zone count changed after import→validate→export cycle: "
+            f"{len(m1.zones)} → {len(m2.zones)}"
+        )
+
 
 def _build_realistic_2room_model() -> BuildingModel:
     """Build a 2-room building with door and windows for round-trip testing.
