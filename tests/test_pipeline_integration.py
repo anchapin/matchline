@@ -212,3 +212,51 @@ class TestPipelineIntegration:
         # Verify the error message contains the conservation violation details
         assert "Conservation law violation" in str(exc_info.value)
         assert "area_conservation" in str(exc_info.value)
+
+
+def test_pipeline_fails_on_takeoff_counts_defect(tmp_path):
+    """Integration test: inject takeoff_counts_reconcile defect via model_factory.
+
+    This test verifies that when a break_* defect is injected into the model,
+    the pipeline correctly fails at the validation stage with the expected error.
+
+    Regression test for issue #347: pipeline integration suite was happy-path only.
+    """
+    from unittest import mock
+
+    import run_pipeline
+    from link._report import LinkReport
+    from tests.model_factory import (
+        break_takeoff_counts_reconcile,
+        make_clean_model,
+    )
+
+    # Create a clean model and inject the defect
+    m = make_clean_model()
+    break_takeoff_counts_reconcile(m)
+
+    # Create a dummy building that build_model can accept
+    building = {"building_id": "bldg_101"}
+
+    out_dir = tmp_path / "defect_test"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ns = _namespace(seed=101, out_dir=out_dir)
+
+    # Create a dummy link report for the patched build_model return
+    dummy_report = LinkReport(
+        building_id="bldg_101",
+        elevation_path="grid",
+        n_spaces=1,
+        n_zones=1,
+    )
+
+    # Patch build_model to return the defective model instead of generating a new one
+    with mock.patch.object(run_pipeline, "build_model", return_value=(m, dummy_report)):
+        # Patch generate_building to return a valid building (used for other metadata)
+        with mock.patch.object(run_pipeline, "generate_building", return_value=building):
+            with pytest.raises(SystemExit) as exc_info:
+                run_pipeline.main(ns)
+
+    # The validation stage should fail with sys.exit(1)
+    assert exc_info.value.code == 1
