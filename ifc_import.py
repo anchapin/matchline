@@ -757,7 +757,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 core_provenance=prov(method, conf, note, gid),
                 label_confidence=0.9 if number else 0.6,
             )
-            space.lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
+            lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
+            if lighting is not None:
+                space.lighting = lighting
             model.spaces[sid] = space
 
         # --- elements -----------------------------------------------------
