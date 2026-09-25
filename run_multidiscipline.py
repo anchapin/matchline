@@ -11,6 +11,8 @@ geometric-fallback elevation path) and score every link type against GT:
 
 from __future__ import annotations
 
+from typing import Any
+
 from building_model import BuildingModel  # noqa: E402
 from link import build_model  # noqa: E402
 from synth.multidiscipline import generate_building  # noqa: E402
@@ -38,7 +40,7 @@ def _index_model(model):
     return fix2sp, sen2sp, dif2sp, dif2zone, open2sp
 
 
-def score_building(bldg, elevation_key):
+def score_building(bldg, elevation_key) -> tuple[Any, Any, dict[str, Any]]:
     model, report = build_model(bldg, elevation_key=elevation_key)
     gt = bldg["gt_links"]
     fix2sp, sen2sp, dif2sp, dif2zone, open2sp = _index_model(model)
@@ -110,7 +112,7 @@ def score_building(bldg, elevation_key):
     return model, report, rows
 
 
-def main():
+def main() -> None:
     configs = [(101, False), (102, True), (103, False)]
     all_ok = True
     for seed, span in configs:

@@ -32,6 +32,7 @@ import math
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 from PIL import Image
@@ -362,7 +363,7 @@ def xml_agreement(
 # ---------------------------------------------------------------------------
 
 
-def iter_facades(root: str | Path):
+def iter_facades(root: str | Path) -> Iterator[tuple[str, Path, Path | None]]:
     """Yield (facade_id, mask_path, xml_path) for all 606 facades."""
     root = Path(root)
     for sub in ("base/base", "extended/extended"):

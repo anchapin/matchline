@@ -12,7 +12,7 @@ import numpy as np
 from jesse import WisardClassifier, com_normalize, make_tuple_indices
 
 
-def main(data_dir: str = "data", out_path: str = "mnist_results.json"):
+def main(data_dir: str = "data", out_path: str = "mnist_results.json") -> None:
     """Run the Section 3 MNIST evaluation (needs data/mnist_X.npy + mnist_y.npy)."""
     data = Path(data_dir)
     if not (data / "mnist_X.npy").exists() or not (data / "mnist_y.npy").exists():
