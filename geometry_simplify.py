@@ -367,7 +367,12 @@ def simplify_ring(
     # This is a stronger constraint than tol, which controls simplification aggressiveness
     MAX_GROWTH = 1e-3
     if delta > MAX_GROWTH:
-        skipped.append({"op": "final", "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}"})
+        skipped.append(
+            {
+                "op": "final",
+                "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}",
+            }
+        )
         return SimplifyResult(
             ring=ring,
             original_count=n0,
@@ -379,7 +384,8 @@ def simplify_ring(
             method="greedy_min_area_loss",
             confidence=0.0,
             provenance=[
-                {"surface": i, "from": [i], "note": "rollback: area growth exceeds hard limit"} for i in range(n0)
+                {"surface": i, "from": [i], "note": "rollback: area growth exceeds hard limit"}
+                for i in range(n0)
             ],
             skipped=skipped,
             valid=False,
