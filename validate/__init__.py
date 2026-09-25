@@ -239,10 +239,7 @@ def export_gate(
             if item.needs_review
             and not item.acknowledged
             and item.status not in ("confirmed", "rejected")
-            and (
-                min_review_confidence is None
-                or (item.confidence or 1.0) >= min_review_confidence
-            )
+            and (min_review_confidence is None or (item.confidence or 1.0) >= min_review_confidence)
         ]
         if unacknowledged:
             return False
