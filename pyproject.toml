@@ -24,7 +24,7 @@ dependencies = [
     "shapely",
     "Pillow",
     "scipy",
-    "lxml",
+    "lxml>=4.9.0",
     "ifcopenshell",
     "jsonschema",
 ]
