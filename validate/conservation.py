@@ -1,5 +1,4 @@
 """Conservation law checks.
-import math
 
 Provenance on every extracted fact.
 Conservation laws: errors block export.
@@ -7,13 +6,33 @@ Conservation laws: errors block export.
 
 from __future__ import annotations
 
+import math
+
 from bem_export import _shoelace
-from datasets_adapter import polygon_area_px2
-from validate import _HAS_SIMPLIFY
-from validate.types import CheckResult, _rel_err
 
 try:
-    from geometry_simplify import footprint_from_regions, simplify_ring
+    from datasets_adapter import polygon_area_px2
+except Exception:
+    polygon_area_px2 = None
+
+from typing import TYPE_CHECKING
+
+from validate.types import _HAS_SIMPLIFY, CheckResult
+
+if TYPE_CHECKING:
+    from validate import _Ctx
+
+from bem_export import BEMModel
+
+
+def _rel_err(actual: float, expected: float) -> float:
+    if expected == 0:
+        return 0.0 if actual == 0 else float("inf")
+    return abs(actual - expected) / abs(expected)
+
+
+try:
+    from geometry_simplify import footprint_from_regions
 except Exception:
     pass
 
@@ -324,5 +343,3 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
         "pass",
         f"envelope wall areas match perimeter x height within {ctx.tol_envelope:.0%}",
     )
-
-

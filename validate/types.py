@@ -23,20 +23,9 @@ Nothing here modifies the model; it only reads it.
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass, field
-from typing import Optional
-
-from lxml import etree
-
-from bem_export import BEMModel, _shoelace
-from building_model import BuildingModel
-from datasets_adapter import polygon_area_px2
-from safe_xml import safe_xml_parse
 
 try:
-    from geometry_simplify import footprint_from_regions, simplify_ring
-
     _HAS_SIMPLIFY = True
 except Exception:
     _HAS_SIMPLIFY = False
@@ -82,7 +71,7 @@ class CheckResult:
 
 def _rel_err(actual: float, expected: float) -> float:
     if expected == 0:
-        return float('inf')
+        return float("inf")
     return abs(actual - expected) / abs(expected)
 
 
@@ -151,5 +140,3 @@ class ValidationReport:
             if r.severity in ("error", "warn"):
                 lines.append(f"  [{r.severity.upper():5s}] {r.check_id}: {r.message}")
         return "\n".join(lines)
-
-

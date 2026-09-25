@@ -5,7 +5,13 @@ Only run when a path is given.
 
 from __future__ import annotations
 
-from validate.types import CheckResult, _rel_err
+from typing import TYPE_CHECKING
+
+from validate.types import MIN_CONFIDENCE_THRESHOLD, CheckResult, _rel_err
+
+if TYPE_CHECKING:
+    from validate import _Ctx
+
 
 def _check_assignment_uniqueness(ctx: _Ctx) -> CheckResult:
     """Every fixture/diffuser/sensor lives in exactly one space."""
@@ -383,5 +389,3 @@ def _check_revision_log_present(ctx: _Ctx) -> CheckResult:
     return CheckResult(
         "revision_log_present", "Revision log present", "pass", f"{n} revision events: {kinds}"
     )
-
-

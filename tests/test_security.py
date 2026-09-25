@@ -319,10 +319,14 @@ class TestNoUnprotectedXmlParsing:
         assert "safe_xml_parser" in content
 
     def test_no_et_parse_in_validate(self):
-        """validate.py must not use unprotected XML parsing."""
-        path = Path(__file__).parents[1] / "validate.py"
-        content = path.read_text()
-        assert "safe_xml_parse" in content
+        """validate/ package must not use unprotected XML parsing."""
+        path = Path(__file__).parents[1] / "validate"
+        for f in path.rglob("*.py"):
+            if f.name.startswith("_"):
+                continue
+            content = f.read_text()
+            if "et.parse" in content or "ET.parse" in content or "ElementTree.parse" in content:
+                assert "safe_xml_parse" in content, f"{f} uses unsafe XML parsing without safe_xml_parse"
 
     def test_no_et_parse_in_datasets_adapter(self):
         """datasets_adapter.py must not use unprotected XML parsing."""

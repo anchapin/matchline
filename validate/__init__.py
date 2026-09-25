@@ -10,23 +10,74 @@ Public API:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-
-from bem_export import BEMModel
-from building_model import BuildingModel
-from datasets_adapter import polygon_area_px2
+from typing import TYPE_CHECKING
 
 from .types import CheckResult, ValidationReport
 
+if TYPE_CHECKING:
+    from building_model import BuildingModel
+
 try:
-    from geometry_simplify import footprint_from_regions, simplify_ring
+    from geometry_simplify import footprint_from_regions
 
     _HAS_SIMPLIFY = True
 except Exception:
     _HAS_SIMPLIFY = False
 
+try:
+    from datasets_adapter import polygon_area_px2
+except Exception:
+    polygon_area_px2 = None
+
+# ---------------------------------------------------------------------------
+# Import check functions from submodules (before _Ctx to satisfy E402)
+# ---------------------------------------------------------------------------
+
+from .conservation import (
+    _check_area_conservation,
+    _check_bem_area_conservation,
+    _check_bem_volume_conservation,
+    _check_envelope_area_matches_perimeter,
+    _check_space_area_matches_polygon,
+    _check_space_volume_matches_area_height,
+    _check_volume_conservation,
+    validate_bem_conservation,
+)
+from .export import (
+    _check_assignment_uniqueness,
+    _check_elevation_placement_consistency,
+    _check_provenance_complete,
+    _check_review_queue_acknowledged,
+    _check_review_queue_sound,
+    _check_revision_log_present,
+    _check_space_id_hygiene,
+    _check_window_double_link,
+    _check_window_tag_coverage,
+    _check_zone_nonempty,
+    _check_zone_space_referential,
+)
+from .gbxml import (
+    _check_gbxml_opening_refs,
+    _check_gbxml_spaces,
+    _check_gbxml_wall_areas,
+    _check_ifc_counts,
+)
+from .invariants import (
+    _check_facade_opening_closure,
+    _check_fixture_schedule_join,
+    _check_lpd_bounds,
+    _check_lpd_unit_consistency,
+    _check_no_negative_areas,
+    _check_opening_schedule_join,
+    _check_sill_head_sanity,
+    _check_simplify_budget,
+    _check_takeoff_counts_reconcile,
+)
+
 # ---------------------------------------------------------------------------
 # Check context: derived quantities shared across checks
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _Ctx:
@@ -59,7 +110,7 @@ def _build_ctx(model: BuildingModel, **kw) -> _Ctx:
     if _HAS_SIMPLIFY:
         for lid, spaces in ctx.level_of.items():
             ring = footprint_from_regions([sp.polygon_m for sp in spaces])
-            ctx.footprint_area[lid] = polygon_area_px2(ring) if ring else 0.0
+            ctx.footprint_area[lid] = polygon_area_px2(ring) if (ring and polygon_area_px2) else 0.0
     return ctx
 
 
@@ -70,64 +121,15 @@ def _rel_err(actual: float, expected: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Import check functions from submodules
-# ---------------------------------------------------------------------------
-
-from .conservation import (
-    _check_space_area_matches_polygon,
-    _check_area_conservation,
-    _check_space_volume_matches_area_height,
-    _check_volume_conservation,
-    _check_envelope_area_matches_perimeter,
-    validate_bem_conservation,
-)
-
-from .invariants import (
-    _check_simplify_budget,
-    _check_facade_opening_closure,
-    _check_takeoff_counts_reconcile,
-    _check_fixture_schedule_join,
-    _check_opening_schedule_join,
-    _check_no_negative_areas,
-    _check_lpd_bounds,
-    _check_lpd_unit_consistency,
-    _check_sill_head_sanity,
-)
-
-from .export import (
-    _check_assignment_uniqueness,
-    _check_zone_nonempty,
-    _check_zone_space_referential,
-    _check_space_id_hygiene,
-    _check_elevation_placement_consistency,
-    _check_window_double_link,
-    _check_window_tag_coverage,
-    _check_provenance_complete,
-    _check_review_queue_sound,
-    _check_review_queue_acknowledged,
-    _check_revision_log_present,
-)
-
-from .gbxml import (
-    _check_gbxml_spaces,
-    _check_gbxml_opening_refs,
-    _check_gbxml_wall_areas,
-    _check_ifc_counts,
-)
-
-
-# ---------------------------------------------------------------------------
 # Battery
 # ---------------------------------------------------------------------------
 
 BATTERY = [
-    # Conservation (error blocks export)
     _check_space_area_matches_polygon,
     _check_area_conservation,
     _check_space_volume_matches_area_height,
     _check_volume_conservation,
     _check_envelope_area_matches_perimeter,
-    # Invariants
     _check_simplify_budget,
     _check_facade_opening_closure,
     _check_takeoff_counts_reconcile,
@@ -137,22 +139,21 @@ BATTERY = [
     _check_lpd_bounds,
     _check_lpd_unit_consistency,
     _check_sill_head_sanity,
-    _check_provenance_complete,
-    _check_space_id_hygiene,
     _check_assignment_uniqueness,
     _check_zone_nonempty,
     _check_zone_space_referential,
-    # Export (only when paths given)
-    _check_window_double_link,
-    _check_window_tag_coverage,
+    _check_space_id_hygiene,
     _check_elevation_placement_consistency,
+    _check_window_tag_coverage,
+    _check_window_double_link,
+    _check_provenance_complete,
     _check_review_queue_sound,
     _check_review_queue_acknowledged,
     _check_revision_log_present,
-    _check_ifc_counts,
     _check_gbxml_spaces,
     _check_gbxml_opening_refs,
     _check_gbxml_wall_areas,
+    _check_ifc_counts,
 ]
 
 N_CHECKS = len(BATTERY)

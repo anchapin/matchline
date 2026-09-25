@@ -1,10 +1,17 @@
-"""gbXML validation checks.
-
-"""
+"""gbXML validation checks."""
 
 from __future__ import annotations
 
+import math
+from typing import TYPE_CHECKING, Optional
+
+from lxml import etree
+
+from safe_xml import safe_xml_parse
 from validate.types import CheckResult
+
+if TYPE_CHECKING:
+    from validate import _Ctx
 
 # ---------------------------------------------------------------------------
 # Export checks (only run when a path is given)
@@ -224,5 +231,3 @@ def _check_ifc_counts(ctx: _Ctx) -> CheckResult:
         "pass",
         f"{n_spaces} IfcSpace, {n_walls} IfcWall -- counts match model",
     )
-
-

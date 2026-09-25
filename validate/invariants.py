@@ -6,12 +6,22 @@ Errors and warnings go to review queue if confidence < threshold.
 
 from __future__ import annotations
 
-from validate.types import CheckResult, _rel_err
+from typing import TYPE_CHECKING
+
+from validate.types import _HAS_SIMPLIFY, CheckResult, _rel_err
+
+if TYPE_CHECKING:
+    from validate import _Ctx
 
 try:
-    from geometry_simplify import footprint_from_regions, simplify_ring
+    from geometry_simplify import simplify_ring
 except Exception:
-    pass
+    simplify_ring = None
+
+try:
+    from geometry_simplify import footprint_from_regions
+except Exception:
+    footprint_from_regions = None
 
 FT2_PER_M2 = 10.7639
 
@@ -359,5 +369,3 @@ def _check_sill_head_sanity(ctx: _Ctx) -> CheckResult:
         "pass",
         f"{n} opening(s) with sane vertical placement",
     )
-
-
