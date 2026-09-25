@@ -105,6 +105,16 @@ def _tri_area(a, b, c) -> float:
     return 0.5 * abs((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
 
 
+def _signed_tri_area(a, b, c) -> float:
+    """Signed area of triangle a-b-c.
+
+    Positive = convex vertex (CCW ring): removing it reduces polygon area.
+    Negative = concave (reflex) vertex (CW ring): removing it INCREASES polygon area.
+    Zero = collinear.
+    """
+    return 0.5 * ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
+
+
 def _seg_intersects_ring(p, q, ring_pts, skip_a, skip_b) -> bool:
     """Would the new edge p->q cross any existing ring edge?
 
@@ -307,6 +317,16 @@ def simplify_ring(
             continue
         over_budget.discard(i)
         p, q = prev[i], nxt[i]
+        a, b, c = work[p], work[i], work[q]
+        if _signed_tri_area(a, b, c) <= 0:
+            skipped.append(
+                {
+                    "op": "vertex_removal",
+                    "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
+                }
+            )
+            over_cap.add(i)
+            continue
         # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
