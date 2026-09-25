@@ -243,6 +243,91 @@ def _check_bem_area_conservation(bem: BEMModel, tol_area: float) -> CheckResult:
     )
 
 
+def _check_bem_zone_space_refs(bem: BEMModel) -> CheckResult:
+    """Every zone.space_ids must reference an existing space in bem.spaces."""
+    space_ids = {sp.sid for sp in bem.spaces}
+    bad = []
+    for zone in bem.zones:
+        zone_id, zone_space_ids = zone
+        for sid in zone_space_ids:
+            if sid not in space_ids:
+                bad.append((zone_id, sid))
+    if bad:
+        zone_id, sid = bad[0]
+        return CheckResult(
+            "bem_zone_space_refs",
+            "BEM zone space references",
+            "error",
+            f"zone {zone_id} references non-existent space {sid}",
+            entities=[zone_id],
+        )
+    return CheckResult(
+        "bem_zone_space_refs",
+        "BEM zone space references",
+        "pass",
+        f"all {len(bem.zones)} zones reference only valid spaces",
+    )
+
+
+def _check_bem_hvac_zone_refs(bem: BEMModel) -> CheckResult:
+    """Every space.hvac.zone_ids must reference an existing zone in bem.zones."""
+    zone_ids = {z[0] for z in bem.zones}
+    bad = []
+    for sp in bem.spaces:
+        hvac = getattr(sp, "hvac", None)
+        if hvac is None:
+            continue
+        for zid in hvac.zone_ids:
+            if zid not in zone_ids:
+                bad.append((sp.sid, zid))
+    if bad:
+        space_id, zid = bad[0]
+        return CheckResult(
+            "bem_hvac_zone_refs",
+            "BEM HVAC zone references",
+            "error",
+            f"space {space_id} references non-existent zone {zid}",
+            entities=[space_id],
+        )
+    return CheckResult(
+        "bem_hvac_zone_refs",
+        "BEM HVAC zone references",
+        "pass",
+        f"all {len(bem.spaces)} spaces reference only valid zones",
+    )
+
+
+def _check_bem_zone_space_symmetry(bem: BEMModel) -> CheckResult:
+    """If zone includes space, the space must include that zone (bidirectional)."""
+    bad = []
+    for zone in bem.zones:
+        zone_id, zone_space_ids = zone
+        for sid in zone_space_ids:
+            sp = next((s for s in bem.spaces if s.sid == sid), None)
+            if sp is None:
+                continue
+            hvac = getattr(sp, "hvac", None)
+            if hvac is None:
+                continue
+            if zone_id not in hvac.zone_ids:
+                bad.append((zone_id, sid))
+    if bad:
+        zone_id, space_id = bad[0]
+        return CheckResult(
+            "bem_zone_space_symmetry",
+            "BEM zone-space symmetry",
+            "error",
+            f"zone {zone_id} contains space {space_id} but space does not list zone",
+            entities=[zone_id, space_id],
+        )
+    return CheckResult(
+        "bem_zone_space_symmetry",
+        "BEM zone-space symmetry",
+        "pass",
+        "all zone-space membership relations are bidirectional",
+    )
+
+
 def _check_bem_volume_conservation(bem: BEMModel, tol_volume: float) -> CheckResult:
     """BEM space volumes consistent with expected volumes?
 
@@ -293,6 +378,9 @@ def validate_bem_conservation(
     results: list[CheckResult] = []
     results.append(_check_bem_area_conservation(bem, tol_area))
     results.append(_check_bem_volume_conservation(bem, tol_volume))
+    results.append(_check_bem_zone_space_refs(bem))
+    results.append(_check_bem_hvac_zone_refs(bem))
+    results.append(_check_bem_zone_space_symmetry(bem))
     return results
 
 
