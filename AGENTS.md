@@ -15,7 +15,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 ## Quick Rules
 
 - **Branch:** `develop` is working branch. `main` is releases only. Never push to `main`.
-- **Verify:** `pip install -e ".[test]"`, then `python -m pytest tests/ -q` (~698 tests), `ruff check .`, `ruff format --check .` — all must be green. Record the test count; a drift of ±1 or more in CI signal requires investigation before merging.
+- **Verify:** `pip install -e ".[test]"`, then `python -m pytest tests/ -q` (~699 tests), `ruff check .`, `ruff format --check .` — all must be green. Record the test count; a drift of ±1 or more in CI signal requires investigation before merging.
 - **Never-list:** No datasets, credentials, or machine paths in code. No `sys.path` hacks. `~/workspace/.venv-det` is off-limits. No PyPI publish without explicit human approval.
 - **Provenance:** Every extracted fact carries sheet, revision, method, confidence. Low-confidence results go to the review queue — nothing is silently accepted.
 - **Conservation laws:** `validate.py` errors **block export**.
