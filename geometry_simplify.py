@@ -401,7 +401,6 @@ def simplify_ring(
             original_area=orig_area,
             simplified_area=orig_area,
             area_delta_pct=0.0,
-
             tol=tol,
             method="greedy_min_area_loss",
             confidence=0.0,
