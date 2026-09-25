@@ -213,3 +213,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 - Browse [docs/](docs/README.md) for module guides
 - See [ARCHITECTURE.md](ARCHITECTURE.md) for architecture overview
 - Check existing issues and PRs for context
+
+## XML Parsing
+
+Use  for all XML parsing. Never use , , or bare  directly.
