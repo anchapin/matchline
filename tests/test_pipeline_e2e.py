@@ -66,7 +66,9 @@ def test_pipeline_e2e_bem_export_roundtrip(seed, tmp_path):
     write_gbxml(bem_model, gbxml_path)
 
     check_report = run_checks(model, sres=sres, gbxml_path=str(gbxml_path))
-    assert check_report.ok, f"seed={seed}: BATTERY check errors: {[e.message for e in check_report.errors]}"
+    assert check_report.ok, (
+        f"seed={seed}: BATTERY check errors: {[e.message for e in check_report.errors]}"
+    )
     assert export_gate(check_report), "export gate closed"
 
 
