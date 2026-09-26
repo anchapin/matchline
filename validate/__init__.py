@@ -49,7 +49,10 @@ from .conservation import (
     _check_space_area_matches_polygon,
     _check_space_volume_matches_area_height,
     _check_volume_conservation,
+    area_closure,
+    envelope_closure,
     validate_bem_conservation,
+    volume_closure,
 )
 from .export import (
     _check_assignment_uniqueness,
@@ -169,7 +172,13 @@ BATTERY = [
     _check_hvac_efficiency,
 ]
 
-N_CHECKS = len(BATTERY)
+CONSERVATION_BATTERY = [
+    area_closure,
+    volume_closure,
+    envelope_closure,
+]
+
+N_CHECKS = len(BATTERY) + len(CONSERVATION_BATTERY)
 
 
 def run_checks(
@@ -222,6 +231,32 @@ def run_checks(
                 )
             )
             print(f"ERROR in check '{check.__name__}': {type(e).__name__}: {e}", file=sys.stderr)
+    for check in CONSERVATION_BATTERY:
+        try:
+            result = check(model)
+            if isinstance(result, CheckResult):
+                report.results.append(result)
+            elif isinstance(result, dict):
+                report.results.append(CheckResult(**result))
+            else:
+                report.results.append(
+                    CheckResult(
+                        check.__name__,
+                        check.__name__,
+                        "error",
+                        f"check returned unexpected type {type(result).__name__}",
+                    )
+                )
+        except Exception as e:
+            report.results.append(
+                CheckResult(
+                    check.__name__,
+                    check.__name__,
+                    "error",
+                    f"check itself raised {type(e).__name__}: {e}",
+                )
+            )
+            print(f"ERROR in check '{check.__name__}': {type(e).__name__}: {e}", file=sys.stderr)
     report.model = model
     return report
 
@@ -241,7 +276,10 @@ def export_gate(
     check_model = model if model is not None else getattr(report, "model", None)
     if check_model is not None and hasattr(check_model, "area_delta_pct"):
         try:
-            validate_bem_conservation(check_model)  # type: ignore[arg-type]
+            bem_results = validate_bem_conservation(check_model)  # type: ignore[arg-type]
+            for result in bem_results:
+                if not result.ok:
+                    return False
         # Catch only BEM model structural errors (not all Exceptions) so that
         # unexpected errors (KeyboardInterrupt, SystemExit, etc.) propagate.
         except (AttributeError, TypeError):
@@ -270,4 +308,8 @@ __all__ = [
     "CheckResult",
     "ValidationReport",
     "BATTERY",
+    "CONSERVATION_BATTERY",
+    "area_closure",
+    "volume_closure",
+    "envelope_closure",
 ]

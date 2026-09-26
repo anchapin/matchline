@@ -75,7 +75,7 @@ def test_clean_model_fully_green():
 def test_battery_size_documented():
     # keep docs/validation.md's check count honest; update the doc if this
     # number changes intentionally.
-    assert N_CHECKS == 34
+    assert N_CHECKS == 37
 
 
 @pytest.mark.parametrize(
