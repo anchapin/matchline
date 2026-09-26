@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 34,
-  "errors": 3,
+  "n_checks": 37,
+  "errors": 5,
   "warnings": 4,
-  "passes": 19,
+  "passes": 20,
   "skipped": 8
  },
  "results": [
@@ -287,6 +287,33 @@
    "entities": [
     "L1-101"
    ]
+  },
+  {
+   "check_id": "area_closure",
+   "name": "Area closure",
+   "severity": "error",
+   "message": "room areas sum to 50.00 m^2 vs footprint 60.00 m^2 (error 16.7%, tol 3%)",
+   "entities": [],
+   "expected": 60.0,
+   "actual": 50.0
+  },
+  {
+   "check_id": "volume_closure",
+   "name": "Volume closure",
+   "severity": "error",
+   "message": "room volumes sum to 150.00 m^3 vs expected 180.00 m^3 (error 16.7%, tol 5%)",
+   "entities": [],
+   "expected": 180.0,
+   "actual": 150.0
+  },
+  {
+   "check_id": "envelope_closure",
+   "name": "Envelope closure",
+   "severity": "pass",
+   "message": "solid wall area 92.40 m^2 matches facade 96.00 m^2 within 5%",
+   "entities": [],
+   "expected": 96.0,
+   "actual": 92.4
   }
  ]
 }

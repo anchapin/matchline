@@ -385,36 +385,30 @@ def _stage_5_fail_fast(report, min_review_confidence=None):
         sys.exit(1)
 
 
-def _stage_6_conservation_gate(bem_model):
-    """Raise StageError if conservation laws are violated in the BEM model.
-
-    This check must happen BEFORE any export files are written.
-    """
-    conservation_results = validate_bem_conservation(bem_model)
-    failed = [r for r in conservation_results if r.severity != "pass"]
-    if failed:
-        msgs = "; ".join(f"{r.name}: {r.message}" for r in failed)
+def _stage_6_conservation_gate(bem_model: BEMModel) -> None:
+    """Block export if conservation law checks fail."""
+    results = validate_bem_conservation(bem_model)
+    violations = [r for r in results if r.severity == "error"]
+    if violations:
+        msgs = "; ".join(f"{r.name}: {r.message}" for r in violations)
         raise StageError(
-            stage_name="stage_6_bem_export",
-            stage_index=0,
-            msg=f"Conservation law violation in BEM transformation: {msgs}",
+            stage_name="validate_bem_conservation",
+            stage_index=6,
+            msg=f"Conservation law violation: {msgs}",
             hint="Check area_delta_pct and simplify_tolerance thresholds",
         )
 
 
 def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
     """Stage 6: Export BEM model to gbXML and IFC4 formats."""
-    bem_dir = out_dir / "stage_06_bem"
-
     bem_model = model_from_linked_model(
         model=model,
         simplified_ring=sres.ring,
         wall_height_m=wall_height,
         simplify_tolerance=simplify_tol * 100.0,
     )
-
     _stage_6_conservation_gate(bem_model)
-
+    bem_dir = out_dir / "stage_06_bem"
     bem_dir.mkdir(parents=True, exist_ok=True)
 
     gbxml_path = bem_dir / f"{model.name or 'building'}.xml"

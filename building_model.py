@@ -37,6 +37,8 @@ import types
 from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
+from datasets_adapter import ScheduleEntry
+
 MODEL_VERSION = "1.0"
 
 # Links below this confidence are flagged for human review, not silently
@@ -64,6 +66,32 @@ class Provenance:
     confidence: float  # 0..1
     bbox: Optional[list] = None  # [xtl,ytl,xbr,ybr] in sheet px, if applicable
     note: str = ""
+
+
+@dataclass
+class SymbolLinkage:
+    """Explicit link between a symbol instance and its schedule row.
+
+    Represents a resolved or unresolved link from a symbol detection
+    (e.g. window tag) to a schedule entry. The linkage graph is
+    queryable: callers can traverse from symbol → schedule row to
+    get dimensions, type, and other metadata for takeoffs.
+
+    Attributes:
+        symbol_id: Unique identifier for this symbol instance (detection).
+        symbol_tag: The tag label from the symbol (e.g. "W1", "D1").
+        category: Symbol category (e.g. "window", "door").
+        schedule_entry: The matched schedule entry, or None if unlinked.
+        confidence: Confidence score for the match (0..1).
+        provenance: Provenance information (sheet, revision, method).
+    """
+
+    symbol_id: str
+    symbol_tag: str
+    category: str
+    schedule_entry: "ScheduleEntry | None" = None
+    confidence: float = 0.0
+    provenance: Provenance = field(default_factory=lambda: Provenance("", 0, "", 0.0))
 
 
 @dataclass
@@ -442,6 +470,10 @@ class BuildingModel:
         revision_log: Ordered log of all revisions applied to this model,
             including supersession events.
         review_queue: List of low-confidence items awaiting human review.
+        symbol_linkages: Explicit symbol-to-schedule linkage graph. Each entry
+            links a symbol instance (detection) to its schedule row, or marks
+            it as unlinked. Takeoffs derive from this graph rather than
+            parallel symbol and schedule lists.
         _rev_seq: Internal revision sequence counter.
 
     Args:
@@ -472,6 +504,7 @@ class BuildingModel:
     # schedules: tag -> ScheduleEntry as plain dict (revived on load)
     revision_log: List[RevisionEvent] = field(default_factory=list)
     review_queue: List[ReviewItem] = field(default_factory=list)
+    symbol_linkages: List[SymbolLinkage] = field(default_factory=list)
     _rev_seq: int = 0
 
     # -- revision log ----------------------------------------------------
