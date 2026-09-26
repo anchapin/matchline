@@ -22,6 +22,7 @@ from bem_export import (
     BEMSpace,
     _ensure_ccw,
     _validate_out_path,
+    validate_ifc4,
     write_ifc4,
 )
 from building_model import BuildingModel, EnvelopeWall, SpaceLighting
@@ -190,16 +191,25 @@ def _export_ifc(model: BuildingModel, path: str | Path) -> Path:
     bem_results = validate_bem_conservation(bem)
     failed = [r for r in bem_results if r.severity == "error"]
     if failed:
+
         def _fmt(r):
             a = f"{r.actual:.3f}" if r.actual is not None else "N/A"
             e = f"{r.expected:.3f}" if r.expected is not None else "N/A"
             return f"  - {r.name}: actual={a}, expected={e}"
+
         msgs = [_fmt(r) for r in failed]
         raise ValueError(
             f"Conservation-law validation failed ({len(failed)} check(s) failed):\n"
             + "\n".join(msgs)
         )
-    return write_ifc4(bem, path)
+    ifc_path = write_ifc4(bem, path)
+    ok, errors = validate_ifc4(ifc_path)
+    if not ok:
+        raise ValueError(
+            f"IFC schema validation failed ({len(errors)} error(s)):\n"
+            + "\n".join(f"  - {e}" for e in errors)
+        )
+    return ifc_path
 
 
 def export_ifc(model_path: str, out_path: str) -> None:
