@@ -81,9 +81,7 @@ def test_validation_error_blocks_bem_export(tmp_path, monkeypatch):
             message="Floor area mismatch: expected 100.0 m², got 90.0 m²",
         )
 
-    monkeypatch.setattr(
-        "run_pipeline.validate_bem_conservation", raising_validate_bem_conservation
-    )
+    monkeypatch.setattr("run_pipeline.validate_bem_conservation", raising_validate_bem_conservation)
 
     ns = argparse.Namespace(
         seed=101,
