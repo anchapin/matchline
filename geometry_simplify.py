@@ -317,17 +317,18 @@ def simplify_ring(
             continue
         over_budget.discard(i)
         p, q = prev[i], nxt[i]
-        # CONCAVE CHECK DISABLED FOR DEBUGGING
-        # pa, pi, qa = work[p], work[i], work[q]
-        # if _signed_tri_area(pa, pi, qa) <= -1e-6:
-        #     skipped.append(
-        #         {
-        #             "op": "vertex_removal",
-        #             "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
-        #         }
-        #     )
-        #     over_cap.add(i)
-        #     continue
+        # Concave (reflex) vertices must not be removed: their removal would
+        # increase polygon area, violating area-conservation invariants.
+        pa, pi, qa = work[p], work[i], work[q]
+        if _signed_tri_area(pa, pi, qa) <= -1e-6:
+            skipped.append(
+                {
+                    "op": "vertex_removal",
+                    "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
+                }
+            )
+            over_cap.add(i)
+            continue
         # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
