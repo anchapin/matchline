@@ -417,9 +417,11 @@ def test_run_checks_exception_surfaces_to_cli():
 
     validate._check_area_conservation = raising_wrapper
 
+    _bat_index = None
     for i, check in enumerate(validate.BATTERY):
         if check.__name__ == "_check_area_conservation":
             validate.BATTERY[i] = raising_wrapper
+            _bat_index = i
             break
 
     captured_stderr = io.StringIO()
@@ -431,10 +433,8 @@ def test_run_checks_exception_surfaces_to_cli():
     finally:
         sys.stderr = old_stderr
         validate._check_area_conservation = original_check
-        for i, check in enumerate(validate.BATTERY):
-            if check.__name__ == "_check_area_conservation":
-                validate.BATTERY[i] = original_check
-                break
+        if _bat_index is not None:
+            validate.BATTERY[_bat_index] = original_check
 
     stderr_output = captured_stderr.getvalue()
     assert "ERROR in check 'raising_wrapper': ValueError: deliberate test failure" in stderr_output
