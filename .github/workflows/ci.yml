@@ -31,7 +31,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: pip install -e ".[test]" "ruff==0.16.8"
+        run: pip install --no-cache-dir -e ".[test]" "ruff==0.16.8" && ruff --version
 
       - name: Run ruff check
         run: ruff check .
