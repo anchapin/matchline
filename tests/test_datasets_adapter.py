@@ -80,6 +80,20 @@ class TestParseScheduleCSV:
         assert "W1" in result
         assert result["W1"].width_m == 2.0
 
+    def test_csv_tag_normalization(self, tmp_path):
+        csv = tmp_path / "normalize.csv"
+        csv.write_text(
+            "tag,category,width_m,height_m\n"
+            "  w1  ,window,1.0,1.0\n"
+            "W2 UP,window,2.0,2.0\n"
+            "w3 with space,window,3.0,3.0\n",
+            encoding="utf-8",
+        )
+        result = parse_schedule_csv(csv)
+        assert "W1" in result
+        assert "W2UP" in result
+        assert "W3WITHSPACE" in result
+
 
 # --- parse_schedule_table ----------------------------------------------------
 
