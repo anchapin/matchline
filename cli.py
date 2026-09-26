@@ -21,6 +21,17 @@ import sys
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 
 
+def check_range_0_1(value: str) -> float:
+    """Parse and validate a float in range [0.0, 1.0] for argparse."""
+    try:
+        f = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {value!r}")
+    if not (0.0 <= f <= 1.0):
+        raise argparse.ArgumentTypeError(f"{value} is out of range [0.0, 1.0]")
+    return f
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Unified pipeline: generate + link + validate + BEM export."""
     import run_pipeline
@@ -271,7 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--confidence-threshold",
-        type=float,
+        type=check_range_0_1,
         default=None,
         dest="confidence_threshold",
         help=f"Minimum confidence for review queue (0.0-1.0). Overrides config file. "
