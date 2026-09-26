@@ -334,7 +334,7 @@ def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
     sched: dict[str, ScheduleEntry] = {}
     try:
         for row in csv.DictReader(f):
-            tag = row["tag"].strip()
+            tag = row["tag"].strip().upper().replace(" ", "")
             sched[tag] = ScheduleEntry(
                 tag=tag,
                 category=row.get("category", "").strip().lower() or "window",
