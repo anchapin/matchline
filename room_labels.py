@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from building_model import Provenance
+from datasets_adapter import polygon_area_px2
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -258,13 +259,6 @@ def point_to_polygon_dist(pt, poly) -> float:
             d = math.hypot(x - (x1 + t * dx), y - (y1 + t * dy))
         best = min(best, d)
     return best
-
-
-def polygon_area_px2(poly) -> float:
-    p = np.asarray(poly, dtype=np.float64)
-    if len(p) < 3:
-        return 0.0
-    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
 
 
 def assign_labels(

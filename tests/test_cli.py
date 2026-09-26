@@ -79,6 +79,24 @@ class TestArgumentParsing:
         r = _run(["review"])
         assert r.returncode == 2
 
+    def test_confidence_threshold_rejects_value_above_1(self):
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "1.5"])
+        assert r.returncode == 2
+        assert "out of range" in r.stderr or "range" in r.stderr.lower()
+
+    def test_confidence_threshold_rejects_value_below_0(self):
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "-0.5"])
+        assert r.returncode == 2
+        assert "out of range" in r.stderr or "range" in r.stderr.lower()
+
+    def test_confidence_threshold_accepts_valid_edge_values(self):
+        # Test boundary values 0.0 and 1.0 are accepted
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "0.0"])
+        # Should not fail due to range (may fail for other reasons like missing deps)
+        assert "out of range" not in r.stderr.lower()
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "1.0"])
+        assert "out of range" not in r.stderr.lower()
+
 
 class TestValidateExitCode:
     def test_validate_exits_zero_on_clean_run(self, tmp_path, monkeypatch):

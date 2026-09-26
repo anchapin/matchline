@@ -193,6 +193,10 @@ def run_checks(
     opening_eps: float = 0.005,
     min_review_confidence: float | None = None,
 ) -> ValidationReport:
+    if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
+        raise ValueError(
+            f"min_review_confidence must be in [0.0, 1.0], got {min_review_confidence!r}"
+        )
     ctx = _build_ctx(
         model,
         tol_area=tol_area,
@@ -266,6 +270,10 @@ def export_gate(
     model: BuildingModel | None = None,
     min_review_confidence: float | None = None,
 ) -> bool:
+    if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
+        raise ValueError(
+            f"min_review_confidence must be in [0.0, 1.0], got {min_review_confidence!r}"
+        )
     """May this model be exported to gbXML/IFC? Errors block; warnings don't.
 
     Re-checks the review queue after auto-triage has run to ensure low-confidence

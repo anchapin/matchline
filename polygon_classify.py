@@ -39,6 +39,17 @@ class PolyClassification:
     poly_type: str  # "room" | "shaft" | "closet" | "elevator_core" | "unassigned"
     confidence: float
     reasons: list[str]
+    evidence: PolyClassEvidence
+
+
+def _compute_adjacency(rect_m: list, grids_h: dict) -> int:
+    """Count how many grid intervals the room spans (proxy for wall-sharing neighbors)."""
+    if not grids_h or len(grids_h) < 2:
+        return 0
+    y0, y1 = rect_m[1], rect_m[3]
+    y_sorted = sorted(grids_h.values())
+    count = sum(1 for y in y_sorted if y0 < y < y1)
+    return max(1, count + 1)
 
 
 def _aspect_ratio(rect_m: list) -> float:
@@ -57,42 +68,58 @@ def _classify_from_evidence(ev: PolyClassEvidence) -> PolyClassification:
 
     if area < 2.0 and not ev.has_room_number:
         reasons.append("tiny area, no number → shaft")
-        return PolyClassification("shaft", 0.95, reasons)
+        return PolyClassification("shaft", 0.95, reasons, ev)
 
     if 2.0 <= area < 8.0 and not ev.has_room_number:
         reasons.append("small unnumbered polygon → closet")
-        return PolyClassification("closet", 0.90, reasons)
+        return PolyClassification("closet", 0.90, reasons, ev)
 
     if ev.has_room_number and area >= 8.0:
         reasons.append("has number and area ≥ 8 m² → room")
-        return PolyClassification("room", 0.95, reasons)
+        return PolyClassification("room", 0.95, reasons, ev)
 
     if ev.has_room_number and area < 8.0:
         reasons.append("has number but small → small_room")
-        return PolyClassification("room", 0.80, reasons)
+        return PolyClassification("room", 0.80, reasons, ev)
 
     if "elevator" in label or "elev" in label:
         reasons.append("label mentions elevator")
-        return PolyClassification("elevator_core", 0.90, reasons)
+        return PolyClassification("elevator_core", 0.90, reasons, ev)
 
     if "stair" in label or "stairwell" in label:
         reasons.append("label mentions stair")
-        return PolyClassification("elevator_core", 0.90, reasons)
+        return PolyClassification("elevator_core", 0.90, reasons, ev)
 
     if "shaft" in label or "chase" in label:
         reasons.append("label mentions shaft/chase")
-        return PolyClassification("shaft", 0.90, reasons)
+        return PolyClassification("shaft", 0.90, reasons, ev)
 
     if "closet" in label or "storage" in label or "utility" in label:
         reasons.append("label suggests closet/storage")
-        return PolyClassification("closet", 0.85, reasons)
+        return PolyClassification("closet", 0.85, reasons, ev)
+
+    if ev.n_adjacent_spaces > 2 and area < 15:
+        reasons.append(f"high_adjacency({ev.n_adjacent_spaces})")
+        return PolyClassification("room", 0.75, reasons, ev)
+
+    if ev.n_doors > 2 and area < 15:
+        reasons.append(f"multi_door({ev.n_doors})")
+        return PolyClassification("room", 0.85, reasons, ev)
+
+    if ev.aspect_ratio > 5 and area < 20:
+        reasons.append(f"very_high_aspect({ev.aspect_ratio:.1f})")
+        return PolyClassification("shaft", 0.88, reasons, ev)
+
+    if ev.aspect_ratio > 3 and area < 10:
+        reasons.append(f"high_aspect({ev.aspect_ratio:.1f})")
+        return PolyClassification("closet", 0.88, reasons, ev)
 
     if area < 4.0:
         reasons.append("small unclassified → closet (default)")
-        return PolyClassification("closet", 0.70, reasons)
+        return PolyClassification("closet", 0.70, reasons, ev)
 
     reasons.append("default unassigned")
-    return PolyClassification("unassigned", 0.50, reasons)
+    return PolyClassification("unassigned", 0.50, reasons, ev)
 
 
 def classify_polygons(rooms: list, south_windows: list, grids_h: dict) -> dict:
@@ -119,7 +146,7 @@ def classify_polygons(rooms: list, south_windows: list, grids_h: dict) -> dict:
         has_num = bool(rn and str(rn).strip())
         label = r.get("name", "")
         n_doors = window_by_room.get(rn, 0)
-        n_adj = 0
+        n_adj = _compute_adjacency(rect, grids_h)
 
         ev = PolyClassEvidence(
             area_m2=area,

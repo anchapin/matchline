@@ -442,3 +442,65 @@ def test_run_checks_exception_surfaces_to_cli():
     assert len(error_results) == 1
     assert "ValueError" in error_results[0].message
     assert "deliberate test failure" in error_results[0].message
+
+
+class TestConfidenceThresholdValidation:
+    """Regression tests for issue #480: --confidence-threshold accepts out-of-range floats."""
+
+    def test_run_checks_rejects_min_review_confidence_above_1(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            run_checks(m, min_review_confidence=1.5)
+
+    def test_run_checks_rejects_min_review_confidence_below_0(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            run_checks(m, min_review_confidence=-0.1)
+
+    def test_run_checks_accepts_valid_min_review_confidence(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        # Should not raise - valid range [0.0, 1.0]
+        report = run_checks(m, min_review_confidence=0.0)
+        assert report is not None
+        report = run_checks(m, min_review_confidence=0.5)
+        assert report is not None
+        report = run_checks(m, min_review_confidence=1.0)
+        assert report is not None
+
+    def test_export_gate_rejects_min_review_confidence_above_1(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            export_gate(report, model=m, min_review_confidence=1.5)
+
+    def test_export_gate_rejects_min_review_confidence_below_0(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            export_gate(report, model=m, min_review_confidence=-0.5)
+
+    def test_export_gate_accepts_valid_min_review_confidence(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        # Should not raise - valid range [0.0, 1.0]
+        result = export_gate(report, model=m, min_review_confidence=0.0)
+        assert result is not None
+        result = export_gate(report, model=m, min_review_confidence=0.5)
+        assert result is not None
+        result = export_gate(report, model=m, min_review_confidence=1.0)
+        assert result is not None
