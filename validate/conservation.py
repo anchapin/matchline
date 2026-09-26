@@ -431,3 +431,169 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
         "pass",
         f"envelope wall areas match perimeter x height within {ctx.tol_envelope:.0%}",
     )
+
+
+def area_closure(model: BuildingModel) -> CheckResult:
+    """Total floor area ~= sum of individual room areas.
+
+    Conservation law: the gross floor area (union of space polygons) should
+    equal the sum of each room's reported area, within tolerance.
+    A mismatch indicates an error in either the space boundary definitions
+    or the area calculations.
+    """
+    if not _HAS_SIMPLIFY:
+        return CheckResult(
+            "area_closure",
+            "Area closure",
+            "skip",
+            "geometry_simplify unavailable",
+        )
+    try:
+        all_polys = [sp.polygon_m for sp in model.spaces.values() if sp.polygon_m is not None]
+        if not all_polys:
+            return CheckResult(
+                "area_closure",
+                "Area closure",
+                "skip",
+                "no space polygons available",
+            )
+        union = footprint_from_regions(all_polys)
+        ring = union if isinstance(union, list) else []
+        footprint_area = abs(_shoelace(ring))
+        room_area_sum = sum(sp.area_m2 or 0.0 for sp in model.spaces.values())
+        rel_err = _rel_err(room_area_sum, footprint_area)
+        if rel_err > 0.03:
+            return CheckResult(
+                "area_closure",
+                "Area closure",
+                "error",
+                f"room areas sum to {room_area_sum:.2f} m^2 vs footprint {footprint_area:.2f} m^2 "
+                f"(error {rel_err:.1%}, tol 3%)",
+                expected=footprint_area,
+                actual=room_area_sum,
+            )
+        return CheckResult(
+            "area_closure",
+            "Area closure",
+            "pass",
+            f"room areas sum {room_area_sum:.2f} m^2 matches footprint {footprint_area:.2f} m^2 "
+            f"within 3%",
+            expected=footprint_area,
+            actual=room_area_sum,
+        )
+    except Exception as exc:
+        return CheckResult(
+            "area_closure",
+            "Area closure",
+            "error",
+            f"could not compute area closure: {exc}",
+        )
+
+
+def volume_closure(model: BuildingModel) -> CheckResult:
+    """Total building volume ~= sum of individual room volumes.
+
+    Conservation law: the gross building volume (footprint area x characteristic
+    height) should equal the sum of each room's reported volume, within tolerance.
+    """
+    if not _HAS_SIMPLIFY:
+        return CheckResult(
+            "volume_closure",
+            "Volume closure",
+            "skip",
+            "geometry_simplify unavailable",
+        )
+    try:
+        all_polys = [sp.polygon_m for sp in model.spaces.values() if sp.polygon_m is not None]
+        if not all_polys:
+            return CheckResult(
+                "volume_closure",
+                "Volume closure",
+                "skip",
+                "no space polygons available",
+            )
+        union = footprint_from_regions(all_polys)
+        ring = union if isinstance(union, list) else []
+        footprint_area = abs(_shoelace(ring))
+        room_vol_sum = sum(sp.volume_m3 or 0.0 for sp in model.spaces.values())
+        if not model.levels:
+            return CheckResult(
+                "volume_closure",
+                "Volume closure",
+                "skip",
+                "no levels available",
+            )
+        avg_height = sum(l.wall_height_m or 3.0 for l in model.levels) / len(model.levels)
+        expected_vol = footprint_area * avg_height
+        rel_err = _rel_err(room_vol_sum, expected_vol)
+        if rel_err > 0.05:
+            return CheckResult(
+                "volume_closure",
+                "Volume closure",
+                "error",
+                f"room volumes sum to {room_vol_sum:.2f} m^3 vs expected {expected_vol:.2f} m^3 "
+                f"(error {rel_err:.1%}, tol 5%)",
+                expected=expected_vol,
+                actual=room_vol_sum,
+            )
+        return CheckResult(
+            "volume_closure",
+            "Volume closure",
+            "pass",
+            f"room volumes sum {room_vol_sum:.2f} m^3 matches expected {expected_vol:.2f} m^3 "
+            f"within 5%",
+            expected=expected_vol,
+            actual=room_vol_sum,
+        )
+    except Exception as exc:
+        return CheckResult(
+            "volume_closure",
+            "Volume closure",
+            "error",
+            f"could not compute volume closure: {exc}",
+        )
+
+
+def envelope_closure(model: BuildingModel) -> CheckResult:
+    """Total facade area ~= sum of solid wall areas (facade minus openings).
+
+    Conservation law: the total facade area (sum of EnvelopeWall.area_m2) should
+    equal the sum of solid wall areas (facade area minus window+door areas),
+    within tolerance. This ensures the facade area is fully accounted for.
+    """
+    try:
+        facade_area = sum(w.area_m2 or 0.0 for w in model.envelope)
+        opening_area = 0.0
+        for sp in model.spaces.values():
+            if sp.openings:
+                for op in sp.openings:
+                    if op.area_m2:
+                        opening_area += op.area_m2
+        solid_wall_area = facade_area - opening_area
+        rel_err = _rel_err(solid_wall_area, facade_area) if facade_area > 0 else float("inf")
+        if rel_err > 0.05:
+            return CheckResult(
+                "envelope_closure",
+                "Envelope closure",
+                "error",
+                f"solid wall area {solid_wall_area:.2f} m^2 vs facade {facade_area:.2f} m^2 "
+                f"(error {rel_err:.1%}, tol 5%)",
+                expected=facade_area,
+                actual=solid_wall_area,
+            )
+        return CheckResult(
+            "envelope_closure",
+            "Envelope closure",
+            "pass",
+            f"solid wall area {solid_wall_area:.2f} m^2 matches facade {facade_area:.2f} m^2 "
+            f"within 5%",
+            expected=facade_area,
+            actual=solid_wall_area,
+        )
+    except Exception as exc:
+        return CheckResult(
+            "envelope_closure",
+            "Envelope closure",
+            "error",
+            f"could not compute envelope closure: {exc}",
+        )
