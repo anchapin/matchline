@@ -85,9 +85,7 @@ def parse_table_entity(entity_data: dict[str, Any]) -> TableEntity:
     )
 
 
-def parse_block_schedule(
-    block_ref: dict[str, Any], block_def: dict[str, Any]
-) -> BlockSchedule:
+def parse_block_schedule(block_ref: dict[str, Any], block_def: dict[str, Any]) -> BlockSchedule:
     block_name = block_def.get("name", block_ref.get("name", ""))
     handle = block_ref.get("handle", "")
 
@@ -146,7 +144,9 @@ def parse_ole_schedule(ole_data: dict[str, Any]) -> OleSchedule | None:
     )
 
 
-def _cell_provenance(sheet_id: str, revision: str, method: str, base_confidence: float) -> Provenance:
+def _cell_provenance(
+    sheet_id: str, revision: str, method: str, base_confidence: float
+) -> Provenance:
     return Provenance(
         sheet_id=sheet_id,
         revision=revision,
@@ -175,14 +175,20 @@ def build_schedule_table(
             for ri, raw_row in enumerate(raw_rows):
                 cells = []
                 for ci, cell_value in enumerate(raw_row):
-                    prov = _cell_provenance(sheet_id, revision, "dwg_table_entity", entity.provenance.confidence)
-                    cells.append(ScheduleCell(
-                        value=str(cell_value),
-                        row=ri,
-                        col=ci,
-                        provenance=prov,
-                    ))
-                row_prov = _cell_provenance(sheet_id, revision, "dwg_table_entity", entity.provenance.confidence)
+                    prov = _cell_provenance(
+                        sheet_id, revision, "dwg_table_entity", entity.provenance.confidence
+                    )
+                    cells.append(
+                        ScheduleCell(
+                            value=str(cell_value),
+                            row=ri,
+                            col=ci,
+                            provenance=prov,
+                        )
+                    )
+                row_prov = _cell_provenance(
+                    sheet_id, revision, "dwg_table_entity", entity.provenance.confidence
+                )
                 rows.append(ScheduleRow(cells=cells, row_index=ri, provenance=row_prov))
 
     for block in blocks:
@@ -192,14 +198,20 @@ def build_schedule_table(
 
             cells = []
             for ci, val in enumerate(block.attribute_values):
-                prov = _cell_provenance(sheet_id, revision, "dwg_block_schedule", block.provenance.confidence)
-                cells.append(ScheduleCell(
-                    value=val,
-                    row=0,
-                    col=ci,
-                    provenance=prov,
-                ))
-            row_prov = _cell_provenance(sheet_id, revision, "dwg_block_schedule", block.provenance.confidence)
+                prov = _cell_provenance(
+                    sheet_id, revision, "dwg_block_schedule", block.provenance.confidence
+                )
+                cells.append(
+                    ScheduleCell(
+                        value=val,
+                        row=0,
+                        col=ci,
+                        provenance=prov,
+                    )
+                )
+            row_prov = _cell_provenance(
+                sheet_id, revision, "dwg_block_schedule", block.provenance.confidence
+            )
             rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
 
     for ole in ole_schedules:
@@ -213,14 +225,20 @@ def build_schedule_table(
             for ri, raw_row in enumerate(raw_rows):
                 cells = []
                 for ci, cell_value in enumerate(raw_row):
-                    prov = _cell_provenance(sheet_id, revision, "ole_spreadsheet", ole.provenance.confidence)
-                    cells.append(ScheduleCell(
-                        value=str(cell_value),
-                        row=ri,
-                        col=ci,
-                        provenance=prov,
-                    ))
-                row_prov = _cell_provenance(sheet_id, revision, "ole_spreadsheet", ole.provenance.confidence)
+                    prov = _cell_provenance(
+                        sheet_id, revision, "ole_spreadsheet", ole.provenance.confidence
+                    )
+                    cells.append(
+                        ScheduleCell(
+                            value=str(cell_value),
+                            row=ri,
+                            col=ci,
+                            provenance=prov,
+                        )
+                    )
+                row_prov = _cell_provenance(
+                    sheet_id, revision, "ole_spreadsheet", ole.provenance.confidence
+                )
                 rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
 
     table_name = ""

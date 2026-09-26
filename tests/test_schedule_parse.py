@@ -203,7 +203,9 @@ def test_build_schedule_table_combined():
     }
     block = parse_block_schedule(block_ref, {})
 
-    ole = parse_ole_schedule({"type": "Excel", "data": {"headers": [], "rows": []}, "source_entity": None})
+    ole = parse_ole_schedule(
+        {"type": "Excel", "data": {"headers": [], "rows": []}, "source_entity": None}
+    )
 
     table = build_schedule_table([entity], [block], [ole], "sheet_X", "1")
 
