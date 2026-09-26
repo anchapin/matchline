@@ -106,13 +106,13 @@ def _tri_area(a, b, c) -> float:
 
 
 def _signed_tri_area(a, b, c) -> float:
-    """Signed area of triangle a-b-c.
+    """Signed area of triangle a-b-c using the standard shoelace formula.
 
-    Positive = convex vertex (CCW ring): removing it reduces polygon area.
-    Negative = concave (reflex) vertex (CW ring): removing it INCREASES polygon area.
+    Positive = vertex bends LEFT (convex) when traversed in CCW order.
+    Negative = vertex bends RIGHT (concave / reflex) when traversed in CCW order.
     Zero = collinear.
     """
-    return 0.5 * ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
+    return 0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
 
 
 def _seg_intersects_ring(p, q, ring_pts, skip_a, skip_b) -> bool:
@@ -266,6 +266,7 @@ def simplify_ring(
 
     # --- Greedy minimum-area-loss vertex removal ---------------------------
     nv = len(work)
+    ring_is_ccw = Polygon(work).exterior.is_ccw
     alive = [True] * nv
     alive_count = nv
     prev = [(i - 1) % nv for i in range(nv)]
@@ -320,7 +321,9 @@ def simplify_ring(
         # Concave (reflex) vertices must not be removed: their removal would
         # increase polygon area, violating area-conservation invariants.
         pa, pi, qa = work[p], work[i], work[q]
-        if _signed_tri_area(pa, pi, qa) <= -1e-6:
+        cross = 2 * _signed_tri_area(pa, pi, qa)
+        is_concave = (cross * (1 if ring_is_ccw else -1)) < -1e-6
+        if is_concave:
             skipped.append(
                 {
                     "op": "vertex_removal",
