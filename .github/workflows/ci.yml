@@ -44,7 +44,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=870  # +1 test for cross-level window deduplication
+          EXPECTED_TEST_COUNT=874  # +5 tests total (870 for issue-404 + 4 for issue-424)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
