@@ -25,6 +25,8 @@ from bem_export import (
     write_ifc4,
 )
 from building_model import BuildingModel, EnvelopeWall, SpaceLighting
+from run_pipeline import StageError
+from validate import validate_bem_conservation
 
 # ---------------------------------------------------------------------------
 # Adapter
@@ -194,4 +196,15 @@ def export_ifc(model_path: str, out_path: str) -> None:
     """
     _validate_in_path(model_path)
     model = BuildingModel.from_json(Path(model_path).read_text())
+    bem = _bem_from_model(model)
+    results = validate_bem_conservation(bem)
+    errors = [r for r in results if r.severity == "error"]
+    if errors:
+        msgs = "; ".join(r.message for r in errors)
+        raise StageError(
+            stage_name="ifc_export",
+            stage_index=6,
+            msg=f"Conservation law violation: {msgs}",
+            hint="Run 'matchline validate' to inspect and resolve errors before exporting",
+        )
     _export_ifc(model, _validate_out_path(out_path))

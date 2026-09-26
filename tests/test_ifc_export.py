@@ -9,6 +9,8 @@ Happy path: export produces a valid IFC with correct entity counts.
 Defect injection: model mismatch triggers _check_ifc_counts error.
 """
 
+import pytest
+
 from building_model import (
     BuildingModel,
     EnvelopeWall,
@@ -17,7 +19,9 @@ from building_model import (
     Space,
     SpaceLighting,
 )
-from ifc_export import _export_ifc
+from ifc_export import _export_ifc, export_ifc
+from run_pipeline import StageError
+from tests.model_factory import break_area, make_clean_model
 from validate import _build_ctx, _check_ifc_counts, run_checks
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
@@ -160,3 +164,19 @@ def test_export_runs_validation_with_ifc_path(tmp_path):
 
     ifc_result = next(r for r in report.results if r.check_id == "ifc_entity_counts")
     assert ifc_result.severity == "pass"
+
+
+def test_export_refuses_on_conservation_violation(tmp_path, monkeypatch):
+    """export_ifc raises StageError when the model violates conservation laws."""
+    m = make_clean_model()
+    break_area(m)
+
+    monkeypatch.chdir(tmp_path)
+    model_path = tmp_path / "model.json"
+    out_path = tmp_path / "out.ifc"
+    model_path.write_text(m.to_json())
+
+    with pytest.raises(StageError):
+        export_ifc(str(model_path), str(out_path))
+
+    assert not out_path.exists(), "no file should be written when conservation validation fails"
