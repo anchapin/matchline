@@ -111,6 +111,70 @@ class TestDedupeSpaceOpenings:
         assert "WINDOW" in tags
         assert "DOOR" in tags
 
+    def test_cross_level_same_facade_deduplicated(self):
+        """Issue #404: windows on same facade across different levels are deduplicated."""
+        model = BuildingModel(name="cross-level-test")
+        level1 = type("Level", (), {"id": "L1", "name": "Level 1", "elevation_z_m": 0.0})()
+        level2 = type("Level", (), {"id": "L2", "name": "Level 2", "elevation_z_m": 3.0})()
+        model.levels.extend([level1, level2])
+
+        space1 = Space(
+            id="L1-101",
+            level_id="L1",
+            name="Room 101",
+            number="101",
+            polygon_m=[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            area_m2=100.0,
+        )
+        space2 = Space(
+            id="L2-101",
+            level_id="L2",
+            name="Room 101",
+            number="101",
+            polygon_m=[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            area_m2=100.0,
+        )
+        model.spaces["L1-101"] = space1
+        model.spaces["L2-101"] = space2
+
+        prov1 = type("Provenance", (), {"confidence": 0.9, "sheet_id": "EL-L1"})()
+        prov2 = type("Provenance", (), {"confidence": 0.95, "sheet_id": "EL-L2"})()
+
+        op1 = SpaceOpening(
+            id="OP1",
+            tag="WINDOW",
+            category="window",
+            width_m=1.5,
+            height_m=2.0,
+            sill_m=0.9,
+            host_facade="NORTH",
+            provenance=prov1,
+        )
+        op2 = SpaceOpening(
+            id="OP2",
+            tag="WINDOW",
+            category="window",
+            width_m=1.5,
+            height_m=2.0,
+            sill_m=0.9,
+            host_facade="NORTH",
+            provenance=prov2,
+        )
+        space1.openings.append(op1)
+        space2.openings.append(op2)
+
+        _dedupe_space_openings(model)
+
+        all_openings = (
+            list(model.spaces.values())[0].openings + list(model.spaces.values())[1].openings
+        )
+        assert len(all_openings) == 1
+        assert all_openings[0].tag == "WINDOW"
+        assert all_openings[0].host_facade == "NORTH"
+        assert "+" in all_openings[0].provenance.sheet_id
+        assert "EL-L1" in all_openings[0].provenance.sheet_id
+        assert "EL-L2" in all_openings[0].provenance.sheet_id
+
 
 class TestReviewQueueRouting:
     def test_low_confidence_fact_lands_in_review_queue(self):
