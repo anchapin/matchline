@@ -110,7 +110,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=902  # +16 tests: +12 issue-423, +3 conservation checks, +1 #415 export-block regression
+          EXPECTED_TEST_COUNT=904  # +16 tests: +12 issue-423, +3 conservation checks, +1 #415 export-block regression +2 #466 regression tests
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
