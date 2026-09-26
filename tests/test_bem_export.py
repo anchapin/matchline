@@ -219,6 +219,83 @@ def test_provenance_carried_through_export_boundary():
     assert bem_opening.history[0].revision == 0
 
 
+def test_model_from_linked_model_drops_openings_with_missing_dimensions():
+    """Issue #481: Openings with missing dimensions must be recorded in skipped_openings.
+
+    model_from_linked_model silently dropped openings with width_m=None or
+    height_m=None. It must now record them in skipped_openings with a reason
+    and add a note to the BEMModel.
+    """
+    from run_pipeline import model_from_linked_model
+
+    opening_good = SpaceOpening(
+        id="op_good",
+        tag="W1",
+        category="window",
+        width_m=1.0,
+        height_m=2.0,
+        sill_m=0.9,
+        provenance=Provenance(
+            sheet_id="arch_A201",
+            revision=1,
+            method="elevation_extraction",
+            confidence=0.90,
+        ),
+    )
+    opening_bad = SpaceOpening(
+        id="op_bad",
+        tag="W2",
+        category="window",
+        width_m=None,
+        height_m=None,
+        sill_m=0.9,
+        provenance=Provenance(
+            sheet_id="arch_A201",
+            revision=1,
+            method="elevation_extraction",
+            confidence=0.90,
+        ),
+    )
+    space = Space(
+        id="L1-101",
+        level_id="L1",
+        polygon_m=[[0, 0], [10, 0], [10, 10], [0, 10]],
+        name="Office",
+        number="101",
+        openings=[opening_good, opening_bad],
+    )
+
+    class FakeLevel:
+        wall_height_m = 3.0
+
+    class FakeBuildingModel:
+        id = "TEST"
+        name = "Test Building"
+
+    model = FakeBuildingModel()
+    model.spaces = {"L1-101": space}
+
+    bem_model = model_from_linked_model(
+        model=model,
+        simplified_ring=[[0, 0], [10, 0], [10, 10], [0, 10]],
+        wall_height_m=3.0,
+        simplify_tolerance=0.01,
+    )
+
+    assert len(bem_model.skipped_openings) == 1, (
+        f"Expected 1 skipped opening, got {len(bem_model.skipped_openings)}"
+    )
+    skipped = bem_model.skipped_openings[0]
+    assert skipped["id"] == "op_bad"
+    assert skipped["tag"] == "W2"
+    assert skipped["category"] == "window"
+    assert skipped["reason"] == "dimensions missing"
+
+    assert len(bem_model.notes) == 1, f"Expected 1 note, got {len(bem_model.notes)}"
+    assert "dropped" in bem_model.notes[0].lower()
+    assert "missing dimensions" in bem_model.notes[0]
+
+
 class TestBEMExportRoundtripBATTERY:
     """Equivalent roundtrip tests using run_checks with full BATTERY validation.
 
