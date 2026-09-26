@@ -6,6 +6,7 @@ from building_model import (
     BuildingModel,
     FixtureInstance,
     Provenance,
+    SymbolLinkage,
 )
 from registration import (
     Affine2D,
@@ -100,6 +101,21 @@ def _link_lighting(
                     confidence=0.95,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                     note=f"centroid in space {sid}",
+                ),
+            )
+        )
+        model.symbol_linkages.append(
+            SymbolLinkage(
+                symbol_id=fid,
+                symbol_tag=f["tag"],
+                category="lighting",
+                schedule_entry=entry,
+                confidence=0.95,
+                provenance=Provenance(
+                    sheet_id=meta["sheet_id"],
+                    revision=meta["revision"],
+                    method="schedule_join",
+                    confidence=0.95,
                 ),
             )
         )
