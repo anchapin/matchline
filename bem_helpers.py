@@ -101,30 +101,42 @@ def _opening_type(category: str) -> str:
 
 
 def _place_openings_on_wall(units, L: float, h: float):
-    """Deterministic opening layout on one wall.
-
-    Evenly spaces the wall's units along its length (centers at
-    (j+0.5)*L/k). Returns (placements, notes); placements are dicts
-    {unit, s0, s1, sill, height} with s measured from the wall START point
-    p0 along the ring edge direction. Widths/heights are clamped to fit
-    the wall; every clamp is reported in notes (never silent).
-    """
     placements, notes = [], []
     k = len(units)
+
+    total_width = sum(u.width_m for u in units)
+    usable = L - 0.1
+    scale = 1.0
+    if total_width > usable:
+        scale = usable / total_width
+        notes.append(
+            f"Openings scaled to {scale:.3f} to fit wall {L:.2f} m "
+            f"(total width {total_width:.2f} m)"
+        )
+
+    pos = 0.05
     for j, u in enumerate(units):
         sill = WINDOW_SILL_M if u.category == "window" else DOOR_SILL_M
         oh = u.height_m
+        if sill >= h:
+            notes.append(f"{u.tag}: skipped – sill {sill:.2f} m ≥ wall height {h:.2f} m")
+            continue
         if sill + oh > h:
             oh = h - sill
             notes.append(f"{u.tag}: height clamped to {oh:.2f} m (wall {h:.2f} m)")
-        c = (j + 0.5) * L / k
-        s0 = max(0.05, c - u.width_m / 2)
-        s1 = min(L - 0.05, c + u.width_m / 2)
-        if s1 - s0 < u.width_m * 0.5:
+        oh = max(0, oh)
+
+        scaled_w = u.width_m * scale
+        s0 = pos
+        s1 = pos + scaled_w
+        pos = s1 + 0.1
+
+        if s1 - s0 < scaled_w * 0.5:
             notes.append(
                 f"{u.tag}: width clamped ({u.width_m:.2f} -> {s1 - s0:.2f} m, wall {L:.2f} m)"
             )
         placements.append({"unit": u, "s0": s0, "s1": s1, "sill": sill, "height": oh})
+
     return placements, notes
 
 
