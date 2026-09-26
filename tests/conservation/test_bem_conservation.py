@@ -89,15 +89,6 @@ class TestBEMVolumeConservation:
         result = _check_bem_volume_conservation(bem, tol_volume=0.03)
         assert result.severity == "pass"
 
-    def test_bem_volume_conservation_fails_on_large_mismatch(self):
-        """Volume conservation fails when space volumes deviate significantly."""
-        bem = _build_bem()
-        # Inject a large volume mismatch to trigger failure
-        if bem.spaces:
-            bem.spaces[0].volume_m3 = 100000.0  # Way different from expected
-        result = _check_bem_volume_conservation(bem, tol_volume=0.03)
-        assert result.severity == "error", "Expected fail on volume mismatch"
-
     @pytest.mark.parametrize(
         "vol_inject,expected_severity",
         [
@@ -107,6 +98,10 @@ class TestBEMVolumeConservation:
             (0.20, "error"),  # 20% over - well above tolerance
             (-0.20, "error"),  # -20% under - exceeds tolerance
             (-0.50, "error"),  # -50% under - far below tolerance
+            (
+                1999.0,
+                "error",
+            ),  # extreme positive - ~100000 m³ first space (same magnitude as original non-parametrized test)
         ],
     )
     def test_bem_volume_conservation_parametrized_defect_injection(
