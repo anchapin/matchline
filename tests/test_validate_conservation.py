@@ -4,7 +4,6 @@ Tests that area_closure, volume_closure, and envelope_closure
 correctly identify invariant violations and block export.
 """
 
-
 from tests.model_factory import make_clean_model
 from validate import export_gate, run_checks
 from validate.conservation import area_closure, envelope_closure, volume_closure
@@ -122,9 +121,7 @@ class TestRunChecksIncludesConservation:
         m = make_clean_model()
         m.spaces["L1-101"].area_m2 = 20.0
         report = run_checks(m)
-        area_check = next(
-            (c for c in report.results if c.check_id == "area_closure"), None
-        )
+        area_check = next((c for c in report.results if c.check_id == "area_closure"), None)
         assert area_check is not None, "area_closure should be in report.results"
         assert area_check.severity == "error"
 
@@ -133,9 +130,7 @@ class TestRunChecksIncludesConservation:
         m = make_clean_model()
         m.spaces["L1-101"].volume_m3 = 20.0
         report = run_checks(m)
-        vol_check = next(
-            (c for c in report.results if c.check_id == "volume_closure"), None
-        )
+        vol_check = next((c for c in report.results if c.check_id == "volume_closure"), None)
         assert vol_check is not None, "volume_closure should be in report.results"
         assert vol_check.severity == "error"
 
@@ -147,8 +142,6 @@ class TestRunChecksIncludesConservation:
                 sp.openings[0].area_m2 = 1000.0
                 break
         report = run_checks(m)
-        env_check = next(
-            (c for c in report.results if c.check_id == "envelope_closure"), None
-        )
+        env_check = next((c for c in report.results if c.check_id == "envelope_closure"), None)
         assert env_check is not None, "envelope_closure should be in report.results"
         assert env_check.severity == "error"
