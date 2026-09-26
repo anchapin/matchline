@@ -4,11 +4,10 @@ Tests that area_closure, volume_closure, and envelope_closure
 correctly identify invariant violations and block export.
 """
 
-import pytest
 
 from tests.model_factory import make_clean_model
 from validate import export_gate, run_checks
-from validate.conservation import area_closure, volume_closure, envelope_closure
+from validate.conservation import area_closure, envelope_closure, volume_closure
 
 
 def is_ok(result):
