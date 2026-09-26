@@ -16,7 +16,7 @@ Two elevations of the same facade are linked in **separate model runs**. If the 
 
 ## Decision
 
-Implement deduplication via `_dedupe_space_openings()` in `link.py`. Entries with matching tag + overlapping `host_interval_m` (within `OPENING_DEDUP_TOL_M = 0.15 m`) are merged into a single `SpaceOpening` carrying compound provenance (`sheet_id1+sheet_id2`) and the higher confidence.
+Implement deduplication via `_dedupe_space_openings()` in `link.py`. Entries with matching (facade, tag, approximate dimensions) are merged into a single `SpaceOpening` carrying compound provenance (`sheet_id1+sheet_id2`) and the higher confidence. Dimensions are bucketed to the nearest `OPENING_DIM_TOL_M = 0.15 m` to tolerate minor measurement differences.
 
 ## Implementation
 
@@ -30,4 +30,4 @@ The safety net detects pre-dedup double-links by flagging windows in the same sp
 
 ## Approach
 
-Dedupe by tag (primary key for tagged entries) + geometric proximity for untagged entries. The 0.15 m center-distance tolerance balances false positives against false negatives.
+Dedupe by (facade, tag, width_bucket, height_bucket) for all entries — dimensions are bucketed to the nearest 0.15 m tolerance. This ensures windows on the same facade with identical specs are deduplicated even when they appear on multiple sheets across different building levels.
