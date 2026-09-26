@@ -33,10 +33,13 @@ jobs:
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.base_ref }}"
-            echo "Checking PR: head=${{ github.head_ref }} base=$BASE_REF"
+            HEAD_REF="${{ github.head_ref }}"
+            echo "Checking PR: head=$HEAD_REF base=$BASE_REF"
             # Fetch base branch to ensure we have it
             git fetch origin "$BASE_REF:$BASE_REF" --depth=1 2>/dev/null || true
-            COMPARE_REF="origin/$BASE_REF"
+            # Fetch head branch so we can compare base..head
+            git fetch origin "$HEAD_REF:refs/heads/$HEAD_REF" --depth=1 2>/dev/null || true
+            COMPARE_REF="refs/heads/$HEAD_REF"
           else
             # For push events, compare against the tracked remote branch
             # or use the first parent for non-merge commits
@@ -50,17 +53,31 @@ jobs:
             fi
           fi
 
-          echo "Comparing: $COMPARE_REF..${{ github.ref }}"
-
-          # Check if diff is empty (no file changes)
-          if git diff --name-only "$COMPARE_REF" "${{ github.ref }}" | grep -q .; then
-            echo "Changes detected - not an empty commit"
-            echo "is_empty=false" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            HEAD_REF="${{ github.head_ref }}"
+            echo "Comparing: $COMPARE_REF..$HEAD_REF"
+            # Check if diff is empty (no file changes)
+            if git diff --name-only "$COMPARE_REF" "refs/heads/$HEAD_REF" | grep -q .; then
+              echo "Changes detected - not an empty commit"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            else
+              echo "NO changes detected - empty commit!"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              git log --oneline "$COMPARE_REF..refs/heads/$HEAD_REF"
+              exit 1
+            fi
           else
-            echo "NO changes detected - empty commit!"
-            echo "is_empty=true" >> $GITHUB_OUTPUT
-            git log --oneline "$COMPARE_REF..${{ github.ref }}"
-            exit 1
+            echo "Comparing: $COMPARE_REF..${{ github.ref }}"
+            # Check if diff is empty (no file changes)
+            if git diff --name-only "$COMPARE_REF" "${{ github.ref }}" | grep -q .; then
+              echo "Changes detected - not an empty commit"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            else
+              echo "NO changes detected - empty commit!"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              git log --oneline "$COMPARE_REF..${{ github.ref }}"
+              exit 1
+            fi
           fi
 
   quality:
