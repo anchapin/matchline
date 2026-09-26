@@ -7,6 +7,7 @@ from building_model import (
     BuildingModel,
     Provenance,
     SpaceOpening,
+    SymbolLinkage,
 )
 from registration import (
     Facade,
@@ -103,6 +104,16 @@ def _link_elevation(
                 conf,
                 prov,
             )
+            model.symbol_linkages.append(
+                SymbolLinkage(
+                    symbol_id=wdet["id"],
+                    symbol_tag=wdet["tag"],
+                    category="window",
+                    schedule_entry=entry,
+                    confidence=conf,
+                    provenance=prov,
+                )
+            )
             continue
         sp = space_of_num[seg["room_number"]]
         width_m = entry.width_m if entry else (s1 - s0)
@@ -123,6 +134,16 @@ def _link_elevation(
                 area_m2=area,
                 provenance=prov,
                 needs_review=needs_review,
+            )
+        )
+        model.symbol_linkages.append(
+            SymbolLinkage(
+                symbol_id=wdet["id"],
+                symbol_tag=wdet["tag"],
+                category="window",
+                schedule_entry=entry,
+                confidence=conf,
+                provenance=prov,
             )
         )
         report.windows_linked += 1

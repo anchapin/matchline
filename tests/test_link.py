@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from building_model import REVIEW_CONFIDENCE, BuildingModel, Space, SpaceOpening
+from building_model import (
+    REVIEW_CONFIDENCE,
+    BuildingModel,
+    Space,
+    SpaceOpening,
+    SymbolLinkage,
+)
 from link import build_model
 from link._dedupe import _dedupe_space_openings
 from synth.multidiscipline import generate_building
@@ -140,3 +146,40 @@ class TestReviewQueueRouting:
             1 for item in model.review_queue if item.confidence >= REVIEW_CONFIDENCE
         )
         assert high_conf_count == 0
+
+
+class TestSymbolLinkageGraph:
+    def test_symbol_linkages_populated_after_build_model(self):
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        assert hasattr(model, "symbol_linkages")
+        assert len(model.symbol_linkages) > 0
+
+    def test_symbol_linkages_have_valid_structure(self):
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        for linkage in model.symbol_linkages:
+            assert isinstance(linkage, SymbolLinkage)
+            assert linkage.symbol_id
+            assert linkage.symbol_tag
+            assert linkage.category in ("window", "door", "lighting")
+            assert 0.0 <= linkage.confidence <= 1.0
+            assert linkage.provenance is not None
+
+    def test_linked_windows_have_schedule_entry(self):
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        window_linkages = [lnk for lnk in model.symbol_linkages if lnk.category == "window"]
+        if window_linkages:
+            linked = [lnk for lnk in window_linkages if lnk.schedule_entry is not None]
+            assert len(linked) > 0
+
+    def test_unlinked_instances_are_visible_in_graph(self):
+        bldg = generate_building(101, open_office_span=False)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name=bldg["building_id"])
+        window_linkages = [lnk for lnk in model.symbol_linkages if lnk.category == "window"]
+        unlinked = [lnk for lnk in window_linkages if lnk.schedule_entry is None]
+        if unlinked:
+            for lnk in unlinked:
+                assert lnk.symbol_id
+                assert lnk.symbol_tag

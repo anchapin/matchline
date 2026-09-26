@@ -44,7 +44,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=869
+          EXPECTED_TEST_COUNT=873  # +4 tests for symbol-to-schedule linkage graph
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
