@@ -59,15 +59,23 @@ def _untagged_dedupe(entries: list[tuple[str, SpaceOpening]], kept_ids: set[str]
         used.update(group_indices)
 
 
+OPENING_DIM_TOL_M: float = 0.15
+
+
+def _dim_bucket(dim_m: float) -> int:
+    """Bucket a dimension to the nearest OPENING_DIM_TOL_M for grouping."""
+    return round(dim_m / OPENING_DIM_TOL_M)
+
+
 def _dedupe_space_openings(model: BuildingModel) -> None:
     """Merge duplicate SpaceOpening entries across ALL spaces (Issue #404).
 
     When two elevation runs of the same facade are linked separately (even
     across different building levels), the same physical window produces two
-    SpaceOpening entries (one per run). Deduplication is by (facade, tag)
-    across all spaces (not just per-space) + geometric proximity (fallback
-    for untagged or conflicting entries): entries whose host_interval_m
-    overlaps by >= OPENING_DEDUP_TOL_M are merged to one.
+    SpaceOpening entries (one per run). Deduplication is by
+    (facade, tag, width_bucket, height_bucket) across all spaces (not just
+    per-space). Geometric proximity (host_interval_m overlap >= OPENING_DEDUP_TOL_M)
+    is used as a fallback for untagged entries.
 
     Merged entries carry a compound sheet_id (sheet1+sheet2) and the
     higher of the two confidences.
@@ -75,16 +83,21 @@ def _dedupe_space_openings(model: BuildingModel) -> None:
     if not model.spaces:
         return
 
-    # Collect all openings grouped by (host_facade, tag) across ALL spaces
-    facade_tag_groups: dict[tuple[str, str], list[tuple[str, SpaceOpening]]] = {}
+    # Collect all openings grouped by (facade, tag, width_bucket, height_bucket) across ALL spaces
+    facade_tag_groups: dict[tuple[str, str, int, int], list[tuple[str, SpaceOpening]]] = {}
     for sp in model.spaces.values():
         for op in sp.openings:
-            key = (op.host_facade, op.tag or _UNTAGGED)
+            key = (
+                op.host_facade,
+                op.tag or _UNTAGGED,
+                _dim_bucket(op.width_m),
+                _dim_bucket(op.height_m),
+            )
             facade_tag_groups.setdefault(key, []).append((sp.id, op))
 
     # Determine which opening IDs to keep per facade+tag group
     kept_op_ids: set[str] = set()
-    for (facade, tag), entries in facade_tag_groups.items():
+    for (facade, tag, _wb, _hb), entries in facade_tag_groups.items():
         if tag == _UNTAGGED:
             _untagged_dedupe(entries, kept_op_ids)
         else:
