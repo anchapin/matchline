@@ -35,47 +35,62 @@ jobs:
             BASE_REF="${{ github.base_ref }}"
             HEAD_REF="${{ github.head_ref }}"
             echo "Checking PR: head=$HEAD_REF base=$BASE_REF"
-            # Fetch both base and head branches from origin for comparison
-            git fetch origin "$BASE_REF:$BASE_REF" "$HEAD_REF:refs/heads/$HEAD_REF" --depth=1 2>/dev/null || true
-            # Compare base branch (local) against head branch (local)
-            COMPARE_REF="$BASE_REF"
-            HEAD_LOCAL_REF="refs/heads/$HEAD_REF"
-          else
-            # For push events, compare against the tracked remote branch
-            # or use the first parent for non-merge commits
-            echo "Checking push to ${{ github.ref }}"
-            if git rev-parse "${{ github.ref }}"^1 &>/dev/null; then
-              COMPARE_REF="${{ github.ref }}^"
+            # Fetch base from origin
+            git fetch origin "$BASE_REF:$BASE_REF" 2>/dev/null || true
+            # For fork PRs, fetch head from the fork's repo via github.event.pull_request.head.repo.full_name
+            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+              echo "Fork PR detected - fetching head from ${{ github.event.pull_request.head.repo.full_name }}"
+              git fetch "${{ github.event.pull_request.head.repo.full_name }}" "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
             else
-              echo "First commit on branch - cannot detect empty commit (no parent)"
+              git fetch origin "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
+            fi
+            HEAD_LOCAL_REF="refs/heads/$HEAD_REF"
+            COMPARE_REF="$BASE_REF"
+          else
+            # For push events, compare against github.event.before
+            echo "Checking push to ${{ github.ref }}"
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE_SHA" ]; then
+              echo "First push on branch - cannot detect empty commit (no previous sha)"
               echo "is_empty=false" >> $GITHUB_OUTPUT
               exit 0
             fi
+            COMPARE_REF="$BEFORE_SHA"
           fi
 
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Comparing: $COMPARE_REF..$HEAD_LOCAL_REF"
-            # Check if diff is empty (no file changes)
-            if git diff --name-only "$COMPARE_REF" "$HEAD_LOCAL_REF" | grep -q .; then
-              echo "Changes detected - not an empty commit"
-              echo "is_empty=false" >> $GITHUB_OUTPUT
-            else
-              echo "NO changes detected - empty commit!"
+            # Loop per-commit to catch empty commits bundled with real ones
+            EMPTY_COMMITS=""
+            for SHA in $(git log --format=%H "$COMPARE_REF..$HEAD_LOCAL_REF"); do
+              if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
+                echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
+                EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
+              fi
+            done
+            if [ -n "$EMPTY_COMMITS" ]; then
+              echo "Empty commits found:$EMPTY_COMMITS"
               echo "is_empty=true" >> $GITHUB_OUTPUT
-              git log --oneline "$COMPARE_REF..$HEAD_LOCAL_REF"
               exit 1
+            else
+              echo "No empty commits detected"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "Comparing: $COMPARE_REF..${{ github.ref }}"
-            # Check if diff is empty (no file changes)
-            if git diff --name-only "$COMPARE_REF" "${{ github.ref }}" | grep -q .; then
-              echo "Changes detected - not an empty commit"
-              echo "is_empty=false" >> $GITHUB_OUTPUT
-            else
-              echo "NO changes detected - empty commit!"
+            # Loop per-commit for push events
+            EMPTY_COMMITS=""
+            for SHA in $(git log --format=%H "$COMPARE_REF..${{ github.ref }}"); do
+              if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
+                echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
+                EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
+              fi
+            done
+            if [ -n "$EMPTY_COMMITS" ]; then
+              echo "Empty commits found:$EMPTY_COMMITS"
               echo "is_empty=true" >> $GITHUB_OUTPUT
-              git log --oneline "$COMPARE_REF..${{ github.ref }}"
               exit 1
+            else
+              echo "No empty commits detected"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
             fi
           fi
 
