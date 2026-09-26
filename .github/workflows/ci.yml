@@ -36,13 +36,13 @@ jobs:
             HEAD_REF="${{ github.head_ref }}"
             echo "Checking PR: head=$HEAD_REF base=$BASE_REF"
             # Fetch base from origin
-            git fetch origin "$BASE_REF:$BASE_REF" --depth=1 2>/dev/null || true
+            git fetch origin "$BASE_REF:$BASE_REF" 2>/dev/null || true
             # For fork PRs, fetch head from the fork's repo via github.event.pull_request.head.repo.full_name
             if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
               echo "Fork PR detected - fetching head from ${{ github.event.pull_request.head.repo.full_name }}"
-              git fetch "${{ github.event.pull_request.head.repo.full_name }}" "$HEAD_REF:refs/heads/$HEAD_REF" --depth=1 2>/dev/null || true
+              git fetch "${{ github.event.pull_request.head.repo.full_name }}" "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
             else
-              git fetch origin "$HEAD_REF:refs/heads/$HEAD_REF" --depth=1 2>/dev/null || true
+              git fetch origin "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
             fi
             HEAD_LOCAL_REF="refs/heads/$HEAD_REF"
             COMPARE_REF="$BASE_REF"
