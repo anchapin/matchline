@@ -9,6 +9,8 @@ Happy path: export produces a valid IFC with correct entity counts.
 Defect injection: model mismatch triggers _check_ifc_counts error.
 """
 
+import pytest
+
 from building_model import (
     BuildingModel,
     EnvelopeWall,
@@ -17,10 +19,13 @@ from building_model import (
     Space,
     SpaceLighting,
 )
+from datasets_adapter import polygon_area_px2
 from ifc_export import _export_ifc
+from tests.conftest import _linked
 from validate import _build_ctx, _check_ifc_counts, run_checks
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
+
 _ensure_ifc()
 import ifcopenshell  # noqa: E402
 
@@ -160,3 +165,25 @@ def test_export_runs_validation_with_ifc_path(tmp_path):
 
     ifc_result = next(r for r in report.results if r.check_id == "ifc_entity_counts")
     assert ifc_result.severity == "pass"
+
+
+def test_ifc_export_blocks_invalid_bem_conservation(tmp_path):
+    """Regression: ifc-export must block invalid BEM data per conservation laws.
+
+    See: https://github.com/.../issues/478
+    """
+    # Create a valid model, then violate space-area conservation
+    # by setting space.area_m2 15% above its true polygon area.
+    bldg, model, _report = _linked(101, False, "elev_grid")
+    sp = model.spaces["L1-101"]
+    true_area = polygon_area_px2(sp.polygon_m)
+    sp.area_m2 = true_area * 1.15  # violate conservation
+
+    ifc_path = tmp_path / "invalid_conservation.ifc"
+
+    # Must raise ValueError before writing any IFC
+    with pytest.raises(ValueError, match="Conservation-law validation failed"):
+        _export_ifc(model, str(ifc_path))
+
+    # File must not be created
+    assert not ifc_path.exists()
