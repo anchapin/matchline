@@ -134,9 +134,18 @@ def model_from_linked_model(
 
     # --- openings --------------------------------------------------------
     bem_openings = []
+    skipped_openings = []
     for sp in model.spaces.values():
         for op in sp.openings:
             if op.width_m is None or op.height_m is None:
+                skipped_openings.append(
+                    {
+                        "id": op.id,
+                        "tag": op.tag,
+                        "category": op.category,
+                        "reason": "dimensions missing",
+                    }
+                )
                 continue
             bem_openings.append(
                 BEMOpeningUnit(
@@ -148,6 +157,13 @@ def model_from_linked_model(
                     history=list(op.history),
                 )
             )
+
+    notes = []
+    if skipped_openings:
+        notes.append(
+            f"{len(skipped_openings)} opening(s) dropped due to missing dimensions "
+            f"(see skipped_openings)."
+        )
 
     # --- envelope ring ---------------------------------------------------
     ring_ccw = _ensure_ccw(simplified_ring)
@@ -182,6 +198,8 @@ def model_from_linked_model(
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
         simplify_tolerance=simplify_tolerance,
+        skipped_openings=skipped_openings,
+        notes=notes,
     )
 
     return bem
