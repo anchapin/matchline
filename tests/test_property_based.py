@@ -162,8 +162,10 @@ def test_simplify_ring_area_never_grows(original: List[Tuple[float, float]], tol
 
     res: SimplifyResult = simplify_ring(ring, tol)
 
-    if not res.valid:
-        return
+    assert res.valid, (
+        f"simplification should be valid when concave vertices are properly protected "
+        f"(got valid={res.valid} — possible sign-inversion bug in _signed_tri_area)"
+    )
 
     delta = res.simplified_area - res.original_area
     rel_delta = delta / max(res.original_area, 1e-9)
