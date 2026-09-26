@@ -15,10 +15,76 @@ permissions:
   pull-requests: write
 
 jobs:
+  no-empty-commits:
+    name: detect empty commits
+    runs-on: ubuntu-latest
+    outputs:
+      is_empty: ${{ steps.check.outputs.is_empty }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect empty commits
+        id: check
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+            HEAD_REF="${{ github.head_ref }}"
+            echo "Checking PR: head=$HEAD_REF base=$BASE_REF"
+            # Fetch both base and head branches from origin for comparison
+            git fetch origin "$BASE_REF:$BASE_REF" "$HEAD_REF:refs/heads/$HEAD_REF" --depth=1 2>/dev/null || true
+            # Compare base branch (local) against head branch (local)
+            COMPARE_REF="$BASE_REF"
+            HEAD_LOCAL_REF="refs/heads/$HEAD_REF"
+          else
+            # For push events, compare against the tracked remote branch
+            # or use the first parent for non-merge commits
+            echo "Checking push to ${{ github.ref }}"
+            if git rev-parse "${{ github.ref }}"^1 &>/dev/null; then
+              COMPARE_REF="${{ github.ref }}^"
+            else
+              echo "First commit on branch - cannot detect empty commit (no parent)"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Comparing: $COMPARE_REF..$HEAD_LOCAL_REF"
+            # Check if diff is empty (no file changes)
+            if git diff --name-only "$COMPARE_REF" "$HEAD_LOCAL_REF" | grep -q .; then
+              echo "Changes detected - not an empty commit"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            else
+              echo "NO changes detected - empty commit!"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              git log --oneline "$COMPARE_REF..$HEAD_LOCAL_REF"
+              exit 1
+            fi
+          else
+            echo "Comparing: $COMPARE_REF..${{ github.ref }}"
+            # Check if diff is empty (no file changes)
+            if git diff --name-only "$COMPARE_REF" "${{ github.ref }}" | grep -q .; then
+              echo "Changes detected - not an empty commit"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            else
+              echo "NO changes detected - empty commit!"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              git log --oneline "$COMPARE_REF..${{ github.ref }}"
+              exit 1
+            fi
+          fi
+
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
