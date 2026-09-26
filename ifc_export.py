@@ -25,6 +25,7 @@ from bem_export import (
     write_ifc4,
 )
 from building_model import BuildingModel, EnvelopeWall, SpaceLighting
+from validate import validate_bem_conservation
 
 # ---------------------------------------------------------------------------
 # Adapter
@@ -180,8 +181,24 @@ def _export_ifc(model: BuildingModel, path: str | Path) -> Path:
 
     Returns:
         the Path that was written
+
+    Raises:
+        ValueError: if the model fails conservation-law validation
     """
     bem = _bem_from_model(model)
+    # Block invalid BEM data per conservation laws before writing IFC
+    bem_results = validate_bem_conservation(bem)
+    failed = [r for r in bem_results if r.severity == "error"]
+    if failed:
+        def _fmt(r):
+            a = f"{r.actual:.3f}" if r.actual is not None else "N/A"
+            e = f"{r.expected:.3f}" if r.expected is not None else "N/A"
+            return f"  - {r.name}: actual={a}, expected={e}"
+        msgs = [_fmt(r) for r in failed]
+        raise ValueError(
+            f"Conservation-law validation failed ({len(failed)} check(s) failed):\n"
+            + "\n".join(msgs)
+        )
     return write_ifc4(bem, path)
 
 
