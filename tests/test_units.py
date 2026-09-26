@@ -1,6 +1,8 @@
 """Unit tests for the geometry / registration / schedule / rollup primitives
 the validation layer depends on."""
 
+import random
+
 import pytest
 
 from datasets_adapter import Detection, ScheduleEntry, polygon_area_px2, rollup_takeoff
@@ -155,14 +157,84 @@ def test_simplify_ring_rectangle_zero_delta():
     assert res.valid
 
 
-@pytest.mark.xfail(
-    reason="pre-existing: noisy rectangle with budget=30 causes 0.79% area growth (exceeds MAX_GROWTH=0.1% hard limit); tol=2% docstring vs 0.1% implementation mismatch - see issue #466"
-)
-def test_simplify_ring_respects_budget():
-    import random
+def test_simplify_ring_convex_only():
+    ring = [
+        (0, 0),
+        (3, 0),
+        (3, 1),
+        (2, 1),
+        (2, 2),
+        (1, 2),
+        (1, 1),
+        (0, 1),
+    ]
+    res = simplify_ring(ring, tol=0.02)
+    assert res.valid, "simplification should be valid"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}%"
+    )
 
+
+def test_simplify_ring_concave_protected():
+    """Small-notch polygon: concave vertex removal cost << single_cap so the
+    concave-protection check is the only thing preventing its removal.
+
+    Bug (inverted _signed_tri_area): convex check skips concave → concave
+    removed → area grows → INVALID or area_delta_pct > 0.
+    Fix: concave vertex is identified correctly and protected."""
+    ring = [
+        (0, 0),
+        (3, 0),
+        (3, 0.01),
+        (2.99, 0.01),
+        (2.99, 0.99),
+        (3, 0.99),
+        (3, 1),
+        (0, 1),
+    ]
+    res = simplify_ring(ring, tol=0.1)
+    assert res.valid, "concave vertex should be protected; result should be valid"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}%"
+    )
+    skipped_concave = [r for r in res.skipped if "concave" in r["reason"]]
+    assert len(skipped_concave) >= 1, (
+        f"expected at least 1 concave-skip (the notch); got {len(skipped_concave)}: {skipped_concave}"
+    )
+
+
+def test_simplify_rectangle_area_never_grows():
+    """Regression: noisy rectangle simplification must never grow polygon area.
+
+    The original concave-vertex sign-inversion bug caused convex jitter vertices to be
+    incorrectly removed (since they appeared concave under the inverted formula),
+    causing area to grow by up to 0.79%.
+    """
     rng = random.Random(7)
-    # noisy rectangle: jittered vertices in perimeter order (simple polygon)
+    corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
+    ring = []
+    per_edge = 10
+    for i in range(4):
+        x0, y0 = corners[i]
+        x1, y1 = corners[(i + 1) % 4]
+        for k in range(per_edge):
+            t = k / per_edge
+            ring.append(
+                (
+                    x0 + (x1 - x0) * t + rng.uniform(-0.05, 0.05),
+                    y0 + (y1 - y0) * t + rng.uniform(-0.05, 0.05),
+                )
+            )
+    res = simplify_ring(ring, tol=0.1)
+    assert res.valid, "simplified polygon must be valid (area within MAX_GROWTH)"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}"
+    )
+    assert res.simplified_count < res.original_count, "jitter vertices should be removed"
+
+
+def test_simplify_ring_respects_budget():
+    rng = random.Random(7)
     corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
     ring = []
     per_edge = 10
