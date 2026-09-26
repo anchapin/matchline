@@ -30,8 +30,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from building_model import Provenance
-from datasets_adapter import TAKEOFF_CATEGORIES, Detection, DrawingScale, ScheduleEntry
-from room_labels import LabeledSpace, point_in_polygon, polygon_area_px2
+from datasets_adapter import (
+    TAKEOFF_CATEGORIES,
+    Detection,
+    DrawingScale,
+    ScheduleEntry,
+    polygon_area_px2,
+)
+from room_labels import LabeledSpace, point_in_polygon
 
 assert "lighting" in TAKEOFF_CATEGORIES  # adapter extended for this module
 
