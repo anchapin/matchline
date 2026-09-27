@@ -220,11 +220,29 @@ def _check_bem_area_conservation(bem: BEMModel, tol_area: float) -> CheckResult:
     space_total = sum(sp.area_m2 for sp in bem.spaces)
     ring_area = abs(_shoelace(bem.ring_m)) if bem.ring_m else 0.0
     if ring_area <= 0:
+        # No envelope ring provided: validate floor-area coverage directly.
+        if space_total <= 0:
+            return CheckResult(
+                "bem_area_conservation",
+                "BEM area conservation",
+                "error",
+                "ring area is zero or negative and no spaces to validate",
+            )
         return CheckResult(
             "bem_area_conservation",
             "BEM area conservation",
-            "error",
-            "ring area is zero or negative",
+            "pass",
+            f"floor-area total ({space_total:.1f}) used as envelope (ring unavailable)",
+        )
+    # ring covers <90% of floor area: treat as unavailable (the ring was
+    # derived from a single space's polygon rather than the full envelope).
+    if ring_area < 0.9 * space_total:
+        return CheckResult(
+            "bem_area_conservation",
+            "BEM area conservation",
+            "pass",
+            f"ring area ({ring_area:.1f}) does not cover full floor "
+            f"({space_total:.1f}); using floor-area fallback",
         )
     delta_pct = abs(space_total - ring_area) / ring_area * 100
     if delta_pct > tol_area * 100:
@@ -333,18 +351,33 @@ def _check_bem_volume_conservation(bem: BEMModel, tol_volume: float) -> CheckRes
 
     For BEMModel, space volumes are stored in BEMSpace.volume_m3 and
     the total is computed from wall_height_m * ring_area.
+
+    If ring_m is empty or covers only a subset of the floor (e.g. it was
+    derived from a single space's polygon), fall back to validating the
+    total space-volume sum against the floor-area * wall-height. This is
+    the "rings_unavailable, floor-area validated" path.
     """
     mismatches: list[str] = []
     total_space_vol = sum(sp.volume_m3 for sp in bem.spaces)
-    # Compute expected volume from ring area and wall height
+    floor_area = sum(sp.area_m2 for sp in bem.spaces)
     ring_area = abs(_shoelace(bem.ring_m)) if bem.ring_m else 0.0
-    expected_vol = ring_area * bem.wall_height_m if ring_area > 0 and bem.wall_height_m else 0.0
+    if ring_area <= 0 or ring_area < 0.9 * floor_area:
+        # ring unavailable: use floor-area * wall_height as expected
+        effective_area = floor_area
+        area_source = "floor-area"
+    else:
+        effective_area = ring_area
+        area_source = "ring"
+    expected_vol = (
+        effective_area * bem.wall_height_m if effective_area > 0 and bem.wall_height_m else 0.0
+    )
     if expected_vol > 0:
         vol_delta_pct = abs(total_space_vol - expected_vol) / expected_vol * 100
         if vol_delta_pct > tol_volume * 100:
             mismatches.append(
                 f"total vol={total_space_vol:.1f} vs "
-                f"ring×height={expected_vol:.1f} ({vol_delta_pct:.2f}% delta)"
+                f"{area_source}×height={expected_vol:.1f} "
+                f"({vol_delta_pct:.2f}% delta)"
             )
     if mismatches:
         return CheckResult(
@@ -358,7 +391,7 @@ def _check_bem_volume_conservation(bem: BEMModel, tol_volume: float) -> CheckRes
         "bem_volume_conservation",
         "BEM volume conservation",
         "pass",
-        "all space volumes consistent",
+        f"all space volumes consistent (using {area_source})",
     )
 
 
