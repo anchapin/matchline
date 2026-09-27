@@ -102,7 +102,6 @@ def _opening_type(category: str) -> str:
 
 def _place_openings_on_wall(units, L: float, h: float):
     placements, notes = [], []
-    k = len(units)
 
     total_width = sum(u.width_m for u in units)
     usable = L - 0.1
