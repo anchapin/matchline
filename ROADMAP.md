@@ -293,3 +293,87 @@ Candidate approaches:
   backend under the same F1-at-IoU-0.50 protocol; report per-backend deltas in
   the audit artifact. Backend disagreement becomes a cross-check, not just a
   number.
+
+# Part II — Future directions
+
+A categorized backlog from an eight-persona review (legal, marketing, product
+design, project management, software architecture, MEP engineering, energy
+modeling, incumbent vendor) on 2026-09-19. These are *not* sequenced or
+numbered: they are directions to pull into the numbered roadmap as priorities
+crystallize. Items marked with multiple-persona support independently came up
+in more than one review.
+
+## Trust, legal, professional
+
+- Professional-use disclaimer and E&O framing ★
+- Stampable, dated sign-off report with source/revision traceability ★
+- Versioned data-contribution agreement for the flywheel ★
+- Training-data license ledger and quarantine for noncommercial data/weights ★
+- CLA or DCO for code contributions
+- Privacy/security-sensitive-building policy and guaranteed local-only mode
+- GUI/service terms governing liability and data retention/deletion
+- Defensive publication of novel methods
+- Legal review of professional-licensure / "practicing engineering" risk
+
+## Product/UX and drawing-set reality
+
+- Drawing-set ingestion via cover-sheet index/title-block parsing
+- Revision/addenda tracking and takeoff diffs
+- Match lines, split sheets, and enlarged-plan deduplication
+- Per-project legend/tag/convention learning ★
+- SD/DD/CD design-phase awareness
+- Explicit area definitions: GSF, BOMA rentable, program/assignable
+- Worst-first, keyboard-first review queue with bulk actions
+- Correction history, undo, and revert-to-automatic output
+- Loud, specific failure modes for bad inputs
+- Progressive takeoff mode vs full-BEM mode
+- Export package: model + one-page trust report + editable decisions file + share-back preview ★
+
+## BEM last mile
+
+- ASHRAE 90.1 Appendix G perimeter/core thermal zoning
+- Below-grade detection and correct ground/outdoor boundaries
+- Space-use classification to cited load/schedule templates
+- Versioned construction library with cited U-values; never fabricate missing values
+- Blocking OpenStudio importer round-trip gate
+- Inter-story surface matching and atrium/shaft consistency
+
+## MEP
+
+- Mechanical schedule parsing and system-type classification
+- Engineering reconciliation gates and discipline-specific accuracy bars
+- Lighting controls and control zones
+- Riser/one-line topology parsing
+- First-class system entities linked to rooms
+- Plumbing fixture takeoffs and service-water-heating inputs
+- Architect-facing plan-vs-schedule coordination QA
+
+## Go-to-market
+
+- Positioning: "auditable extraction, not AI magic"; feed incumbents rather than replace them
+- Real-building benchmark on 3–5 commercial buildings ★
+- Five-minute demo, bundled sample project, results gallery ★
+- Quiet beta with friendly firms before public launch
+- Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
+- Visible monthly flywheel/model changelog
+- Rename before public launch because WiSARD is not the production detector
+
+## Strategy
+
+- Revit/AutoCAD plugin
+- Enterprise trust package: SSO, audit logs, isolation, SOC 2 story, air-gapped/on-prem mode
+- Standalone BIM import health score
+- Platform-risk hedge: keep IFC and web GUI first-class
+- Deliberate open-core commercial model
+- Publish validation checks as an industry benchmark
+
+## Process
+
+- Define Monday validation exit criteria before fine-tuning
+- Define v0.1.0 scope and release cadence
+- Maintain an in-repo risk register
+- Add a dependency/sequencing map
+- Add explicit non-goals and parked ideas
+- Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
+
+★ = raised independently by multiple personas — highest signal.
