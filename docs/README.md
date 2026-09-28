@@ -10,7 +10,9 @@ disclosed, not hidden.
 | `bem_export.md` | gbXML 6.01 + IFC4 export paths and validation |
 | `building_model.md` | Canonical `BuildingModel`: spaces, provenance, review queue |
 | `cli.md` | CLI reference: `matchline` command-line interface |
+| `CODE-REVIEW.md` | Code review standards and per-PR checklist (severity levels, domain-specific focus, anti-patterns) |
 | `datasets_adapter.md` | Dataset adapters bridging external datasets to the Matchline pipeline |
+| `detector-robustness.md` | Synthetic-degradation robustness eval (`detector/degrade.py`, `detector/eval_robustness.py`) |
 | `ecosystem_audit.md` | Detector-strategy audit: YOLO + tiling + legend learning rationale |
 | `elevation_windows.md` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.md` | Facade wall/glazing/door fractions (CMP Facade) + priors |
@@ -23,10 +25,12 @@ disclosed, not hidden.
 | `link.md` | Cross-sheet linker building BuildingModel from plan + elevation annotations |
 | `measurement_layer.md` | Measurement/uncertainty conventions across the pipeline |
 | `pipeline.md` | Stage chain, intermediate JSON artifacts, auto-triage integration |
+| `PLANS.md` | Planning conventions and plan template (3-digit prefix, work/designs folders, Status lifecycle) |
 | `polygon_classify.md` | Non-room polygon classification (shafts, closets, elevator cores) |
 | `registration.md` | Sheet registration: plan + elevation affine alignment into canonical metres |
 | `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
+| `run_review.md` | `matchline review` — review queue triage, `ReviewItem` fields, `validate.export_gate` blocking |
 | `safe_xml.md` | Hardened XML parser for XXE prevention |
 | `symbols.md` | Programmatic GD&T symbol rendering for synthetic training data |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
