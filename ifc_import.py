@@ -534,20 +534,68 @@ def _read_lighting(sp, model, provenance):
     return None
 
 
-def _wall_direction_from_envelope(el, model):
-    """Try to get wall direction from an envelope wall of matching length."""
-    length_m = el.length_m
-    if length_m is None:
+# Endpoint-coincidence tolerance (m) when matching a wall to its envelope edge.
+# Envelope edges are built from the wall's own placement, so the wall origin and
+# the edge endpoint are equal up to rounding. This is the same 0.1 m window the
+# previous length-based match used.
+_ENVELOPE_TOL_M = 0.1
+
+
+def _envelope_edge_dir(ew, origin):
+    """Unit direction of envelope edge ``ew``, oriented to start at ``origin``.
+
+    Returns None for a degenerate edge.
+    """
+    fx, fy = float(ew.from_m[0]), float(ew.from_m[1])
+    tx, ty = float(ew.to_m[0]), float(ew.to_m[1])
+    if math.dist((fx, fy), origin) <= math.dist((tx, ty), origin):
+        dx, dy = tx - fx, ty - fy
+    else:
+        dx, dy = fx - tx, fy - ty
+    norm = math.hypot(dx, dy)
+    if norm <= 1e-9:
         return None
+    return (dx / norm, dy / norm)
+
+
+def _wall_direction_from_envelope(el, model):
+    """Direction of the wall's own envelope edge, or None if it cannot be pinned down.
+
+    The wall is matched to its envelope edge by *position*: an edge qualifies
+    only if one of its endpoints coincides with the wall's placement, which is
+    exactly how envelope edges are constructed from walls (see
+    ``_read_bim_elements``). Length is used only to break ties between edges
+    that share an endpoint, and the returned direction is oriented to start at
+    the wall's own placement, so its sign comes from geometry rather than from
+    the order the exporter happened to write walls in.
+
+    Matching on length alone (the previous behaviour) is ambiguous for every
+    rectangle, since opposite sides are equal: the winner depended on
+    ``model.envelope`` ordering, and a wrong edge gives a wrong direction, which
+    puts the opening on the wrong side of the wall and can attach it to the
+    wrong space (#505). Refusing to guess is preferred: the caller then falls
+    back to the wall's own RefDirection, and the opening is left unattached
+    rather than silently mis-attributed.
+    """
+    if el.length_m is None or not el.placement_m:
+        return None
+    origin = (float(el.placement_m[0]), float(el.placement_m[1]))
+    best_rank, dirs = 2, set()
     for ew in model.envelope:
-        ew_len = math.sqrt((ew.to_m[0] - ew.from_m[0]) ** 2 + (ew.to_m[1] - ew.from_m[1]) ** 2)
-        if abs(ew_len - length_m) < 0.1:
-            dx = ew.to_m[0] - ew.from_m[0]
-            dy = ew.to_m[1] - ew.from_m[1]
-            norm = math.sqrt(dx * dx + dy * dy)
-            if norm > 1e-9:
-                return (dx / norm, dy / norm)
-    return None
+        d = _envelope_edge_dir(ew, origin)
+        if d is None:
+            continue
+        if min(math.dist(ew.from_m, origin), math.dist(ew.to_m, origin)) > _ENVELOPE_TOL_M:
+            continue
+        edge_len = math.dist(ew.from_m, ew.to_m)
+        rank = 0 if abs(edge_len - el.length_m) < _ENVELOPE_TOL_M else 1
+        if rank < best_rank:
+            best_rank, dirs = rank, {d}
+        elif rank == best_rank:
+            dirs.add(d)
+    if len(dirs) != 1:
+        return None
+    return dirs.pop()
 
 
 def _wall_direction_from_entity(el):
@@ -595,13 +643,39 @@ def _attach_openings_to_spaces(model):
         if wall_dir is None:
             wall_dir = _wall_direction_from_entity(el)
         if wall_dir is None:
+            # The host wall's axis is unknown, so the openings' positions along it
+            # cannot be reconstructed. Leave them unattached rather than
+            # attaching them to a space the geometry does not support.
+            model.flag_for_review(
+                kind="opening_attachment",
+                description=(
+                    f"Wall {el.global_id} ({el.ifc_class}) hosts "
+                    f"{len(el.openings)} opening(s) but its along-wall direction could "
+                    "not be determined; openings left unattached."
+                ),
+                confidence=0.3,
+                provenance=el.openings[0].provenance
+                or el.provenance
+                or Provenance(
+                    sheet_id="ifc",
+                    revision=0,
+                    method="ifc_import:tier1:opening_attachment",
+                    confidence=0.3,
+                    note=f"GlobalId={el.global_id}",
+                ),
+            )
             continue
 
         for bo in el.openings:
             if bo.s_center_m is None:
                 continue
-            ox = cx + wall_dir[0] * (bo.s_center_m - length_m / 2)
-            oy = cy + wall_dir[1] * (bo.s_center_m - length_m / 2)
+            # s_center_m is measured from the wall's own origin along its local X
+            # axis -- _read_opening validates it against 0 <= s <= length_m -- and
+            # el.placement_m is that same origin. Subtracting half the length here
+            # displaced every opening by length/2 along its wall, which dropped
+            # openings outright and could land them in the wrong space (#505).
+            ox = cx + wall_dir[0] * bo.s_center_m
+            oy = cy + wall_dir[1] * bo.s_center_m
             for sp in model.spaces.values():
                 if sp.polygon_m and _point_in_polygon((ox, oy), sp.polygon_m):
                     sp.openings.append(

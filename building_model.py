@@ -406,6 +406,7 @@ class ReviewItem:
         "window_extraction",
         "elevation_extraction",
         "facade_takeoff",
+        "opening_attachment",
     ]
     description: str
     confidence: float
@@ -556,6 +557,7 @@ class BuildingModel:
             "elevation_conflict",
             "window_reconciliation",
             "gd_complex_row",
+            "opening_attachment",
         ],
         description: str,
         confidence: float,

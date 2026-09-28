@@ -10,8 +10,6 @@ lighting watt totals are preserved within 1% tolerance.
 
 from collections import defaultdict
 
-import pytest
-
 from bem_export import validate_ifc4
 from building_model import (
     BuildingModel,
@@ -136,18 +134,6 @@ def test_ifc_export_validates(tmp_path):
     assert len(zones) >= 2, f"expected ≥2 IfcZone entities, got {len(zones)}"
 
 
-@pytest.mark.xfail(
-    reason="IFC-04 dedup-via-roundtrip: dedup works in export (2 openings -> 1 "
-    "IfcOpeningElement) but the re-import drops it. _attach_openings_to_spaces "
-    "reconstructs the opening point from the host wall's direction, which "
-    "_wall_direction_from_envelope derives by matching envelope edges on LENGTH "
-    "ALONE (ifc_import.py:544). The opening is hosted on a facade edge whose "
-    "length matches another edge, so the direction -- and therefore whether the "
-    "reconstructed point lands inside the space -- is ambiguous. Tracked as "
-    "future work (out of scope for #494/#495/#496). strict=True so that fixing "
-    "the underlying bug surfaces as a failure rather than a silent xpass.",
-    strict=True,
-)
 def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     """IFC-04: two link_elevations runs on same facade produce one SpaceOpening per window.
 
@@ -166,16 +152,15 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
         level_id="L1",
         name="Room",
         number="101",
-        # Trapezoid, not a rectangle, and deliberately so: all four edge lengths
-        # (12 / 9.849 / 8 / 9) are distinct. A rectangle always has two pairs of
-        # equal edges, and _wall_direction_from_envelope matches envelope edges
-        # on length alone -- with duplicate lengths the host wall's direction
-        # depends on envelope ordering, which the IFC export writes in a
-        # nondeterministic order. That made this test flip xpass/xfail ~50% of
-        # runs (#504). Distinct lengths remove the ambiguity, so the outcome is
-        # deterministic. See test_envelope_wall_matching_is_length_only.
-        polygon_m=[[0, 0], [12, 0], [8, 9], [0, 9]],
-        area_m2=90.0,
+        # A 10x8 rectangle, as originally written. This fixture is deliberately
+        # not a trapezoid: a rectangle has two pairs of equal-length edges, so it
+        # is the shape that made the old length-only envelope match ambiguous and
+        # flipped this test between xpass and xfail on ~50% of runs (#504). The
+        # matcher now identifies a wall's envelope edge by position, so the
+        # ambiguity is gone and the rectangle is the case worth testing. See
+        # test_envelope_wall_matching_uses_position_not_length.
+        polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]],
+        area_m2=80.0,
     )
     # Two identical windows (simulating two elevations of same facade)
     sp.openings = [
@@ -213,6 +198,91 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     assert len(openings) == 1, f"expected 1 SpaceOpening after dedup, got {len(openings)}"
 
 
+def test_wall_direction_refuses_rather_than_guesses():
+    """Invariant: a wall is matched to an envelope edge by position, or not at all.
+
+    When no edge endpoint coincides with the wall's placement, the matcher must
+    return None. Falling back to "some edge of about the right length" is the
+    behaviour that put openings in the wrong space (#505), so the length window
+    must not be able to resurrect a match on its own.
+    """
+    from building_model import BimElement, EnvelopeWall
+    from ifc_import import _wall_direction_from_envelope
+
+    model = BuildingModel(name="m", levels=[])
+    # One 10 m edge, far away from the wall below.
+    model.envelope.append(
+        EnvelopeWall(id="env-1", facade="", from_m=[100.0, 100.0], to_m=[110.0, 100.0])
+    )
+    wall = BimElement(
+        global_id="w1",
+        ifc_class="IfcWall",
+        length_m=10.0,  # exactly the same length as the stray edge above
+        placement_m=[0.0, 0.0, 0.0],
+    )
+    assert _wall_direction_from_envelope(wall, model) is None, (
+        "must not match an edge on length alone when no endpoint coincides"
+    )
+
+
+def test_unresolvable_wall_leaves_openings_unattached_and_flagged():
+    """The dangerous mode: an opening must never be attached on a guess.
+
+    If the host wall's along-wall direction cannot be established, the opening's
+    world position is unknown. Attaching it to whichever space happens to contain
+    a guessed point silently mis-attributes it, and openings feed the BEM takeoff
+    via ``datasets_adapter.rollup_takeoff``. So the opening must be left
+    unattached and the wall raised for review.
+    """
+    from building_model import BimElement, BimOpening, EnvelopeWall
+    from ifc_import import _attach_openings_to_spaces
+
+    prov = Provenance(sheet_id="synth", revision=1, method="test", confidence=0.5)
+    model = BuildingModel(name="m", levels=[Level(id="L1", wall_height_m=3.0)])
+    sp = Space(
+        id="L1-101",
+        level_id="L1",
+        name="Room",
+        number="101",
+        polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]],
+        area_m2=80.0,
+    )
+    model.spaces["L1-101"] = sp
+
+    # An envelope edge that coincides with nothing this wall touches.
+    model.envelope.append(
+        EnvelopeWall(id="env-1", facade="", from_m=[100.0, 100.0], to_m=[110.0, 100.0])
+    )
+    wall = BimElement(
+        global_id="w1",
+        ifc_class="IfcWall",
+        length_m=10.0,
+        placement_m=[0.0, 0.0, 0.0],
+        provenance=prov,
+    )
+    wall.openings.append(
+        BimOpening(
+            id="o1",
+            category="window",
+            width_m=1.5,
+            height_m=1.2,
+            sill_m=0.9,
+            s_center_m=5.0,
+            host_global_id="w1",
+            provenance=prov,
+        )
+    )
+    model.bim_elements.append(wall)
+
+    _attach_openings_to_spaces(model)
+
+    assert sp.openings == [], "opening must not be attached without a known wall direction"
+    kinds = [r.kind for r in model.review_queue]
+    assert "opening_attachment" in kinds, (
+        f"undetermined wall direction must be flagged, got {kinds}"
+    )
+
+
 def _dedup_model():
     """A room with two openings identical in (tag, sill, center, facade)."""
     prov = Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=0.9)
@@ -222,8 +292,8 @@ def _dedup_model():
         level_id="L1",
         name="Room",
         number="101",
-        polygon_m=[[0, 0], [12, 0], [8, 9], [0, 9]],
-        area_m2=90.0,
+        polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]],
+        area_m2=80.0,
     )
     sp.openings = [
         SpaceOpening(
@@ -259,49 +329,62 @@ def test_export_dedups_identical_openings(tmp_path):
     assert len(f.by_type("IfcRelVoidsElement")) == 1
 
 
-def test_envelope_wall_matching_is_length_only():
-    """Pins the ambiguity that made test_cross_sheet_dedup_via_roundtrip flaky.
+def test_envelope_wall_matching_uses_position_not_length(tmp_path):
+    """The wall-to-envelope-edge match must depend on position, not length alone.
 
-    ``_wall_direction_from_envelope`` picks the first envelope edge whose length
-    is within 0.1 m of the wall's. Any footprint with two similar-length edges
-    -- which includes *every rectangle*, since opposite sides are equal -- makes
-    that choice order-dependent, and the host wall's direction decides whether an
-    opening's reconstructed point lands inside its space. The trapezoid fixture
-    above dodges it by having four distinct edge lengths; this test records why,
-    so the workaround is not mistaken for correctness.
+    A 10x8 rectangle has two 10 m edges and two 8 m edges, so the old
+    "first edge within 0.1 m of this length" rule picked its winner from
+    ``model.envelope`` ordering -- and IFC export writes walls in a
+    nondeterministic set-derived order, so the chosen edge (and hence the wall
+    direction, and hence whether an opening's reconstructed point landed inside
+    its space) flipped between runs (#504, #505).
+
+    Envelope edges are built from each wall's own placement, so a wall can be
+    identified by which edge endpoint coincides with it. This asserts that
+    conclusion: for every wall, the direction returned must be consistent with
+    the wall's own centerline, and must not change when the envelope is
+    reordered or reversed.
     """
     from ifc_import import _wall_direction_from_envelope
 
-    # A 10x8 rectangle: two edges of length 10, two of length 8.
-    rect_ring = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)]
-    lengths = {
-        round(
-            ((rect_ring[(i + 1) % 4][0] - rect_ring[i][0]) ** 2)
-            + ((rect_ring[(i + 1) % 4][1] - rect_ring[i][1]) ** 2),
-            6,
+    ifc_path = tmp_path / "matcher.ifc"
+    _export_ifc(_dedup_model(), str(ifc_path))
+    model = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
+
+    walls = [el for el in model.bim_elements if el.ifc_class == "IfcWall"]
+    assert walls, "fixture must import at least one IfcWall"
+
+    # A rectangle: two equal-length pairs, so length alone cannot discriminate.
+    # Assert the fixture really is the ambiguous shape, or this test is vacuous.
+    lengths = sorted(round(e.length_m, 3) for e in model.envelope if e.length_m)
+    assert len(lengths) >= 4, f"expected a four-edge footprint, got {lengths}"
+    assert len(set(lengths)) < len(lengths), (
+        f"fixture must have duplicate edge lengths to be ambiguous, got {lengths}"
+    )
+
+    baseline = {}
+    for el in walls:
+        d = _wall_direction_from_envelope(el, model)
+        assert d is not None, f"wall {el.global_id} should resolve to an envelope edge"
+        baseline[el.global_id] = d
+        # The direction must run along the wall's own centerline: stepping the
+        # full length from the placement must land on a real envelope endpoint.
+        cx, cy = el.placement_m[0], el.placement_m[1]
+        far = (cx + d[0] * el.length_m, cy + d[1] * el.length_m)
+        ends = [tuple(e.from_m) for e in model.envelope] + [tuple(e.to_m) for e in model.envelope]
+        assert any(abs(far[0] - ex) < 0.05 and abs(far[1] - ey) < 0.05 for ex, ey in ends), (
+            f"direction {d} for wall {el.global_id} does not follow its centerline"
         )
-        ** 0.5
-        for i in range(4)
-    }
-    assert len(lengths) < 4, "a rectangle cannot have four distinct edge lengths"
 
-    # The trapezoid fixture used by the dedup tests.
-    trap_ring = [(0.0, 0.0), (12.0, 0.0), (8.0, 9.0), (0.0, 9.0)]
-    trap_lengths = [
-        round(
-            ((trap_ring[(i + 1) % 4][0] - trap_ring[i][0]) ** 2)
-            + ((trap_ring[(i + 1) % 4][1] - trap_ring[i][1]) ** 2),
-            6,
+    # Reordering the envelope must not change any answer. Under the old
+    # length-only rule this permutation changed the wall direction.
+    model.envelope = list(reversed(model.envelope))
+    for el in walls:
+        d = _wall_direction_from_envelope(el, model)
+        assert d == baseline[el.global_id], (
+            f"wall {el.global_id} direction changed under envelope reordering: "
+            f"{baseline[el.global_id]} -> {d}"
         )
-        ** 0.5
-        for i in range(4)
-    ]
-    assert len(set(trap_lengths)) == 4, f"trapezoid edges must be distinct: {trap_lengths}"
-
-    # Any pair closer than the 0.1 m match window is ambiguous by construction.
-    assert min(abs(a - b) for i, a in enumerate(trap_lengths) for b in trap_lengths[i + 1 :]) > 0.1
-
-    assert callable(_wall_direction_from_envelope), "import guard: helper must exist"
 
 
 # -----------------------------------------------------------------------------

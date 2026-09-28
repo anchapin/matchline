@@ -99,6 +99,19 @@ Tier 1 is done when all of the following are true.
 
 **Algorithm note:** The fallback `_attach_openings_to_spaces` (currently at the end of `import_ifc`) implements a basic polygon-containment test: the opening's along-wall center point is projected into world coordinates and tested against each space polygon. Tier 1 replaces this with a proper proximity/clash query using IfcOpenShell geometry but the same data-flow: `BimOpening` → `SpaceOpening` on the correct `Space`.
 
+**Host-wall axis resolution (#505).** Projecting the along-wall center needs the host wall's own axis, resolved in this order:
+
+1. `_wall_direction_from_envelope` — the wall is matched to its envelope edge by *position*: an edge qualifies only if one of its endpoints coincides with the wall's placement, which is exactly how envelope edges are built from walls. Length only breaks ties between edges that share an endpoint, and the returned direction is oriented to start at the wall's placement, so its sign is geometric rather than a function of export order.
+2. `_wall_direction_from_entity` — the wall's own `RefDirection`, used when no envelope edge coincides.
+3. Neither → the openings are left **unattached** and the wall is raised to the review queue as `opening_attachment`. The opening's world position is unknown in that case, and attaching it to whichever space contains a guessed point would silently mis-attribute it; openings feed the BEM takeoff via `datasets_adapter.rollup_takeoff`, so a wrong attachment becomes a wrong schedule.
+
+Two defects fixed together here, because they mask each other:
+
+- **Length-only matching.** The previous matcher took the first envelope edge within 0.1 m of the wall's length. Length is not an identity: every rectangle has two pairs of equal edges, so the winner depended on `model.envelope` ordering, and `ifc_export` writes walls in a nondeterministic set-derived order. A wrong edge yields a wrong direction, which puts the reconstructed point on the wrong side of the wall.
+- **Off-by-half-a-wall projection.** `s_center_m` is measured from the wall's own origin along its local X axis — `_read_opening` validates it against `0 <= s <= length_m` — and `BimElement.placement_m` is that same origin. The reconstruction nevertheless subtracted `length_m / 2`, displacing every opening by half a wall along its own axis. On a 12 m wall that is 6 m, which dropped openings outright and could land them in a neighbouring space. This affected *every* wall, not only ambiguous ones.
+
+The combination is what the #504 fixture was really measuring: with both present, the offset alone put the reconstructed point outside its space, and the ambiguity alone flipped which side it landed on.
+
 Facade classification: derive the wall's 2-D outward normal from its `RefDirection` in the canonical frame; project onto the four cardinal axes; assign the axis with the largest absolute dot product. Walls whose largest projection is below a documented threshold (e.g. |dot| < 0.7 — within ~45° of diagonal) are flagged `facade_unclear` and left empty.
 
 #### Test buildings
@@ -154,5 +167,7 @@ exact, zone membership exact.
 - **Polygon-based adjacency inference**: `infer_adjacency` uses 2D polygon containment for opening attachment and space adjacency. Non-planar walls, curved geometry, and complex openings may produce incorrect attachments.
 - **Facade classification threshold is heuristic**: Walls within ~45° of diagonal are flagged `facade_unclear`. The 0.7 dot-product threshold is not validated against real buildings with oblique facade orientations.
 - **No IfcOpenShell geometry for Tier 1**: Opening attachment in Tier 1 uses a fallback polygon-containment test; proper 3D clash detection is deferred to future tiers.
+- **Host-wall matching relies on an import-side invariant**: the positional envelope match assumes an envelope edge endpoint coincides with the wall's placement, which holds because `_read_bim_elements` builds envelope edges from walls. A model whose envelope was populated some other way — with edges offset from wall centrelines, or split into sub-segments — will not match positionally, and those openings fall through to `RefDirection` or are left unattached and flagged. The 0.1 m endpoint tolerance is also a tolerance on that assumption, not a measured survey tolerance.
+- **Refusing to guess loses openings**: when several same-length edges share a wall's origin, or none coincides, the wall direction resolves to `None` and its openings are dropped rather than mis-attributed. This trades completeness for correctness; the count of such walls is not yet reported as a metric, so the loss is only visible through the `opening_attachment` review queue.
 - **Geometry-less spaces are not handled**: Spaces without geometry are currently skipped; they do not appear in the BIM model output.
 - **No IFC4 multi-level spatial structure**: The importer flattens the spatial hierarchy into a single building model; site, building, and floor levels are not preserved as separate entities.
