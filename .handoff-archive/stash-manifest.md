@@ -23,3 +23,47 @@ None of these were created by the session that archived them (all dated 2026-09-
 
 - `74f69eef5423` — "WIP refactor validate.py to validate/ package - BROKEN (issue 232)", 1 file, -1437 lines. A self-described broken
   half-finished package refactor. Flagged for triage rather than silently discarded; see the note in the session summary.
+
+## Triaged 2026-09-28 (session 2)
+
+Both items previously deferred to triage are now resolved. Neither needed salvaging
+beyond one fragment, and both were left on disk — nothing was deleted.
+
+### `74f69eef5423` — SUPERSEDED, do not resurrect
+
+The refactor it attempted **shipped**: `d48781c refactor: split validate.py into
+validate/ package (closes #259)`. `validate/` is now a package with 9 modules
+(`__init__.py`, `conservation.py`, `invariants.py`, `ashrae90_1.py`, `export.py`,
+`gbxml.py`, `svg.py`, `types.py`), and `validate.N_CHECKS == 37`. Issue #232 closed
+COMPLETED 2026-09-25. The stash's entire diff is the deletion of the flat
+`validate.py` — which the completed refactor also did, by replacing it with the
+package. Applying it now would delete nothing useful and break every
+`from validate import ...` import in the suite. The "BROKEN" self-description is
+accurate as of 2026-09-24 and simply no longer relevant.
+
+### `wave15-dx-docs-uncommitted.patch` — ~95% SUPERSEDED, 1 fragment salvaged
+
+122 insertions across 5 files, all documentation. The prior handoff recorded it as
+"verified to apply cleanly against `d2718ee`" — true then, **false now**, and
+`git apply --check` against current `develop` fails on 3 of 5 files:
+
+| File | State | Why |
+|---|---|---|
+| `building_model.py` (+61) | superseded | `ReviewItem`, `BuildingModel` and `flag_for_review` all carry fuller docstrings in `develop` today |
+| `jesse.py` (+6) | superseded | the `.. warning::` research-asset block is present in `develop` |
+| `run_review.py` (+23) | superseded in substance | `develop` has a newer, differently-structured `Overview` docstring; hunks conflict |
+| `validate.py` (+28) | **obsolete** | the file no longer exists — it is the `validate/` package (see above). `git apply` errors `does not exist in index` |
+| `cli.py` (+17) | **salvaged** | applied by hand to `cli.py::cmd_validate` |
+
+The one fragment worth keeping was `cmd_validate`'s docstring, which documents real
+behaviour that was undocumented. Hand-applied with two corrections: the text now
+says `validate.run_checks()` / `validate.export_gate` / `validate.N_CHECKS` instead
+of `validate.py` (the package rename), and it points at `N_CHECKS` rather than
+hardcoding the patch's "28+", which was true when written and is now 37.
+
+The patch file itself is left in place as the record. The branch
+`fix-wave15-dx-docs` still holds one unmerged commit, `d2718ee` ("DX: docstrings,
+CONTRIBUTING clarification, docs/run_review.md, jesse.py warning"); the jesse.py
+portion of its intent is in `develop` by another route, so it is likely superseded
+too — but that was not verified commit-by-commit and is not asserted here.
+

@@ -78,7 +78,13 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    """Build 2 synthetic buildings, link them, run the validation battery."""
+    """Run the full validation battery (``validate.N_CHECKS`` checks) on synthetic buildings.
+
+    Builds two synthetic buildings (3-room and 2-level), links them, then runs
+    ``validate.run_checks()``. Any check with severity="error" (a conservation law
+    violated) causes a non-zero exit. Results with needs_review=True block export
+    via ``validate.export_gate``.
+    """
     import run_validation
 
     run_validation.main()
