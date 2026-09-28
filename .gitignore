@@ -11,6 +11,12 @@ synth/out/
 bem_out/
 *_results.json
 
+# Ultralytics base checkpoints auto-download into the CWD on first use
+# (e.g. train.py --pretrained yolo11n.pt). Weights are never committed;
+# real runs live under ~/workspace/datasets/detector_runs/ (see detector/QUICKSTART.md).
+/yolo11*.pt
+/detector/yolo11*.pt
+
 # ML model artifacts (reproducible via review_classifier/train.py)
 # -- triage.py loads these; npz is required, pkl raises ValueError --
 /review_classifier/trained_model.pkl

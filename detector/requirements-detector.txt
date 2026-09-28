@@ -1,13 +1,24 @@
 # Pinned detector-track dependencies, snapshotted from the training venv
 # (~/workspace/.venv-det) on 2026-09-19 via 'pip freeze'.
 #
-# Purpose: let a second agent recreate the exact detector environment.
-# Recreate with: python3 -m venv .venv-det && .venv-det/bin/pip install -r detector/requirements-detector.txt
+# Recreate with:
+#   python3 -m venv detector/.venv-det
+#   detector/.venv-det/bin/pip install \
+#       --extra-index-url https://download.pytorch.org/whl/cpu \
+#       -r detector/requirements-detector.txt
 #
-# NOTE: torchvision is 0.29.0+cpu.stub here — the real torchvision C++
-# extension is broken in this environment, so detector/ carries a pure-Torch
-# NMS workaround. On real hardware prefer stock torchvision (see
-# detector/README.md).
+# --extra-index-url is REQUIRED: torch/torchvision are pinned to the +cpu local
+# version tag, which only exists on the PyTorch CPU index, not on PyPI. Without
+# it pip fails with "No matching distribution found for torch==2.14.0+cpu".
+#
+# NOTE: this file previously pinned `torchvision==0.29.0+cpu.stub` — a
+# hand-written pure-torch NMS shim, snapshotted from that venv because its
+# torchvision C++ extension (_C_stable.so) failed to load there. The stub was
+# never published to any index, so the pin was unreproducible: a fresh machine
+# could not satisfy it. Re-verified 2026-09-28 — stock torchvision 0.29.0+cpu
+# imports cleanly and `torchvision.ops.nms` returns correct results (checked on
+# the toy overlap case), so the stub is no longer needed and is replaced by the
+# stock pin. Keep this pin in sync with torch; see detector/README.md.
 #
 # NOTE: jesse.py (root-level WiSARD research impl) is NOT part of the
 # detector delivery scope — it is listed in pyproject.toml py-modules for
@@ -53,9 +64,15 @@ setuptools>=78.1.0,<78.2
 six>=1.17.0,<1.18
 sympy>=1.14.0,<1.15
 torch==2.14.0+cpu
-torchvision==0.29.0+cpu.stub
+torchvision==0.29.0+cpu
 typing_extensions>=4.16.0,<4.17
 ultralytics>=8.4.155,<8.5
 ultralytics-platform>=0.1.48,<0.2
 ultralytics-thop>=2.1.6,<2.2
 urllib3>=2.8.0,<2.9
+
+# --- test-only, not a training dependency ---
+# detector/tests needs pytest:
+#   detector/.venv-det/bin/pip install pytest
+#   detector/.venv-det/bin/python -m pytest detector/tests -q
+# Kept out of the pins above so a training run does not drag in a test runner.
