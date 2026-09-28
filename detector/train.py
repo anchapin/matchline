@@ -78,6 +78,13 @@ def main():
         batch=args.batch,
         workers=args.workers,
         device=args.device,
+        # Must be forwarded: ultralytics re-seeds random/numpy/torch from its own
+        # `seed` argument at the start of training, which OVERRIDES the
+        # random.seed/np.random.seed/torch.manual_seed calls above. Omitting it
+        # silently pinned every run to ultralytics' default of 0, so --seed 1 and
+        # --seed 2 produced byte-identical results.csv to --seed 0 and a
+        # multi-seed A/B was measuring a single sample three times.
+        seed=args.seed,
         project=args.project,
         name=args.name,
         exist_ok=True,
