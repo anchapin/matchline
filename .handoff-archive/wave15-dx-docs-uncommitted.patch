@@ -1,0 +1,212 @@
+diff --git a/building_model.py b/building_model.py
+index e90d267..3d3ede8 100644
+--- a/building_model.py
++++ b/building_model.py
+@@ -320,6 +320,30 @@ class Level:
+ 
+ @dataclass
+ class ReviewItem:
++    """An extraction result awaiting human review before export is allowed.
++
++    ReviewItem is the core provenance gate: any extraction with confidence below the
++    triage threshold (default 0.8) is suspended here until explicitly acknowledged.
++    The export pipeline (validate.py export_gate) BLOCKS export when any item in
++    review_queue has needs_review=True and acknowledged=False.
++
++    Fields:
++        id: Unique identifier for this review item.
++        kind: Which extraction kind triggered this review (see Literal values below).
++        description: Human-readable explanation of the uncertainty or conflict.
++        confidence: Extraction confidence in [0, 1]. Values below 0.8 → needs_review=True.
++        provenance: Provenance record (sheet_id, revision, method) for full audit trail.
++        status: "open" (awaiting review), "confirmed" (accepted), "rejected" (dropped).
++        needs_human: P(needs human review) as estimated by the triage model (0–1).
++        urgency: Priority 0–3. Higher = surfaced first in matchline review output.
++        auto_resolved: True if resolved automatically by high-confidence re-run guardrails;
++            still requires human acknowledgment to clear the export gate.
++        resolution: "accept" (keep the extraction), "drop" (discard), "reassign" (route
++            to a different space/zone). Set by triage logic.
++        needs_review: True = this item blocks export until acknowledged. False = reviewed.
++        acknowledged: True = human has explicitly acknowledged this item.
++    """
++
+     id: str
+     kind: Literal[
+         "fixture_assignment",
+@@ -359,6 +383,26 @@ class ReviewItem:
+ 
+ @dataclass
+ class BuildingModel:
++    """Canonical in-memory building model for BEM inputs.
++
++    BuildingModel is the central domain object assembled by the link pipeline from
++    IFC/gbXML extractions. All downstream consumers — validate.py (conservation checks),
++    bem_export.py (serialisation), and the review queue — read from BuildingModel.
++
++    Fields:
++        name: Human-readable building name.
++        model_version: Schema version string.
++        auto_triage: Override for ENABLE_AUTO_TRIAGE env var. None = use global default.
++        levels: All Level objects (roof, floor-by-floor groupings).
++        spaces: Dict mapping space_id -> Space. Thermal zones are derived from spaces.
++        zones: Dict mapping zone_name -> Zone. A zone groups spaces sharing a setpoint schedule.
++        envelope: List of EnvelopeWall (opaque and transparent facade area for daylighting).
++        bim_elements: Raw BIM element inventory (IFC frontend, Tier 0+).
++        schedules: Schedule definitions keyed by tag.
++        review_queue: List[ReviewItem] awaiting human review before export is allowed.
++        revision_log: Audit trail of all mutations (sheet_id, revision, action, note).
++    """
++
+     name: str = ""
+     model_version: str = MODEL_VERSION
+     auto_triage: Optional[bool] = None
+@@ -428,6 +472,23 @@ class BuildingModel:
+         confidence: float,
+         provenance: Provenance,
+     ) -> ReviewItem:
++        """Route a low-confidence extraction to the review queue.
++
++        Creates a ReviewItem and appends it to self.review_queue. If ENABLE_AUTO_TRIAGE
++        is set (env var or self.auto_triage override), the triage classifier is run
++        immediately to set urgency and auto_resolved. Items with needs_review=True AND
++        acknowledged=False block export via validate.py export_gate.
++
++        Args:
++            kind: Which extraction kind this is. Controls the review UI grouping.
++            description: Human-readable description of the uncertainty or conflict.
++            confidence: Extraction confidence in [0, 1]. Values below the triage threshold
++                (typically 0.8) result in needs_review=True.
++            provenance: Provenance record (sheet, revision, method) for audit trail.
++
++        Returns:
++            The created ReviewItem (already appended to self.review_queue).
++        """
+         rid = f"RVW-{len(self.review_queue) + 1:03d}"
+         item = ReviewItem(
+             id=rid,
+diff --git a/cli.py b/cli.py
+index e0e7326..c6dc8f1 100644
+--- a/cli.py
++++ b/cli.py
+@@ -67,7 +67,14 @@ def cmd_run(args: argparse.Namespace) -> None:
+ 
+ 
+ def cmd_validate(args: argparse.Namespace) -> None:
+-    """Build 2 synthetic buildings, link them, run the validation battery."""
++    """Run the full validate.py BATTERY (28+ conservation and quality checks) on synthetic buildings.
++
++    Builds two synthetic buildings (3-room and 2-level), links them, then runs
++    ``run_checks()`` which executes the validate.py BATTERY.  Any check with
++    severity="error" (conservation violated) causes a non-zero exit.  CheckResults
++    with needs_review=True block export via the export_gate.
++    """
++
+     import run_validation
+ 
+     run_validation.main()
+@@ -316,8 +323,12 @@ def build_parser() -> argparse.ArgumentParser:
+     p.add_argument(
+         "--enable-auto-triage",
+         action="store_true",
+-        help="Explicitly enable auto-triage classifier when loading the model "
+-        "(enabled by default; flag is a no-op for backwards compatibility)",
++        help="Enable the auto-triage classifier when loading the model. "
++        "When enabled, low-confidence extractions (confidence < triage threshold) are "
++        "automatically flagged for review and added to the queue with urgency scores. "
++        "Items with needs_review=True block export (see export_gate in validate.py) "
++        "until explicitly acknowledged via `matchline review --acknowledge`. "
++        "Default: enabled (ENABLE_AUTO_TRIAGE=1 env var); this flag overrides the env var.",
+     )
+     p.add_argument(
+         "--list",
+diff --git a/jesse.py b/jesse.py
+index 316c1b9..c1b945f 100644
+--- a/jesse.py
++++ b/jesse.py
+@@ -1,5 +1,11 @@
+ """Jesse-Vision prototype: zero-weight n-tuple (WiSARD) classifier.
+ 
++.. warning::
++    This module is a **research asset** (WiSARD paper reproduction).  It is NOT
++    the production symbol spotting pipeline.  For real drawing extraction, use the
++    ``detector/`` YOLO fine-tuning pipeline.  ``jesse.py`` must not be imported
++    by any production module in this package.
++
+ Implements the core of https://jesse.solidsf.com/paper ("Zero-Weight Optical
+ Recognition ... via One-Hot Pixel String Tuple Addressing and Empirical
+ Bayesian Beliefs") from the paper text alone. numpy only, no torch.
+diff --git a/run_review.py b/run_review.py
+index 0b05f85..24e6c49 100644
+--- a/run_review.py
++++ b/run_review.py
+@@ -1,10 +1,29 @@
+ """Review queue CLI: list, confirm, or reject open review items.
+ 
++Triage Flow
++===========
++Every extraction with confidence < triage threshold (default 0.8) is automatically
++flagged via BuildingModel.flag_for_review() and appended to BuildingModel.review_queue.
++The auto-triage classifier (review_classifier.model.TypedDecider) assigns an urgency
++score (0-3).  Items with urgency >= 2 are surfaced first.
++
++Items with needs_review=True AND acknowledged=False BLOCK export via the export_gate
++in validate.py.  Acknowledging an item (--confirm) sets acknowledged=True; the
++export_gate then permits the export.
++
++Security Model
++==============
++Acknowledgment is recorded as an audit entry in BuildingModel.revision_log, tagged
++with the CLI identity (from MATCHLINE_IDENTITY env var, defaults to "cli").
++There is no server-side authentication for review queue access — control it via
++filesystem permissions on the model JSON.
++
+ Usage:
+     matchline review <model.json>                        # list open items
+     matchline review <model.json> --show-all             # list all items
+-    matchline review <model.json> --confirm <id>         # confirm item
+-    matchline review <model.json> --reject <id>          # reject item
++    matchline review <model.json> --confirm <id>        # confirm item (clears export gate)
++    matchline review <model.json> --reject <id>         # reject item (removes from queue)
++    matchline review <model.json> --enable-auto-triage  # run auto-triage classifier
+ """
+ 
+ from __future__ import annotations
+diff --git a/validate.py b/validate.py
+index 1ce3dcf..1751ca1 100644
+--- a/validate.py
++++ b/validate.py
+@@ -54,14 +54,26 @@ SEVERITIES = ("pass", "warn", "error", "skip")
+ 
+ @dataclass
+ class CheckResult:
+-    check_id: str
+-    name: str
+-    severity: str  # "pass" | "warn" | "error" | "skip"
+-    message: str
+-    entities: list = field(default_factory=list)  # offending entity ids
+-    expected: object = None
+-    actual: object = None
+-    needs_review: dict = field(default_factory=dict)  # fact_id -> bool
++    """Result of a single validation check from the BATTERY.
++
++    Attributes:
++        check_id: Unique identifier for the check (e.g., "area_conservation").
++        name: Human-readable name of the check.
++        severity: One of "pass" (books balance), "warn" (plausibility tripwire),
++            "error" (conservation violated — blocks export), "skip" (not applicable).
++        message: Human-readable explanation of the result.
++        entities: List of offending entity ids. Empty for passes.
++        expected: Expected value for the measured quantity. None for passes and skips.
++        actual: Actual computed value. None for passes and skips.
++        needs_review: Dict mapping fact_id -> bool for low-confidence facts requiring
++            human review. An "error" severity with non-empty needs_review blocks export.
++
++    Severity policy:
++      * "error" = conservation violated or referential breakage → BLOCKS EXPORT
++      * "warn"  = plausibility tripwire → does not block but must be acknowledged
++      * "skip"  = check not applicable for this model configuration
++      * "pass"  = conservation law satisfied
++    """
+ 
+     def to_dict(self) -> dict:
+         d = {
