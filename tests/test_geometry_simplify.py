@@ -369,6 +369,24 @@ class TestObliqueBoundary:
         for entry in res.skipped:
             assert entry["op"] and entry["reason"], "a skip must say what and why"
 
+    def test_dp_pass_raises_no_deprecation_warning(self):
+        """The DP distance must not rely on the deprecated 2-D np.cross.
+
+        ``np.cross`` on 2-D vectors was deprecated in NumPy 2.0 and *raises* on
+        >= 2.3. Because CI installs numpy unpinned while local development had
+        2.2.6, the old code only warned locally and failed CI -- and the DP path
+        had no coverage before #502, so nothing noticed. Running the pass with
+        DeprecationWarning promoted to an error makes the local and CI
+        environments agree.
+        """
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            res = simplify_ring(OBLIQUE_SLANT, tol=0.02, dp_eps=0.05, wall_height=3.0)
+        assert res.valid
+        assert res.simplified_count < res.original_count
+
     def test_oblique_slant_is_a_real_hard_case(self):
         """Guard the fixture itself: it must actually be dense and bowed.
 

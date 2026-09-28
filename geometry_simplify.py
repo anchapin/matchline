@@ -152,7 +152,13 @@ def _douglas_peucker(pts: np.ndarray, eps: float) -> np.ndarray:
         if L == 0:
             d = np.hypot(*(pts[i0 + 1 : i1] - a).T)
         else:
-            d = np.abs(np.cross(seg, pts[i0 + 1 : i1] - a)) / L
+            # Explicit 2-D cross product (z component of seg x rel). np.cross on
+            # 2-D vectors was deprecated in NumPy 2.0 and raises on >= 2.3, which
+            # broke the whole dp_eps pass on CI while warning locally -- the DP
+            # path had no test coverage before #502. Written out so the
+            # perpendicular distance does not depend on the NumPy version.
+            rel = pts[i0 + 1 : i1] - a
+            d = np.abs(seg[0] * rel[:, 1] - seg[1] * rel[:, 0]) / L
         rel = np.argmax(d)
         k = rel + i0 + 1
         if d[rel] > eps:
