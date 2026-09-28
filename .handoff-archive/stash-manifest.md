@@ -65,5 +65,49 @@ The patch file itself is left in place as the record. The branch
 `fix-wave15-dx-docs` still holds one unmerged commit, `d2718ee` ("DX: docstrings,
 CONTRIBUTING clarification, docs/run_review.md, jesse.py warning"); the jesse.py
 portion of its intent is in `develop` by another route, so it is likely superseded
-too — but that was not verified commit-by-commit and is not asserted here.
+too — that caveat is now **resolved**, see below.
+
+### `3fedbcb` — duplicate of the patch above, created defensively
+
+`git stash push` in the `wave15-dx-docs` worktree during #511. The same 122
+insertions / 13 deletions across the same 5 files, byte-for-byte the same
+per-file counts as `wave15-dx-docs-uncommitted.patch` (verified: `git apply
+--numstat` against the patch equals `git stash show --numstat` for `3fedbcb`).
+
+It exists only because the delta was found sitting **uncommitted and unstashed** in
+the worktree, which is what the section above had missed: the patch had been
+exported, but the working tree still carried a live copy. The branch could not be
+deleted while that copy was there, because `git branch -d` refuses a branch checked
+out in a worktree and `git worktree remove --force` would have destroyed the only
+unstashed instance. Stashing first made the deletion non-destructive.
+
+Retained (not dropped) so the recovery path survives `git gc`. Disposition is
+unchanged from the patch: **superseded, do not resurrect.**
+
+## Branch `fix-wave15-dx-docs` — deleted 2026-09-28 (#511)
+
+The `wave15-dx-docs` worktree at `~/Projects/worktrees/wave15-dx-docs` was removed,
+then the local and remote branches deleted. What made this safe:
+
+- `d2718ee` was the only commit not in `develop`, and `origin/develop` did not
+  contain it — confirmed before deleting, not assumed.
+- Its net diff is one file, `docs/run_review.md` (+81), and it is a **downgrade**:
+  `develop` has 131 lines with a `ReviewItem` field table, the branch has 81 with
+  the older `## Concepts` structure. Merging would have replaced real documentation
+  with a thinner draft.
+- The uncommitted worktree delta was never in any stash. It is now preserved three
+  ways: the patch file above, stash `3fedbcb`, and (before removal) the worktree
+  itself. `git apply --numstat` on the patch matches `git stash show --numstat` on
+  `3fedbcb` file-for-file.
+
+Recovery, if ever needed:
+
+```bash
+git stash apply 3fedbcb                              # the 5-file delta
+git show d2718ee:docs/run_review.md                 # the superseded draft
+```
+
+Note: `d2718ee` is no longer referenced by any branch, but survives as an
+unreachable object while `/tmp/opencode/verify_patch` holds it at detached HEAD.
+Do not rely on that — it is in `/tmp` and will not survive a reboot.
 
