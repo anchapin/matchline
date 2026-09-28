@@ -96,7 +96,7 @@ reflex guard both neutralised, the simplifier returns a **valid polygon** with a
 **finite** area delta, and the neck silently opens from 2.2 m to 6.6 m. Neither
 `res.valid` nor `area_delta_pct` flags it — only a geometric probe of the neck
 does. The budget is therefore not a performance knob: it is the invariant that
-`validate.py` relies on when it blocks export.
+`validate/` relies on when it blocks export.
 
 Two further properties are asserted directly:
 

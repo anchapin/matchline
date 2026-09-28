@@ -10,6 +10,9 @@ Conservation law correctness tests (Issue #263):
 - zone adjacency: every space references a zone and vice versa
 """
 
+import re
+from pathlib import Path
+
 import pytest
 
 from tests.model_factory import (
@@ -72,10 +75,111 @@ def test_clean_model_fully_green():
     assert _by_id(report, "volume_conservation").severity == "pass"
 
 
+_REPO = Path(__file__).resolve().parents[1]
+_VALIDATION_DOC = _REPO / "docs" / "validation.md"
+
+# Live orientation docs that state the battery size in prose. Each is asserted
+# against N_CHECKS, so the count cannot drift again in silence.
+_COUNT_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "QUALITY-SCORE.md",
+    "docs/README.md",
+    "docs/pipeline.md",
+)
+
+# Docs that must name the `validate/` package rather than the removed
+# `validate.py` file (split into a package by d48781c, #259).
+_PACKAGE_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "QUALITY-SCORE.md",
+    "ROADMAP.md",
+    ".github/ISSUE_TEMPLATE/feature_request.md",
+    "docs/CODE-REVIEW.md",
+    "docs/pipeline.md",
+    "docs/run_review.md",
+    "docs/validation.md",
+    "docs/ifc_import.md",
+    "docs/geometry_simplify.md",
+    "docs/design-docs/core-beliefs.md",
+)
+
+# Backticked tokens that appear in a catalog bullet but are not check ids.
+# A new one has to be reviewed and added here, not silently tolerated.
+_NON_CHECK_TOKENS = frozenset({"area_m2", "volume_m3", "lpd_w_ft2", "lpd_w_m2"})
+
+
+def _emitted_check_ids() -> set[str]:
+    """Check ids the battery actually produces, from a real run.
+
+    Read off `run_checks` output rather than off `BATTERY` so that a check
+    listed in the battery but never wired in still registers as drift.
+    """
+    return {r.check_id for r in run_checks(make_clean_model()).results}
+
+
+def _documented_check_ids() -> set[str]:
+    """Backticked id-like tokens from the catalog bullets in validation.md."""
+    text = _VALIDATION_DOC.read_text(encoding="utf-8")
+    start = text.index("## The battery")
+    end = text.index("## How to add a check", start)
+    bullets = "\n".join(line for line in text[start:end].splitlines() if line.startswith("- "))
+    return set(re.findall(r"`([a-z][a-z_0-9]+)`", bullets))
+
+
 def test_battery_size_documented():
-    # keep docs/validation.md's check count honest; update the doc if this
-    # number changes intentionally.
-    assert N_CHECKS == 37
+    # Reads docs/validation.md. The previous version of this test asserted a
+    # bare literal while its name and comment promised a doc check it never
+    # performed, so the count in prose could drift freely and it stayed green.
+    text = _VALIDATION_DOC.read_text(encoding="utf-8")
+    stated = re.search(r"^## The battery \((\d+) checks\)", text, re.M)
+    assert stated, "docs/validation.md lost its '## The battery (N checks)' heading"
+    assert int(stated.group(1)) == N_CHECKS, (
+        f"docs/validation.md says {stated.group(1)} checks, battery has {N_CHECKS}"
+    )
+
+
+def test_every_check_is_documented():
+    # Forward: nothing the battery runs may lack a catalog bullet.
+    missing = sorted(_emitted_check_ids() - _documented_check_ids())
+    assert not missing, f"checks with no bullet in docs/validation.md: {missing}"
+
+
+def test_no_phantom_checks_documented():
+    # Reverse: the catalog may not promise a check that does not exist.
+    phantom = sorted(_documented_check_ids() - _emitted_check_ids() - _NON_CHECK_TOKENS)
+    assert not phantom, (
+        f"docs/validation.md names non-checks {phantom}; delete the bullet, or "
+        f"add the token to _NON_CHECK_TOKENS if it is a model field name"
+    )
+
+
+@pytest.mark.parametrize("relpath", _COUNT_DOCS)
+def test_check_count_matches_orientation_docs(relpath):
+    path = _REPO / relpath
+    stated = {
+        int(n)
+        for n in re.findall(r"(\d+)-check invariant battery", path.read_text(encoding="utf-8"))
+    }
+    assert stated, f"{relpath} no longer states a check count; confirm the prose still agrees"
+    assert stated == {N_CHECKS}, f"{relpath} states {sorted(stated)}, battery has {N_CHECKS}"
+
+
+def test_no_docs_reference_removed_validate_module():
+    # `validate.py` became the `validate/` package in d48781c (#259).
+    # `tests/test_validate.py` is a real filename and is not matched: the
+    # lookbehind excludes any preceding word character.
+    pattern = re.compile(r"(?<![A-Za-z0-9_])validate\.py")
+    stale = [
+        f"{rel}:{lineno}"
+        for rel in _PACKAGE_DOCS
+        for lineno, line in enumerate((_REPO / rel).read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert not stale, f"stale `validate.py` references, use `validate/`: {stale}"
 
 
 @pytest.mark.parametrize(

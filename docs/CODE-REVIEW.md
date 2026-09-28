@@ -24,7 +24,7 @@
 ### Provenance and review queue
 Every new fact type added to `BuildingModel` must have a `Provenance` field. If the extraction method is uncertain, it must go through the review queue — never silently accept a low-confidence link.
 
-### Conservation laws (`validate.py`)
+### Conservation laws (`validate/`)
 Do not weaken existing tolerances or remove existing checks without an explicit decision in `docs/design-docs/`. New invariants must be documented in `docs/validation.md`.
 
 ### Coordinate frames
@@ -52,7 +52,7 @@ The detector track has its own venv and is excluded from the main ruff config. C
 
 - Any change to `building_model.py` core types or `Provenance` fields
 - Any new module added to the pipeline
-- Any change to `validate.py` invariants or tolerances
+- Any change to `validate/` invariants or tolerances
 - Any change to coordinate frame handling
 - Any IFC Tier 1 (space attachment) work
 

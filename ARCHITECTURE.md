@@ -58,7 +58,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 | `link.py` | Orchestrates cross-sheet registration + linking into BuildingModel |
 | `registration.py` | Affine2D transforms, cross-sheet coordinate registration |
 | `datasets_adapter.py` | Detector → schedule join → count×width×height takeoffs |
-| `validate.py` | 28-check invariant battery; errors **block export** |
+| `validate/` | 37-check invariant battery; errors **block export** |
 | `bem_export.py` | gbXML 6.01 + IFC4 export from canonical model |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0; Tier 1 = space attachment, open) |
 | `geometry_simplify.py` | Area-budgeted surface reduction (≤2% area drift default) |
@@ -83,7 +83,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 ## Key design decisions
 
 - **Provenance required**: every extracted fact carries sheet, revision, method, confidence. Low-confidence results go to the review queue — nothing is silently accepted.
-- **Conservation laws block export**: `validate.py` enforces area/volume/envelope closure; errors are fatal.
+- **Conservation laws block export**: `validate/` enforces area/volume/envelope closure; errors are fatal.
 - **Synthetic-first validation**: end-to-end paths are tested against `synth/` fixtures (`bldg_3room`, `bldg_open_office`, `bldg_8room`) before any real-data run.
 - **YOLO fine-tuning is a separate track**: `detector/` has its own venv; the main package has no torch dependency.
 - **WiSARD is a research asset**: `jesse.py` is a deterministic, explainable paper reproduction; production symbol spotting uses the YOLO pipeline.

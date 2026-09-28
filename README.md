@@ -75,7 +75,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate.py` | 28-check invariant battery; errors block export |
+| `validate/` | 37-check invariant battery; errors block export |
 
 ## Quickstart
 
@@ -91,7 +91,7 @@ python3 run_facade_takeoff.py      # facade takeoffs — needs --data-root
 
 ## Validation
 
-`validate.py` enforces conservation laws over the model and its exports:
+`validate/` enforces conservation laws over the model and its exports:
 per-level floor-area conservation, volume conservation, envelope closure,
 takeoff closure, LPD plausibility, cross-discipline referential integrity,
 provenance closure. Errors block export; warnings require acknowledgment.

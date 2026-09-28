@@ -21,11 +21,11 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - `model_version` for schema migration
 - No known blocking debt
 
-### Validation (`validate.py`)
+### Validation (`validate/`)
 
 **Grade: A**
 
-- 28-check invariant battery documented in `docs/validation.md`
+- 37-check invariant battery documented in `docs/validation.md`
 - Conservation laws block export via `export_gate()`
 - Defect injection tests in `tests/test_validate.py` (`model_factory.py`)
 - Every check has error/warn/skip semantics
@@ -65,7 +65,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 - Area-budgeted simplification with ≤2% drift default
 - `SimplifyResult` with `valid` flag and `area_delta_pct`
-- Validation check in `validate.py` (`_check_simplify_budget`)
+- Validation check in `validate/` (`_check_simplify_budget`)
 - Tolerances documented in `docs/geometry_simplify.md`
 
 ### HVAC Zoning (`hvac_trace.py`)

@@ -8,7 +8,7 @@ A recurring theme: several of these introduce *known, directional bias*
 (overestimated air volume, overestimated floor area). The project's answer is
 the same everywhere — don't pretend the bias is zero; measure it, attribute it
 to the convention that caused it, and report it. The validation battery
-(`validate.py`) is the natural home for these "convention bias" numbers.
+(`validate/`) is the natural home for these "convention bias" numbers.
 
 ## 1. Wall thickness → planar BEM surfaces
 

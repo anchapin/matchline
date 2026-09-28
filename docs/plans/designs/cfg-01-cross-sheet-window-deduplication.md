@@ -22,7 +22,7 @@ Implement deduplication via `_dedupe_space_openings()` in `link.py`. Entries wit
 
 - `link.py` — `_dedupe_space_openings()` function
 - `docs/link.md` §"Cross-sheet window dedup is approximate" — tolerance documentation
-- `validate.py` — `_check_window_double_link()` validation safety net
+- `validate/` — `_check_window_double_link()` validation safety net
 
 ## Validation
 

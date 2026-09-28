@@ -32,13 +32,13 @@ disclosed, not hidden.
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
 | `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `ci.md` | CI gates, test count regression policy, and merge requirements |
-| `validation.md` | The 28-check invariant battery and tolerance rationales |
+| `validation.md` | The 37-check invariant battery and tolerance rationales |
 
 ## Quick Start
 
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
-python -m pytest tests/ -q      # (2) smoke test — 968 tests, a few minutes
+python -m pytest tests/ -q      # (2) smoke test — 976 tests, a few minutes
 matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
 ```
 

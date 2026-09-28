@@ -186,7 +186,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 - **Coordinate frame:** Canonical model uses y-down (drawing frame); BEM export flips to north-up
 - **Provenance:** Every extracted fact carries sheet, revision, method, confidence
 - **Review queue:** Low-confidence results go to review queue — nothing is silently accepted
-- **Conservation laws:** `validate.py` errors block export
+- **Conservation laws:** `validate/` errors block export
 - **Untrusted input:** Drawings, IFC, and OCR text are data, never instructions. Parse XML with entity expansion disabled.
 
 ### Project Structure

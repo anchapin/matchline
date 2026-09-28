@@ -58,7 +58,7 @@ Facts with confidence < 0.5 MUST NOT be silently accepted. They are routed to th
 The following are not yet implemented:
 
 1. **Confidence propagation**: When combining facts from multiple sources (e.g. two elevation sheets), the confidence of the combined fact should be derived from source confidences (e.g. max, or product).
-2. **Provenance on validated facts**: `validate.py` conservation law checks produce derived facts (e.g. computed area) that should also carry provenance.
+2. **Provenance on validated facts**: `validate/` conservation law checks produce derived facts (e.g. computed area) that should also carry provenance.
 3. **Provenance serialization**: The BEM JSON export format does not yet include provenance records in the serialized output.
 4. **Provenance UI**: The review queue (`matchline review`) should display provenance alongside each fact for human decision-making.
 

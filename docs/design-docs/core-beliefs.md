@@ -16,7 +16,7 @@ Links below `REVIEW_CONFIDENCE = 0.80` (`building_model.py`) are flagged for hum
 
 ## Conservation laws block export
 
-`validate.py` enforces invariants (area closure, volume closure, envelope closure, LPD plausibility, cross-discipline referential integrity). An error is fatal — the export is blocked.
+`validate/` enforces invariants (area closure, volume closure, envelope closure, LPD plausibility, cross-discipline referential integrity). An error is fatal — the export is blocked.
 
 **Why**: Exporting an internally inconsistent model to gbXML or IFC would produce simulation results that cannot be trusted. Conservation law violations indicate a bug in the pipeline, not in the input.
 

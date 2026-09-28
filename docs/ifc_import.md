@@ -125,7 +125,7 @@ The IFC fixture is preferred for unit-level assertions (exact opening counts per
 
 Both buildings have openings on shared/interior walls; this is the minimum realistic configuration. A building with purely rectangular perimeter rooms and only exterior openings would not exercise the ambiguity-resolution logic.
 
-#### validate.py guards
+#### validate/ guards
 
 Tier 1 is blocked from shipping if any of these fire at error severity:
 
@@ -137,7 +137,7 @@ Tier 1 is blocked from shipping if any of these fire at error severity:
 | *(new) `facade_classification_complete`* | any `EnvelopeWall.facade == ""` after `infer_adjacency` — enforces criterion #5 above |
 | *(new) `adjacency_review_acknowledged`* | any `adjacency_ambiguous` review item that is not `acknowledged` — enforces criterion #7 above |
 
-The two new checks are added to `validate.py` and `N_CHECKS` incremented before Tier 1 is merged. `facade_opening_closure` and `takeoff_counts_reconcile` already exist and will start passing once `Space.openings` is populated; they serve as regression guards without requiring new code.
+The two new checks are added to `validate/` and `N_CHECKS` incremented before Tier 1 is merged. `facade_opening_closure` and `takeoff_counts_reconcile` already exist and will start passing once `Space.openings` is populated; they serve as regression guards without requiring new code.
 
 ## IfcOpenShell notes (0.8.5, vendored)
 

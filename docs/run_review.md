@@ -15,7 +15,7 @@ or that the pipeline could not auto-resolve. A review item captures:
 - **Raw confidence** — the extraction confidence score
 - **Triage metadata** — urgency level, auto-resolution flag
 
-Items pending review **block BEM export** via `validate.py` until they are
+Items pending review **block BEM export** via `validate/` until they are
 confirmed or rejected.
 
 ---
@@ -107,7 +107,7 @@ Exit code `1` is returned if a `SecurityError` from a blocked pickle file is rai
 ## Limitations
 
 - **Review queue blocks export**: Items in the `open` state block BEM export via
-  `validate.py`. All open items must be confirmed or rejected to proceed.
+  `validate/`. All open items must be confirmed or rejected to proceed.
 - **Auto-triage requires opt-in**: Auto-resolution only runs when
   `ENABLE_AUTO_TRIAGE=1` is set or `--auto-triage` is passed. It is not enabled
   by default.
