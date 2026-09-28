@@ -125,7 +125,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=939 # +20 #499 detector robustness-split tests (degrade + matcher + eval harness)
+          EXPECTED_TEST_COUNT=965 # +26: #502 geometry_simplify hard-case fixtures (oblique, circulation, partitions) + #504 deterministic-strict IFC dedup tests
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
