@@ -137,11 +137,16 @@ def test_ifc_export_validates(tmp_path):
 
 
 @pytest.mark.xfail(
-    reason="IFC-04 dedup-via-roundtrip: openings dropped on re-import because "
-    "_attach_openings_to_spaces only attaches via IfcWall hosts. Test fixture "
-    "has no IfcWall, so dedup works in export but import drops both. "
-    "Tracked as future work (out of scope for #494/#495/#496).",
-    strict=False,
+    reason="IFC-04 dedup-via-roundtrip: dedup works in export (2 openings -> 1 "
+    "IfcOpeningElement) but the re-import drops it. _attach_openings_to_spaces "
+    "reconstructs the opening point from the host wall's direction, which "
+    "_wall_direction_from_envelope derives by matching envelope edges on LENGTH "
+    "ALONE (ifc_import.py:544). The opening is hosted on a facade edge whose "
+    "length matches another edge, so the direction -- and therefore whether the "
+    "reconstructed point lands inside the space -- is ambiguous. Tracked as "
+    "future work (out of scope for #494/#495/#496). strict=True so that fixing "
+    "the underlying bug surfaces as a failure rather than a silent xpass.",
+    strict=True,
 )
 def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     """IFC-04: two link_elevations runs on same facade produce one SpaceOpening per window.
@@ -161,8 +166,16 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
         level_id="L1",
         name="Room",
         number="101",
-        polygon_m=[[0, 0], [10, 0], [10, 8], [0, 8]],
-        area_m2=80.0,
+        # Trapezoid, not a rectangle, and deliberately so: all four edge lengths
+        # (12 / 9.849 / 8 / 9) are distinct. A rectangle always has two pairs of
+        # equal edges, and _wall_direction_from_envelope matches envelope edges
+        # on length alone -- with duplicate lengths the host wall's direction
+        # depends on envelope ordering, which the IFC export writes in a
+        # nondeterministic order. That made this test flip xpass/xfail ~50% of
+        # runs (#504). Distinct lengths remove the ambiguity, so the outcome is
+        # deterministic. See test_envelope_wall_matching_is_length_only.
+        polygon_m=[[0, 0], [12, 0], [8, 9], [0, 9]],
+        area_m2=90.0,
     )
     # Two identical windows (simulating two elevations of same facade)
     sp.openings = [
@@ -198,6 +211,97 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
     # After cross-sheet dedup, L1-101 should have exactly 1 opening (not 2)
     openings = imported.spaces["L1-101"].openings
     assert len(openings) == 1, f"expected 1 SpaceOpening after dedup, got {len(openings)}"
+
+
+def _dedup_model():
+    """A room with two openings identical in (tag, sill, center, facade)."""
+    prov = Provenance(sheet_id="synth", revision=1, method="synthetic", confidence=0.9)
+    model = BuildingModel(name="Dedup Test", levels=[Level(id="L1", wall_height_m=3.0)])
+    sp = Space(
+        id="L1-101",
+        level_id="L1",
+        name="Room",
+        number="101",
+        polygon_m=[[0, 0], [12, 0], [8, 9], [0, 9]],
+        area_m2=90.0,
+    )
+    sp.openings = [
+        SpaceOpening(
+            id=wid,
+            tag="A",
+            category="window",
+            width_m=1.5,
+            height_m=1.2,
+            sill_m=0.9,
+            host_facade="south",
+            s_center_m=2.0,
+            provenance=prov,
+        )
+        for wid in ("w1", "w2")
+    ]
+    model.spaces["L1-101"] = sp
+    return model
+
+
+def test_export_dedups_identical_openings(tmp_path):
+    """The IFC export must collapse two identical openings into one element.
+
+    This is the behaviour the xfail test above is really about, asserted
+    directly on the written file so it is a stable, non-xfail regression test:
+    dedup is an *export* guarantee and does not depend on the re-import path
+    that currently loses the opening.
+    """
+    ifc_path = tmp_path / "dedup_export.ifc"
+    _export_ifc(_dedup_model(), str(ifc_path))
+    f = ifcopenshell.open(str(ifc_path))
+    openings = f.by_type("IfcOpeningElement")
+    assert len(openings) == 1, f"export must dedup to 1 opening, wrote {len(openings)}"
+    assert len(f.by_type("IfcRelVoidsElement")) == 1
+
+
+def test_envelope_wall_matching_is_length_only():
+    """Pins the ambiguity that made test_cross_sheet_dedup_via_roundtrip flaky.
+
+    ``_wall_direction_from_envelope`` picks the first envelope edge whose length
+    is within 0.1 m of the wall's. Any footprint with two similar-length edges
+    -- which includes *every rectangle*, since opposite sides are equal -- makes
+    that choice order-dependent, and the host wall's direction decides whether an
+    opening's reconstructed point lands inside its space. The trapezoid fixture
+    above dodges it by having four distinct edge lengths; this test records why,
+    so the workaround is not mistaken for correctness.
+    """
+    from ifc_import import _wall_direction_from_envelope
+
+    # A 10x8 rectangle: two edges of length 10, two of length 8.
+    rect_ring = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)]
+    lengths = {
+        round(
+            ((rect_ring[(i + 1) % 4][0] - rect_ring[i][0]) ** 2)
+            + ((rect_ring[(i + 1) % 4][1] - rect_ring[i][1]) ** 2),
+            6,
+        )
+        ** 0.5
+        for i in range(4)
+    }
+    assert len(lengths) < 4, "a rectangle cannot have four distinct edge lengths"
+
+    # The trapezoid fixture used by the dedup tests.
+    trap_ring = [(0.0, 0.0), (12.0, 0.0), (8.0, 9.0), (0.0, 9.0)]
+    trap_lengths = [
+        round(
+            ((trap_ring[(i + 1) % 4][0] - trap_ring[i][0]) ** 2)
+            + ((trap_ring[(i + 1) % 4][1] - trap_ring[i][1]) ** 2),
+            6,
+        )
+        ** 0.5
+        for i in range(4)
+    ]
+    assert len(set(trap_lengths)) == 4, f"trapezoid edges must be distinct: {trap_lengths}"
+
+    # Any pair closer than the 0.1 m match window is ambiguous by construction.
+    assert min(abs(a - b) for i, a in enumerate(trap_lengths) for b in trap_lengths[i + 1 :]) > 0.1
+
+    assert callable(_wall_direction_from_envelope), "import guard: helper must exist"
 
 
 # -----------------------------------------------------------------------------
