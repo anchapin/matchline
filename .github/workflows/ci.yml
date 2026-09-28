@@ -125,7 +125,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=976 # +8: #513 doc-reconciliation guards — test_battery_size_documented now actually greps docs/validation.md, plus test_every_check_is_documented, test_no_phantom_checks_documented, test_no_docs_reference_removed_validate_module, and test_check_count_matches_orientation_docs parametrised over 5 orientation docs.
+          EXPECTED_TEST_COUNT=984 # +8: #506 seed-forwarding guards (tests/test_detector_train_seed.py) — 4 parametrised seed values plus distinct-seeds, seed-0-not-omitted, python-level-seeds, and a defect injection on a mutated copy of train.py. Runs in the main CI suite because the defect is pure argument forwarding: ultralytics and torch are stubbed, so no GPU, dataset or detector venv is needed.
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

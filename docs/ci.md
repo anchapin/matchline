@@ -8,11 +8,11 @@ This document describes the automated gates that run on every PR and push.
 
 **Location:** `.github/workflows/ci.yml` — `Check test count` step
 
-**Expected test count:** 976 tests
+**Expected test count:** 984 tests
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (976), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (984), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**

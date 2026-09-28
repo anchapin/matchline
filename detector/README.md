@@ -118,12 +118,27 @@ python train.py --model configs/yolo11n_baseline.yaml $COMMON --name eca_base
 python train.py --model configs/yolo11n_eca.yaml     $COMMON --name eca_eca
 ```
 
+**Seeds.** `--seed` is forwarded to `model.train(seed=...)` and that forwarding is
+load-bearing. `train.py` also calls `random.seed`/`np.random.seed`/
+`torch.manual_seed` first, but Ultralytics re-seeds all three from *its own*
+`seed` argument at the start of training, overriding them. Omitting the kwarg
+silently pinned every run to Ultralytics' default of `0`: `--seed 1` and
+`--seed 2` produced byte-identical `results.csv` to `--seed 0`, so a three-seed
+A/B was one sample measured three times. **A summary with three identical rows
+is a failed experiment, not three confirmations** — check that first before
+reading any delta. Guarded by `tests/test_detector_train_seed.py` in the main
+suite (pure argument forwarding, so it needs no GPU, dataset, or detector venv).
+Note also that ROCm is not bit-reproducible at fixed seed (#509): 3 seeds
+understate total variance, so a within-arm spread is a floor, not a confidence
+interval.
+
 **Status: infrastructure complete, mAP delta NOT yet measured.** Both arms train
-end to end on a synthetic smoke dataset. The measurement is blocked on (a) no
-dataset present at `~/workspace/datasets/` on this machine and (b) the control
-run above never having completed (see the unchecked box in Status). The ECA arm
-is small, measurable, and revertible, but any mAP number quoted before the
-control arm exists would be a comparison against nothing.
+end to end, on GPU (RX 6600 XT / ROCm) as well as CPU. The CubiCasa5K dataset is
+built (5000 plans, CC BY-NC-SA, non-commercial). The 2x3x50-epoch matrix is the
+measurement; until all six runs finish there is no delta to report, and a delta
+quoted from a subset of the arms is a comparison against noise. Report per-arm
+mean and within-arm spread, and treat overlapping ranges as "no delta measurable
+at this budget" — a legitimate result, not a failure to find one.
 
 ## Limitations
 
