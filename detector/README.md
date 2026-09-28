@@ -128,9 +128,17 @@ A/B was one sample measured three times. **A summary with three identical rows
 is a failed experiment, not three confirmations** — check that first before
 reading any delta. Guarded by `tests/test_detector_train_seed.py` in the main
 suite (pure argument forwarding, so it needs no GPU, dataset, or detector venv).
-Note also that ROCm is not bit-reproducible at fixed seed (#509): 3 seeds
-understate total variance, so a within-arm spread is a floor, not a confidence
-interval.
+Note also that **bit-reproducibility at fixed seed is unmeasured, not
+measured-absent** (#509). It was long assumed the ROCm path was not reproducible,
+on the strength of two 1-epoch runs scoring 0.05485 and 0.21352 mAP50 — but that
+pair is a confound, not a replicate: `seedtest_s0` ran `epochs: 1` and
+`yolo11n_baseline_s0` ran `epochs: 50`, so the two sat on different learning-rate
+schedules (epoch-1 `lr/pg0` 0.001667 vs 0.000553554), and `seedtest_s1` is
+`seed: 1`, not a second seed-0 run. The honest position is that seed-to-seed and
+run-to-run noise have not been separated, so 3 seeds may understate total variance
+and a within-arm spread should be read as a floor rather than a confidence
+interval. Establishing the real run-to-run floor needs one config at one seed
+repeated N times **at a fixed epoch count**; that has not been done.
 
 **Status: infrastructure complete, mAP delta NOT yet measured.** Both arms train
 end to end, on GPU (RX 6600 XT / ROCm) as well as CPU. The CubiCasa5K dataset is
