@@ -71,6 +71,15 @@ ultralytics-platform>=0.1.48,<0.2
 ultralytics-thop>=2.1.6,<2.2
 urllib3>=2.8.0,<2.9
 
+# --- Dataset conversion (not needed for training) ---
+# The converters (convert_cubicasa.py, convert_aec.py, convert_floorplancad.py)
+# are a separate step from training and need two packages that a training-only
+# freeze does not pull in. convert_cubicasa.py does `import pymupdf` (SVG ->
+# PNG rasterisation) and `import lxml.etree` (SVG tree walk). Without these the
+# venv trains fine and then fails at the conversion step, which reads as a
+# dataset problem rather than a missing dependency. Install with:
+#   detector/.venv-det/bin/pip install pymupdf lxml
+# Kept out of the pins above so a training run does not drag them in.
 # --- test-only, not a training dependency ---
 # detector/tests needs pytest:
 #   detector/.venv-det/bin/pip install pytest
