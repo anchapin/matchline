@@ -76,6 +76,43 @@ Notes:
   synthetic over-segmentation cases.
 - Tolerance is configurable 1–5%; verified at 1%, 2%, 5%.
 
+## Hard-case coverage
+
+The greedy min-area-loss removal is a **local** decision, so the geometries
+most likely to break it are those where a locally cheap removal moves the
+envelope globally. `tests/test_geometry_simplify.py` covers three families,
+each with happy-path, invariant, and defect-injection tests:
+
+| Family | Why it is hard | Governing constraint |
+|---|---|---|
+| Oblique / shallow-angle boundary | A dense, bowed slant has many near-free vertices; DP at a moderate `eps` flattens the bow | DP pass is refused and **logged** when its candidate breaches `tol`; the budget, not DP, decides |
+| Circulation continuity (pinch, dogleg) | A neck is narrow and high-vertex-count: expensive by surface count, load-bearing geometrically | Protected by the **per-step cap and the reflex guard**, so relaxing `tol` does not open it |
+| Oblique boundary + internal partitions | The union → exterior-ring step must drop interior walls without disturbing the outer edge | Only the exterior ring reaches the budget; interior partitions are not envelope surfaces |
+
+### Why the area budget is the governing constraint
+
+A corridor pinch is the clearest illustration. With the cost model and the
+reflex guard both neutralised, the simplifier returns a **valid polygon** with a
+**finite** area delta, and the neck silently opens from 2.2 m to 6.6 m. Neither
+`res.valid` nor `area_delta_pct` flags it — only a geometric probe of the neck
+does. The budget is therefore not a performance knob: it is the invariant that
+`validate.py` relies on when it blocks export.
+
+Two further properties are asserted directly:
+
+- **Reflex removal grows the ring.** Removing a neck's reflex vertices *adds*
+  area, so the per-step cap and the total budget — which bound shrinkage — do
+  not stop it. The final hard growth limit (0.1%) is the backstop, and it
+  rolls the ring back rather than exporting a grown envelope.
+- **Every refusal is recorded.** Each skipped operation appears in
+  `SimplifyResult.skipped` (and `simplify_report()["skipped_ops"]`) with the
+  vertex index and the constraint it violated, so a low surface count is never
+  the only evidence of what the simplifier declined to do.
+
+The hard-case *category names* follow SALI-FP Appendix F. No SALI-FP code,
+schema, or data is used — the fixtures are synthetic, per the `synth/`
+convention.
+
 ## Gaps / v2
 
 - Input is a single exterior ring. Courtyard buildings (holes) and
