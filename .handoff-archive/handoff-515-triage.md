@@ -1,0 +1,185 @@
+# Session Handoff Checkpoint
+
+**Timestamp:** 2026-09-28T17:05-04:00
+**Branch:** `develop` — clean working tree
+**Task:** #500 ECA A/B on the detector backbone (FloorYOLO) — 2 arms × 3 seeds ×
+50 epochs on GPU, **3/6 rows landed**, run 4/6 training. #511 closed, #509
+corrected, gap audit filed #514–#519, #515 triaged.
+
+## 1. Accomplished So Far
+
+- **#511 closed** — deleted branch `fix-wave15-dx-docs` (local + origin). Sole
+  unlanded commit `d2718ee` is a docs downgrade: net diff is one file,
+  `docs/run_review.md` (+81) against develop's 131 lines, dropping the
+  `ReviewItem` field table.
+  - **The issue's preconditions were incomplete and nearly caused data loss.** The
+    branch was checked out in a worktree (`~/Projects/worktrees/wave15-dx-docs`;
+    the `+` in `git branch --list -v` is the tell) holding a 5-file, 122-insertion
+    uncommitted delta that **no stash covered** — the patch file had been exported
+    but the worktree kept a live copy. Its recommended `git branch -D` →
+    `git worktree remove --force` would have destroyed the only unstashed copy.
+    Stashed first as `3fedbcb` (verified identical to the patch by numstat), then
+    removed the worktree *without* `--force`, then the local branch, then origin's.
+    Recovery commands in `.handoff-archive/stash-manifest.md` and the #511 comment.
+- **#509's evidence found to be a confound** (issue left open, commented).
+  Its premise — two 1-epoch runs at mAP50 0.05485 vs 0.21352 as "same config, same
+  seed" — is false: `seedtest_s0` ran `epochs: 1`, `yolo11n_baseline_s0` ran
+  `epochs: 50`, so the pair sits on **different LR schedules** (epoch-1 `lr/pg0`
+  0.001667 vs 0.000553554). And `seedtest_s1` is `seed: 1`, not a second seed-0
+  run; the `_s0`/`_s1` suffix meant *seed*. **No unconfounded same-config/same-seed
+  pair exists on disk.**
+  - Consequence: that gap ≈ **0.16 mAP50** is precisely the noise floor #509 told
+    the reader to judge #500's delta against. Unused, it would underpower the A/B
+    on a false premise. Corrected in `detector/README.md:131` and the #509 comment.
+    Run-to-run noise is now recorded as **unmeasured, not measured-absent**.
+- **Gap audit — six issues filed**, all verified against the repo:
+  - **#514** `run_ab_eca.sh` appends a summary row for **skipped** runs too (the
+    block only tests `-f "$csv"`, true for a skipped run). Re-invoking to resume —
+    the instruction this handoff gives — **duplicates rows** in `ab_summary.csv`,
+    corrupting the #500 mean/spread; duplicating one arm shrinks its spread, making
+    a real effect look *more* significant. Latent, not yet triggered. Blocks on the
+    matrix.
+  - **#515 triaged 16:46–17:05, comment posted, nothing deleted.** The issue's
+    premise needed a correction: **`git cherry` is useless here** — it matches
+    per-commit patches and this repo squash-merges, so squash-landed work always
+    reads as unmerged. `feat/detector-robustness-split-499` (the issue's own
+    example, provably landed) shows **both commits as unique (`+`)**. Any future
+    triage trusting `git cherry` reports ~all 95 branches as unsuperseded.
+    Correct method: paths touched vs merge-base → blob-SHA vs develop's current
+    tip → added-line coverage %.
+    - **Tiers:** 100% covered **16** · 1–99% **56** · **0% 14** · deletions-only 9.
+    - **The 0% tier is a review queue, not lost work.** Calibrated on three:
+      `fix/issue-21` (97%) landed ✅; `fix/issue-345` (0%) is 11 lines since
+      restructured ❌; **`roadmap-part-ii` (0%) added a "Part II — Future
+      directions" eight-persona-review backlog that develop's ROADMAP.md does
+      not contain — likely genuinely unrecovered.** Start the 0% queue there.
+    - **Coverage ignores deletions**, so even the 16 "safe" branches are not
+      proven superseded. Do not delete on this data alone.
+    - **`/tmp/opencode/verify_patch` verified to hold no unique work** — its
+      5-file delta is md5-identical to stash `3fedbcb` (`904111322ec3a54…`) and
+      the stash's base commit *is* the worktree HEAD `d2718ee`. Safe to
+      `git worktree remove` (no `--force`); left in place for human confirmation.
+  - **#516** run-to-run variance at fixed seed never measured → #500 has no valid
+    noise floor. 3-repeat × 10-epoch design + the naming trap.
+  - **#517** `docs/README.md` catalog missing 4 files: `CODE-REVIEW.md`,
+    `PLANS.md`, `detector-robustness.md`, `run_review.md`.
+  - **#518** `docs/PLANS.md` says plans are gitignored; 10 files under
+    `docs/plans/` + `docs/design-docs/` are committed. Needs a human decision.
+  - **#519** 23 tracked files `.gitignore` forbids: 3 `review_classifier/*.pkl`
+    (inert — each has a committed `.npz`), 19 `.planning/phases/**`, and
+    **`weights/yolo26n.pt` — 5.3 MB, referenced by nothing, committed by `eebd282`**
+    while `.gitignore` says "Weights are never committed".
+- **Checked and confirmed NOT gaps** (don't re-audit): CubiCasa5K licensing in 5
+  files; all relative links in `detector/README.md` and
+  `docs/detector-robustness.md` resolve; `c42e48a` ("ECA backbone variant + A/B
+  harness for #500", origin already deleted) is fully superseded — all 10 files it
+  touched are in develop.
+- **Methodological trap worth carrying forward:** `git diff develop...branch` is a
+  three-dot diff — it measures from the *merge base*, so a branch whose work already
+  landed still shows every line as an addition. `feat/detector-robustness-split-499`
+  looked like 665 lines of lost work on a closed issue; all four files are
+  byte-identical to develop. Compare against develop's **current tree**, or hash
+  files, before calling anything lost.
+
+## 2. Modified Files
+
+All committed; working tree clean, no uncommitted diff.
+
+- `.handoff-archive/stash-manifest.md` — +45. New `3fedbcb` entry, the
+  `wave15-dx-docs-uncommitted.patch` caveat marked resolved, new "Branch deleted"
+  section with recovery commands.
+- `detector/README.md` — the #509 overclaim corrected (bit-reproducibility is
+  unmeasured, not measured-absent), with the confound spelled out.
+- `.handoff.md` — this file, rewritten compact.
+- `.handoff-archive/handoff-matrix-launch.md` — prior handoff, archived.
+- `.handoff-archive/handoff-seed-test.md` — pre-existing archive.
+
+## 3. Current Verification State
+
+- **Suite:** last local run **981 passed, 2 skipped, 1 xfailed** (984 collected),
+  219 s. **Not re-run this session** — all changes were docs-only, and the CPU cost
+  competes with the matrix. Run in the **foreground**; a backgrounded run once left
+  an empty `.out` file and reported nothing.
+- **Lint:** `ruff check .` PASS, `ruff format --check .` clean — no Python touched
+  this session.
+- **CI:** `success` on `0511072` (run `36479760128`, `Check test count` passed →
+  984 confirmed). `3613758` was `in_progress` at time of writing; it is a
+  markdown-only handoff commit.
+- **Tooling gotcha:** `ci-wait` misreported `FAILED` for in-progress and for
+  successful runs. Use `gh run watch <id> --exit-status --interval 20` (blocks).
+- **Matrix — 3/6 rows landed:**
+
+  | arm | seed | epochs | mAP50 | mAP50_95 | train_box_loss |
+  |---|---|---|---|---|---|
+  | yolo11n_baseline | 0 | 50 | 0.96547 | 0.87505 | 0.43498 |
+  | yolo11n_eca | 0 | 50 | 0.96850 | 0.87837 | 0.43414 |
+  | yolo11n_baseline | 1 | 50 | 0.97139 | 0.88419 | 0.42740 |
+
+  Driver order is **seed-major** (`baseline_s0, eca_s0, baseline_s1, eca_s1,
+  baseline_s2, eca_s2`). Runs 1–3 took 53, 49 and 55 min (~50 min/run steady).
+  Run 3/6 `yolo11n_baseline_s1` finished 17:04:40; run 4/6 `yolo11n_eca_s1`
+  started 17:04:40. Driver alive (PID 828948). All six ≈ **19:35 EDT**.
+  - **This is a ROCm/AMD box — `nvidia-smi` does not exist.** Use
+    `rocm-smi --showuse`. (Card: RX 6600 XT, torch-2.14.0+rocm7.2.)
+- **Open issues:** #500 (blocked on matrix), #507, #508, #509, #510, #512, #514
+  (also blocked on matrix), #515 (triaged, comment posted, nothing deleted —
+  0% queue remains), #516–#519.
+
+## 4. Immediate Next Step
+
+**Do not restart or edit the matrix.** Check progress, not results.
+
+```bash
+column -s, -t ~/workspace/datasets/detector_runs/ab_summary.csv   # one row per FINISHED run
+tail -5 ~/workspace/datasets/detector_runs/ab_driver.log
+```
+
+`ab_summary.csv` is **created on first completion** — before that the file does not
+exist and `column` errors rather than printing an empty table. Two rows is correct
+now.
+
+**If the driver died, do NOT blindly re-invoke** — see #514: the summary append is
+not tied to the skip branch, so resuming **duplicates rows** for every already-
+complete run and corrupts the #500 statistics. Either verify no duplicates exist
+after resuming, or wait for #514's fix. The driver is resumable, but its summary is
+not idempotent.
+
+⚠️ **Stale-CSV hazard — re-verified 16:45, narrower than first written.** Exactly
+three dirs still hold 1-epoch `results.csv` from pre-launch validation:
+`yolo11n_eca_s1` (14:20:30), `yolo11n_baseline_s2` (14:22:14), `yolo11n_eca_s2`
+(14:23:43) — all `rows=1`. `yolo11n_baseline_s1` is no longer stale; it is the
+live run (35 rows, growing). The two finished dirs read `rows=50`. The skip
+guard requires ≥50 rows so the three stale ones get overwritten — **but never
+read their mAP50 as matrix data.** This exact hazard produced the bad #509
+evidence. Quick re-verify command is in §4.
+
+🚫 **Do not edit `detector/train.py`, `detector/configs/`, or
+`detector/run_ab_eca.sh` until all six rows exist** — the driver re-invokes
+`train.py` per run, so a mid-matrix edit silently changes arms 2–6. Blocks #508 and
+#514. `detector/README.md` is *not* in that list.
+
+**Reporting rules for #500** (do not skip): no delta before all six rows exist.
+Per-arm **mean ± spread across all runs**, never a best-seed number. Compare the
+between-arm difference against the **within-arm** spread; overlapping ranges →
+"no delta measurable at this budget", a legitimate and better result than a
+confident wrong number. Do not close as "no effect" without a measured spread. The
+two seed-0 rows above differ by **+0.003 mAP50** in ECA's favour — that is **not** a
+result; one seed per arm carries almost no information. Do **not** use #509's old
+0.05485/0.21352 as a noise floor (confound, see §1). `detector/` is excluded from
+CI, so no detector result is verified upstream — say so rather than implying a green
+run covers it.
+
+**Safe work while the matrix runs** (none touch the files it reads): #515 branch
+triage — **pass 1 done, see §1**; the 14-branch 0% queue is the natural
+continuation and is pure reading. Then #517 catalog rows + a guard test · #518
+needs a human decision, not code · #519 untrack stray artifacts · #510 venv
+provenance. **#514 is blocked on the matrix. #516 needs the GPU** — queue after
+#500 is reported. #507 and #512 untouched. One at a time; the main suite's CPU
+cost slows the matrix.
+
+**Resolved 17:05.** `ask_foreman` abstained on which item to pick up (0.48 <
+0.70; its own top pick was "refresh and stop", ahead of #515 at 0.32). The human
+chose **#515**, which is now triaged and posted. This file was **refreshed, not
+archived**: the matrix runs another ~2.5h and §1's audit knowledge plus §4's
+reporting rules and #514 hazard are load-bearing until #500 is reported.
+Deleting it mid-matrix would cause the exact staleness it exists to prevent.
