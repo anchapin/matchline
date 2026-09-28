@@ -33,6 +33,12 @@ def main():
     ap.add_argument('--resume', default=None)
     ap.add_argument('--seed', type=int, default=0,
                     help='random seed for python/numpy/torch (default 0)')
+    ap.add_argument('--pretrained', default=None,
+                    help='checkpoint to partially load into --model; use for the '
+                         'ECA A/B (e.g. --model configs/yolo11n_eca.yaml '
+                         '--pretrained yolo11n.pt) so both arms start from the '
+                         'same COCO weights. Params with no counterpart in the '
+                         'checkpoint (e.g. ECA) keep their init.')
     args = ap.parse_args()
 
     import random
@@ -50,12 +56,21 @@ def main():
 
     from ultralytics import YOLO
 
-    data = args.data
+    # A model yaml may reference custom modules (e.g. ECA). parse_model resolves
+    # names through ultralytics.nn.tasks' globals, so register before building.
+    _register_custom_modules(args.model)
+
+    data = _resolve_data_yaml(args.data, os.path.join(args.project, args.name))
     if args.subset_train or args.subset_val:
-        data = _subset_yaml(args.data, args.subset_train, args.subset_val,
+        data = _subset_yaml(data, args.subset_train, args.subset_val,
                             os.path.join(args.project, args.name))
 
     model = YOLO(args.resume) if args.resume else YOLO(args.model)
+    if args.pretrained:
+        if args.resume:
+            ap.error('--pretrained and --resume are mutually exclusive')
+        print(f'[train] aligned partial load of {args.pretrained} into {args.model}')
+        _load_pretrained(model, args.pretrained)
     results = model.train(
         data=data,
         epochs=args.epochs,
@@ -71,6 +86,95 @@ def main():
         save_period=-1,
     )
     print('TRAIN DONE. best:', results.save_dir if hasattr(results, 'save_dir') else '')
+
+
+def _register_custom_modules(model_path):
+    """Register any custom modules a model yaml may reference.
+
+    Kept best-effort: a stock ultralytics yaml needs nothing, and failing to
+    import the optional ECA module must not break a plain yolo11n run.
+    """
+    if 'eca' not in os.path.basename(str(model_path)).lower():
+        return
+    try:
+        from eca import register_eca
+    except ImportError:
+        return
+    register_eca()
+
+
+def _load_pretrained(model, weights):
+    """Load *weights* into *model* by structure, not by parameter name.
+
+    Ultralytics' YOLO.load() matches parameters by name, so an architecture with
+    layers inserted into the backbone (see configs/yolo11n_eca.yaml) matches
+    almost nothing and silently trains from scratch. Use the aligned transfer so
+    both arms of an A/B start from the same COCO weights.
+    """
+    try:
+        from eca import transfer_aligned
+    except ImportError:
+        model.load(weights)
+        return
+    import ultralytics.nn.tasks as tasks
+
+    loaded = tasks.load_checkpoint(weights)
+    ckpt = loaded[0] if isinstance(loaded, (tuple, list)) else loaded
+    if isinstance(ckpt, dict):
+        ckpt = ckpt.get('ema') or ckpt.get('model')
+    copied, mismatched = transfer_aligned(ckpt.float(), model.model)
+    total = sum(p.numel() for p in model.model.parameters())
+    print(f'[train] aligned transfer: {copied:,}/{total:,} params '
+          f'({100 * copied / total:.1f}%), {mismatched} tensors shape-mismatched '
+          f'(expected: Detect head, nc 80 -> 2)')
+
+
+def _resolve_data_yaml(data_yaml, run_dir):
+    """Return a yaml whose `path:` is an absolute, existing dataset directory.
+
+    `detector/configs/*.yaml` must stay free of machine paths (AGENTS.md
+    never-list), so the dataset root is resolved here instead. Three forms are
+    accepted, in order of precedence:
+
+      1. MATCHLINE_DATASETS set  -> `path` is treated as relative to it.
+      2. `path` starting with `~` -> expanded to the home directory.
+      3. `path` relative           -> resolved against this file's directory.
+
+    The resolved copy is written under *run_dir* so the repo config is never
+    mutated. Raises with the offending value if the directory is missing, rather
+    than letting Ultralytics fail later with an opaque path error.
+    """
+    import yaml
+    from pathlib import Path
+
+    with open(data_yaml) as f:
+        d = yaml.safe_load(f)
+
+    raw = d.get('path', '')
+    root_override = os.environ.get('MATCHLINE_DATASETS')
+    if root_override:
+        p = Path(raw).expanduser()
+        resolved = p if p.is_absolute() else Path(root_override).expanduser() / p
+    else:
+        p = Path(raw).expanduser()
+        resolved = p if p.is_absolute() else (Path(data_yaml).parent / p)
+
+    resolved = resolved.resolve()
+    if not resolved.is_dir():
+        raise SystemExit(
+            f'[train] dataset dir not found: {resolved}\n'
+            f'  from path={raw!r} in {data_yaml}\n'
+            f'  set MATCHLINE_DATASETS=<datasets root> or point --data at a '
+            f'resolvable path. See detector/QUICKSTART.md for the converters.'
+        )
+    d['path'] = str(resolved)
+    print(f'[train] dataset root: {resolved}')
+
+    os.makedirs(run_dir, exist_ok=True)
+    out = os.path.join(run_dir, 'data_resolved.yaml')
+    with open(out, 'w') as f:
+        yaml.safe_dump(d, f)
+    return out
 
 
 def _safe_rmtree(path, must_live_under):

@@ -70,8 +70,65 @@ python3 eval_zero_shot.py --preds /tmp/sheet01_preds.json \
 - [ ] Monday: fine-tune/eval on Alex's commercial drawings; legend one-shot
       classification prototype (PID stage 2)
 
-Environment note: this sandbox's torchvision wheels ship a broken C++
-extension against torch 2.14.0+cpu (`_C_stable.so` fails to load), so the
-project venv (`~/workspace/.venv-det`, isolated) uses a minimal pure-torch
-`torchvision.ops.nms` stub — NMS behavior verified on a toy case. Revisit on
-better hardware Monday.
+Environment note (updated 2026-09-28): the earlier "broken torchvision" note is
+**resolved and retracted**. The C++ extension issue was specific to that sandbox;
+on current hardware stock `torchvision==0.29.0+cpu` imports cleanly and
+`torchvision.ops.nms` returns correct results (verified on a toy overlap case).
+The hand-written `torchvision.ops.nms` stub has been removed from the pins, so
+`requirements-detector.txt` is now installable from scratch — it previously
+required `--extra-index-url https://download.pytorch.org/whl/cpu` *and* an
+unpublished local stub, and could not be satisfied on a fresh machine.
+
+## ECA experiment (#500)
+
+Testing whether FloorYOLO's Efficient Channel Attention helps discriminate
+visually similar intra-class door/window symbol variants.
+
+- `eca.py` — the ECA block (ECA-Net) plus `transfer_aligned`
+- `configs/yolo11n_eca.yaml` — yolo11n backbone + 4 ECA rows
+- `configs/yolo11n_baseline.yaml` — the control arm (yolo11n, `nc: 2`)
+
+Measured cost at 640px, both arms at `nc: 2`:
+
+| | params | GFLOPs | fwd latency (CPU) |
+|---|---|---|---|
+| baseline | 2,590,230 | 6.50066 | 55.1 ms |
+| +ECA | 2,590,248 (+18, +0.0007%) | 6.50066 (+0.0001%) | 56.8 ms (+3.0%) |
+
+The FLOP cost is effectively zero; the ~3% is per-op dispatch overhead on a CPU
+path, not arithmetic. The 18 added parameters are four `1x1xk` convs (k=3,5).
+
+**Why `--pretrained` is not plain `model.load()`.** Inserting ECA rows shifts
+every later layer index, so parameter *names* stop corresponding: in the ECA arm
+index 3 is an `ECA` where the checkpoint has a `Conv`, index 4 is a `Conv` where
+it has `C3k2`, and so on — 23 of 28 positions misalign. Ultralytics' name-based
+load reports "Transferred 52/503 items" and leaves the ECA arm training from
+scratch while the control arm starts from COCO, which would confound the whole
+experiment. `train.py --pretrained` instead uses `transfer_aligned`, which skips
+the inserted blocks and pairs the rest by forward order. Verified: on an
+unmodified architecture it is bit-identical to Ultralytics' own `load()`, and
+both arms then start from identical COCO weights (2,560,305 params, 98.8%; the
+51 mismatched tensors are the `nc` 80→2 Detect head, which fine-tunes anyway).
+
+Run the A/B (identical seed, split, epochs):
+
+```bash
+COMMON="--data configs/cubicasa.yaml --epochs 25 --seed 0 --pretrained yolo11n.pt"
+python train.py --model configs/yolo11n_baseline.yaml $COMMON --name eca_base
+python train.py --model configs/yolo11n_eca.yaml     $COMMON --name eca_eca
+```
+
+**Status: infrastructure complete, mAP delta NOT yet measured.** Both arms train
+end to end on a synthetic smoke dataset. The measurement is blocked on (a) no
+dataset present at `~/workspace/datasets/` on this machine and (b) the control
+run above never having completed (see the unchecked box in Status). The ECA arm
+is small, measurable, and revertible, but any mAP number quoted before the
+control arm exists would be a comparison against nothing.
+
+## Limitations
+
+- Latency measured on CPU with train-mode forward semantics; a GPU number is
+  the relevant one for deployment and has not been taken.
+- The smoke dataset is synthetic and its labels are not physically aligned to
+  the drawn symbols; it validates plumbing only, never accuracy.
+
