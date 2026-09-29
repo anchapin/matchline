@@ -14,8 +14,6 @@ import sys
 import types
 from pathlib import Path
 
-import pytest
-
 from detector import train as detector_train
 
 TRAIN_PY = Path(detector_train.__file__).resolve()
