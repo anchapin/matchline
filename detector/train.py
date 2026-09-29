@@ -176,8 +176,9 @@ def _resolve_data_yaml(data_yaml, run_dir):
     mutated. Raises with the offending value if the directory is missing, rather
     than letting Ultralytics fail later with an opaque path error.
     """
-    import yaml
     from pathlib import Path
+
+    import yaml
 
     with open(data_yaml) as f:
         d = yaml.safe_load(f)
