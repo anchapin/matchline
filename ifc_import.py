@@ -767,10 +767,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     f = ifcopenshell.open(str(path))
 
     max_elements = int(os.environ.get("MATCHLINE_MAX_IFC_ELEMENTS", 500_000))
-    try:
-        total_elements = len(f.wrapped_data)
-    except TypeError:
-        total_elements = len(f.by_type("IfcProduct"))
+    # Count all entities via the native 0.9 API (wrapped_data was removed in 0.9.0).
+    total_elements = len(f.entity_names())
     if total_elements > max_elements:
         raise ValueError(
             f"IFC file '{path}' has {total_elements} elements, "
