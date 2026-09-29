@@ -22,7 +22,8 @@ def main():
     ap.add_argument('--imgsz', type=int, default=640)
     ap.add_argument('--batch', type=int, default=8)
     ap.add_argument('--workers', type=int, default=2)
-    ap.add_argument('--device', default='cpu')
+    ap.add_argument('--device', default=None,
+                    help='device for training (default: auto-detect GPU, fallback cpu)')
     ap.add_argument('--name', default='harness_check')
     ap.add_argument('--project', default=os.path.expanduser(
         '~/workspace/datasets/detector_runs'))
@@ -40,6 +41,30 @@ def main():
                          'same COCO weights. Params with no counterpart in the '
                          'checkpoint (e.g. ECA) keep their init.')
     args = ap.parse_args()
+
+    # Resolve --device: auto-detect GPU when not explicitly passed.
+    # Distinguish "user passed --device" from "defaulted" by using None as sentinel.
+    _resolved_device = args.device
+    if _resolved_device is None:
+        try:
+            import torch
+            if hasattr(torch, 'cuda') and torch.cuda.is_available():
+                _resolved_device = '0'
+            else:
+                _resolved_device = 'cpu'
+        except ImportError:
+            _resolved_device = 'cpu'
+    elif str(_resolved_device).lower() == 'cpu':
+        try:
+            import torch
+            if hasattr(torch, 'cuda') and torch.cuda.is_available():
+                device_name = torch.cuda.get_device_name(0)
+                print(f'[train] WARNING: --device cpu requested but CUDA is available '
+                      f'({device_name}). Training on CPU.')
+        except ImportError:
+            pass
+    args.device = _resolved_device
+    print(f'[train] device={args.device}')
 
     import random
 
