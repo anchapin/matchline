@@ -16,6 +16,10 @@ bem_out/
 # real runs live under ~/workspace/datasets/detector_runs/ (see detector/QUICKSTART.md).
 /yolo11*.pt
 /detector/yolo11*.pt
+# Weights are never committed, whatever the model name or directory.
+*.pt
+*.onnx
+*.pth
 
 # ML model artifacts (reproducible via review_classifier/train.py)
 # -- triage.py loads these; npz is required, pkl raises ValueError --
