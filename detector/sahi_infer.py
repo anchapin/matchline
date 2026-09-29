@@ -14,7 +14,6 @@ full-sheet pixel coordinates.
 """
 import argparse
 import json
-import os
 
 
 def tile_boxes(W, H, tile=1024, overlap=0.2):
@@ -40,7 +39,6 @@ def tile_boxes(W, H, tile=1024, overlap=0.2):
 
 def nms(boxes, iou_thr=0.5):
     """Class-wise greedy NMS. boxes: list of dicts with cls/conf/x0..y1."""
-    import numpy as np
     out = []
     boxes = sorted(boxes, key=lambda b: -b['conf'])
     for cls in set(b['cls'] for b in boxes):
@@ -66,8 +64,8 @@ def nms(boxes, iou_thr=0.5):
 
 def infer_sheet(weights, image_path, tile=1024, overlap=0.2, conf=0.25,
                 iou_thr=0.5, imgsz=1024, device='cpu'):
-    from ultralytics import YOLO
     from PIL import Image
+    from ultralytics import YOLO
     model = YOLO(weights)
     img = Image.open(image_path).convert('RGB')
     W, H = img.size

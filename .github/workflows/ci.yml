@@ -94,6 +94,38 @@ jobs:
             fi
           fi
 
+  # detector-lint: lint-only coverage for the detector track.
+  #
+  # IMPORTANT: This job runs ruff on detector/*.py. It does NOT run the
+  # detector test suite (detector/tests/test_eca.py), which requires torch +
+  # ultralytics and the detector venv. Changes to detector code are verified
+  # for lint cleanliness but NOT for runtime correctness in CI. The detector
+  # tests must be run locally with:
+  #   detector/.venv-det/bin/python -m pytest detector/tests -q
+  # See issue #507 for context.
+  detector-lint:
+    name: detector ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install --no-cache-dir "ruff==0.16.8" && ruff --version
+
+      - name: Run ruff check on detector/
+        run: ruff check detector/
+
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
