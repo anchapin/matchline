@@ -115,6 +115,7 @@ def _run_main(monkeypatch, tmp_path, extra_argv: list[str], torch_stub):
 # Tests
 # --------------------------------------------------------------------------
 
+
 def test_default_with_cuda_available_resolves_to_0(monkeypatch, tmp_path):
     """When --device is omitted and CUDA is available, auto-resolve to '0'."""
     torch_stub = _make_torch_stub(cuda_available=True)
@@ -194,6 +195,6 @@ def test_run_ab_eca_sh_passes_device_explicitly():
     # The script should set DEVICE to '0' and pass it explicitly
     assert device_value == "0", f"Expected DEVICE=0 in run_ab_eca.sh, got {device_value!r}"
     # Also verify it passes --device "$DEVICE"
-    assert "--device \"$DEVICE\"" in content or "--device $DEVICE" in content, (
+    assert '--device "$DEVICE"' in content or "--device $DEVICE" in content, (
         "run_ab_eca.sh should pass --device $DEVICE"
     )
