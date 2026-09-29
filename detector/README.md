@@ -5,6 +5,27 @@ Alex's clean commercial drawings. See `docs/ecosystem_audit.md` for the
 rationale (PID two-stage pattern: class-agnostic YOLO + SAHI tiling, then
 one-shot legend/schedule classification; plain fine-tuned YOLO as baseline).
 
+## Environments
+
+The detector track has **two venvs** — one for CPU work, one for GPU training:
+
+| venv | purpose | pytest | converters | GPU |
+|---|---|---|---|---|
+| `detector/.venv-det` | CPU inference, testing, evaluation | yes | yes (pymupdf, lxml) | no |
+| `detector/.venv-det-rocm` | GPU training only | no | no | yes (ROCm 7.2.3, gfx1030) |
+
+**`.venv-det`** — the CPU venv. Use for: harness validation, SAHI inference,
+`eval_zero_shot.py`, running pytest, and running the converters
+(`convert_cubicasa.py`, `convert_aec.py`, `convert_floorplancad.py`). See
+`requirements-detector.txt` and `QUICKSTART.md` for the install recipe.
+
+**`.venv-det-rocm`** — the ROCm GPU venv. Use for: `train.py` on GPU. Does NOT
+include pytest, pymupdf, or lxml — those are CPU-only dependencies in the CPU venv.
+Install with `requirements-detector-rocm.txt`; generic rocm7.2 wheels ship gfx1030
+(RX 6600 XT) kernels, so no AMD per-arch index is needed.
+
+Both venvs are gitignored (`.venv*/` in `.gitignore`).
+
 ## Taxonomy
 
 Unified 2-class taxonomy (`classes.py`): **door** (0), **window** (1) — the
