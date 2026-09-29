@@ -271,6 +271,39 @@ class Zone:
 
 
 @dataclass
+class OpeningAttachmentSummary:
+    """Counts of openings left unattached, broken down by failure reason.
+
+    Produced during Tier 1 geometric opening attachment
+    (ifc_import._attach_openings_to_spaces).
+    """
+
+    no_envelope_edge: int = 0  # no envelope edge endpoint matched wall placement
+    ambiguous_tie: int = 0  # multiple same-length edges tied for wall position
+    no_ref_direction: int = 0  # envelope and entity RefDirection both unavailable
+
+    @property
+    def total(self) -> int:
+        return self.no_envelope_edge + self.ambiguous_tie + self.no_ref_direction
+
+    def is_empty(self) -> bool:
+        return self.total == 0
+
+    def summary_line(self) -> str:
+        """Human-readable one-line summary for import logs."""
+        if self.is_empty():
+            return "0 openings unattached"
+        parts = []
+        if self.no_envelope_edge:
+            parts.append(f"{self.no_envelope_edge} no envelope edge")
+        if self.ambiguous_tie:
+            parts.append(f"{self.ambiguous_tie} ambiguous tie")
+        if self.no_ref_direction:
+            parts.append(f"{self.no_ref_direction} no RefDirection")
+        return f"{self.total} opening(s) unattached: {', '.join(parts)}"
+
+
+@dataclass
 class EnvelopeWall:
     """One exterior wall run (per facade segment). The detailed
     area-budgeted simplification lives in geometry_simplify.py; this is
@@ -506,6 +539,10 @@ class BuildingModel:
     revision_log: List[RevisionEvent] = field(default_factory=list)
     review_queue: List[ReviewItem] = field(default_factory=list)
     symbol_linkages: List[SymbolLinkage] = field(default_factory=list)
+    opening_attachment_summary: OpeningAttachmentSummary = field(
+        default_factory=OpeningAttachmentSummary
+    )
+    # counts of openings left unattached, broken down by failure reason
     _rev_seq: int = 0
 
     # -- revision log ----------------------------------------------------
