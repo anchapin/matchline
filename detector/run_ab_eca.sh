@@ -83,15 +83,14 @@ for seed in "${SEEDS[@]}"; do
         | grep -E "aligned transfer|CUDA:|epochs completed|Traceback|KeyError|Error|error:" \
         | tee -a "$RUNS/ab_$name.log"
       echo "[ab] === $name : done $(date -Is) (exit ${PIPESTATUS[0]}) ==="
-    fi
 
-    # Append the final-epoch metrics for this run.
-    if [[ -f "$csv" ]]; then
-      if [[ $header_needed -eq 1 ]]; then
-        echo "arm,seed,epochs,mAP50,mAP50_95,train_box_loss" > "$SUMMARY"
-        header_needed=0
-      fi
-      "$PY" - "$csv" "$arm" "$seed" "$EPOCHS" >> "$SUMMARY" <<'PYEOF'
+      # Append the final-epoch metrics for this run (only newly completed runs).
+      if [[ -f "$csv" ]]; then
+        if [[ $header_needed -eq 1 ]]; then
+          echo "arm,seed,epochs,mAP50,mAP50_95,train_box_loss" > "$SUMMARY"
+          header_needed=0
+        fi
+        "$PY" - "$csv" "$arm" "$seed" "$EPOCHS" >> "$SUMMARY" <<'PYEOF'
 import csv, sys
 path, arm, seed, epochs = sys.argv[1:5]
 with open(path, newline="") as f:
@@ -101,8 +100,9 @@ if not rows:
 r = rows[-1]
 print(f"{arm},{seed},{len(rows)},{r['metrics/mAP50(B)']},{r['metrics/mAP50-95(B)']},{r['train/box_loss']}")
 PYEOF
-    else
-      echo "[ab] WARN $name produced no results.csv" >&2
+      else
+        echo "[ab] WARN $name produced no results.csv" >&2
+      fi
     fi
   done
 done
