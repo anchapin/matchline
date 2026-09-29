@@ -540,6 +540,12 @@ def _read_lighting(sp, model, provenance):
 # previous length-based match used.
 _ENVELOPE_TOL_M = 0.1
 
+# Failure reasons for _wall_direction_from_envelope, used to populate
+# OpeningAttachmentSummary in _attach_openings_to_spaces.
+_WALL_DIR_NO_EDGE = "no_envelope_edge"  # no edge endpoint matched wall placement
+_WALL_DIR_AMBIGUOUS_TIE = "ambiguous_tie"  # multiple same-length edges tied
+_WALL_DIR_NO_REF = "no_ref_direction"  # both envelope and entity RefDirection failed
+
 
 def _envelope_edge_dir(ew, origin):
     """Unit direction of envelope edge ``ew``, oriented to start at ``origin``.
@@ -576,9 +582,15 @@ def _wall_direction_from_envelope(el, model):
     wrong space (#505). Refusing to guess is preferred: the caller then falls
     back to the wall's own RefDirection, and the opening is left unattached
     rather than silently mis-attributed.
+
+    Returns
+    -------
+    tuple
+        (direction, None) on success, where direction is a unit (dx, dy) tuple.
+        (None, reason) on failure, where reason is one of the _WALL_DIR_* constants.
     """
     if el.length_m is None or not el.placement_m:
-        return None
+        return (None, _WALL_DIR_NO_EDGE)
     origin = (float(el.placement_m[0]), float(el.placement_m[1]))
     best_rank, dirs = 2, set()
     for ew in model.envelope:
@@ -593,9 +605,11 @@ def _wall_direction_from_envelope(el, model):
             best_rank, dirs = rank, {d}
         elif rank == best_rank:
             dirs.add(d)
+    if len(dirs) == 0:
+        return (None, _WALL_DIR_NO_EDGE)
     if len(dirs) != 1:
-        return None
-    return dirs.pop()
+        return (None, _WALL_DIR_AMBIGUOUS_TIE)
+    return (dirs.pop(), None)
 
 
 def _wall_direction_from_entity(el):
@@ -628,6 +642,10 @@ def _attach_openings_to_spaces(model):
     Uses the opening's along-wall position (s_center_m) to determine which space
     the opening belongs to, correctly handling exterior walls that span multiple
     spaces.
+
+    Tracks unattached openings in ``model.opening_attachment_summary`` with
+    per-reason breakdown: ``no_envelope_edge``, ``ambiguous_tie``,
+    ``no_ref_direction``.
     """
     for el in model.bim_elements:
         if not el.openings or not el.placement_m:
@@ -639,19 +657,36 @@ def _attach_openings_to_spaces(model):
         if length_m is None:
             continue
 
-        wall_dir = _wall_direction_from_envelope(el, model)
+        env_dir, env_reason = _wall_direction_from_envelope(el, model)
+        wall_dir = env_dir
+        failure_reason = None  # one of the _WALL_DIR_* constants, or None
+
         if wall_dir is None:
             wall_dir = _wall_direction_from_entity(el)
+            if wall_dir is None:
+                # The host wall's axis is unknown, so the openings' positions along it
+                # cannot be reconstructed. Leave them unattached rather than
+                # attaching them to a space the geometry does not support.
+                failure_reason = env_reason or _WALL_DIR_NO_REF
+
         if wall_dir is None:
-            # The host wall's axis is unknown, so the openings' positions along it
-            # cannot be reconstructed. Leave them unattached rather than
-            # attaching them to a space the geometry does not support.
+            # Record the failure reason for import-summary reporting.
+            num_openings = len(el.openings)
+            if failure_reason == _WALL_DIR_NO_EDGE:
+                model.opening_attachment_summary.no_envelope_edge += num_openings
+                reason_desc = "no envelope edge matched wall placement"
+            elif failure_reason == _WALL_DIR_AMBIGUOUS_TIE:
+                model.opening_attachment_summary.ambiguous_tie += num_openings
+                reason_desc = "ambiguous tie (multiple same-length edges)"
+            else:
+                model.opening_attachment_summary.no_ref_direction += num_openings
+                reason_desc = "no RefDirection fallback available"
             model.flag_for_review(
                 kind="opening_attachment",
                 description=(
                     f"Wall {el.global_id} ({el.ifc_class}) hosts "
-                    f"{len(el.openings)} opening(s) but its along-wall direction could "
-                    "not be determined; openings left unattached."
+                    f"{num_openings} opening(s) but its along-wall direction could "
+                    f"not be determined ({reason_desc}); openings left unattached."
                 ),
                 confidence=0.3,
                 provenance=el.openings[0].provenance
@@ -978,15 +1013,18 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     _attach_openings_to_spaces(model)
 
-    model.log_revision(
-        sheet,
-        revision,
-        "ingest",
-        f"Tier-0 IFC import: {len(model.spaces)} spaces, "
-        f"{len(model.bim_elements)} elements, "
-        f"{sum(len(e.openings) for e in model.bim_elements)} openings, "
-        f"{len(model.zones)} zones; scale={scale}",
-    )
+    total_openings = sum(len(e.openings) for e in model.bim_elements)
+    unattached = model.opening_attachment_summary
+    summary_parts = [
+        f"Tier-0 IFC import: {len(model.spaces)} spaces",
+        f"{len(model.bim_elements)} elements",
+        f"{total_openings} openings",
+        f"{len(model.zones)} zones",
+        f"scale={scale}",
+    ]
+    if not unattached.is_empty():
+        summary_parts.append(unattached.summary_line())
+    model.log_revision(sheet, revision, "ingest", "; ".join(summary_parts))
     return model
 
 

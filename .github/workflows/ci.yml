@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=996 # +7: #508 training-device default (tests/test_detector_device_auto.py); +5: #515 auto-triage coverage recovery (tests/test_run_pipeline_auto_triage.py) — recovered from the 0%-coverage branch queue; covers run_pipeline._run_auto_triage(), which existed in develop with no test coverage. Plain unittest/mock, no GPU, dataset or detector venv needed.
+          EXPECTED_TEST_COUNT=999 # +10: #512 unattached opening count and report on import summary; adds 10 new tests in tests/test_ifc_import.py for OpeningAttachmentSummary, _wall_direction_from_envelope(), and _attach_openings_to_spaces().
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

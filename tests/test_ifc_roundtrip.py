@@ -202,12 +202,12 @@ def test_wall_direction_refuses_rather_than_guesses():
     """Invariant: a wall is matched to an envelope edge by position, or not at all.
 
     When no edge endpoint coincides with the wall's placement, the matcher must
-    return None. Falling back to "some edge of about the right length" is the
-    behaviour that put openings in the wrong space (#505), so the length window
-    must not be able to resurrect a match on its own.
+    return (None, reason). Falling back to "some edge of about the right length"
+    is the behaviour that put openings in the wrong space (#505), so the length
+    window must not be able to resurrect a match on its own.
     """
     from building_model import BimElement, EnvelopeWall
-    from ifc_import import _wall_direction_from_envelope
+    from ifc_import import _WALL_DIR_NO_EDGE, _wall_direction_from_envelope
 
     model = BuildingModel(name="m", levels=[])
     # One 10 m edge, far away from the wall below.
@@ -220,9 +220,9 @@ def test_wall_direction_refuses_rather_than_guesses():
         length_m=10.0,  # exactly the same length as the stray edge above
         placement_m=[0.0, 0.0, 0.0],
     )
-    assert _wall_direction_from_envelope(wall, model) is None, (
-        "must not match an edge on length alone when no endpoint coincides"
-    )
+    direction, reason = _wall_direction_from_envelope(wall, model)
+    assert direction is None, "must not match an edge on length alone when no endpoint coincides"
+    assert reason == _WALL_DIR_NO_EDGE
 
 
 def test_unresolvable_wall_leaves_openings_unattached_and_flagged():
@@ -364,7 +364,7 @@ def test_envelope_wall_matching_uses_position_not_length(tmp_path):
 
     baseline = {}
     for el in walls:
-        d = _wall_direction_from_envelope(el, model)
+        d, _ = _wall_direction_from_envelope(el, model)
         assert d is not None, f"wall {el.global_id} should resolve to an envelope edge"
         baseline[el.global_id] = d
         # The direction must run along the wall's own centerline: stepping the
@@ -380,7 +380,7 @@ def test_envelope_wall_matching_uses_position_not_length(tmp_path):
     # length-only rule this permutation changed the wall direction.
     model.envelope = list(reversed(model.envelope))
     for el in walls:
-        d = _wall_direction_from_envelope(el, model)
+        d, _ = _wall_direction_from_envelope(el, model)
         assert d == baseline[el.global_id], (
             f"wall {el.global_id} direction changed under envelope reordering: "
             f"{baseline[el.global_id]} -> {d}"
