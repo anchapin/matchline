@@ -16,7 +16,10 @@ from pathlib import Path
 import pytest
 
 from tests.model_factory import (
+    _ensure_bim_wall,
     break_area,
+    break_convention_bias_implausible_thickness,
+    break_convention_bias_large,
     break_dangling_zone,
     break_dupe_fixture,
     break_elevation_placement_consistency,
@@ -200,6 +203,8 @@ def test_no_docs_reference_removed_validate_module():
         (break_lpd_unit_slip, "lpd_unit_consistency", "error"),
         (break_space_volume_matches_area_height, "space_volume_matches_area_height", "warn"),
         (break_volume_conservation, "volume_conservation", "error"),
+        (break_convention_bias_implausible_thickness, "convention_bias", "warn"),
+        (break_convention_bias_large, "convention_bias", "warn"),
         (break_envelope_area_matches_perimeter, "envelope_area_matches_perimeter", "error"),
         (break_simplify_budget, "simplify_budget", "error"),
         (break_simplify_invalid, "simplify_budget", "error"),
@@ -608,3 +613,125 @@ class TestConfidenceThresholdValidation:
         assert result is not None
         result = export_gate(report, model=m, min_review_confidence=1.0)
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# convention_bias (roadmap item 1). A measurement, not a conservation law:
+# there is no "correct" value to fail against, so it never blocks export. The
+# tests below pin that intent, because a future refactor that quietly promotes
+# it to an error would start rejecting honest exports.
+# ---------------------------------------------------------------------------
+
+
+def _bias(m):
+    return _by_id(run_checks(m), "convention_bias")
+
+
+def test_convention_bias_skips_without_thickness():
+    # The clean model has no BIM walls, so no thickness exists. The check must
+    # say the bias is UNMEASURABLE, not report it as zero: a fabricated
+    # thickness would produce a fabricated bias.
+    r = _bias(make_clean_model())
+    assert r.severity == "skip"
+    assert "not zero" in r.message
+
+
+def test_convention_bias_measured_from_material_layers():
+    # Analytical path (roadmap item 1): IfcMaterialLayerSet sums to a true
+    # thickness, so the source must be named as analytical and preferred over
+    # a bare thickness_m on the same wall.
+    m = make_clean_model()
+    _ensure_bim_wall(
+        m,
+        thickness_m=0.9,  # decoy: layers must win
+        layers=[
+            {"material": "brick", "thickness_m": 0.1},
+            {"material": "insulation", "thickness_m": 0.05},
+            {"material": "gypsum", "thickness_m": 0.015},
+        ],
+    )
+    r = _bias(m)
+    assert r.severity == "pass"
+    assert "material_layers" in r.message and "analytical" in r.message
+    assert r.actual["thickness_m"] == pytest.approx(0.165)
+
+
+def test_convention_bias_falls_back_to_thickness_m():
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.15)
+    r = _bias(m)
+    assert r.actual["thickness_source"].startswith("thickness_m")
+    assert r.actual["thickness_m"] == pytest.approx(0.15)
+
+
+def test_convention_bias_exterior_face_is_always_larger():
+    # Directional by construction: spaces tile the interior, so offsetting the
+    # footprint outward can only grow the volume. A negative delta would mean
+    # the derivation is wrong, not that the building is unusual.
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.1)
+    per_level = _bias(m).actual["levels"]
+    assert per_level
+    for lid, v in per_level.items():
+        assert v["exterior_volume_m3"] > v["interior_volume_m3"], lid
+        assert v["delta_pct"] > 0
+
+
+def test_convention_bias_grows_with_thickness():
+    def frac(t):
+        m = make_clean_model()
+        _ensure_bim_wall(m, thickness_m=t)
+        lv = _bias(m).actual["levels"]["L1"]
+        return lv["delta_pct"]
+
+    assert frac(0.05) < frac(0.1) < frac(0.3)
+
+
+def test_convention_bias_never_blocks_export():
+    # Both warn paths, and the pass path, must leave the gate open.
+    for breaker in (
+        break_convention_bias_implausible_thickness,
+        break_convention_bias_large,
+    ):
+        m = make_clean_model()
+        breaker(m)
+        report = run_checks(m)
+        assert _by_id(report, "convention_bias").severity == "warn"
+        assert export_gate(report), f"{breaker.__name__} must not close the export gate"
+
+
+def test_convention_bias_names_the_units_slip():
+    # 12 metres is an inch value in a metre field. The message has to blame the
+    # number rather than the building, or the reader will chase the geometry.
+    m = make_clean_model()
+    break_convention_bias_implausible_thickness(m)
+    r = _bias(m)
+    assert "outside the plausible band" in r.message
+    assert "units slip" in r.message
+    assert "W-BIAS-1" in r.entities
+
+
+def test_convention_bias_reports_per_level_and_worst():
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.2)
+    r = _bias(m)
+    assert set(r.actual["levels"]["L1"]) == {
+        "interior_volume_m3",
+        "exterior_volume_m3",
+        "delta_m3",
+        "delta_pct",
+        "perimeter_m",
+        "wall_height_m",
+    }
+    assert "worst level L1" in r.message
+    assert r.actual["convention"].startswith("interior_face")
+
+
+def test_convention_bias_ignores_non_wall_bim_elements():
+    from building_model import BimElement
+
+    m = make_clean_model()
+    m.bim_elements.append(
+        BimElement(global_id="S-1", ifc_class="IfcSlab", level_id="L1", thickness_m=0.3)
+    )
+    assert _bias(m).severity == "skip"

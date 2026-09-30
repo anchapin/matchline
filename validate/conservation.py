@@ -32,7 +32,7 @@ def _rel_err(actual: float, expected: float) -> float:
 
 
 try:
-    from geometry_simplify import footprint_from_regions
+    from geometry_simplify import footprint_from_regions, ring_perimeter
 except Exception:
     pass
 
@@ -630,3 +630,194 @@ def envelope_closure(model: BuildingModel) -> CheckResult:
             "error",
             f"could not compute envelope closure: {exc}",
         )
+
+
+# ---------------------------------------------------------------------------
+# Convention bias (roadmap item 1): measure the volume delta between the
+# interior-face and exterior-face derivations rather than asserting it is zero.
+# ---------------------------------------------------------------------------
+
+# Plausible exterior wall thickness for a commercial building, in metres.
+# Outside this band the number is far more likely a units slip (an inch or a
+# foot value landing in a metre field) or a material-layer parse error than a
+# real assembly, so the check reports it instead of quietly biasing a volume.
+THICKNESS_PLAUSIBLE_M = (0.05, 1.20)
+
+# Above this, the bias stops being a footnote on the export and becomes the
+# headline. 10% of volume is roughly a 0.5 m wall on a 20 m x 30 m plate.
+BIAS_WARN_FRACTION = 0.10
+
+
+def _exterior_thickness_m(ctx: _Ctx) -> tuple[float | None, str, list]:
+    """Best available exterior wall thickness, with its source and evidence.
+
+    Priority is analytical first, per roadmap item 1: ``IfcMaterialLayerSet``
+    gives true per-layer thickness on the BIM path, so no convention is needed,
+    just extraction. ``thickness_m`` on its own is the drawing-path fallback
+    (wall-thickness pairs or dimension annotations). Returns (None, reason, [])
+    when neither exists, which is a skip and never a guessed default: a
+    fabricated thickness would produce a fabricated bias number, which is worse
+    than reporting that the input does not carry one.
+    """
+    walls = [
+        e
+        for e in getattr(ctx.model, "bim_elements", [])
+        if str(getattr(e, "ifc_class", "")).lower().startswith("ifcwall")
+    ]
+    layered = []
+    for w in walls:
+        layers = getattr(w, "material_layers", None) or []
+        total = sum(
+            float(layer["thickness_m"])
+            for layer in layers
+            if isinstance(layer, dict) and layer.get("thickness_m") is not None
+        )
+        if total > 0:
+            layered.append((w, total))
+    if layered:
+        vals = [t for _, t in layered]
+        return (
+            sum(vals) / len(vals),
+            f"material_layers ({len(layered)} wall(s), analytical)",
+            [w.global_id for w, _ in layered],
+        )
+
+    direct = [
+        (w, float(w.thickness_m))
+        for w in walls
+        if getattr(w, "thickness_m", None) is not None and float(w.thickness_m) > 0
+    ]
+    if direct:
+        vals = [t for _, t in direct]
+        return (
+            sum(vals) / len(vals),
+            f"thickness_m ({len(direct)} wall(s), geometry)",
+            [w.global_id for w, _ in direct],
+        )
+
+    return None, "no wall carries material_layers or thickness_m", []
+
+
+def _check_convention_bias(ctx: _Ctx) -> CheckResult:
+    """Report the interior-face vs exterior-face volume delta per level.
+
+    Roadmap item 1 settles the architecture: thickness is kept internally and
+    surfaces are derived per convention at export. That means a choice of
+    convention biases the exported air volume in a KNOWN direction (spaces
+    tile the interior, so an exterior-face derivation is always larger), and
+    the project's answer everywhere is to measure the bias and attribute it to
+    the convention that caused it rather than pretend it is zero.
+
+    So this check is a measurement, not a conservation law. It is informational
+    by design and does not block export: there is no "correct" value to fail
+    against, and an export whose bias is honestly reported is exactly what the
+    convention report wants. It warns in two cases only, both of which mean the
+    NUMBER is untrustworthy rather than the building being unusual: a thickness
+    outside a plausible band, and a bias large enough to dominate the export.
+
+    Geometry: offsetting a simple closed ring outward by t grows its area by
+    perimeter x t plus a corner term. The corner term is the Steiner term
+    pi t^2 for a convex ring, which is what is used here; for a 0.2 m wall
+    that whole term is 0.13 m^2, so on any real plate it is far below the 3%
+    conservation tolerances while the perimeter x t term is the one that
+    matters. Non-convex plates make it a slight overestimate of the corner
+    contribution only. Documented rather than hidden, because the bias number
+    is the deliverable.
+    """
+    check_id = "convention_bias"
+    name = "Convention bias (interior vs exterior face)"
+
+    if not _HAS_SIMPLIFY or polygon_area_px2 is None:
+        return CheckResult(
+            check_id, name, "skip", "geometry_simplify unavailable; cannot union footprint"
+        )
+    if not ctx.level_of:
+        return CheckResult(check_id, name, "skip", "model has no spaces on any level")
+
+    thickness, source, evidence = _exterior_thickness_m(ctx)
+    if thickness is None:
+        return CheckResult(
+            check_id,
+            name,
+            "skip",
+            f"no exterior wall thickness available ({source}); "
+            f"volume bias is unmeasurable, not zero",
+        )
+
+    lo, hi = THICKNESS_PLAUSIBLE_M
+    implausible = not (lo <= thickness <= hi)
+
+    per_level = {}
+    interior_total = exterior_total = 0.0
+    for lid, spaces in ctx.level_of.items():
+        h = ctx.wall_height.get(lid, 0.0)
+        fp_area = ctx.footprint_area.get(lid, 0.0)
+        ring = footprint_from_regions([sp.polygon_m for sp in spaces])
+        perim = ring_perimeter(ring) if ring else 0.0
+        if fp_area <= 0 or h <= 0:
+            continue
+        interior_v = fp_area * h
+        exterior_area = fp_area + perim * thickness + math.pi * thickness**2
+        exterior_v = exterior_area * h
+        interior_total += interior_v
+        exterior_total += exterior_v
+        per_level[lid] = {
+            "interior_volume_m3": interior_v,
+            "exterior_volume_m3": exterior_v,
+            "delta_m3": exterior_v - interior_v,
+            "delta_pct": (exterior_v - interior_v) / interior_v * 100.0,
+            "perimeter_m": perim,
+            "wall_height_m": h,
+        }
+
+    if not per_level:
+        return CheckResult(
+            check_id, name, "skip", "no level has both a footprint area and a wall height"
+        )
+
+    delta = exterior_total - interior_total
+    frac = delta / interior_total if interior_total else 0.0
+    payload = {
+        "thickness_m": thickness,
+        "thickness_source": source,
+        "convention": "interior_face (canonical); exterior_face derived",
+        "levels": per_level,
+    }
+    worst = max(per_level, key=lambda lid: per_level[lid]["delta_pct"])
+    headline = (
+        f"exterior-face derivation is {delta:.2f} m^3 ({frac:.1%}) larger than "
+        f"interior-face across {len(per_level)} level(s); worst level {worst} "
+        f"at {per_level[worst]['delta_pct']:.1f}%; t={thickness:.3f} m from {source}"
+    )
+
+    if implausible:
+        return CheckResult(
+            check_id,
+            name,
+            "warn",
+            f"wall thickness {thickness:.3f} m is outside the plausible band "
+            f"{lo}-{hi} m, so the bias number is untrustworthy (likely a units "
+            f"slip or a material-layer parse error). {headline}",
+            entities=evidence,
+            expected=interior_total,
+            actual=payload,
+        )
+    if frac > BIAS_WARN_FRACTION:
+        return CheckResult(
+            check_id,
+            name,
+            "warn",
+            f"convention bias exceeds {BIAS_WARN_FRACTION:.0%} of air volume: "
+            f"{headline}. Report it with the export; do not average it away.",
+            entities=sorted(per_level),
+            expected=interior_total,
+            actual=payload,
+        )
+    return CheckResult(
+        check_id,
+        name,
+        "pass",
+        headline,
+        expected=interior_total,
+        actual=payload,
+    )

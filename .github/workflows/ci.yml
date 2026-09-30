@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1006 # +7: #508 training-device default (tests/test_detector_device_auto.py) — merged as #522 after #523's branch was cut, so #523's +10 bump landed at 999 and missed them; +10: #512 unattached opening count and report on import summary; adds 10 new tests in tests/test_ifc_import.py for OpeningAttachmentSummary, _wall_direction_from_envelope(), and _attach_openings_to_spaces().
+          EXPECTED_TEST_COUNT=1017 # +11: roadmap item 1 convention_bias check (9 tests in tests/test_validate.py pinning the skip-not-zero, material-layers-first, directional-delta and never-blocks-export behaviour, plus 2 defect-battery parametrize rows for the two warn paths).
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

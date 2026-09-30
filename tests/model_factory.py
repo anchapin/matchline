@@ -590,3 +590,40 @@ def break_room_number(m: BuildingModel):
 
 # -------------------------------------------------------------------------------------------------
 # BEM conservation break helpers
+
+
+def break_convention_bias_implausible_thickness(m: BuildingModel):
+    """Exterior wall thickness lands outside the plausible band.
+
+    The realistic cause is a units slip: a 12 (inch) or 1.5 (foot) value
+    reaching a metre field, or a material-layer parse that summed the wrong
+    column. Either way the derived bias number is garbage and must say so
+    rather than silently biasing the exported volume.
+    """
+    _ensure_bim_wall(m, thickness_m=12.0)
+
+
+def break_convention_bias_large(m: BuildingModel):
+    """A thickness that is plausible per wall but biases volume over 10%."""
+    _ensure_bim_wall(m, thickness_m=1.1)
+
+
+def _ensure_bim_wall(m: BuildingModel, thickness_m: float, layers=None):
+    from building_model import BimElement
+
+    m.bim_elements = [
+        e
+        for e in m.bim_elements
+        if not str(getattr(e, "ifc_class", "")).lower().startswith("ifcwall")
+    ]
+    m.bim_elements.append(
+        BimElement(
+            global_id="W-BIAS-1",
+            ifc_class="IfcWall",
+            name="EXT-1",
+            level_id="L1",
+            thickness_m=thickness_m,
+            material_layers=layers or [],
+            provenance=P(method="ifc_import"),
+        )
+    )

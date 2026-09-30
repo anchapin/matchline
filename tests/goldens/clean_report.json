@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 37,
+  "n_checks": 38,
   "errors": 0,
   "warnings": 0,
   "passes": 29,
-  "skipped": 8
+  "skipped": 9
  },
  "results": [
   {
@@ -40,6 +40,13 @@
    "entities": [],
    "expected": 180.0,
    "actual": 180.0
+  },
+  {
+   "check_id": "convention_bias",
+   "name": "Convention bias (interior vs exterior face)",
+   "severity": "skip",
+   "message": "no exterior wall thickness available (no wall carries material_layers or thickness_m); volume bias is unmeasurable, not zero",
+   "entities": []
   },
   {
    "check_id": "envelope_area_matches_perimeter",
