@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import os
 import statistics
 import sys
@@ -77,6 +78,103 @@ def spread(values: list[float]) -> tuple[float, float, float]:
     return rng, mean, sd
 
 
+# --- Student's t, stdlib only -------------------------------------------------
+# This script must run with no scipy (either detector venv, or a bare python3).
+# The regularised incomplete beta via Lentz's continued fraction is the standard
+# route to the t CDF; the tests pin it to the df=1 and df=2 closed forms.
+
+
+def _betacf(a: float, b: float, x: float) -> float:
+    tiny, eps = 1e-300, 1e-15
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    d = 1.0 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (d if abs(d) > tiny else tiny)
+        c = 1.0 + aa / c
+        c = c if abs(c) > tiny else tiny
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        d = 1.0 / (d if abs(d) > tiny else tiny)
+        c = 1.0 + aa / c
+        c = c if abs(c) > tiny else tiny
+        step = d * c
+        h *= step
+        if abs(step - 1.0) < eps:
+            break
+    return h
+
+
+def _betai(a: float, b: float, x: float) -> float:
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    lbeta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    front = math.exp(lbeta + a * math.log(x) + b * math.log1p(-x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _betacf(a, b, x) / a
+    return 1.0 - front * _betacf(b, a, 1.0 - x) / b
+
+
+def t_two_sided_p(t: float, df: int) -> float:
+    """Two-sided p-value for Student's t with df degrees of freedom."""
+    if math.isinf(t):
+        return 0.0
+    return _betai(df / 2.0, 0.5, df / (df + t * t))
+
+
+def t_critical(df: int, alpha: float = 0.05) -> float:
+    """Two-sided critical value: the t with P(|T| > t) = alpha."""
+    lo, hi = 0.0, 1e4
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if t_two_sided_p(mid, df) > alpha:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def paired(control: dict[int, float], treatment: dict[int, float]) -> dict | None:
+    """Seed-paired comparison, treatment - control, on seeds present in BOTH arms.
+
+    Valid only when a seed means the same run in both arms (same split, same data
+    order, same init outside the inserted blocks). A #516 floor of exactly zero,
+    i.e. bit-deterministic training at fixed seed, is what licenses the pairing;
+    main() prints that condition next to the result.
+
+    Returns None when fewer than two seeds pair: one difference has no variance.
+    """
+    seeds = sorted(set(control) & set(treatment))
+    if len(seeds) < 2:
+        return None
+    deltas = [treatment[s] - control[s] for s in seeds]
+    n = len(deltas)
+    mean = statistics.fmean(deltas)
+    sd = statistics.stdev(deltas)
+    df = n - 1
+    se = sd / math.sqrt(n)
+    if se == 0.0:
+        t = math.inf if mean != 0.0 else 0.0
+    else:
+        t = mean / se
+    p = t_two_sided_p(abs(t), df) if t != 0.0 else 1.0
+    tc = t_critical(df)
+    pos = sum(1 for d in deltas if d > 0)
+    neg = sum(1 for d in deltas if d < 0)
+    return {
+        'seeds': seeds, 'deltas': deltas, 'n': n, 'mean': mean, 'sd': sd,
+        'df': df, 't': t, 'p': p, 'ci': (mean - tc * se, mean + tc * se),
+        'consistent': pos == n or neg == n, 'pos': pos, 'neg': neg,
+    }
+
+
 def fmt(vals: list[float]) -> str:
     return ', '.join(f'{v:.5f}' for v in vals)
 
@@ -88,6 +186,9 @@ def main() -> int:
     ap.add_argument('--metric', default='mAP50', choices=sorted(METRIC_COLUMNS))
     ap.add_argument('--arms', nargs=2, default=['yolo11n_baseline', 'yolo11n_eca'],
                     metavar=('CONTROL', 'TREATMENT'))
+    ap.add_argument('--reference-delta', type=float, default=None,
+                    help="an effect size to test against the paired CI, e.g. a paper's "
+                         'reported gain (FloorYOLO: 0.0125 mAP50 on CVC-FP)')
     args = ap.parse_args()
 
     runs = Path(args.runs)
@@ -168,6 +269,11 @@ def main() -> int:
         print(f'  noise {noise_range:.5f}. The arms are indistinguishable at this')
         print('  budget. Report as "no delta measurable", not "ECA does not work".')
     elif abs(delta) <= within:
+        if noise_range == 0.0:
+            print('  NOTE: the run-to-run floor is exactly zero, so "clears it" carries')
+            print('  no information on its own. It does mean runs are deterministic at')
+            print('  fixed seed, which licenses the paired test below, and that test is')
+            print('  the more informative one.')
         print(f'  UNDERPOWERED. |delta| {abs(delta):.5f} clears run-to-run noise')
         print(f'  ({noise_range:.5f}) but sits inside the within-arm seed spread')
         print(f'  ({within:.5f}). More seeds are needed before a claim holds.')
@@ -176,6 +282,53 @@ def main() -> int:
         print(f'  DELTA CLEARS BOTH FLOORS: {treatment} {direction} {metric} by')
         print(f'  {abs(delta):.5f}, vs within-arm {within:.5f} and run-to-run')
         print(f'  {noise_range:.5f}. Still report all three numbers together.')
+    print()
+
+    # --- seed-paired comparison ---------------------------------------------
+    # The unpaired verdict above treats the arms as independent samples, which
+    # throws away that seed s means the same split/order/init in both. With a
+    # deterministic floor the pairing is real and it is the more powerful test:
+    # on the #500 matrix it finds a consistent mAP50-95 gain (paired p=0.008)
+    # that the unpaired comparison cannot see (Welch p=0.38).
+    pr = paired(summary.get(control, {}), summary.get(treatment, {}))
+    print('seed-paired (treatment - control, matched seeds)')
+    if pr is None:
+        print('  SKIPPED: fewer than two seeds present in both arms.')
+    else:
+        if noise_range is None:
+            print('  CAUTION: pairing is valid only if a seed means the same run in both')
+            print('  arms. The #516 floor is unmeasured, so determinism at fixed seed is')
+            print('  unverified. Read this as provisional.')
+        elif noise_range == 0.0:
+            print('  pairing licensed: the #516 floor is exactly zero (deterministic).')
+        else:
+            print(f'  pairing caution: the #516 floor is {noise_range:.5f}, nonzero, so')
+            print('  matched seeds are not identical runs. Pairing still removes shared')
+            print('  seed effects, but less cleanly.')
+        print(f'  seeds:  {pr["seeds"]}')
+        print(f'  deltas: {", ".join(f"{d:+.5f}" for d in pr["deltas"])}')
+        lo, hi = pr['ci']
+        print(f'  mean={pr["mean"]:+.5f}  sd={pr["sd"]:.5f}  t={pr["t"]:.2f}'
+              f' (df {pr["df"]})  p={pr["p"]:.3f}')
+        print(f'  95% CI [{lo:+.5f}, {hi:+.5f}]')
+        if pr['consistent']:
+            sign = 'positive' if pr['pos'] else 'negative'
+            print(f'  direction: consistent, all {pr["n"]} seeds {sign}')
+        else:
+            print(f'  direction: NOT consistent ({pr["pos"]} up, {pr["neg"]} down)')
+        if lo > 0 or hi < 0:
+            direction = 'improves' if pr['mean'] > 0 else 'degrades'
+            print(f'  paired verdict: {treatment} {direction} {metric}; the CI excludes 0.')
+            print(f'  Small df ({pr["df"]}): report the CI, not just the p-value.')
+        else:
+            print('  paired verdict: the CI includes 0; no paired effect measurable.')
+        if args.reference_delta is not None:
+            ref = args.reference_delta
+            if lo <= ref <= hi:
+                print(f'  reference {ref:+.5f} lies INSIDE the CI: not ruled out.')
+            else:
+                print(f'  reference {ref:+.5f} lies OUTSIDE the CI: ruled out at 95% on')
+                print('  this data (not merely undetected).')
     print()
     print('NOTE: detector/ is excluded from CI (pyproject.toml). Nothing here is')
     print('verified by a green upstream run.')
