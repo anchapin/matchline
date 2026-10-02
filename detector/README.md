@@ -75,7 +75,7 @@ python3 eval_zero_shot.py --preds /tmp/sheet01_preds.json \
     --labels ~/workspace/datasets/detector_yolo/aec/labels/eval
 ```
 
-## Status (2026-09-19)
+## Status (2026-09-28)
 
 - [x] Full CubiCasa conversion: train 4200 / val 400 / test 400 plans,
       42,392 doors + 35,419 windows, integrity-checked (`check_dataset.py`)
@@ -85,8 +85,9 @@ python3 eval_zero_shot.py --preds /tmp/sheet01_preds.json \
       (P=0.741, R=0.655) — pipeline works end to end
 - [x] SAHI tiling + NMS proven on a 7201x4801 AEC sheet (26 preds, ~30s CPU)
 - [x] Zero-shot eval harness (`eval_zero_shot.py`) proven on sheet_01
-- [ ] Full training run: 10 epochs YOLO11n, all 4200 train images (in progress,
-      ~6h CPU) -> `~/workspace/datasets/detector_runs/cubi_yolo11n_e10/`
+- [x] Full ECA A/B: 2 arms × 3 seeds × 50 epochs on the RX 6600 XT
+      (`detector/results/ab_2026-09-28/`, ~5.1 h GPU total). Numbers and
+      disposition in `analysis.md` there.
 - [ ] Re-run SAHI + zero-shot P/R on 2-3 AEC sheets with the full model
 - [ ] Monday: fine-tune/eval on Alex's commercial drawings; legend one-shot
       classification prototype (PID stage 2)
@@ -150,24 +151,38 @@ is a failed experiment, not three confirmations** — check that first before
 reading any delta. Guarded by `tests/test_detector_train_seed.py` in the main
 suite (pure argument forwarding, so it needs no GPU, dataset, or detector venv).
 Note also that **bit-reproducibility at fixed seed is unmeasured, not
-measured-absent** (#509). It was long assumed the ROCm path was not reproducible,
-on the strength of two 1-epoch runs scoring 0.05485 and 0.21352 mAP50 — but that
-pair is a confound, not a replicate: `seedtest_s0` ran `epochs: 1` and
-`yolo11n_baseline_s0` ran `epochs: 50`, so the two sat on different learning-rate
-schedules (epoch-1 `lr/pg0` 0.001667 vs 0.000553554), and `seedtest_s1` is
-`seed: 1`, not a second seed-0 run. The honest position is that seed-to-seed and
-run-to-run noise have not been separated, so 3 seeds may understate total variance
-and a within-arm spread should be read as a floor rather than a confidence
-interval. Establishing the real run-to-run floor needs one config at one seed
-repeated N times **at a fixed epoch count**; that has not been done.
+measured-absent** (#509, closed 2026-09-29). It was long assumed the ROCm path
+was not reproducible, on the strength of two 1-epoch runs scoring 0.05485 and
+0.21352 mAP50 — but that pair is a confound, not a replicate: `seedtest_s0` ran
+`epochs: 1` and `yolo11n_baseline_s0` ran `epochs: 50`, so the two sat on
+different learning-rate schedules (epoch-1 `lr/pg0` 0.001667 vs 0.000553554),
+and `seedtest_s1` is `seed: 1`, not a second seed-0 run. The honest position
+is that seed-to-seed and run-to-run noise have not been separated, so 3 seeds
+understate total variance and the within-arm spread in the 2026-09-28 A/B
+(seed-to-seed ~0.006 mAP50 for both arms) should be read as a floor rather
+than a confidence interval. Establishing the real run-to-run floor still
+needs one config at one seed repeated N times **at a fixed epoch count**;
+that has not been done.
 
-**Status: infrastructure complete, mAP delta NOT yet measured.** Both arms train
-end to end, on GPU (RX 6600 XT / ROCm) as well as CPU. The CubiCasa5K dataset is
-built (5000 plans, CC BY-NC-SA, non-commercial). The 2x3x50-epoch matrix is the
-measurement; until all six runs finish there is no delta to report, and a delta
-quoted from a subset of the arms is a comparison against noise. Report per-arm
-mean and within-arm spread, and treat overlapping ranges as "no delta measurable
-at this budget" — a legitimate result, not a failure to find one.
+**Status (2026-09-28): measured on RX 6600 XT, kept as opt-in arm.** Full
+matrix — 2 arms × 3 seeds × 50 epochs — completed in ~5.1 h GPU time. Numbers
+and provenance live in `detector/results/ab_2026-09-28/`:
+
+| metric | baseline (mean ± sd, n=3) | +ECA (mean ± sd, n=3) | Δ |
+|---|---|---|---:|
+| mAP50 | 0.96805 ± 0.00303 | 0.96903 ± 0.00173 | +0.00098 |
+| mAP50-95 | 0.87951 ± 0.00457 | 0.88319 ± 0.00461 | +0.00368 |
+| Precision | 0.93356 ± 0.00355 | 0.94108 ± 0.00500 | +0.00752 |
+| Recall | 0.92748 ± 0.00636 | 0.92360 ± 0.00756 | −0.00388 |
+
+The mAP50 delta is ~1/6 of one arm's seed-to-seed range and the mAP50-95 delta
+is ~40% of it. Direction is positive and consistent across seeds (especially
+on the wider-IoU metric), but the magnitude is inside the within-arm noise
+at n=3. See `analysis.md` in that directory for the full spread-vs-delta
+breakdown, the P↑/R↓ pattern (consistent with attention sharpening), and
+the run-to-run variance caveat from #509. **Disposition: kept as opt-in
+arm** — the cost is essentially zero (+18 params, +0.0001% FLOPs) and the
+infra is in place if a future larger-budget A/B is run.
 
 ## Limitations
 
