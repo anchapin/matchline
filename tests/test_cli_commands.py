@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -31,11 +33,13 @@ class TestElevationWindows:
 
     def test_exits_zero_synthetic(self):
         """Synthetic generation completes without error."""
+        pytest.importorskip("cv2", exc_type=ImportError)  # #535
         r = _run(["elevation-windows"])
         assert r.returncode == 0, r.stderr
 
     def test_produces_window_data(self):
         """Output mentions window count or placement."""
+        pytest.importorskip("cv2", exc_type=ImportError)  # #535
         r = _run(["elevation-windows"])
         assert r.returncode == 0
         out = r.stdout + r.stderr
