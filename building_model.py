@@ -131,11 +131,11 @@ class ComponentRef:
 
 @dataclass
 class SpaceOpening:
-    """One window/door on this space's walls (from an elevation)."""
+    """One window/door on this space's walls (from an elevation), or a skylight on its roof."""
 
     id: str
     tag: str
-    category: str  # "window" | "door"
+    category: str  # "window" | "door" | "skylight"
     width_m: float
     height_m: float
     sill_m: Optional[float] = None
@@ -147,6 +147,13 @@ class SpaceOpening:
     provenance: Provenance | None = None
     needs_review: bool = True
     history: List[Provenance] = field(default_factory=list)
+    # Roof glazing (roadmap item 3). A skylight is category="skylight" with
+    # host_facade="roof"; sill/head/host_interval do not apply. Tilt is from
+    # horizontal (0 = flat roof, the current convention), azimuth is the
+    # outward normal's compass bearing (degrees clockwise from north). Both are
+    # None for wall openings and for skylights whose roof plane is unknown.
+    tilt_deg: Optional[float] = None
+    azimuth_deg: Optional[float] = None
 
 
 @dataclass

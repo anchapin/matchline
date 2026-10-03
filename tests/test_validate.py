@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from tests.model_factory import (
+    H,
     _ensure_bim_wall,
     break_area,
     break_convention_bias_implausible_thickness,
@@ -49,6 +50,8 @@ from tests.model_factory import (
     break_sill_head_sanity,
     break_simplify_budget,
     break_simplify_invalid,
+    break_skylight_below_top,
+    break_skylight_oversize,
     break_space_core_provenance,
     break_space_id_hygiene,
     break_space_volume_matches_area_height,
@@ -205,6 +208,8 @@ def test_no_docs_reference_removed_validate_module():
         (break_volume_conservation, "volume_conservation", "error"),
         (break_convention_bias_implausible_thickness, "convention_bias", "warn"),
         (break_convention_bias_large, "convention_bias", "warn"),
+        (break_skylight_oversize, "skylight_within_roof", "error"),
+        (break_skylight_below_top, "skylight_within_roof", "warn"),
         (break_envelope_area_matches_perimeter, "envelope_area_matches_perimeter", "error"),
         (break_simplify_budget, "simplify_budget", "error"),
         (break_simplify_invalid, "simplify_budget", "error"),
@@ -735,3 +740,109 @@ def test_convention_bias_ignores_non_wall_bim_elements():
         BimElement(global_id="S-1", ifc_class="IfcSlab", level_id="L1", thickness_m=0.3)
     )
     assert _bias(m).severity == "skip"
+
+
+# ---------------------------------------------------------------------------
+# skylight_within_roof (roadmap item 3). The model has no roof entity; the
+# check states the flat-roof convention the gbXML exporter already uses (roof
+# over a top-level space = its floor area) and holds skylights to it.
+# ---------------------------------------------------------------------------
+
+
+def _sky(m):
+    return _by_id(run_checks(m), "skylight_within_roof")
+
+
+def _skylight(m, sid="L1-101", oid="roof-SK-1", w=1.2, h=1.2, **kw):
+    from tests.model_factory import _add_skylight
+
+    _add_skylight(m, sid, oid, w, h)
+    o = m.spaces[sid].openings[-1]
+    for k, v in kw.items():
+        setattr(o, k, v)
+    return o
+
+
+def test_skylight_check_skips_without_skylights():
+    r = _sky(make_clean_model())
+    assert r.severity == "skip"
+
+
+def test_skylight_within_flat_roof_passes():
+    m = make_clean_model()
+    _skylight(m)
+    _skylight(m, oid="roof-SK-2")
+    r = _sky(m)
+    assert r.severity == "pass", r.message
+    assert "2 skylight(s)" in r.message and "2.88 m^2" in r.message
+
+
+def test_skylight_area_sums_per_space_not_per_opening():
+    # Two skylights, each smaller than the 30 m^2 roof, together larger.
+    m = make_clean_model()
+    _skylight(m, w=4.0, h=4.0)
+    _skylight(m, oid="roof-SK-2", w=4.0, h=4.0)
+    r = _sky(m)
+    assert r.severity == "error"
+    assert r.entities == ["L1-101"]
+    assert r.expected == 30.0 and abs(r.actual - 32.0) < 1e-9
+
+
+def test_skylight_area_falls_back_to_dims_then_schedule():
+    m = make_clean_model()
+    _skylight(m, w=8.0, h=5.0, area_m2=None)  # 40 m^2 from own dims
+    assert _sky(m).severity == "error"
+    m = make_clean_model()
+    _skylight(m, area_m2=None, width_m=None, height_m=None)
+    m.schedules["SK-1"] = {"width_m": 8.0, "height_m": 5.0}
+    assert _sky(m).severity == "error"
+
+
+def test_skylight_without_dims_is_named_not_zeroed():
+    m = make_clean_model()
+    _skylight(m, area_m2=None, width_m=None, height_m=None)
+    r = _sky(m)
+    assert r.severity == "pass"
+    assert "1 skylight(s) without dimensions left out" in r.message
+
+
+def test_skylight_below_top_level_warns_and_names_it():
+    m = make_clean_model()
+    break_skylight_below_top(m)
+    r = _sky(m)
+    assert r.severity == "warn"
+    assert r.entities == ["roof-SK-LOW"]
+    assert "atrium" in r.message
+
+
+def test_skylight_on_top_level_of_multi_level_model_passes():
+    from building_model import Level
+
+    m = make_clean_model()
+    m.levels.insert(0, Level(id="L0", name="Basement", elevation_z_m=-H, wall_height_m=H))
+    _skylight(m)
+    assert _sky(m).severity == "pass"
+
+
+def test_skylight_does_not_count_against_facade_closure():
+    # Roof glazing must not land on a phantom "roof" facade with zero wall
+    # area, which would close the export gate on an honest skylight.
+    m = make_clean_model()
+    _skylight(m, w=5.0, h=5.0)
+    r = _by_id(run_checks(m), "facade_opening_closure")
+    assert r.severity == "pass", r.message
+
+
+def test_skylight_round_trips_through_model_json():
+    from building_model import BuildingModel
+
+    m = make_clean_model()
+    _skylight(m, tilt_deg=0.0, azimuth_deg=180.0)
+    back = BuildingModel.from_dict(m.to_dict())
+    o = back.spaces["L1-101"].openings[-1]
+    assert (o.category, o.host_facade, o.tilt_deg, o.azimuth_deg) == (
+        "skylight",
+        "roof",
+        0.0,
+        180.0,
+    )

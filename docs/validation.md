@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (38 checks)
+## The battery (39 checks)
 
 ### Conservation laws (error)
 
@@ -64,6 +64,20 @@ are consistent with each other but implausible for a real building).
   π t²; at t = 0.2 m that corner term is 0.13 m² in total, far below the 3%
   conservation tolerances, while perimeter × t is the term that matters.
   Non-convex plates make the corner term a slight overestimate only.
+- `skylight_within_roof` — **roadmap item 3, roof glazing.** Per space,
+  Σ(skylight areas) ≤ the roof area over that space. The model has no roof
+  entity yet, so this check states the convention the gbXML exporter already
+  uses: one **flat roof** over the footprint, so the roof over a space on the
+  top level is that space's floor area and spaces below the top level have
+  none. Error when a space's skylights exceed its roof (a dimension slip or a
+  wrong host space; no convention makes it real). Warn when a skylight is
+  hosted below the top level (an atrium or light well the model cannot yet
+  represent, or a level-assignment error). Skylight area resolves as the
+  opening's own area, then width × height, then its schedule entry; a
+  skylight with none of these is named and left out of the sum, never
+  counted as zero. Skips when there are no skylights. Sloped roofs (roadmap
+  item 2) replace the flat-roof assumption when they land. Skylights are
+  excluded from `facade_opening_closure`, which is about walls.
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -71,7 +85,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 35 + 3 = 38.
+and are run in addition to it, so `N_CHECKS` = 36 + 3 = 39.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area

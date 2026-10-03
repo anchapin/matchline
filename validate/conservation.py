@@ -821,3 +821,118 @@ def _check_convention_bias(ctx: _Ctx) -> CheckResult:
         expected=interior_total,
         actual=payload,
     )
+
+
+SKYLIGHT_ROOF_HOST = "roof"
+
+
+def _skylight_area(o, schedules: dict):
+    """Area of one skylight, or None when no dimensions resolve.
+
+    Same resolution order as the rest of the battery: the opening's own
+    area, then its own width x height, then the schedule entry for its tag.
+    An unresolvable skylight is opening_schedule_join's to report; here it is
+    left out of the sum and named, never counted as zero.
+    """
+    if o.area_m2 is not None:
+        return o.area_m2
+    if o.width_m is not None and o.height_m is not None:
+        return o.width_m * o.height_m
+    e = schedules.get(o.tag, {}) if o.tag else {}
+    if e.get("width_m") is not None and e.get("height_m") is not None:
+        return e["width_m"] * e["height_m"]
+    return None
+
+
+def _check_skylight_within_roof(ctx: _Ctx) -> CheckResult:
+    """Per space: skylight area <= the roof area over that space.
+
+    Roadmap item 3. The model has no roof entity yet; the gbXML exporter
+    writes one flat roof over the footprint. This check makes that convention
+    explicit instead of hiding it: the roof over a space on the top level is
+    taken to be the space's own floor area (flat roof, no overhang), and
+    spaces below the top level have no roof. Sloped roofs are roadmap item 2;
+    when they land, the roof area here becomes the space's share of the roof
+    planes and the flat-roof line goes away.
+
+    error -- a space's skylights exceed its roof area. No convention makes
+             that real: it is a dimension slip or a wrong host space.
+    warn  -- a skylight hosted by a space below the top level. Under the
+             flat-roof convention that space has no roof. It may be an atrium
+             or light well (real, but the model cannot represent it yet) or a
+             level assignment error; either way a person should look.
+    skip  -- the model has no skylights.
+    """
+    sky = [
+        (sid, sp, o)
+        for sid, sp in ctx.model.spaces.items()
+        for o in sp.openings
+        if o.category == "skylight"
+    ]
+    if not sky:
+        return CheckResult(
+            "skylight_within_roof",
+            "Skylight within roof",
+            "skip",
+            "no skylights in model",
+        )
+
+    levels = list(ctx.model.levels)
+    if levels:
+        top_z = max(lvl.elevation_z_m for lvl in levels)
+        top_ids = {lvl.id for lvl in levels if lvl.elevation_z_m == top_z}
+    elif len(ctx.level_of) == 1:
+        top_ids = set(ctx.level_of)
+    else:
+        top_ids = None  # levels undeclared: cannot tell which carries the roof
+
+    per_space: dict = {}
+    unmeasured = []
+    for sid, sp, o in sky:
+        a = _skylight_area(o, ctx.model.schedules)
+        if a is None:
+            unmeasured.append(o.id)
+            continue
+        per_space[sid] = per_space.get(sid, 0.0) + a
+
+    over = []
+    for sid, sa in per_space.items():
+        sp = ctx.model.spaces[sid]
+        roof = sp.area_m2 if sp.area_m2 is not None else abs(_shoelace(sp.polygon_m))
+        if sa > roof * (1.0 + ctx.opening_eps) + 1e-9:
+            over.append((sid, sa, roof))
+    if over:
+        sid, sa, roof = over[0]
+        return CheckResult(
+            "skylight_within_roof",
+            "Skylight within roof",
+            "error",
+            f"{len(over)} space(s) with more skylight than roof: {sid} has "
+            f"{sa:.2f} m^2 of skylight under a {roof:.2f} m^2 flat roof",
+            entities=[o[0] for o in over][:20],
+            expected=roof,
+            actual=sa,
+        )
+
+    tail = f"; {len(unmeasured)} skylight(s) without dimensions left out" if unmeasured else ""
+    if top_ids is not None:
+        below = sorted({o.id for sid, sp, o in sky if sp.level_id not in top_ids})
+        if below:
+            return CheckResult(
+                "skylight_within_roof",
+                "Skylight within roof",
+                "warn",
+                f"{len(below)} skylight(s) hosted below the top level, where the "
+                f"flat-roof convention puts no roof (atrium, or a level "
+                f"assignment error){tail}",
+                entities=below[:20],
+            )
+    note = "" if top_ids is not None else "; levels undeclared, host level not checked"
+    total = sum(per_space.values())
+    return CheckResult(
+        "skylight_within_roof",
+        "Skylight within roof",
+        "pass",
+        f"{len(sky)} skylight(s), {total:.2f} m^2, each space within its "
+        f"flat-roof area{note}{tail}",
+    )
