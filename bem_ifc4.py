@@ -207,9 +207,15 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     path = _validate_out_path(path)
     f.write(str(path))
+    n_sky = sum(1 for u in model.openings if u.category == "skylight")
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
-        f"spaces, {len(model.openings)} openings hosted, {len(model.zones)} zones."
+        f"spaces, {len(model.openings) - n_sky} openings hosted, {len(model.zones)} zones."
+        + (
+            f" {n_sky} skylight(s) not exported: IFC skylight path not implemented yet."
+            if n_sky
+            else ""
+        )
     )
     return path
 

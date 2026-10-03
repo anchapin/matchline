@@ -25,7 +25,7 @@ class BEMSpace:
 class BEMOpeningUnit:
     """One physical opening instance (expanded from count x schedule)."""
 
-    category: str  # "window" | "door"
+    category: str  # "window" | "door" | "skylight"
     tag: str  # schedule tag, e.g. "A"
     width_m: float
     height_m: float
@@ -134,13 +134,13 @@ def model_from_takeoff(
             )
             continue
         cat = line.category.lower()
-        if cat not in ("window", "door"):
+        if cat not in ("window", "door", "skylight"):
             skipped.append(
                 {
                     "tag": line.tag,
                     "category": line.category,
                     "count": line.count,
-                    "reason": f"category '{line.category}' not window/door; not placed as opening",
+                    "reason": f"category '{line.category}' not window/door/skylight; not placed as opening",
                 }
             )
             continue

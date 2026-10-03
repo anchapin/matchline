@@ -54,6 +54,7 @@ from bem_helpers import (
     _fmt,
     _opening_type,
     _place_openings_on_wall,
+    _place_skylights_on_roof,
     _wall_edges,
 )
 from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
@@ -253,6 +254,27 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     pl = _el(pg, "PolyLoop")
     for x, y in model.ring_m:
         _cartesian(pl, x, y, h)
+    # skylights on the roof (roadmap item 3). Flat roof, so absolute 3-D
+    # coordinates at z = h; CCW from above keeps the outward normal +z.
+    sky_units = [u for u in model.openings if u.category == "skylight"]
+    sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m)
+    for n in sky_notes:
+        placement_notes.append(f"roof-001: {n}")
+    for pl_ in sky_placed:
+        u = pl_["unit"]
+        open_count += 1
+        op = _el(
+            su,
+            "Opening",
+            id=f"op-{open_count:04d}",
+            openingType=_opening_type(u.category),
+            coordinatesAbsolute="true",
+        )
+        _el(op, "Name", f"{u.tag} ({u.category})")
+        opg = _el(op, "PlanarGeometry")
+        opl = _el(opg, "PolyLoop")
+        for x, y in pl_["rect"]:
+            _cartesian(opl, x, y, h)
 
     # ground floor (outward -z): clockwise from above
     surf_count += 1
@@ -269,10 +291,17 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     comment = (
         f"Jesse-Vision BEM export. Simplification area delta "
         f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tolerance:.1f}%). "
-        f"Openings: {len(model.openings)} placed by largest-remainder "
+        f"Openings: {len(model.openings) - len(sky_units)} placed by largest-remainder "
         f"apportionment across {len(edges)} walls proportional to wall "
         f"length, evenly spaced per wall; window sill {WINDOW_SILL_M} m, "
-        f"door sill {DOOR_SILL_M} m. Interior partitions omitted (v1 gap). "
+        f"door sill {DOOR_SILL_M} m. "
+        + (
+            f"Skylights: {len(sky_placed)} of {len(sky_units)} placed on the flat roof, "
+            f"spread from the roof interior outward. "
+            if sky_units
+            else ""
+        )
+        + "Interior partitions omitted (v1 gap). "
         + (" ".join(model.notes) + " " if model.notes else "")
         + (
             "Placement notes: " + "; ".join(placement_notes)
