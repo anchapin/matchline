@@ -10,9 +10,13 @@ from bem_geometry import BEMModel
 from bem_helpers import (
     _distribute_openings,
     _place_openings_on_wall,
+    _place_skylights_on_roof,
+    _roof_outline,
     _validate_out_path,
     _wall_edges,
 )
+
+ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
 
 
 def _ensure_ifc():
@@ -140,6 +144,89 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             )
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
 
+    # --- roof slab + skylights (roadmap item 3, wave 2b) ------------------
+    # Flat-roof convention from #540: one roof over the footprint at the wall
+    # top. The slab is written only when it has skylights to host, so files
+    # without skylights are unchanged. Skylights reuse the gbXML layout
+    # (_place_skylights_on_roof), so both exports put them in the same spots.
+    sky_units = [u for u in model.openings if u.category == "skylight"]
+    regions = {sp.sid: sp.polygon_m for sp in model.spaces}
+    sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m, regions=regions)
+    if sky_placed:
+        roof = _R.create_entity(f, ifc_class="IfcSlab", name="Roof", predefined_type="ROOF")
+        roof.ObjectPlacement = placement((0.0, 0.0, h), parent=storey_pl)
+        rep = _Gm.add_slab_representation(
+            f,
+            context=body,
+            depth=ROOF_SLAB_THICKNESS_M,
+            polyline=_roof_outline(model.ring_m, regions),
+        )
+        _Gm.assign_representation(f, product=roof, representation=rep)
+        _Sp.assign_container(f, products=[roof], relating_structure=storey)
+        for pl_ in sky_placed:
+            u = pl_["unit"]
+            xs_ = [pt[0] for pt in pl_["rect"]]
+            ys_ = [pt[1] for pt in pl_["rect"]]
+            sx, sy = (min(xs_) + max(xs_)) / 2.0, (min(ys_) + max(ys_)) / 2.0
+            opening = _R.create_entity(f, ifc_class="IfcOpeningElement", name=f"{u.tag} opening")
+            opening.ObjectPlacement = placement((sx, sy, 0.0), parent=roof.ObjectPlacement)
+            # real void solid: a box through the slab, so importers (ours
+            # included) can read the skylight's size from geometry
+            prof = f.create_entity(
+                "IfcRectangleProfileDef",
+                ProfileType="AREA",
+                XDim=float(u.width_m),
+                YDim=float(u.height_m),
+                Position=f.create_entity(
+                    "IfcAxis2Placement2D",
+                    Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0)),
+                ),
+            )
+            solid = f.create_entity(
+                "IfcExtrudedAreaSolid",
+                SweptArea=prof,
+                Position=f.create_entity(
+                    "IfcAxis2Placement3D",
+                    Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, -0.05)),
+                ),
+                ExtrudedDirection=f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+                Depth=ROOF_SLAB_THICKNESS_M + 0.1,
+            )
+            opening.Representation = f.create_entity(
+                "IfcProductDefinitionShape",
+                Representations=[
+                    f.create_entity(
+                        "IfcShapeRepresentation",
+                        ContextOfItems=body,
+                        RepresentationIdentifier="Body",
+                        RepresentationType="SweptSolid",
+                        Items=[solid],
+                    )
+                ],
+            )
+            f.create_entity(
+                "IfcRelVoidsElement",
+                GlobalId=ifcopenshell.guid.new(),
+                RelatingBuildingElement=roof,
+                RelatedOpeningElement=opening,
+            )
+            fill = _R.create_entity(
+                f,
+                ifc_class="IfcWindow",
+                name=f"{u.tag} (skylight {u.width_m:.2f}x{u.height_m:.2f} m)",
+                predefined_type="SKYLIGHT",
+            )
+            fill.OverallWidth = float(u.width_m)
+            fill.OverallHeight = float(u.height_m)
+            fill.ObjectPlacement = placement((0.0, 0.0, 0.0), parent=opening.ObjectPlacement)
+            f.create_entity(
+                "IfcRelFillsElement",
+                GlobalId=ifcopenshell.guid.new(),
+                RelatingOpeningElement=opening,
+                RelatedBuildingElement=fill,
+            )
+            _Sp.assign_container(f, products=[fill], relating_structure=storey)
+
     # --- spaces -----------------------------------------------------------
     ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
     for sp in model.spaces:
@@ -207,15 +294,17 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     path = _validate_out_path(path)
     f.write(str(path))
-    n_sky = sum(1 for u in model.openings if u.category == "skylight")
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
-        f"spaces, {len(model.openings) - n_sky} openings hosted, {len(model.zones)} zones."
+        f"spaces, {len(model.openings) - len(sky_units)} wall openings hosted, "
+        f"{len(model.zones)} zones."
         + (
-            f" {n_sky} skylight(s) not exported: IFC skylight path not implemented yet."
-            if n_sky
+            f" Roof slab with {len(sky_placed)} of {len(sky_units)} skylight(s) "
+            f"(IfcWindow SKYLIGHT)."
+            if sky_units
             else ""
         )
+        + ("".join(f" Roof: {n}" for n in sky_notes))
     )
     return path
 
@@ -274,7 +363,7 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
     filled = {r.RelatingOpeningElement.id() for r in f.by_type("IfcRelFillsElement")}
     for o in openings:
         if o.id() not in voided:
-            errors.append(f"opening '{o.Name}' voids no wall")
+            errors.append(f"opening '{o.Name}' voids no host element")
         if o.id() not in filled:
             errors.append(f"opening '{o.Name}' has no filling element")
     for el in list(windows) + list(doors):

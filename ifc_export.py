@@ -76,22 +76,22 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
 
     # --- openings: flatten SpaceOpenings, deduplicate --------------------
     seen: Dict[tuple, BEMOpeningUnit] = {}
-    skipped: list = []
+    sky: List[BEMOpeningUnit] = []
     for space in model.spaces.values():
         for op in space.openings:
             if op.category == "skylight":
-                # Roof glazing has no IFC path yet (roadmap item 3, wave 2:
-                # IfcWindow PredefinedType=SKYLIGHT on the roof slab). The
-                # writer maps every non-window to IfcDoor, so passing it
-                # through would export a skylight as a wall door. Skip it
-                # and say so, same as bem_geometry does for gbXML.
-                skipped.append(
-                    {
-                        "tag": op.tag,
-                        "category": op.category,
-                        "space": space.id,
-                        "reason": "skylight export not implemented yet; not placed as opening",
-                    }
+                # Roof glazing (roadmap item 3, wave 2b): one unit per
+                # skylight, no dedupe (two SK-1s over two rooms are two
+                # skylights), tied to its space so the writer keeps it over
+                # that room on the roof slab.
+                sky.append(
+                    BEMOpeningUnit(
+                        category="skylight",
+                        tag=op.tag,
+                        width_m=op.width_m,
+                        height_m=op.height_m,
+                        space_sid=space.id,
+                    )
                 )
                 continue
             key = (op.tag, op.width_m, op.height_m)
@@ -102,7 +102,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     width_m=op.width_m,
                     height_m=op.height_m,
                 )
-    openings = list(seen.values())
+    openings = list(seen.values()) + sky
 
     # --- ring: build from EnvelopeWall segments in canonical facade order -
     if model.envelope:
@@ -126,12 +126,6 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         area_delta_pct=0.0,  # no simplification on export path
         simplify_tolerance=0.0,
         zones=[(z.id, z.space_ids) for z in model.zones.values()],
-        skipped_openings=skipped,
-        notes=(
-            [f"{len(skipped)} skylight(s) not exported: IFC skylight path not implemented yet"]
-            if skipped
-            else []
-        ),
     )
 
 

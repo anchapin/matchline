@@ -336,15 +336,18 @@ class BimOpening:
     """
 
     id: str  # GlobalId of the IfcOpeningElement
-    category: str  # "window" | "door" | "unknown"
+    category: str  # "window" | "door" | "skylight" | "unknown"
     tag: str = ""
-    width_m: Optional[float] = None
-    height_m: Optional[float] = None
+    width_m: Optional[float] = None  # skylight: plan extent along x
+    height_m: Optional[float] = None  # skylight: plan extent along y
     sill_m: Optional[float] = None  # above host wall base
     s_center_m: Optional[float] = None  # along host wall from wall start
-    host_global_id: str = ""  # the IfcWall / host element
+    host_global_id: str = ""  # the IfcWall / IfcSlab / host element
     fill_global_id: str = ""  # the IfcWindow / IfcDoor
     provenance: Provenance | None = None
+    # Skylights only (roof-hosted): plan centre [x, y] in the canonical
+    # y-down frame, used to attach the skylight to the space under it.
+    plan_center_m: Optional[list] = None
 
 
 @dataclass

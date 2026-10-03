@@ -31,6 +31,10 @@ class BEMOpeningUnit:
     height_m: float
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
+    # Skylights only: the space whose roof hosts it, when known (IFC export
+    # path from a BuildingModel). Empty means "anywhere on the roof"
+    # (takeoff lines carry no space).
+    space_sid: str = ""
 
 
 @dataclass

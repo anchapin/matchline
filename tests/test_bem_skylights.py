@@ -20,6 +20,7 @@ from bem_helpers import (
     SKYLIGHT_SETBACK_M,
     _opening_type,
     _place_skylights_on_roof,
+    _roof_outline,
 )
 
 RING = [(0.0, 0.0), (20.0, 0.0), (20.0, 12.0), (0.0, 12.0)]
@@ -140,10 +141,26 @@ def test_gbxml_without_skylights_has_no_roof_openings(tmp_path):
     assert roof.findall("g:Opening", ns) == []
 
 
-def test_ifc4_names_skipped_skylights_in_notes(tmp_path):
+def test_ifc4_notes_count_roof_skylights(tmp_path):
     pytest.importorskip("ifcopenshell")
     from bem_export import write_ifc4
 
     m = _model(_sky(2))
     write_ifc4(m, tmp_path / "sky.ifc")
-    assert any("2 skylight(s) not exported" in n for n in m.notes)
+    assert any("Roof slab with 2 of 2 skylight(s)" in n for n in m.notes)
+
+
+def test_degenerate_space_footprint_falls_back_to_whole_roof():
+    u = BEMOpeningUnit("skylight", "SK-1", 1.2, 1.2, space_sid="sp-x")
+    placed, notes = _place_skylights_on_roof([u], RING, regions={"sp-x": [(0, 0), (1, 1)]})
+    assert len(placed) == 1 and not notes
+
+
+def test_roof_outline_falls_back_to_space_union_when_ring_is_degenerate():
+    west = [(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)]
+    east = [(10.0, 0.0), (20.0, 0.0), (20.0, 8.0), (10.0, 8.0)]
+    out = _roof_outline([(0.0, 0.0), (20.0, 0.0)], {"w": west, "e": east})
+    assert out and math.isclose(Polygon(out).area, 160.0) and Polygon(out).exterior.is_ccw
+    # disjoint footprints give no single roof: no guessing a hull
+    far = [(30.0, 0.0), (35.0, 0.0), (35.0, 5.0), (30.0, 5.0)]
+    assert _roof_outline([], {"w": west, "f": far}) is None
