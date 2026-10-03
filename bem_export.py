@@ -191,7 +191,9 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     # --- envelope surfaces ------------------------------------------------
     edges = _wall_edges(model.ring_m)
-    opening_assign = _distribute_openings(model.openings, edges)
+    opening_assign = _distribute_openings(
+        model.openings, edges, getattr(model, "ring_facades", None)
+    )
     surf_count = 0
     open_count = 0
     placement_notes = []

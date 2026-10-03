@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1108 # +10: roadmap item 7 Tier 1, IFC round-trip fidelity
+          EXPECTED_TEST_COUNT=1116 # +8: wall openings placed by facade
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

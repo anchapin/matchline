@@ -26,6 +26,7 @@ from bem_export import (
     validate_ifc4,
     write_ifc4,
 )
+from bem_helpers import _edge_facades
 from building_model import BuildingModel, EnvelopeWall, SpaceLighting
 from validate import validate_bem_conservation
 
@@ -119,6 +120,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     tag=op.tag,
                     width_m=op.width_m,
                     height_m=op.height_m,
+                    host_facade=op.host_facade or "",
                 )
             )
     openings = wall_units + sky
@@ -146,6 +148,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         spaces=spaces,
         openings=openings,
         ring_m=ring_ccw,
+        ring_facades=_edge_facades(ring_ccw, y_north=True),
         wall_height_m=wall_height,
         area_delta_pct=0.0,  # no simplification on export path
         simplify_tolerance=0.0,

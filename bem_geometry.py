@@ -35,6 +35,10 @@ class BEMOpeningUnit:
     # path from a BuildingModel). Empty means "anywhere on the roof"
     # (takeoff lines carry no space).
     space_sid: str = ""
+    # Wall openings: the facade the drawing/model put it on ("south", ...),
+    # when known. Writers use it to keep the opening on that facade's walls;
+    # empty means distribute by wall length as before.
+    host_facade: str = ""
 
 
 @dataclass
@@ -64,6 +68,9 @@ class BEMModel:
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
     shades: list = field(default_factory=list)  # BEMShade (roadmap item 5)
+    # facade of each ring edge i -> i+1 (parallel to ring_m), set by adapters
+    # that know which frame their ring is in; empty when unknown
+    ring_facades: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 
