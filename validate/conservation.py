@@ -261,6 +261,50 @@ def _check_bem_area_conservation(bem: BEMModel, tol_area: float) -> CheckResult:
     )
 
 
+def _check_bem_space_area_matches_polygon(bem: BEMModel, tol_area: float) -> CheckResult:
+    """Each BEM space's stored area_m2 matches the area of its own polygon.
+
+    Issue #478: an export must block when a space claims more (or less) floor
+    than its outline encloses. Before this check the case was caught only by
+    accident, through a malformed envelope ring that pushed the volume check
+    onto its floor-area fallback; with a correct ring it slipped through.
+    Spaces without a usable polygon or area are skipped, not guessed.
+    """
+    bad = []
+    checked = 0
+    for sp in bem.spaces:
+        poly = getattr(sp, "polygon_m", None) or []
+        if len(poly) < 3 or not sp.area_m2:
+            continue
+        poly_area = abs(_shoelace(poly))
+        if poly_area <= 0:
+            continue
+        checked += 1
+        delta = abs(sp.area_m2 - poly_area) / poly_area
+        if delta > tol_area:
+            bad.append((sp.sid, sp.area_m2, poly_area, delta))
+    if bad:
+        lines = [
+            f"space {sid}: area_m2={a:.2f} vs polygon {pa:.2f} ({d * 100:.2f}% delta)"
+            for sid, a, pa, d in bad
+        ]
+        return CheckResult(
+            "bem_space_area_matches_polygon",
+            "BEM space area matches its polygon",
+            "error",
+            f"{len(bad)} space(s) exceed {tol_area * 100:.0f}% tolerance:\n" + "\n".join(lines),
+            entities=[b[0] for b in bad],
+        )
+    return CheckResult(
+        "bem_space_area_matches_polygon",
+        "BEM space area matches its polygon",
+        "pass" if checked else "skip",
+        f"{checked} space area(s) match their polygons within {tol_area * 100:.0f}%"
+        if checked
+        else "no spaces with both a polygon and an area",
+    )
+
+
 def _check_bem_zone_space_refs(bem: BEMModel) -> CheckResult:
     """Every zone.space_ids must reference an existing space in bem.spaces."""
     space_ids = {sp.sid for sp in bem.spaces}
@@ -410,6 +454,7 @@ def validate_bem_conservation(
     """
     results: list[CheckResult] = []
     results.append(_check_bem_area_conservation(bem, tol_area))
+    results.append(_check_bem_space_area_matches_polygon(bem, tol_area))
     results.append(_check_bem_volume_conservation(bem, tol_volume))
     results.append(_check_bem_zone_space_refs(bem))
     results.append(_check_bem_hvac_zone_refs(bem))
