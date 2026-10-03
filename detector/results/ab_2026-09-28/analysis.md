@@ -49,7 +49,7 @@ The accuracy question reduces to whether the deltas are signal or noise:
   arm's seed-to-seed range. Not distinguishable from training noise at n=3.
 - **mAP50-95 Δ = +0.0037, within-arm spread ≈ 0.009.** The delta is ~40% of
   one arm's seed-to-seed range. A weak but consistent positive on the
-  tighter metric.
+  stricter metric.
 - **Precision Δ = +0.0075, Recall Δ = −0.0039.** The ECA arm trades a little
   recall for more precision at the operating point Ultralytics evaluates at
   the end of training. Consistent with the attention block sharpening
@@ -137,6 +137,6 @@ The disposition (kept as an opt-in arm) is unchanged. The mechanism ECA is
 claimed to help with, discriminating visually similar intra-class variants,
 is barely exercised by `nc: 2` (door, window).
 
-"Tighter metric" in the mAP50-95 bullet is left as written: mAP50-95 averages
-over IoU 0.5 to 0.95, so it demands tighter localization than mAP50. It means
-the same thing as "wider-IoU" in the disposition, seen from the other side.
+The mAP50-95 bullet originally called it the "tighter" metric. That is now
+"stricter": it averages over IoU 0.5 to 0.95, so it demands tighter localization,
+but "tighter" also reads as a narrower IoU range, which is backwards.
