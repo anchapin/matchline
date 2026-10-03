@@ -190,6 +190,13 @@ def model_from_linked_model(
 
     area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
+    from bem_shading import shades_from_model
+
+    shades, shade_notes = shades_from_model(
+        model, lambda p: (p[0], p[1]), [sp.polygon_m for sp in bem_spaces]
+    )
+    notes.extend(shade_notes)
+
     bem = BEMModel(
         building_name=model.name,
         spaces=bem_spaces,
@@ -200,6 +207,7 @@ def model_from_linked_model(
         simplify_tolerance=simplify_tolerance,
         skipped_openings=skipped_openings,
         notes=notes,
+        shades=shades,
     )
 
     return bem
