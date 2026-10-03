@@ -636,6 +636,60 @@ def _wall_direction_from_entity(el):
     return (dx / norm, dy / norm)
 
 
+def _attach_skylights_to_spaces(model):
+    """Attach roof-hosted skylights to the space under their plan centre.
+
+    Same level as the host slab when both carry a level. A skylight over no
+    space is left unattached and flagged for review, never forced onto the
+    nearest room.
+    """
+    for el in model.bim_elements:
+        if el.ifc_class not in ("IfcSlab", "IfcRoof"):
+            continue
+        for bo in el.openings:
+            if bo.category != "skylight" or not bo.plan_center_m:
+                continue
+            pt = (bo.plan_center_m[0], bo.plan_center_m[1])
+            host = None
+            for sp in model.spaces.values():
+                if el.level_id and sp.level_id and sp.level_id != el.level_id:
+                    continue
+                if sp.polygon_m and _point_in_polygon(pt, sp.polygon_m):
+                    host = sp
+                    break
+            if host is None:
+                model.flag_for_review(
+                    kind="opening_attachment",
+                    description=(
+                        f"Skylight {bo.tag or bo.id} on {el.ifc_class} {el.global_id} "
+                        f"sits over no space on {el.level_id or 'its level'}; left unattached."
+                    ),
+                    confidence=0.3,
+                    provenance=bo.provenance
+                    or Provenance(
+                        sheet_id="ifc",
+                        revision=0,
+                        method="ifc_import:tier1:skylight_attachment",
+                        confidence=0.3,
+                        note=f"GlobalId={bo.id}",
+                    ),
+                )
+                continue
+            w, h = bo.width_m, bo.height_m
+            host.openings.append(
+                SpaceOpening(
+                    id=bo.id,
+                    tag=bo.tag,
+                    category="skylight",
+                    width_m=w or 0.0,
+                    height_m=h or 0.0,
+                    host_facade="roof",
+                    area_m2=round(w * h, 4) if w and h else None,
+                    provenance=bo.provenance,
+                )
+            )
+
+
 def _attach_openings_to_spaces(model):
     """Tier-1 fallback: attach BEM openings to the spaces whose polygons contain them.
 
@@ -647,6 +701,7 @@ def _attach_openings_to_spaces(model):
     per-reason breakdown: ``no_envelope_edge``, ``ambiguous_tie``,
     ``no_ref_direction``.
     """
+    _attach_skylights_to_spaces(model)
     for el in model.bim_elements:
         if not el.openings or not el.placement_m:
             continue
@@ -982,6 +1037,21 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         )
                     )
 
+            # skylights: windows hosted in a roof or slab (roadmap item 3).
+            # Only window fills are read; an unfilled slab void is a shaft
+            # or stair hole, not glazing, and stays out of the opening count.
+            elif cls in ("IfcSlab", "IfcRoof"):
+                for ogid, host in voids.items():
+                    if host.GlobalId != gid:
+                        continue
+                    opening = openings_by_gid.get(ogid)
+                    fill = fills.get(ogid)
+                    if opening is None or fill is None or not fill.is_a("IfcWindow"):
+                        continue
+                    be.openings.append(
+                        _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=gid)
+                    )
+
         if wall_heights:
             level.wall_height_m = round(max(wall_heights), 4)
 
@@ -1028,6 +1098,65 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
 def _r4(v):
     return round(v, 4) if v is not None else None
+
+
+def _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=""):
+    """One skylight BimOpening from a window hosted in a slab or roof.
+
+    Plan size and centre come from the opening solid in world coordinates
+    (placement chain composed, like _read_opening does for walls). With no
+    solid, the centre falls back to the opening placement and the size to the
+    window's OverallWidth/OverallHeight, at lower confidence.
+    """
+    ogid = opening.GlobalId
+    fgid = fill.GlobalId
+    tag = _parse_fill_tag(fill.Name)
+    t = _placement_transform(opening, scale)
+    width_m = height_m = None
+    center = None
+    conf, method = 0.6, "ifc_import:tier0:skylight:placement"
+    note = "opening placement only; size from window OverallWidth/OverallHeight"
+    verts = _geom_verts(opening)
+    if verts:
+        xs, ys = [], []
+        for i in range(0, len(verts), 3):
+            wx, wy, _ = _apply(t, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+            xs.append(wx)
+            ys.append(wy)
+        if xs:
+            width_m, height_m = max(xs) - min(xs), max(ys) - min(ys)
+            center = (0.5 * (min(xs) + max(xs)), 0.5 * (min(ys) + max(ys)))
+            conf, method = 0.95, "ifc_import:tier0:skylight:solid"
+            note = "plan size from opening solid, world frame"
+    if center is None:
+        center = (t[1], t[2])
+        ow, oh = getattr(fill, "OverallWidth", None), getattr(fill, "OverallHeight", None)
+        width_m = ow * scale if ow else None
+        height_m = oh * scale if oh else None
+    ptype = getattr(fill, "PredefinedType", None)
+    if ptype and ptype != "SKYLIGHT":
+        note += f"; fill PredefinedType {ptype}, read as skylight because its host is a roof/slab"
+    cx, cy = _to_canonical(*center)
+    p = Provenance(
+        sheet_id=sheet,
+        revision=revision,
+        method=method,
+        confidence=conf,
+        note=f"GlobalId={ogid} fill={fgid} {note}".strip(),
+    )
+    if tag:
+        p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
+    return BimOpening(
+        id=ogid,
+        category="skylight",
+        tag=tag,
+        width_m=_r4(width_m),
+        height_m=_r4(height_m),
+        host_global_id=host_gid,
+        fill_global_id=fgid,
+        provenance=p,
+        plan_center_m=[round(cx, 4), round(cy, 4)],
+    )
 
 
 def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):

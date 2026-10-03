@@ -189,15 +189,17 @@ def test_ifc_export_blocks_invalid_bem_conservation(tmp_path):
     assert not ifc_path.exists()
 
 
-def test_skylights_are_skipped_not_exported_as_doors(tmp_path):
-    # Until the IFC skylight path exists (roadmap item 3, wave 2), a skylight
-    # must not reach the writer, which maps every non-window to IfcDoor.
+def test_skylights_export_as_ifcwindow_skylight_on_a_roof_slab(tmp_path):
+    # Roadmap item 3, wave 2b: a skylight leaves as IfcWindow
+    # PredefinedType=SKYLIGHT voiding a roof IfcSlab, never as a wall door.
     from building_model import SpaceOpening
     from ifc_export import _bem_from_model
 
     m = _simple_model(n_spaces=1)
     before = _export_ifc(m, tmp_path / "before.ifc")
-    doors_before = len(ifcopenshell.open(str(before)).by_type("IfcDoor"))
+    fb = ifcopenshell.open(str(before))
+    doors_before = len(fb.by_type("IfcDoor"))
+    assert not fb.by_type("IfcSlab")  # no skylights, no roof slab: unchanged output
     sid = next(iter(m.spaces))
     m.spaces[sid].openings.append(
         SpaceOpening(
@@ -212,10 +214,16 @@ def test_skylights_are_skipped_not_exported_as_doors(tmp_path):
         )
     )
     bem = _bem_from_model(m)
-    assert all(u.category != "skylight" for u in bem.openings)
-    assert [d["tag"] for d in bem.skipped_openings] == ["SK-1"]
-    assert any("skylight" in n for n in bem.notes)
+    sky = [u for u in bem.openings if u.category == "skylight"]
+    assert [(u.tag, u.space_sid) for u in sky] == [("SK-1", sid)]
     after = _export_ifc(m, tmp_path / "after.ifc")
     f = ifcopenshell.open(str(after))
     assert len(f.by_type("IfcDoor")) == doors_before
     assert not any("SK-1" in (d.Name or "") for d in f.by_type("IfcDoor"))
+    slabs = f.by_type("IfcSlab")
+    assert len(slabs) == 1 and slabs[0].PredefinedType == "ROOF"
+    skys = [w for w in f.by_type("IfcWindow") if w.PredefinedType == "SKYLIGHT"]
+    assert len(skys) == 1 and "SK-1" in skys[0].Name
+    (fill_rel,) = skys[0].FillsVoids
+    (void_rel,) = fill_rel.RelatingOpeningElement.VoidsElements
+    assert void_rel.RelatingBuildingElement == slabs[0]

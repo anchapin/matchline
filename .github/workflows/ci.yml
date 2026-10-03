@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1040 # +11: roadmap item 3 wave 2a, gbXML skylights (tests/test_bem_skylights.py)
+          EXPECTED_TEST_COUNT=1047 # +7: roadmap item 3 wave 2b, IFC skylights (5 in tests/test_ifc_skylights.py, +2 in tests/test_bem_skylights.py; the #540 skip test in tests/test_ifc_export.py now asserts IfcWindow SKYLIGHT)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

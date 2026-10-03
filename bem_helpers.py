@@ -102,12 +102,36 @@ def _opening_type(category: str) -> str:
     return "FixedWindow" if category == "window" else "NonSlidingDoor"
 
 
+def _roof_outline(ring, regions=None):
+    """The flat roof's outline: the envelope ring, or, when the ring is
+    degenerate (an envelope with fewer than three usable edges), the union of
+    the space footprints when that union is one polygon. None if neither
+    gives a roof. Returned CCW so the roof's outward normal is +z.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    if ring and len(ring) >= 3:
+        roof = Polygon(ring)
+        if roof.is_valid and roof.area > 0:
+            return [tuple(map(float, pt)) for pt in roof.exterior.coords[:-1]]
+    polys = [Polygon(pg) for pg in (regions or {}).values() if pg and len(pg) >= 3]
+    polys = [pg for pg in polys if pg.is_valid and pg.area > 0]
+    if not polys:
+        return None
+    u = unary_union(polys)
+    if u.geom_type != "Polygon" or u.area <= 0:
+        return None
+    ext = u.exterior if u.exterior.is_ccw else u.exterior.reverse()
+    return [tuple(map(float, pt)) for pt in ext.coords[:-1]]
+
+
 SKYLIGHT_SETBACK_M = 0.30  # min distance from a skylight to the roof edge
 SKYLIGHT_CLEARANCE_M = 0.30  # min gap between two skylights
 SKYLIGHT_GRID_STEP_M = 0.25  # candidate-centre spacing
 
 
-def _place_skylights_on_roof(units, ring):
+def _place_skylights_on_roof(units, ring, regions=None):
     """Place skylight units on a flat roof over ``ring`` (CCW, metres).
 
     Takeoff lines carry a count and schedule dimensions, never a position,
@@ -119,6 +143,11 @@ def _place_skylights_on_roof(units, ring):
     roof's interior point, each next one at the candidate farthest from those
     already placed, so the layout spreads over the roof instead of packing
     into one corner (top-lighting depends on the spread).
+
+    ``regions`` maps a space id to its polygon (same frame as ``ring``). A
+    unit whose ``space_sid`` is in it is confined to that space's share of
+    the roof, so a skylight the drawings put over room 101 stays over 101;
+    a unit with no known space may go anywhere on the roof.
 
     Deterministic. A unit that cannot fit is skipped with a note, never
     shrunk: a scaled skylight would quietly change glazing area, which the
@@ -134,21 +163,33 @@ def _place_skylights_on_roof(units, ring):
     placements, notes = [], []
     if not units:
         return placements, notes
-    roof = Polygon(ring)
-    if not roof.is_valid or roof.area <= 0:
+    outline = _roof_outline(ring, regions)
+    roof = Polygon(outline) if outline else Polygon()
+    if roof.is_empty or not roof.is_valid or roof.area <= 0:
         notes.append(f"{len(units)} skylight(s) skipped: roof outline is degenerate")
         return placements, notes
-    usable = roof.buffer(-SKYLIGHT_SETBACK_M)
+    usable_roof = roof.buffer(-SKYLIGHT_SETBACK_M)
+    usable_by_sid = {}
+    for sid, poly in (regions or {}).items():
+        # a space with no usable footprint simply has no region: its
+        # skylights fall back to the whole roof rather than failing the export
+        if not poly or len(poly) < 3:
+            continue
+        reg = Polygon(poly)
+        if reg.is_valid and reg.area > 0:
+            usable_by_sid[sid] = roof.intersection(reg).buffer(-SKYLIGHT_SETBACK_M)
     minx, miny, maxx, maxy = roof.bounds
     xs = np.arange(minx, maxx + 1e-9, SKYLIGHT_GRID_STEP_M)
     ys = np.arange(miny, maxy + 1e-9, SKYLIGHT_GRID_STEP_M)
     cx, cy = (a.ravel() for a in np.meshgrid(xs, ys))
-    anchor = roof.representative_point()
     taken = None  # union of placed skylights grown by the clearance
     centres = []
     order = sorted(units, key=lambda u: (-(u.width_m * u.height_m), u.tag))
     for u in order:
         hw, hh = u.width_m / 2.0, u.height_m / 2.0
+        sid = getattr(u, "space_sid", "") or ""
+        usable = usable_by_sid.get(sid, usable_roof)
+        where = f"space {sid}" if sid in usable_by_sid else "the roof"
         boxes = shapely.box(cx - hw, cy - hh, cx + hw, cy + hh)
         ok = shapely.contains(usable, boxes) if not usable.is_empty else np.zeros(len(cx), bool)
         if taken is not None:
@@ -156,7 +197,7 @@ def _place_skylights_on_roof(units, ring):
         if not ok.any():
             notes.append(
                 f"{u.tag}: skipped, no room for a {u.width_m:.2f}x{u.height_m:.2f} m "
-                f"skylight on the roof (setback {SKYLIGHT_SETBACK_M} m, "
+                f"skylight over {where} (setback {SKYLIGHT_SETBACK_M} m, "
                 f"clearance {SKYLIGHT_CLEARANCE_M} m)"
             )
             continue
@@ -166,6 +207,7 @@ def _place_skylights_on_roof(units, ring):
             d = np.min(np.hypot(cx[idx][:, None] - pc[:, 0], cy[idx][:, None] - pc[:, 1]), axis=1)
             k = idx[int(np.argmax(d))]
         else:
+            anchor = (usable if not usable.is_empty else roof).representative_point()
             k = idx[int(np.argmin(np.hypot(cx[idx] - anchor.x, cy[idx] - anchor.y)))]
         x, y = float(cx[k]), float(cy[k])
         rect = [(x - hw, y - hh), (x + hw, y - hh), (x + hw, y + hh), (x - hw, y + hh)]

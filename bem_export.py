@@ -257,7 +257,9 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     # skylights on the roof (roadmap item 3). Flat roof, so absolute 3-D
     # coordinates at z = h; CCW from above keeps the outward normal +z.
     sky_units = [u for u in model.openings if u.category == "skylight"]
-    sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m)
+    sky_placed, sky_notes = _place_skylights_on_roof(
+        sky_units, model.ring_m, regions={sp.sid: sp.polygon_m for sp in model.spaces}
+    )
     for n in sky_notes:
         placement_notes.append(f"roof-001: {n}")
     for pl_ in sky_placed:
@@ -297,7 +299,8 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         f"door sill {DOOR_SILL_M} m. "
         + (
             f"Skylights: {len(sky_placed)} of {len(sky_units)} placed on the flat roof, "
-            f"spread from the roof interior outward. "
+            f"spread from the roof interior outward, each kept over its own space "
+            f"when the model knows it. "
             if sky_units
             else ""
         )
