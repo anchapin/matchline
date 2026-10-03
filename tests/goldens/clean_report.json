@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 40,
+  "n_checks": 41,
   "errors": 0,
   "warnings": 0,
   "passes": 29,
-  "skipped": 11
+  "skipped": 12
  },
  "results": [
   {
@@ -60,6 +60,13 @@
    "name": "Wall construction coverage",
    "severity": "skip",
    "message": "no wall constructions in model",
+   "entities": []
+  },
+  {
+   "check_id": "shading_host_reference",
+   "name": "Shading host reference",
+   "severity": "skip",
+   "message": "no shading surfaces in model",
    "entities": []
   },
   {

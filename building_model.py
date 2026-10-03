@@ -316,6 +316,34 @@ class OpeningAttachmentSummary:
 
 
 @dataclass
+class ShadingSurface:
+    """One exterior projection that shades the envelope (roadmap item 5).
+
+    Overhangs, fins and balconies matter to BEM as shading, not as envelope:
+    they live here, outside ``BuildingModel.envelope``, so the envelope area
+    budget and closure checks never count them.
+
+    Placement is relative to the host wall segment, in its own frame:
+    ``along_m`` runs from the segment's ``from_m`` end toward ``to_m``,
+    ``z_m`` is height above the host level's floor, and ``depth_m`` is the
+    projection outward from the exterior wall face. An overhang or balcony
+    is horizontal (``width_m`` along the wall at height ``z_m``); a fin is
+    vertical (at ``along_m``, from ``z_m`` up ``height_m``).
+    """
+
+    id: str
+    kind: str  # "overhang" | "fin" | "balcony" | "other"
+    host_wall_id: str = ""  # EnvelopeWall.id; empty = no host (suspicious)
+    host_opening_id: str = ""  # SpaceOpening.id it shades, if any
+    along_m: Optional[float] = None
+    width_m: Optional[float] = None  # extent along the wall (overhang/balcony)
+    z_m: Optional[float] = None
+    depth_m: Optional[float] = None  # projection from the wall face
+    height_m: Optional[float] = None  # vertical extent (fin)
+    provenance: Provenance | None = None
+
+
+@dataclass
 class Construction:
     """One exterior wall assembly (roadmap item 6).
 
@@ -536,6 +564,8 @@ class BuildingModel:
         envelope: All envelope wall segments (walls, windows, doors).
         constructions: Exterior wall assemblies keyed by ``Construction.id``;
             ``EnvelopeWall.construction_id`` points here.
+        shading: Exterior shading projections hosted on envelope walls;
+            kept out of ``envelope`` so they never enter the area budget.
         bim_elements: All BIM elements from IFC import.
         schedules: Lighting and other schedules as plain dicts, keyed by
             schedule tag. Revived from plain dict on model load.
@@ -571,6 +601,8 @@ class BuildingModel:
     zones: Dict[str, Zone] = field(default_factory=dict)
     envelope: List[EnvelopeWall] = field(default_factory=list)
     constructions: Dict[str, Construction] = field(default_factory=dict)
+    shading: List[ShadingSurface] = field(default_factory=list)
+    # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
     bim_elements: List[BimElement] = field(default_factory=list)
     # raw BIM element inventory (IFC frontend, Tier 0+)

@@ -1067,3 +1067,120 @@ def _check_wall_construction_coverage(ctx: _Ctx) -> CheckResult:
         "pass",
         f"{len(walls)} segment(s), {len(cons)} construction(s), {len(aa)} space(s) rolled up{rng}",
     )
+
+
+SHADING_DEPTH_PLAUSIBLE_M = 5.0  # deeper than this is almost surely a misread
+_SHADING_EXTENT_EPS_M = 0.05
+
+
+def _check_shading_host_reference(ctx: _Ctx) -> CheckResult:
+    """Every shading surface is attached to a real, adjacent host.
+
+    Roadmap item 5. A projection with no host is most likely a detection
+    error (a dimension line or a neighbouring building read as a balcony),
+    so it is flagged rather than exported as free-floating shade.
+
+    error -- a host wall or host opening that does not exist; a host opening
+             on a different facade from the host wall (not adjacent); a
+             non-positive depth, overhang/balcony width, or fin height.
+    warn  -- no host wall at all; the surface runs past the ends of its host
+             wall; it sits above the wall's height; or its depth exceeds
+             5 m (implausible for an overhang, fin or balcony).
+    skip  -- the model has no shading surfaces.
+    """
+    cid_ = "shading_host_reference"
+    title = "Shading host reference"
+    model = ctx.model
+    shades = list(getattr(model, "shading", []) or [])
+    if not shades:
+        return CheckResult(cid_, title, "skip", "no shading surfaces in model")
+
+    walls = {w.id: w for w in model.envelope}
+    openings = {o.id: o for sp in model.spaces.values() for o in sp.openings}
+
+    errors: list = []
+    for sh in shades:
+        if sh.host_wall_id and sh.host_wall_id not in walls:
+            errors.append((sh.id, f"host wall {sh.host_wall_id} does not exist"))
+            continue
+        if sh.host_opening_id:
+            op = openings.get(sh.host_opening_id)
+            if op is None:
+                errors.append((sh.id, f"host opening {sh.host_opening_id} does not exist"))
+                continue
+            w = walls.get(sh.host_wall_id)
+            if w is not None and op.host_facade and op.host_facade != w.facade:
+                errors.append(
+                    (
+                        sh.id,
+                        f"shades {op.id} on the {op.host_facade} facade but is "
+                        f"hosted on {w.id} ({w.facade})",
+                    )
+                )
+                continue
+        if sh.depth_m is not None and sh.depth_m <= 0:
+            errors.append((sh.id, f"depth {sh.depth_m} m"))
+        elif sh.kind == "fin" and sh.height_m is not None and sh.height_m <= 0:
+            errors.append((sh.id, f"fin height {sh.height_m} m"))
+        elif sh.kind != "fin" and sh.width_m is not None and sh.width_m <= 0:
+            errors.append((sh.id, f"width {sh.width_m} m"))
+    if errors:
+        sid, why = errors[0]
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(errors)} shading surface(s) with a bad host or size: {sid}: {why}",
+            entities=[e[0] for e in errors][:20],
+        )
+
+    unhosted = sorted(sh.id for sh in shades if not sh.host_wall_id)
+    past_ends = []
+    too_high = []
+    too_deep = sorted(
+        sh.id for sh in shades if sh.depth_m is not None and sh.depth_m > SHADING_DEPTH_PLAUSIBLE_M
+    )
+    for sh in shades:
+        w = walls.get(sh.host_wall_id)
+        if w is None:
+            continue
+        length = w.length_m
+        if length is None and w.from_m and w.to_m:
+            length = math.dist(w.from_m, w.to_m)
+        if length is not None and sh.along_m is not None:
+            span = sh.width_m if (sh.kind != "fin" and sh.width_m) else 0.0
+            if (
+                sh.along_m < -_SHADING_EXTENT_EPS_M
+                or sh.along_m + span > length + _SHADING_EXTENT_EPS_M
+            ):
+                past_ends.append(sh.id)
+        if w.height_m is not None and sh.z_m is not None:
+            if sh.z_m > w.height_m + _SHADING_EXTENT_EPS_M:
+                too_high.append(sh.id)
+    gaps = []
+    if unhosted:
+        gaps.append(f"{len(unhosted)} with no host wall (likely a detection error)")
+    if past_ends:
+        gaps.append(f"{len(past_ends)} running past the ends of the host wall")
+    if too_high:
+        gaps.append(f"{len(too_high)} above the host wall's height")
+    if too_deep:
+        gaps.append(f"{len(too_deep)} deeper than {SHADING_DEPTH_PLAUSIBLE_M:g} m")
+    if gaps:
+        return CheckResult(
+            cid_,
+            title,
+            "warn",
+            "shading surface(s) " + "; ".join(gaps),
+            entities=(unhosted + past_ends + too_high + too_deep)[:20],
+        )
+    kinds: dict = {}
+    for sh in shades:
+        kinds[sh.kind] = kinds.get(sh.kind, 0) + 1
+    breakdown = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+    return CheckResult(
+        cid_,
+        title,
+        "pass",
+        f"{len(shades)} shading surface(s) ({breakdown}), each on an existing host",
+    )
