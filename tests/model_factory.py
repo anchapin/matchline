@@ -741,3 +741,51 @@ def break_wall_u_rollup_drift(m: BuildingModel):
     """A stored per-space U-value no longer matches its segments."""
     add_wall_constructions(m)
     m.constructions["W-2"].u_value_w_m2k = 1.20  # edited after the rollup ran
+
+
+# -- roadmap item 5: shading surfaces --------------------------------------
+
+
+def add_shading(m: BuildingModel):
+    """A 0.6 m overhang over the south windows and a 0.4 m fin on the east wall."""
+    from building_model import ShadingSurface
+
+    south = next(w for w in m.envelope if w.facade == "south")
+    east = next(w for w in m.envelope if w.facade == "east")
+    m.shading.append(
+        ShadingSurface(
+            id="SH-OVH-1",
+            kind="overhang",
+            host_wall_id=south.id,
+            host_opening_id="south-W1",
+            along_m=0.5,
+            width_m=4.0,
+            z_m=2.2,
+            depth_m=0.6,
+            provenance=P(sheet="arch_A201", method="elevation_projection"),
+        )
+    )
+    m.shading.append(
+        ShadingSurface(
+            id="SH-FIN-1",
+            kind="fin",
+            host_wall_id=east.id,
+            along_m=3.0,
+            z_m=0.0,
+            depth_m=0.4,
+            height_m=east.height_m,
+            provenance=P(sheet="arch_A201", method="elevation_projection"),
+        )
+    )
+
+
+def break_shading_dangling_host(m: BuildingModel):
+    """An overhang hosted on a wall segment that does not exist."""
+    add_shading(m)
+    m.shading[0].host_wall_id = "L1-EW99"
+
+
+def break_shading_unhosted(m: BuildingModel):
+    """A projection read with no host wall: likely a detection error."""
+    add_shading(m)
+    m.shading[1].host_wall_id = ""

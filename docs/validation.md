@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (40 checks)
+## The battery (41 checks)
 
 ### Conservation laws (error)
 
@@ -95,6 +95,18 @@ are consistent with each other but implausible for a real building).
   drawing path does not extract wall types yet). U is SI (W/m²K); the
   ASHRAE 90.1 U-factor checks still read their own IP field and are not
   wired to this yet.
+- `shading_host_reference` — **roadmap item 5, shading surfaces.**
+  Overhangs, fins and balconies live in `BuildingModel.shading`, outside
+  `envelope`, so the envelope area budget and closure checks never count
+  them. Each surface is placed in its host wall's frame (`along_m` from the
+  wall's `from_m` end, `z_m` above the level floor, `depth_m` out from the
+  wall face). Error when the host wall or host opening does not exist, when
+  the host opening is on a different facade from the host wall (not
+  adjacent), or when depth, overhang/balcony width, or fin height is not
+  positive. Warn when a surface has no host wall (most likely a detection
+  error: a dimension line or a neighbouring building read as a projection),
+  runs past the ends of its host wall by more than 5 cm, sits above the
+  wall's height, or projects more than 5 m. Skips when there is no shading.
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -102,7 +114,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 37 + 3 = 40.
+and are run in addition to it, so `N_CHECKS` = 38 + 3 = 41.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
