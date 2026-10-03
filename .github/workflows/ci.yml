@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1029 # +12: roadmap item 3 skylight_within_roof check (9 tests in tests/test_validate.py pinning skip-without-skylights, per-space summing, dims-then-schedule area fallback, named-not-zeroed unmeasured skylights, the below-top-level warn, facade-closure exclusion and JSON round-trip, plus 2 defect-battery parametrize rows, plus 1 in tests/test_ifc_export.py pinning that skylights are skipped, not exported as IfcDoor, until wave 2).
+          EXPECTED_TEST_COUNT=1040 # +11: roadmap item 3 wave 2a, gbXML skylights (tests/test_bem_skylights.py)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

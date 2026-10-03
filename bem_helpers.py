@@ -97,7 +97,83 @@ def _distribute_openings(openings, edges):
 
 def _opening_type(category: str) -> str:
     # openingTypeEnum has no generic "Door": NonSlidingDoor is the closest.
+    if category == "skylight":
+        return "FixedSkylight"
     return "FixedWindow" if category == "window" else "NonSlidingDoor"
+
+
+SKYLIGHT_SETBACK_M = 0.30  # min distance from a skylight to the roof edge
+SKYLIGHT_CLEARANCE_M = 0.30  # min gap between two skylights
+SKYLIGHT_GRID_STEP_M = 0.25  # candidate-centre spacing
+
+
+def _place_skylights_on_roof(units, ring):
+    """Place skylight units on a flat roof over ``ring`` (CCW, metres).
+
+    Takeoff lines carry a count and schedule dimensions, never a position,
+    so placement is synthesised the same way wall openings are spread evenly
+    along their walls. Each skylight is an axis-aligned rectangle (width
+    along x, height along y) that must sit fully inside the roof, set back
+    SKYLIGHT_SETBACK_M from its edge, with SKYLIGHT_CLEARANCE_M between
+    skylights. Larger units are placed first. The first goes nearest the
+    roof's interior point, each next one at the candidate farthest from those
+    already placed, so the layout spreads over the roof instead of packing
+    into one corner (top-lighting depends on the spread).
+
+    Deterministic. A unit that cannot fit is skipped with a note, never
+    shrunk: a scaled skylight would quietly change glazing area, which the
+    energy model is sensitive to.
+
+    Returns (placements, notes); each placement is
+    {"unit": u, "rect": [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]}, CCW.
+    """
+    import numpy as np
+    import shapely
+    from shapely.geometry import Polygon
+
+    placements, notes = [], []
+    if not units:
+        return placements, notes
+    roof = Polygon(ring)
+    if not roof.is_valid or roof.area <= 0:
+        notes.append(f"{len(units)} skylight(s) skipped: roof outline is degenerate")
+        return placements, notes
+    usable = roof.buffer(-SKYLIGHT_SETBACK_M)
+    minx, miny, maxx, maxy = roof.bounds
+    xs = np.arange(minx, maxx + 1e-9, SKYLIGHT_GRID_STEP_M)
+    ys = np.arange(miny, maxy + 1e-9, SKYLIGHT_GRID_STEP_M)
+    cx, cy = (a.ravel() for a in np.meshgrid(xs, ys))
+    anchor = roof.representative_point()
+    taken = None  # union of placed skylights grown by the clearance
+    centres = []
+    order = sorted(units, key=lambda u: (-(u.width_m * u.height_m), u.tag))
+    for u in order:
+        hw, hh = u.width_m / 2.0, u.height_m / 2.0
+        boxes = shapely.box(cx - hw, cy - hh, cx + hw, cy + hh)
+        ok = shapely.contains(usable, boxes) if not usable.is_empty else np.zeros(len(cx), bool)
+        if taken is not None:
+            ok &= ~shapely.intersects(taken, boxes)
+        if not ok.any():
+            notes.append(
+                f"{u.tag}: skipped, no room for a {u.width_m:.2f}x{u.height_m:.2f} m "
+                f"skylight on the roof (setback {SKYLIGHT_SETBACK_M} m, "
+                f"clearance {SKYLIGHT_CLEARANCE_M} m)"
+            )
+            continue
+        idx = np.flatnonzero(ok)
+        if centres:
+            pc = np.array(centres)
+            d = np.min(np.hypot(cx[idx][:, None] - pc[:, 0], cy[idx][:, None] - pc[:, 1]), axis=1)
+            k = idx[int(np.argmax(d))]
+        else:
+            k = idx[int(np.argmin(np.hypot(cx[idx] - anchor.x, cy[idx] - anchor.y)))]
+        x, y = float(cx[k]), float(cy[k])
+        rect = [(x - hw, y - hh), (x + hw, y - hh), (x + hw, y + hh), (x - hw, y + hh)]
+        placements.append({"unit": u, "rect": rect})
+        centres.append((x, y))
+        grown = boxes[k].buffer(SKYLIGHT_CLEARANCE_M, join_style="mitre")
+        taken = grown if taken is None else taken.union(grown)
+    return placements, notes
 
 
 def _place_openings_on_wall(units, L: float, h: float):
