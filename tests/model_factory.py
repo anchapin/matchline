@@ -667,3 +667,77 @@ def break_skylight_below_top(m: BuildingModel):
 
     m.levels.append(Level(id="L2", name="Level 2", elevation_z_m=H, wall_height_m=H))
     _add_skylight(m, "L1-101", "roof-SK-LOW", 1.2, 1.2)
+
+
+# -- roadmap item 6: wall constructions ------------------------------------
+
+
+def add_wall_constructions(m: BuildingModel):
+    """Two wall types over the clean model, assigned per space, rolled up.
+
+    L1-101 (west half) gets W-1 on its south/north/west share; L1-102 gets
+    W-2 on its south/north/east share. The clean model has one segment per
+    facade spanning both spaces, so the 10 m south and north runs are split
+    at x=5 into one segment per space.
+    """
+    from building_model import Construction, EnvelopeWall
+    from constructions import apply_wall_u_rollup
+
+    m.constructions["W-1"] = Construction(
+        id="W-1", name="brick cavity", u_value_w_m2k=0.35, provenance=P(method="wall_type_legend")
+    )
+    m.constructions["W-2"] = Construction(
+        id="W-2",
+        name="curtain wall spandrel",
+        u_value_w_m2k=0.60,
+        provenance=P(method="wall_type_legend"),
+    )
+    split = []
+    for w in m.envelope:
+        if w.facade in ("south", "north"):
+            a, b = w.from_m, w.to_m
+            mid = [5.0, a[1]]
+            for k, (p0, p1) in enumerate(((a, mid), (mid, b))):
+                west = min(p0[0], p1[0]) < 5.0
+                split.append(
+                    EnvelopeWall(
+                        id=f"{w.id}{'ab'[k]}",
+                        facade=w.facade,
+                        from_m=list(p0),
+                        to_m=list(p1),
+                        length_m=5.0,
+                        height_m=w.height_m,
+                        area_m2=5.0 * w.height_m,
+                        provenance=w.provenance,
+                        construction_id="W-1" if west else "W-2",
+                        space_id="L1-101" if west else "L1-102",
+                    )
+                )
+        else:
+            west = w.facade == "west"
+            w.construction_id = "W-1" if west else "W-2"
+            w.space_id = "L1-101" if west else "L1-102"
+            split.append(w)
+    m.envelope[:] = split
+    apply_wall_u_rollup(m)
+
+
+def break_wall_construction_dangling(m: BuildingModel):
+    """A segment names a wall type the legend never defines."""
+    add_wall_constructions(m)
+    m.envelope[0].construction_id = "W-9"
+
+
+def break_wall_construction_partial(m: BuildingModel):
+    """One segment's wall type was never read: partial coverage."""
+    add_wall_constructions(m)
+    m.envelope[-1].construction_id = ""
+    from constructions import apply_wall_u_rollup
+
+    apply_wall_u_rollup(m)
+
+
+def break_wall_u_rollup_drift(m: BuildingModel):
+    """A stored per-space U-value no longer matches its segments."""
+    add_wall_constructions(m)
+    m.constructions["W-2"].u_value_w_m2k = 1.20  # edited after the rollup ran

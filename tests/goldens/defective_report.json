@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 39,
+  "n_checks": 40,
   "errors": 5,
   "warnings": 4,
   "passes": 20,
-  "skipped": 10
+  "skipped": 11
  },
  "results": [
   {
@@ -59,6 +59,13 @@
    "name": "Skylight within roof",
    "severity": "skip",
    "message": "no skylights in model",
+   "entities": []
+  },
+  {
+   "check_id": "wall_construction_coverage",
+   "name": "Wall construction coverage",
+   "severity": "skip",
+   "message": "no wall constructions in model",
    "entities": []
   },
   {

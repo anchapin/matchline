@@ -936,3 +936,134 @@ def _check_skylight_within_roof(ctx: _Ctx) -> CheckResult:
         f"{len(sky)} skylight(s), {total:.2f} m^2, each space within its "
         f"flat-roof area{note}{tail}",
     )
+
+
+def _check_wall_construction_coverage(ctx: _Ctx) -> CheckResult:
+    """Every exterior wall segment has one known construction; per-space U holds.
+
+    Roadmap item 6. The per-space wall U-value is sum(U_i * A_i) / sum(A_i)
+    over the space's own segments. This check recomputes it here with its own
+    loop rather than calling ``constructions.wall_u_rollup``, so a bug in the
+    rollup cannot vouch for itself.
+
+    error -- a segment names a construction that is not defined, a segment
+             names a space that does not exist, or a space's stored
+             ``wall_u_value_w_m2k`` differs from the recomputed value by more
+             than 0.5% (or is set where nothing can contribute).
+    warn  -- coverage is partial: some segments have no construction, or a
+             referenced construction has no U-value, or a space has a
+             computable U but none stored (rollup not run).
+    skip  -- no construction is declared and no segment names one; the
+             drawing path does not extract wall types yet.
+    """
+    cid_ = "wall_construction_coverage"
+    title = "Wall construction coverage"
+    model = ctx.model
+    cons = getattr(model, "constructions", {}) or {}
+    walls = list(model.envelope)
+    named = [w for w in walls if getattr(w, "construction_id", "")]
+    if not cons and not named:
+        return CheckResult(cid_, title, "skip", "no wall constructions in model")
+
+    dangling = sorted(w.id for w in named if w.construction_id not in cons)
+    if dangling:
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(dangling)} wall segment(s) name a construction that is not "
+            f"defined, e.g. {dangling[0]} -> "
+            f"{next(w.construction_id for w in named if w.id == dangling[0])}",
+            entities=dangling[:20],
+        )
+    orphan = sorted(
+        w.id for w in walls if getattr(w, "space_id", "") and w.space_id not in model.spaces
+    )
+    if orphan:
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(orphan)} wall segment(s) name a space that does not exist",
+            entities=orphan[:20],
+        )
+
+    # independent recompute of sum(U*A)/sum(A) per space
+    ua: dict = {}
+    aa: dict = {}
+    for w in named:
+        sid = getattr(w, "space_id", "")
+        u = cons[w.construction_id].u_value_w_m2k
+        if not sid or u is None or u <= 0:
+            continue
+        if w.area_m2 is not None:
+            a = w.area_m2
+        elif w.length_m is not None and w.height_m is not None:
+            a = w.length_m * w.height_m
+        else:
+            continue
+        if a <= 0:
+            continue
+        ua[sid] = ua.get(sid, 0.0) + u * a
+        aa[sid] = aa.get(sid, 0.0) + a
+
+    drift = []
+    unrolled = []
+    for sid, sp in model.spaces.items():
+        stored = getattr(sp, "wall_u_value_w_m2k", None)
+        want = ua[sid] / aa[sid] if sid in aa else None
+        if want is None:
+            if stored is not None:
+                drift.append((sid, stored, None))
+            continue
+        if stored is None:
+            unrolled.append(sid)
+        elif abs(stored - want) > 0.005 * want + 1e-9:
+            drift.append((sid, stored, want))
+    if drift:
+        sid, got, want = drift[0]
+        detail = (
+            f"{sid} stores {got:.3f} W/m^2K, recomputed {want:.3f}"
+            if want is not None
+            else f"{sid} stores {got:.3f} W/m^2K but no segment can contribute"
+        )
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(drift)} space(s) whose wall U-value disagrees with its segments: {detail}",
+            entities=[d[0] for d in drift][:20],
+            expected=want,
+            actual=got,
+        )
+
+    uncovered = sorted(w.id for w in walls if not getattr(w, "construction_id", ""))
+    no_u = sorted(
+        c.id
+        for c in cons.values()
+        if (c.u_value_w_m2k is None or c.u_value_w_m2k <= 0)
+        and any(w.construction_id == c.id for w in named)
+    )
+    gaps = []
+    if uncovered:
+        gaps.append(f"{len(uncovered)} segment(s) with no construction")
+    if no_u:
+        gaps.append(f"{len(no_u)} construction(s) with no U-value ({', '.join(no_u[:5])})")
+    if unrolled:
+        gaps.append(f"{len(unrolled)} space(s) with no stored wall U (rollup not run)")
+    if gaps:
+        return CheckResult(
+            cid_,
+            title,
+            "warn",
+            "; ".join(gaps),
+            entities=(uncovered + no_u + unrolled)[:20],
+        )
+    us = [ua[s] / aa[s] for s in aa]
+    rng = f", wall U {min(us):.3f}-{max(us):.3f} W/m^2K" if us else ""
+    return CheckResult(
+        cid_,
+        title,
+        "pass",
+        f"{len(walls)} segment(s), {len(cons)} construction(s), {len(aa)} space(s) rolled up{rng}",
+    )
