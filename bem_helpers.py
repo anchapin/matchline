@@ -64,32 +64,85 @@ def _assign_wall_to_space(p0, p1, spaces):
     return min(spaces, key=lambda sp: math.hypot(centroid(sp)[0] - ix, centroid(sp)[1] - iy))
 
 
-def _distribute_openings(openings, edges):
-    """Assign opening units to walls proportional to wall length.
+def _edge_facades(ring_m, y_north=True):
+    """Cardinal facade of each ring edge i -> i+1, from its outward normal.
 
-    Largest-remainder apportionment per category, so per-category totals are
+    Works for either winding (outward side comes from the signed area).
+    ``y_north`` says which way +y points in this ring's frame: True for
+    x=east/y=north, False for the canonical y-down plan frame.
+    """
+    n = len(ring_m)
+    if n < 3:
+        return []
+    a2 = sum(
+        ring_m[i][0] * ring_m[(i + 1) % n][1] - ring_m[(i + 1) % n][0] * ring_m[i][1]
+        for i in range(n)
+    )
+    out = []
+    for i in range(n):
+        (x0, y0), (x1, y1) = ring_m[i][:2], ring_m[(i + 1) % n][:2]
+        dx, dy = x1 - x0, y1 - y0
+        # CCW (a2 > 0): outward is right of travel; CW: left
+        nx, ny = (dy, -dx) if a2 > 0 else (-dy, dx)
+        if abs(nx) >= abs(ny):
+            out.append("east" if nx > 0 else "west")
+        else:
+            north = ny > 0 if y_north else ny < 0
+            out.append("north" if north else "south")
+    return out
+
+
+def _apportion(units, idxs, lengths, assign):
+    """Largest-remainder split of units over edges idxs, by edge length."""
+    n = len(units)
+    if not n or not idxs:
+        return
+    total_L = sum(lengths[i] for i in idxs) or 1.0
+    shares = {i: n * lengths[i] / total_L for i in idxs}
+    base = {i: int(math.floor(shares[i])) for i in idxs}
+    rem = n - sum(base.values())
+    order = sorted(idxs, key=lambda i: (shares[i] - base[i], lengths[i], -i), reverse=True)
+    for i in order[:rem]:
+        base[i] += 1
+    k = 0
+    for i in sorted(idxs):
+        assign[i].extend(units[k : k + base[i]])
+        k += base[i]
+
+
+def _distribute_openings(openings, edges, edge_facades=None):
+    """Assign opening units to walls.
+
+    An opening with a ``host_facade`` that matches at least one edge in
+    ``edge_facades`` goes on that facade's edges (split by length when the
+    facade has several). Everything else -- no facade known, or no edge
+    with that facade -- is apportioned over all edges by length, as before.
+    Largest-remainder apportionment per category and facade, so totals are
     exact and the assignment is deterministic. Returns {wall_idx: [units]}.
     """
     lengths = [math.hypot(p1[0] - p0[0], p1[1] - p0[1]) for p0, p1 in edges]
-    total_L = sum(lengths) or 1.0
     assign = {i: [] for i in range(len(edges))}
+    facades = list(edge_facades or [])
+    if len(facades) != len(edges):
+        facades = []
+    by_facade = {}
+    for i, f in enumerate(facades):
+        if lengths[i] > 1e-6:
+            by_facade.setdefault(f, []).append(i)
+    all_idx = list(range(len(edges)))
     for cat in ("window", "door"):
         units = [u for u in openings if u.category == cat]
-        n = len(units)
-        if not n:
-            continue
-        shares = [n * L / total_L for L in lengths]
-        base = [int(math.floor(sh)) for sh in shares]
-        rem = n - sum(base)
-        order = sorted(
-            range(len(edges)), key=lambda i: (shares[i] - base[i], -lengths[i]), reverse=True
-        )
-        for i in order[:rem]:
-            base[i] += 1
-        k = 0
-        for i, cnt in enumerate(base):
-            assign[i].extend(units[k : k + cnt])
-            k += cnt
+        loose = []
+        groups = {}
+        for u in units:
+            f = getattr(u, "host_facade", "") or ""
+            if f in by_facade:
+                groups.setdefault(f, []).append(u)
+            else:
+                loose.append(u)
+        for f in sorted(groups):
+            _apportion(groups[f], by_facade[f], lengths, assign)
+        _apportion(loose, all_idx, lengths, assign)
     for i in assign:
         assign[i].sort(key=lambda u: (u.category, u.tag))
     return assign

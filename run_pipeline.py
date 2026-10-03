@@ -31,6 +31,7 @@ from bem_export import (
     write_gbxml,
     write_ifc4,
 )
+from bem_helpers import _edge_facades
 from datasets_adapter import (
     detections_from_yolo_json,
     load_aec_bench,
@@ -155,6 +156,7 @@ def model_from_linked_model(
                     height_m=op.height_m,
                     provenance=op.provenance,
                     history=list(op.history),
+                    host_facade=op.host_facade or "",
                 )
             )
 
@@ -201,6 +203,8 @@ def model_from_linked_model(
         building_name=model.name,
         spaces=bem_spaces,
         openings=bem_openings,
+        # this adapter keeps the canonical y-down plan frame (no flip)
+        ring_facades=_edge_facades(ring_ccw, y_north=False),
         ring_m=ring_ccw,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,

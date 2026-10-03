@@ -1044,6 +1044,28 @@ def _classify_envelope(model):
     return counts
 
 
+def _facades_onto_openings(model):
+    """Give attached wall openings the facade Tier 1 found for their host wall.
+
+    Host wall -> envelope segment by GlobalId (recorded at the start of the
+    segment's provenance note). Openings whose host wall stayed unclassified
+    or left the envelope keep an empty facade.
+    """
+    wall_facade = {}
+    for w in model.envelope:
+        note = (w.provenance.note if w.provenance else "") or ""
+        if w.facade and note.startswith("GlobalId="):
+            wall_facade[note.split()[0][len("GlobalId=") :]] = w.facade
+    host_of = {o.id: e.global_id for e in model.bim_elements for o in e.openings}
+    for sp in model.spaces.values():
+        for op in sp.openings:
+            if op.host_facade or op.category == "skylight":
+                continue
+            f = wall_facade.get(host_of.get(op.id, ""))
+            if f:
+                op.host_facade = f
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -1368,6 +1390,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     _attach_openings_to_spaces(model)
     facade_summary = _classify_envelope(model)
+    _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
     unattached = model.opening_attachment_summary

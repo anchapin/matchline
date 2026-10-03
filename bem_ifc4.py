@@ -120,7 +120,9 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     # --- walls ------------------------------------------------------------
     edges = _wall_edges(model.ring_m)
-    opening_assign = _distribute_openings(model.openings, edges)
+    opening_assign = _distribute_openings(
+        model.openings, edges, getattr(model, "ring_facades", None)
+    )
     walls = []
     for i, (p0, p1) in enumerate(edges):
         dx, dy = p1[0] - p0[0], p1[1] - p0[1]
