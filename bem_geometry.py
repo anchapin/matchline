@@ -67,6 +67,9 @@ class BEMModel:
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
+    # zone_id -> [(diffuser_id, tag, x_m, y_m)] in the same y-north frame as
+    # ring_m; written as IfcAirTerminal DIFFUSER grouped into the IfcZone.
+    zone_terminals: dict = field(default_factory=dict)
     shades: list = field(default_factory=list)  # BEMShade (roadmap item 5)
     # facade of each ring edge i -> i+1 (parallel to ring_m), set by adapters
     # that know which frame their ring is in; empty when unknown
