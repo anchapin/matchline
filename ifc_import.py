@@ -16,6 +16,7 @@ item 7):
     + material names (the analytical wall-thickness answer)
   * containment via IfcRelContainedInSpatialStructure
   * opportunistically: IfcZone (via IfcRelAssignsToGroup)
+  * IfcShadingDevice -> ShadingSurface, hosted on the wall line under it
 
 Coordinate frame: IFC is Z-up. The canonical model is y-down (drawing
 frame); bem_export flips y on the way out (north-up), so the importer
@@ -38,6 +39,7 @@ from building_model import (
     EnvelopeWall,
     Level,
     Provenance,
+    ShadingSurface,
     Space,
     SpaceLighting,
     SpaceOpening,
@@ -788,6 +790,154 @@ def _attach_openings_to_spaces(model):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Shading devices (roadmap item 5, wave 4)
+# ---------------------------------------------------------------------------
+
+SHADE_HOST_TOL_M = 0.3  # inner edge of a shade within this of a wall line hosts it
+_SHADE_FLAT_EPS_M = 1e-3  # extent below this counts as zero (plate is planar)
+_SHADE_KINDS = ("overhang", "fin", "balcony", "other")
+
+
+def _shading_device_quad(dev, scale):
+    """Base-face corners of a rectangular swept shading plate, IFC world frame (m).
+
+    Reads the first Body IfcExtrudedAreaSolid with an IfcRectangleProfileDef
+    and applies profile position, solid position and the full 3D placement
+    chain. Returns four (x, y, z) or None when the body is not that shape.
+    """
+    import ifcopenshell.util.placement as _Pl
+
+    solids = _body_extrusions(dev)
+    if not solids or not solids[0].SweptArea.is_a("IfcRectangleProfileDef"):
+        return None
+    solid = solids[0]
+    prof = solid.SweptArea
+    hx, hy = float(prof.XDim) / 2.0, float(prof.YDim) / 2.0
+    cx = cy = 0.0
+    rx, ry = 1.0, 0.0
+    pos2 = getattr(prof, "Position", None)
+    if pos2 is not None:
+        cx, cy = (float(c) for c in pos2.Location.Coordinates[:2])
+        if getattr(pos2, "RefDirection", None) is not None:
+            d = pos2.RefDirection.DirectionRatios
+            n = math.hypot(d[0], d[1]) or 1.0
+            rx, ry = d[0] / n, d[1] / n
+    local = [
+        (cx + rx * a - ry * b, cy + ry * a + rx * b, 0.0)
+        for a, b in ((-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy))
+    ]
+    m_solid = _Pl.get_axis2placement(solid.Position) if solid.Position is not None else None
+    m_obj = _Pl.get_local_placement(dev.ObjectPlacement)
+    out = []
+    for x, y, z in local:
+        v = [x, y, z, 1.0]
+        if m_solid is not None:
+            v = [sum(m_solid[i][j] * v[j] for j in range(4)) for i in range(4)]
+        v = [sum(m_obj[i][j] * v[j] for j in range(4)) for i in range(4)]
+        out.append((v[0] * scale, v[1] * scale, v[2] * scale))
+    return out
+
+
+def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
+    """One IfcShadingDevice -> ShadingSurface hosted on the nearest wall line.
+
+    The host is found geometrically: the wall whose centreline the plate's
+    inner edge lies on (within SHADE_HOST_TOL_M) and within its length.
+    Placement is then measured in that wall's own frame. A plate with no such
+    wall comes back unhosted with no placement, so the shading_host_reference
+    check flags it instead of the importer guessing.
+    """
+    import ifcopenshell.util.element as _El
+
+    gid = dev.GlobalId
+    psets = _El.get_psets(dev) or {}
+    ref = (psets.get("Pset_ShadingDeviceCommon") or {}).get("Reference") or ""
+    sid = ref if ref and ref not in taken_ids else f"SH-{gid[:8]}"
+    obj_type = (getattr(dev, "ObjectType", None) or "").strip().lower()
+    quad = _shading_device_quad(dev, scale)
+    if quad is None:
+        return ShadingSurface(
+            id=sid,
+            kind=obj_type if obj_type in _SHADE_KINDS else "other",
+            provenance=prov(
+                "ifc_import:tier0:shading", 0.3, "no rectangular swept body; unplaced", gid
+            ),
+        )
+    pts = [(*_to_canonical(x, y), z) for x, y, z in quad]
+    zs = [p[2] for p in pts]
+    z_rng = max(zs) - min(zs)
+
+    best = None
+    for w in walls:
+        if not w.from_m or not w.to_m:
+            continue
+        p0, p1 = w.from_m, w.to_m
+        L = math.dist(p0, p1)
+        if L < 1e-6:
+            continue
+        ux, uy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
+        ss = [(p[0] - p0[0]) * ux + (p[1] - p0[1]) * uy for p in pts]
+        ds = [abs((p[0] - p0[0]) * uy - (p[1] - p0[1]) * ux) for p in pts]
+        near = min(ds)
+        if near > SHADE_HOST_TOL_M:
+            continue
+        if max(ss) < -SHADE_HOST_TOL_M or min(ss) > L + SHADE_HOST_TOL_M:
+            continue
+        if best is None or near < best[0]:
+            best = (near, w, ss, ds)
+
+    kind_from_type = obj_type if obj_type in _SHADE_KINDS else ""
+    if best is None:
+        return ShadingSurface(
+            id=sid,
+            kind=kind_from_type or "other",
+            provenance=prov(
+                "ifc_import:tier0:shading", 0.5, "no wall line under the plate; unhosted", gid
+            ),
+        )
+    _, w, ss, ds = best
+    s_rng = max(ss) - min(ss)
+    depth = max(ds) - min(ds)
+    z0 = min(zs) - elev
+    if z_rng <= _SHADE_FLAT_EPS_M:
+        kind = kind_from_type if kind_from_type in ("overhang", "balcony", "other") else "overhang"
+        return ShadingSurface(
+            id=sid,
+            kind=kind,
+            host_wall_id=w.id,
+            along_m=round(min(ss), 4),
+            width_m=round(s_rng, 4),
+            z_m=round(z0, 4),
+            depth_m=round(depth, 4),
+            provenance=prov(
+                "ifc_import:tier0:shading", 0.9, f"horizontal plate on wall {w.id}", gid
+            ),
+        )
+    if s_rng <= _SHADE_FLAT_EPS_M:
+        return ShadingSurface(
+            id=sid,
+            kind="fin",
+            host_wall_id=w.id,
+            along_m=round(sum(ss) / len(ss), 4),
+            z_m=round(z0, 4),
+            depth_m=round(depth, 4),
+            height_m=round(z_rng, 4),
+            provenance=prov("ifc_import:tier0:shading", 0.9, f"vertical fin on wall {w.id}", gid),
+        )
+    return ShadingSurface(
+        id=sid,
+        kind=kind_from_type or "other",
+        host_wall_id=w.id,
+        provenance=prov(
+            "ifc_import:tier0:shading",
+            0.5,
+            f"plate on wall {w.id} is tilted; placement not read",
+            gid,
+        ),
+    )
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -923,6 +1073,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         # --- elements -----------------------------------------------------
         elements = _contained(storey)
         wall_heights = []
+        env_start = len(model.envelope)
         for el in elements:
             cls = el.is_a()
             if cls not in (
@@ -1055,6 +1206,14 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         if wall_heights:
             level.wall_height_m = round(max(wall_heights), 4)
 
+        # --- shading devices (roadmap item 5) -----------------------------
+        storey_walls = model.envelope[env_start:]
+        for el in elements:
+            if not el.is_a("IfcShadingDevice"):
+                continue
+            taken = {sh.id for sh in model.shading}
+            model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
+
     # --- zones (opportunistic) ---------------------------------------------
     for z in f.by_type("IfcZone"):
         sids = []
@@ -1088,6 +1247,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         f"{len(model.bim_elements)} elements",
         f"{total_openings} openings",
         f"{len(model.zones)} zones",
+        f"{len(model.shading)} shading devices",
         f"scale={scale}",
     ]
     if not unattached.is_empty():
