@@ -96,3 +96,47 @@ infra, not the result.
 Close #500 as **resolved — kept as opt-in, infra archived in
 `detector/results/ab_2026-09-28/`**, with a follow-up issue opened only if
 a future A/B at 5+ seeds is run.
+
+## Addendum, 2026-10-02: corrections after the #516 noise floor
+
+This file and the #536 commit message (`3d3a3a2`) were written before the
+run-to-run floor was measured. Three statements no longer hold. They are
+corrected here rather than edited in place, so the original record survives,
+and the merged commit message is left as it is (rewriting `develop` history
+for a message is not worth it).
+
+1. **"Direction is positive and consistent across seeds" (#536 commit
+   message) is wrong for mAP50.** The per-seed mAP50 deltas are +0.00303,
+   −0.00043, +0.00033: two up, one down. The claim holds only for mAP50-95
+   (+0.00332, +0.00337, +0.00434, all positive), which is what the
+   disposition line above ("positive on the wider-IoU metric across all three
+   seeds") correctly says.
+
+2. **The caveat section is superseded.** #516 measured the run-to-run floor
+   at exactly zero: three `repro_seed0_r*` runs at 10 epochs produced
+   byte-identical `results.csv` files apart from wall-clock. Training is
+   deterministic at fixed seed, so the seed-to-seed spread quoted above is the
+   total variance at this config, not a lower bound on it. Results:
+   `detector/results/noise_2026-10-02/`.
+
+3. **"Even if the magnitude is inside noise" understates the mAP50-95
+   result.** Because runs are deterministic, same-seed runs across arms are
+   genuinely paired. The paired test (`report_ab_stats.py`, #537) gives:
+
+   | metric | paired mean Δ | 95% CI | p (df 2) |
+   |---|---|---|---|
+   | mAP50 | +0.00098 | [−0.0035, +0.0055] | 0.45 |
+   | mAP50-95 | +0.00368 | [+0.0023, +0.0051] | 0.008 |
+
+   mAP50 shows no measurable effect, and FloorYOLO's reported +0.0125 lies
+   outside its CI, so an effect of the paper's size is ruled out on this data.
+   mAP50-95 shows a small, real gain. It is significant only under pairing
+   (Welch p = 0.38), and with df 2 the CI is the number to quote.
+
+The disposition (kept as an opt-in arm) is unchanged. The mechanism ECA is
+claimed to help with, discriminating visually similar intra-class variants,
+is barely exercised by `nc: 2` (door, window).
+
+"Tighter metric" in the mAP50-95 bullet is left as written: mAP50-95 averages
+over IoU 0.5 to 0.95, so it demands tighter localization than mAP50. It means
+the same thing as "wider-IoU" in the disposition, seen from the other side.
