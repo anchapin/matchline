@@ -148,6 +148,41 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             opening.ObjectPlacement = placement(
                 (s_mid, 0.0, pl_["sill"]), parent=wall.ObjectPlacement
             )
+            # real void solid through the wall (as for skylights), so
+            # importers can read width/height/sill from geometry instead of
+            # getting a dimensionless opening
+            _o_prof = f.create_entity(
+                "IfcRectangleProfileDef",
+                ProfileType="AREA",
+                XDim=float(pl_["s1"] - pl_["s0"]),
+                YDim=float(2.0 * wall_thickness_m + 0.2),
+                Position=f.create_entity(
+                    "IfcAxis2Placement2D",
+                    Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0)),
+                ),
+            )
+            _o_solid = f.create_entity(
+                "IfcExtrudedAreaSolid",
+                SweptArea=_o_prof,
+                Position=f.create_entity(
+                    "IfcAxis2Placement3D",
+                    Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+                ),
+                ExtrudedDirection=f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+                Depth=float(pl_["height"]),
+            )
+            opening.Representation = f.create_entity(
+                "IfcProductDefinitionShape",
+                Representations=[
+                    f.create_entity(
+                        "IfcShapeRepresentation",
+                        ContextOfItems=body,
+                        RepresentationIdentifier="Body",
+                        RepresentationType="SweptSolid",
+                        Items=[_o_solid],
+                    )
+                ],
+            )
             f.create_entity(
                 "IfcRelVoidsElement",
                 GlobalId=ifcopenshell.guid.new(),

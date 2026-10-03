@@ -938,6 +938,112 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
     )
 
 
+# --- Tier 1: envelope classification (roadmap item 7) -----------------------
+# Probe distances either side of a wall centerline. Several are tried because
+# the space polygon edge sits half a wall thickness (or more) off the
+# centerline; the nearest hit on each side wins.
+_ENV_PROBE_M = (0.1, 0.25, 0.5, 1.0)
+# fractions along the wall at which the sides are sampled
+_ENV_SAMPLE_T = (0.1, 0.3, 0.5, 0.7, 0.9)
+
+
+def _facade_of(nx, ny):
+    """Cardinal facade of an outward normal in the canonical (y-down) frame."""
+    if abs(nx) >= abs(ny):
+        return "east" if nx > 0 else "west"
+    return "south" if ny > 0 else "north"
+
+
+def _classify_envelope(model):
+    """Tier 1: decide exterior/interior and facade for imported wall segments.
+
+    For each segment, probe points either side of its midpoint against the
+    space footprints on its level. Exactly one side inside a space: exterior,
+    the other side is outward, facade = nearest cardinal of that normal, and
+    space_id = the space on the inside. Both sides inside: interior wall, so
+    it leaves the envelope (its BimElement stays). Neither side inside: left
+    in the envelope unclassified (facade empty) for review. Never guessed.
+
+    Returns a dict of counts for the import summary.
+    """
+    from shapely.geometry import Point, Polygon
+
+    polys = {}
+    for sp in model.spaces.values():
+        if len(sp.polygon_m) >= 3:
+            try:
+                pg = Polygon(sp.polygon_m)
+            except Exception:  # noqa: BLE001 -- malformed footprint, skip
+                continue
+            if pg.is_valid and pg.area > 0:
+                polys.setdefault(sp.level_id, []).append((sp.id, pg))
+
+    def side_space(level_id, x, y, nx, ny):
+        for d in _ENV_PROBE_M:
+            pt = Point(x + nx * d, y + ny * d)
+            for sid, pg in polys.get(level_id, []):
+                if pg.contains(pt):
+                    return sid
+        return None
+
+    counts = {"exterior": 0, "interior": 0, "unclassified": 0}
+    keep = []
+    for w in model.envelope:
+        if w.facade or len(w.from_m) < 2 or len(w.to_m) < 2:
+            keep.append(w)
+            continue
+        level_id = w.id.split("-EW")[0] if "-EW" in w.id else ""
+        (x0, y0), (x1, y1) = w.from_m, w.to_m
+        L = math.hypot(x1 - x0, y1 - y0)
+        if L < 1e-6:
+            keep.append(w)
+            counts["unclassified"] += 1
+            continue
+        nx, ny = -(y1 - y0) / L, (x1 - x0) / L
+        # sample along the wall, not just the midpoint: a midpoint can sit
+        # exactly on a partition line between two rooms
+        lefts, rights = [], []
+        for t in _ENV_SAMPLE_T:
+            mx, my = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+            sl = side_space(level_id, mx, my, nx, ny)
+            sr = side_space(level_id, mx, my, -nx, -ny)
+            if sl:
+                lefts.append(sl)
+            if sr:
+                rights.append(sr)
+        left = sorted(set(lefts)) or None
+        right = sorted(set(rights)) or None
+        prov = w.provenance
+        if left and right:
+            # interior partition: not envelope. Its BimElement stays, so the
+            # wall is still in the takeoff inventory.
+            counts["interior"] += 1
+            continue
+        if left or right:
+            inside = left or right
+            ox, oy = (-nx, -ny) if left else (nx, ny)
+            w.facade = _facade_of(ox, oy)
+            counts["exterior"] += 1
+            if len(inside) == 1:
+                w.space_id = inside[0]
+                encl = f"encloses {inside[0]}"
+            else:
+                # one segment along several rooms: no single space to name
+                encl = f"spans {', '.join(inside)} (space_id left empty)"
+            if prov is not None:
+                prov.method = "ifc_import:tier1:facade"
+                prov.confidence = min(prov.confidence, 0.85)
+                prov.note += f"; exterior, {encl}, outward normal -> {w.facade}"
+        else:
+            counts["unclassified"] += 1
+            if prov is not None:
+                prov.confidence = min(prov.confidence, 0.5)
+                prov.note += "; no space found on either side -- facade unclassified, review"
+        keep.append(w)
+    model.envelope[:] = keep
+    return counts
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -1150,7 +1256,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 wall_heights.append(height_m or 0.0)
                 model.envelope.append(
                     EnvelopeWall(
-                        id=f"env-{len(model.envelope) + 1:03d}",
+                        # level-prefixed like drawing-path ids, so the
+                        # per-level envelope checks see these walls
+                        id=f"{level_id}-EW{len(model.envelope) - env_start + 1}",
                         facade="",
                         from_m=[round(p0[0], 4), round(p0[1], 4)],
                         to_m=[round(p1[0], 4), round(p1[1], 4)],
@@ -1160,7 +1268,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         provenance=prov(
                             "ifc_import:tier0:envelope",
                             0.95,
-                            "wall centerline segment; facade TBD (Tier 1)",
+                            "wall centerline segment; facade from Tier 1 classification",
                             gid,
                         ),
                     )
@@ -1206,6 +1314,22 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         if wall_heights:
             level.wall_height_m = round(max(wall_heights), 4)
 
+        # spaces exported as footprints only carry no solid: derive volume as
+        # area x storey wall height, recorded as derived (lower confidence)
+        if level.wall_height_m:
+            for space in model.spaces.values():
+                if (
+                    space.level_id == level_id
+                    and space.volume_m3 is None
+                    and space.area_m2 is not None
+                ):
+                    space.volume_m3 = round(space.area_m2 * level.wall_height_m, 4)
+                    if space.core_provenance is not None:
+                        space.core_provenance.note += (
+                            f"; volume derived as area x wall height "
+                            f"{level.wall_height_m:g} m (no space solid)"
+                        )
+
         # --- shading devices (roadmap item 5) -----------------------------
         storey_walls = model.envelope[env_start:]
         for el in elements:
@@ -1226,6 +1350,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         if not sids:
             continue
         zid = z.Name or f"ZONE-{z.GlobalId[:8]}"
+        for sid in sids:  # reciprocal space -> zone link
+            zl = model.spaces[sid].hvac.zone_ids
+            if zid not in zl:
+                zl.append(zid)
         model.zones[zid] = Zone(
             id=zid,
             level_id=model.levels[0].id if model.levels else "L1",
@@ -1239,6 +1367,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
 
     _attach_openings_to_spaces(model)
+    facade_summary = _classify_envelope(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
     unattached = model.opening_attachment_summary
@@ -1248,6 +1377,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         f"{total_openings} openings",
         f"{len(model.zones)} zones",
         f"{len(model.shading)} shading devices",
+        (
+            f"envelope: {facade_summary['exterior']} exterior, "
+            f"{facade_summary['interior']} interior removed, "
+            f"{facade_summary['unclassified']} unclassified"
+        ),
         f"scale={scale}",
     ]
     if not unattached.is_empty():

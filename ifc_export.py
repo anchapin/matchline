@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 from bem_export import (
     BEMModel,
@@ -75,8 +75,9 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
             )
         )
 
-    # --- openings: flatten SpaceOpenings, deduplicate --------------------
-    seen: Dict[tuple, BEMOpeningUnit] = {}
+    # --- openings: flatten SpaceOpenings, one unit each ------------------
+    wall_units: List[BEMOpeningUnit] = []
+    seen_keys: set = set()
     sky: List[BEMOpeningUnit] = []
     for space in model.spaces.values():
         for op in space.openings:
@@ -95,15 +96,32 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     )
                 )
                 continue
-            key = (op.tag, op.width_m, op.height_m)
-            if key not in seen:
-                seen[key] = BEMOpeningUnit(
+            # One unit per physical opening. Two openings are the same window
+            # only when they match on tag, size, sill, facade AND position:
+            # that is a duplicate detection (two elevations of one facade,
+            # #504) and is written once. The old key (tag, w, h) also merged
+            # distinct windows of the same type -- two type-A windows on one
+            # wall became one -- and disagreed with the gbXML adapter.
+            key = (
+                op.tag,
+                op.width_m,
+                op.height_m,
+                op.sill_m,
+                op.host_facade,
+                op.s_center_m,
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            wall_units.append(
+                BEMOpeningUnit(
                     category=op.category,
                     tag=op.tag,
                     width_m=op.width_m,
                     height_m=op.height_m,
                 )
-    openings = list(seen.values()) + sky
+            )
+    openings = wall_units + sky
 
     # --- ring: build from EnvelopeWall segments in canonical facade order -
     if model.envelope:
