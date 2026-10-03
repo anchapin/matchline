@@ -36,6 +36,7 @@ from building_model import (
     BimElement,
     BimOpening,
     BuildingModel,
+    ComponentRef,
     EnvelopeWall,
     Level,
     Provenance,
@@ -1361,14 +1362,18 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
 
     # --- zones (opportunistic) ---------------------------------------------
+    terminals_seen = {}  # IfcAirTerminal GlobalId -> ComponentRef (one per terminal)
+    terminal_sids = {}  # IfcAirTerminal GlobalId -> spaces of every zone it serves
     for z in f.by_type("IfcZone"):
-        sids = []
+        sids, terms = [], []
         for rel in getattr(z, "IsGroupedBy", None) or []:
             if not rel.is_a("IfcRelAssignsToGroup"):
                 continue
             for o in rel.RelatedObjects or []:
                 if o.is_a("IfcSpace") and o.GlobalId in space_by_gid:
                     sids.append(space_by_gid[o.GlobalId])
+                elif o.is_a("IfcAirTerminal"):
+                    terms.append(o)
         if not sids:
             continue
         zid = z.Name or f"ZONE-{z.GlobalId[:8]}"
@@ -1376,17 +1381,29 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             zl = model.spaces[sid].hvac.zone_ids
             if zid not in zl:
                 zl.append(zid)
+        diffusers = []
+        for t in terms:
+            ref = terminals_seen.get(t.GlobalId)
+            if ref is None:
+                ref = _read_air_terminal(t, scale, prov)
+                terminals_seen[t.GlobalId] = ref
+            terminal_sids.setdefault(t.GlobalId, []).extend(sids)
+            diffusers.append(ref)
         model.zones[zid] = Zone(
             id=zid,
             level_id=model.levels[0].id if model.levels else "L1",
             space_ids=sids,
+            diffusers=diffusers,
             provenance=prov(
                 "ifc_import:tier0:zone",
                 0.9,
-                f"{len(sids)} spaces via IfcRelAssignsToGroup",
+                f"{len(sids)} spaces, {len(diffusers)} air terminals via IfcRelAssignsToGroup",
                 z.GlobalId,
             ),
         )
+
+    for gid, ref in terminals_seen.items():
+        _assign_air_terminal_to_space(ref, terminal_sids.get(gid, []), model)
 
     _attach_openings_to_spaces(model)
     facade_summary = _classify_envelope(model)
@@ -1399,6 +1416,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         f"{len(model.bim_elements)} elements",
         f"{total_openings} openings",
         f"{len(model.zones)} zones",
+        f"{len(terminals_seen)} air terminals",
         f"{len(model.shading)} shading devices",
         (
             f"envelope: {facade_summary['exterior']} exterior, "
@@ -1415,6 +1433,51 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
 def _r4(v):
     return round(v, 4) if v is not None else None
+
+
+def _read_air_terminal(term, scale, prov):
+    """IfcAirTerminal grouped into an IfcZone -> diffuser ComponentRef.
+
+    Position is the placement origin, in the canonical frame.
+    """
+    _ang, tx, ty, _tz = _placement_transform(term, scale)
+    x, y = _to_canonical(tx, ty)
+    return ComponentRef(
+        id=term.Name or f"AT-{term.GlobalId[:8]}",
+        type="diffuser",
+        x_m=x,
+        y_m=y,
+        tag=getattr(term, "Tag", None) or "",
+        provenance=prov(
+            "ifc_import:tier0:air_terminal",
+            0.9,
+            f"IfcAirTerminal at ({x:.2f}, {y:.2f})",
+            term.GlobalId,
+        ),
+    )
+
+
+def _assign_air_terminal_to_space(ref, zone_sids, model):
+    """List a diffuser on the one served space whose footprint contains it.
+
+    Candidates are the spaces of every zone the terminal is grouped into.
+    With zero or several hits it stays on the zone(s) only, and the
+    provenance note says so; the space is not guessed.
+    """
+    cands = list(dict.fromkeys(zone_sids))
+    hits = [
+        sid
+        for sid in cands
+        if len(model.spaces[sid].polygon_m) >= 3
+        and _point_in_polygon((ref.x_m, ref.y_m), model.spaces[sid].polygon_m)
+    ]
+    if len(hits) == 1:
+        model.spaces[hits[0]].hvac.diffusers.append(ref)
+        suffix = f"; inside {hits[0]}"
+    else:
+        suffix = f"; inside {len(hits)} served spaces, not assigned to a space"
+    if ref.provenance is not None:
+        ref.provenance.note = (ref.provenance.note or "") + suffix
 
 
 def _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=""):

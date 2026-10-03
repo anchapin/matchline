@@ -80,12 +80,12 @@ def test_zone_links_reciprocated(roundtrip):
     assert bm.spaces["L1-102"].hvac.zone_ids == []
 
 
-def test_only_known_gap_left_in_validation(roundtrip):
-    """Diffusers/terminals are not exported to IFC yet, so the imported zone
-    is empty. Everything else the round trip used to break now passes."""
+def test_roundtrip_leaves_no_validation_errors(roundtrip):
+    """Diffusers now export as IfcAirTerminal in their IfcZone, so the last
+    round-trip error (zone_nonempty) is gone too."""
     _, bm = roundtrip
     errors = {r.check_id for r in run_checks(bm).results if r.severity == "error"}
-    assert errors == {"zone_nonempty"}
+    assert errors == set()
 
 
 def _bare_model():

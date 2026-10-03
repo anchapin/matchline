@@ -153,6 +153,11 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         area_delta_pct=0.0,  # no simplification on export path
         simplify_tolerance=0.0,
         zones=[(z.id, z.space_ids) for z in model.zones.values()],
+        zone_terminals={
+            z.id: [(d.id, d.tag, d.x_m, -d.y_m) for d in z.diffusers]
+            for z in model.zones.values()
+            if z.diffusers
+        },
         shades=shades,
         notes=shade_notes,
     )

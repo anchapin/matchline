@@ -423,18 +423,33 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         ifc_space_by_sid[sp.sid] = space
 
     # --- zones ------------------------------------------------------------
+    terminals_by_id = {}  # a diffuser listed under two zones is one IfcAirTerminal
     for zone_id, zone_space_ids in model.zones:
         zone = f.create_entity("IfcZone", Name=zone_id)
-        zone_spaces = [ifc_space_by_sid[sid] for sid in zone_space_ids if sid in ifc_space_by_sid]
-        if zone_spaces:
-            _Grp.assign_group(f, products=zone_spaces, group=zone)
+        members = [ifc_space_by_sid[sid] for sid in zone_space_ids if sid in ifc_space_by_sid]
+        for did, tag, x, y in getattr(model, "zone_terminals", {}).get(zone_id, []):
+            term = terminals_by_id.get(did)
+            if term is None:
+                term = _R.create_entity(f, ifc_class="IfcAirTerminal", name=did)
+                term.PredefinedType = "DIFFUSER"
+                if tag:
+                    term.Tag = tag
+                # ceiling-mounted: at wall height, in the storey frame
+                term.ObjectPlacement = placement(
+                    (float(x), float(y), float(model.wall_height_m)), parent=storey_pl
+                )
+                _Sp.assign_container(f, products=[term], relating_structure=storey)
+                terminals_by_id[did] = term
+            members.append(term)
+        if members:
+            _Grp.assign_group(f, products=members, group=zone)
 
     path = _validate_out_path(path)
     f.write(str(path))
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
         f"spaces, {len(model.openings) - len(sky_units)} wall openings hosted, "
-        f"{len(model.zones)} zones."
+        f"{len(model.zones)} zones, {len(terminals_by_id)} diffusers (IfcAirTerminal)."
         + (
             f" Roof slab with {len(sky_placed)} of {len(sky_units)} skylight(s) "
             f"(IfcWindow SKYLIGHT)."
