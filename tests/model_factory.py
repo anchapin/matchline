@@ -627,3 +627,43 @@ def _ensure_bim_wall(m: BuildingModel, thickness_m: float, layers=None):
             provenance=P(method="ifc_import"),
         )
     )
+
+
+def _add_skylight(m: BuildingModel, sid: str, oid: str, w: float, h: float):
+    from building_model import SpaceOpening
+
+    m.spaces[sid].openings.append(
+        SpaceOpening(
+            id=oid,
+            tag="SK-1",
+            category="skylight",
+            width_m=w,
+            height_m=h,
+            host_facade="roof",
+            area_m2=w * h,
+            tilt_deg=0.0,
+            provenance=P(sheet="arch_A501", note="roof plan skylight"),
+            needs_review=False,
+        )
+    )
+
+
+def break_skylight_oversize(m: BuildingModel):
+    """Skylight bigger than the flat roof over its space (30 m^2 office).
+
+    The realistic cause is a dimension slip (feet read as metres) or a
+    skylight attached to the wrong, smaller space.
+    """
+    _add_skylight(m, "L1-101", "roof-SK-BIG", 8.0, 5.0)
+
+
+def break_skylight_below_top(m: BuildingModel):
+    """A skylight hosted by a space that is not on the top level.
+
+    Adds an empty L2 above L1 so L1 is no longer the roof level. Under the
+    flat-roof convention an L1 space has no roof to host glazing.
+    """
+    from building_model import Level
+
+    m.levels.append(Level(id="L2", name="Level 2", elevation_z_m=H, wall_height_m=H))
+    _add_skylight(m, "L1-101", "roof-SK-LOW", 1.2, 1.2)

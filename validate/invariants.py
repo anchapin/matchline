@@ -100,6 +100,8 @@ def _check_facade_opening_closure(ctx: _Ctx) -> CheckResult:
     openings = {}
     for sid, sp in ctx.model.spaces.items():
         for o in sp.openings:
+            if o.category == "skylight":
+                continue  # roof glazing; skylight_within_roof owns it
             if o.area_m2:
                 openings[o.host_facade or "?"] = openings.get(o.host_facade or "?", 0.0) + o.area_m2
     bad = []

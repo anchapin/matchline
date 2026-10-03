@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 38,
+  "n_checks": 39,
   "errors": 5,
   "warnings": 4,
   "passes": 20,
-  "skipped": 9
+  "skipped": 10
  },
  "results": [
   {
@@ -52,6 +52,13 @@
    "name": "Convention bias (interior vs exterior face)",
    "severity": "skip",
    "message": "no exterior wall thickness available (no wall carries material_layers or thickness_m); volume bias is unmeasurable, not zero",
+   "entities": []
+  },
+  {
+   "check_id": "skylight_within_roof",
+   "name": "Skylight within roof",
+   "severity": "skip",
+   "message": "no skylights in model",
    "entities": []
   },
   {
