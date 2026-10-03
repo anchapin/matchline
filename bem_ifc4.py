@@ -17,6 +17,30 @@ from bem_helpers import (
 )
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
+SHADE_THICKNESS_M = 0.05  # drawings give shade extents, not build-up; thin plate
+
+
+def _shade_frame(verts):
+    """Local frame of a rectangular shade quad: origin, x axis, y axis, normal, extents.
+
+    ``verts`` are four (x, y, z) corners in order, as bem_shading builds them
+    (a rectangle, so edges v0->v1 and v0->v3 are perpendicular). Returns None
+    for a degenerate quad.
+    """
+    v0, v1, _, v3 = (tuple(float(c) for c in v) for v in verts[:4])
+    e1 = tuple(b - a for a, b in zip(v0, v1))
+    e3 = tuple(b - a for a, b in zip(v0, v3))
+    l1 = math.sqrt(sum(c * c for c in e1))
+    l3 = math.sqrt(sum(c * c for c in e3))
+    if l1 < 1e-6 or l3 < 1e-6:
+        return None
+    x = tuple(c / l1 for c in e1)
+    y = tuple(c / l3 for c in e3)
+    nz = (x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0])
+    ln = math.sqrt(sum(c * c for c in nz))
+    if ln < 1e-6:
+        return None
+    return v0, x, y, tuple(c / ln for c in nz), l1, l3
 
 
 def _ensure_ifc():
@@ -44,6 +68,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     one IfcSpace per room (placement at centroid; no solid geometry in v1),
     and per opening an IfcOpeningElement hosted in its wall
     (IfcRelVoidsElement) filled by an IfcWindow/IfcDoor (IfcRelFillsElement).
+    Shading surfaces (model.shades) become IfcShadingDevice plates.
 
     Opening placement reuses _place_openings_on_wall, so IFC and gbXML agree
     on positions (s measured from the wall start point p0 along the edge).
@@ -227,6 +252,81 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             )
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
 
+    # --- shading devices (roadmap item 5, wave 3) -------------------------
+    # One IfcShadingDevice per BEMShade, same absolute quad the gbXML Shade
+    # surface uses, as a thin swept plate extruded along the quad normal.
+    # IFC4 has no OVERHANG/FIN enum value, so PredefinedType is USERDEFINED
+    # with ObjectType carrying the kind. Source id and host wall id go in
+    # Pset_ShadingDeviceCommon.Reference and a matchline pset for traceability.
+    shades_written = 0
+    shade_notes = []
+    for sh in getattr(model, "shades", None) or []:
+        frame = _shade_frame(sh.vertices)
+        if frame is None:
+            shade_notes.append(f"shade {sh.id} skipped: degenerate quad")
+            continue
+        origin, ax_x, _ax_y, normal, dx_len, dy_len = frame
+        dev = _R.create_entity(
+            f, ifc_class="IfcShadingDevice", name=sh.id, predefined_type="USERDEFINED"
+        )
+        dev.ObjectType = (sh.kind or "other").upper()
+        ax = f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=f.create_entity("IfcCartesianPoint", Coordinates=origin),
+            Axis=f.create_entity("IfcDirection", DirectionRatios=normal),
+            RefDirection=f.create_entity("IfcDirection", DirectionRatios=ax_x),
+        )
+        dev.ObjectPlacement = f.create_entity(
+            "IfcLocalPlacement", PlacementRelTo=storey_pl, RelativePlacement=ax
+        )
+        prof = f.create_entity(
+            "IfcRectangleProfileDef",
+            ProfileType="AREA",
+            XDim=dx_len,
+            YDim=dy_len,
+            Position=f.create_entity(
+                "IfcAxis2Placement2D",
+                Location=f.create_entity(
+                    "IfcCartesianPoint", Coordinates=(dx_len / 2.0, dy_len / 2.0)
+                ),
+            ),
+        )
+        solid = f.create_entity(
+            "IfcExtrudedAreaSolid",
+            SweptArea=prof,
+            Position=f.create_entity(
+                "IfcAxis2Placement3D",
+                Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+            ),
+            ExtrudedDirection=f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+            Depth=SHADE_THICKNESS_M,
+        )
+        dev.Representation = f.create_entity(
+            "IfcProductDefinitionShape",
+            Representations=[
+                f.create_entity(
+                    "IfcShapeRepresentation",
+                    ContextOfItems=body,
+                    RepresentationIdentifier="Body",
+                    RepresentationType="SweptSolid",
+                    Items=[solid],
+                )
+            ],
+        )
+        _Sp.assign_container(f, products=[dev], relating_structure=storey)
+        try:
+            import ifcopenshell.api.pset as _Ps
+
+            common = _Ps.add_pset(f, product=dev, name="Pset_ShadingDeviceCommon")
+            _Ps.edit_pset(f, pset=common, properties={"Reference": sh.id})
+            src = _Ps.add_pset(f, product=dev, name="Matchline_ShadingSource")
+            _Ps.edit_pset(
+                f, pset=src, properties={"Kind": sh.kind or "", "HostWallId": sh.host_wall_id or ""}
+            )
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            pass  # traceability is enrichment, not core validity
+        shades_written += 1
+
     # --- spaces -----------------------------------------------------------
     ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
     for sp in model.spaces:
@@ -305,6 +405,8 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             else ""
         )
         + ("".join(f" Roof: {n}" for n in sky_notes))
+        + (f" {shades_written} shading device(s)." if shades_written else "")
+        + ("".join(f" Shading: {n}" for n in shade_notes))
     )
     return path
 
@@ -369,5 +471,11 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
     for el in list(windows) + list(doors):
         if not el.ContainedInStructure:
             errors.append(f"{el.is_a()} '{el.Name}' not in a spatial container")
+    for sd in f.by_type("IfcShadingDevice"):
+        reps = sd.Representation.Representations if sd.Representation else []
+        if not any(r.RepresentationType == "SweptSolid" for r in reps):
+            errors.append(f"shading device '{sd.Name}' has no SweptSolid body")
+        if not sd.ContainedInStructure:
+            errors.append(f"shading device '{sd.Name}' not in a spatial container")
 
     return not errors, errors
