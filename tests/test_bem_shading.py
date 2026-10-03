@@ -56,8 +56,9 @@ def test_linked_model_adapter_places_shades_in_its_own_frame():
         m, [[0, 0], [10, 0], [10, 6], [0, 6]], wall_height_m=3.0, simplify_tolerance=2.0
     )
     sh = _by_id(bem)["SH-OVH-1"]
-    # this adapter keeps the linked frame, building at y in [0, 6]: outward +y
-    assert sorted({round(v[1], 6) for v in sh.vertices}) == [6.0, 6.6]
+    # north-up frame: canonical y in [0, 6] -> y in [-6, 0]; the south wall
+    # (canonical y=6) sits at y=-6 and the overhang projects outward to -6.6
+    assert sorted({round(v[1], 6) for v in sh.vertices}) == [-6.6, -6.0]
 
 
 def test_gbxml_carries_shade_surfaces_and_validates(tmp_path):
