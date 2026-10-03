@@ -250,6 +250,11 @@ class Space:
     core_provenance: Provenance | None = None  # polygon + name/number source
     label_confidence: float = 0.0
     poly_type: str = "room"  # "room" | "shaft" | "closet" | "elevator_core" | "unassigned"
+    # roadmap item 6: area-weighted exterior wall U-value over this space's
+    # envelope segments, sum(U_i * A_i) / sum(A_i), written by
+    # constructions.apply_wall_u_rollup. None until the rollup runs or when
+    # no segment of the space has a construction with a known U-value.
+    wall_u_value_w_m2k: Optional[float] = None
     history: List[Provenance] = field(default_factory=list)
 
     @property
@@ -311,6 +316,22 @@ class OpeningAttachmentSummary:
 
 
 @dataclass
+class Construction:
+    """One exterior wall assembly (roadmap item 6).
+
+    Drawings rarely carry assembly data, so ``u_value_w_m2k`` is often
+    unknown; a construction without one still identifies the wall type, and
+    the rollup leaves its segments out of the weighted U rather than
+    guessing a value.
+    """
+
+    id: str  # e.g. "W-1", as tagged on the wall-type legend
+    name: str = ""
+    u_value_w_m2k: Optional[float] = None  # assembly U-value, SI
+    provenance: Provenance | None = None
+
+
+@dataclass
 class EnvelopeWall:
     """One exterior wall run (per facade segment). The detailed
     area-budgeted simplification lives in geometry_simplify.py; this is
@@ -324,6 +345,11 @@ class EnvelopeWall:
     height_m: Optional[float] = None
     area_m2: Optional[float] = None
     provenance: Provenance | None = None
+    # roadmap item 6: the assembly this segment is built from (a key into
+    # BuildingModel.constructions) and the space it encloses. Empty means
+    # not yet known; validation names such segments rather than guessing.
+    construction_id: str = ""
+    space_id: str = ""
 
 
 @dataclass
@@ -508,6 +534,8 @@ class BuildingModel:
         spaces: All spaces (rooms) keyed by ``Space.id``.
         zones: All thermal zones keyed by zone ID.
         envelope: All envelope wall segments (walls, windows, doors).
+        constructions: Exterior wall assemblies keyed by ``Construction.id``;
+            ``EnvelopeWall.construction_id`` points here.
         bim_elements: All BIM elements from IFC import.
         schedules: Lighting and other schedules as plain dicts, keyed by
             schedule tag. Revived from plain dict on model load.
@@ -542,6 +570,8 @@ class BuildingModel:
     spaces: Dict[str, Space] = field(default_factory=dict)
     zones: Dict[str, Zone] = field(default_factory=dict)
     envelope: List[EnvelopeWall] = field(default_factory=list)
+    constructions: Dict[str, Construction] = field(default_factory=dict)
+    # exterior wall assemblies keyed by Construction.id (roadmap item 6)
     bim_elements: List[BimElement] = field(default_factory=list)
     # raw BIM element inventory (IFC frontend, Tier 0+)
     schedules: Dict[str, dict] = field(default_factory=dict)

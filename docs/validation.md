@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (39 checks)
+## The battery (40 checks)
 
 ### Conservation laws (error)
 
@@ -78,6 +78,23 @@ are consistent with each other but implausible for a real building).
   counted as zero. Skips when there are no skylights. Sloped roofs (roadmap
   item 2) replace the flat-roof assumption when they land. Skylights are
   excluded from `facade_opening_closure`, which is about walls.
+- `wall_construction_coverage` — **roadmap item 6, per-space wall
+  constructions.** Each `EnvelopeWall` segment carries a `construction_id`
+  (a key into `BuildingModel.constructions`) and the `space_id` it encloses;
+  the space's wall U-value is Σ(Uᵢ × Aᵢ) / ΣAᵢ over its own segments, stored
+  as `Space.wall_u_value_w_m2k` by `constructions.apply_wall_u_rollup`. The
+  check recomputes that number with its own loop rather than calling the
+  rollup, so the rollup cannot vouch for itself. Error when a segment names
+  an undefined construction or a missing space, or when a stored space U
+  differs from the recompute by more than 0.5% (or is set where no segment
+  can contribute). Warn on partial coverage: segments with no construction,
+  referenced constructions with no U-value, or spaces with a computable U
+  but none stored. Segment area resolves as its own area, then length ×
+  height; segments with neither are left out of the weighting, never
+  counted as zero. Skips when the model declares no constructions (the
+  drawing path does not extract wall types yet). U is SI (W/m²K); the
+  ASHRAE 90.1 U-factor checks still read their own IP field and are not
+  wired to this yet.
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -85,7 +102,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 36 + 3 = 39.
+and are run in addition to it, so `N_CHECKS` = 37 + 3 = 40.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
