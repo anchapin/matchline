@@ -151,6 +151,12 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         co = _el(root, "Construction", id=cid)
         _el(co, "Name", cname)
         _el(co, "U-value", uval, unit="WPerSquareMeterK")
+    if getattr(model, "shades", None):
+        # gbXML requires constructionIdRef on every Surface, Shade included.
+        # Shading carries no heat; this construction only names the surface
+        # type. Written only when shades exist so plain exports are unchanged.
+        co = _el(root, "Construction", id="const-shade")
+        _el(co, "Name", "Shading device (no heat transfer modeled)")
 
     # --- spaces (children of Building in gbXML) ------------------------------
     for sp in model.spaces:
@@ -290,6 +296,23 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     for x, y in reversed(model.ring_m):
         _cartesian(pl, x, y, 0.0)
 
+    # shading surfaces (roadmap item 5): detached Shade surfaces, absolute
+    # coordinates, no AdjacentSpaceId -- shading is not envelope.
+    for k, sh in enumerate(getattr(model, "shades", []) or []):
+        surf_count += 1
+        su = _el(
+            campus,
+            "Surface",
+            id=f"shade-{k + 1:03d}",
+            surfaceType="Shade",
+            constructionIdRef="const-shade",
+        )
+        _el(su, "Name", f"{sh.kind} {sh.id} on {sh.host_wall_id}")
+        pg = _el(su, "PlanarGeometry")
+        pl = _el(pg, "PolyLoop")
+        for x, y, z in sh.vertices:
+            _cartesian(pl, x, y, z)
+
     comment = (
         f"Jesse-Vision BEM export. Simplification area delta "
         f"{model.area_delta_pct:+.3f}% (tol {model.simplify_tolerance:.1f}%). "
@@ -302,6 +325,12 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             f"spread from the roof interior outward, each kept over its own space "
             f"when the model knows it. "
             if sky_units
+            else ""
+        )
+        + (
+            f"Shading: {len(model.shades)} Shade surface(s) placed off their host "
+            f"walls' exterior faces. "
+            if getattr(model, "shades", None)
             else ""
         )
         + "Interior partitions omitted (v1 gap). "

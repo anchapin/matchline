@@ -38,6 +38,20 @@ class BEMOpeningUnit:
 
 
 @dataclass
+class BEMShade:
+    """One shading surface in absolute export coordinates (roadmap item 5).
+
+    ``vertices`` are (x, y, z) in the BEM frame (x=east, y=north, z=up),
+    already placed off the host wall's exterior face.
+    """
+
+    id: str  # ShadingSurface.id it came from
+    kind: str  # "overhang" | "fin" | "balcony" | "other"
+    host_wall_id: str
+    vertices: list  # [(x, y, z), ...] planar quad
+
+
+@dataclass
 class BEMModel:
     building_name: str
     spaces: list  # BEMSpace
@@ -49,6 +63,7 @@ class BEMModel:
     skipped_openings: list = field(default_factory=list)  # tags w/o dims
     notes: list = field(default_factory=list)
     zones: list = field(default_factory=list)  # list of (zone_id, [space_ids])
+    shades: list = field(default_factory=list)  # BEMShade (roadmap item 5)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 

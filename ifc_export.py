@@ -117,6 +117,11 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     # ring_m must be CCW in y-north for write_ifc4
     ring_ccw = _ensure_ccw(ring) if ring else []
 
+    from bem_shading import shades_from_model
+
+    shades, shade_notes = shades_from_model(
+        model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in spaces]
+    )
     return BEMModel(
         building_name=model.name,
         spaces=spaces,
@@ -126,6 +131,8 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         area_delta_pct=0.0,  # no simplification on export path
         simplify_tolerance=0.0,
         zones=[(z.id, z.space_ids) for z in model.zones.values()],
+        shades=shades,
+        notes=shade_notes,
     )
 
 
