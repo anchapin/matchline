@@ -187,3 +187,35 @@ def test_ifc_export_blocks_invalid_bem_conservation(tmp_path):
 
     # File must not be created
     assert not ifc_path.exists()
+
+
+def test_skylights_are_skipped_not_exported_as_doors(tmp_path):
+    # Until the IFC skylight path exists (roadmap item 3, wave 2), a skylight
+    # must not reach the writer, which maps every non-window to IfcDoor.
+    from building_model import SpaceOpening
+    from ifc_export import _bem_from_model
+
+    m = _simple_model(n_spaces=1)
+    before = _export_ifc(m, tmp_path / "before.ifc")
+    doors_before = len(ifcopenshell.open(str(before)).by_type("IfcDoor"))
+    sid = next(iter(m.spaces))
+    m.spaces[sid].openings.append(
+        SpaceOpening(
+            id="roof-SK-1",
+            tag="SK-1",
+            category="skylight",
+            width_m=1.2,
+            height_m=1.2,
+            host_facade="roof",
+            area_m2=1.44,
+            tilt_deg=0.0,
+        )
+    )
+    bem = _bem_from_model(m)
+    assert all(u.category != "skylight" for u in bem.openings)
+    assert [d["tag"] for d in bem.skipped_openings] == ["SK-1"]
+    assert any("skylight" in n for n in bem.notes)
+    after = _export_ifc(m, tmp_path / "after.ifc")
+    f = ifcopenshell.open(str(after))
+    assert len(f.by_type("IfcDoor")) == doors_before
+    assert not any("SK-1" in (d.Name or "") for d in f.by_type("IfcDoor"))
