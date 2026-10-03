@@ -13,6 +13,7 @@ Future extensions (zones, lighting) can layer on top of _bem_from_model.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Dict, List
 
@@ -139,11 +140,17 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
 def _build_ring(walls: List[EnvelopeWall]) -> List[tuple]:
     """Assemble an ordered ring from EnvelopeWall segments.
 
-    Orders walls by facade direction (south -> east -> north -> west) then
-    chains from_m -> to_m for each segment. The result is a closed polygon
-    in y-north coordinates with CCW winding (after _ensure_ccw in _bem_from_model).
+    Starts at the first wall in facade order (south -> east -> north -> west)
+    and then follows shared endpoints, taking each segment in whichever
+    direction continues the chain. EnvelopeWall from_m/to_m carry no common
+    winding (a south wall may run west->east while the east wall runs
+    north->south), so chaining on to_m alone can skip a corner and close the
+    ring with a diagonal. When no segment touches the current end (a gap in
+    the envelope), the next wall in facade order is taken, entered at its
+    nearer endpoint. Returns y-north points; _bem_from_model makes it CCW.
     """
     FACADE_ORDER = ["south", "east", "north", "west"]
+    eps = 1e-6
 
     def _sort_key(w: EnvelopeWall) -> int:
         try:
@@ -151,20 +158,47 @@ def _build_ring(walls: List[EnvelopeWall]) -> List[tuple]:
         except ValueError:
             return len(FACADE_ORDER)
 
-    sorted_walls = sorted(walls, key=_sort_key)
-    ring: List[tuple] = []
+    def _north(p) -> tuple:
+        return (float(p[0]), -float(p[1]))
 
-    for w in sorted_walls:
-        if not ring:
-            # Start: from_m in y-north
-            ring.append((w.from_m[0], -w.from_m[1]))
-            ring.append((w.to_m[0], -w.to_m[1]))
-        else:
-            # Append to_m, but skip if it equals the last point (duplicate)
-            pt = (w.to_m[0], -w.to_m[1])
-            if ring[-1] != pt:
+    def _same(a, b) -> bool:
+        return abs(a[0] - b[0]) <= eps and abs(a[1] - b[1]) <= eps
+
+    segs = [
+        (_north(w.from_m), _north(w.to_m))
+        for w in sorted(walls, key=_sort_key)
+        if w.from_m and w.to_m
+    ]
+    if not segs:
+        return []
+    a, b = segs.pop(0)
+    ring: List[tuple] = [a, b]
+    while segs:
+        end = ring[-1]
+        nxt = None
+        for i, (p0, p1) in enumerate(segs):
+            if _same(p0, end):
+                nxt = (i, p1)
+                break
+            if _same(p1, end):
+                nxt = (i, p0)
+                break
+        if nxt is not None:
+            i, pt = nxt
+            segs.pop(i)
+            if not _same(pt, ring[-1]):
                 ring.append(pt)
-
+            continue
+        # gap: take the next wall in facade order, nearer endpoint first
+        p0, p1 = segs.pop(0)
+        d0 = math.dist(p0, end)
+        d1 = math.dist(p1, end)
+        first, second = (p0, p1) if d0 <= d1 else (p1, p0)
+        for pt in (first, second):
+            if not _same(pt, ring[-1]):
+                ring.append(pt)
+    if len(ring) > 1 and _same(ring[0], ring[-1]):
+        ring.pop()
     return ring
 
 

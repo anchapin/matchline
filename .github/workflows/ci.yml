@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1084 # +8: roadmap item 5 wave 3, IFC shading devices
+          EXPECTED_TEST_COUNT=1091 # +7: IFC export ring chaining (5) + bem_space_area_matches_polygon (2)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
