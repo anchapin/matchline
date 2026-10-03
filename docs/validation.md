@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (37 checks)
+## The battery (38 checks)
 
 ### Conservation laws (error)
 
@@ -47,6 +47,23 @@ are consistent with each other but implausible for a real building).
 - `simplify_budget` — the simplifier's own area delta stays within its
   budget (default 2%, configurable 1–5%). Pass a `SimplifyResult` as
   `sres=`; skipped otherwise.
+- `convention_bias` — **the roadmap item 1 measurement, not a conservation
+  law.** Per level, reports the air-volume delta between the interior-face
+  derivation (spaces tile the interior; this is canonical) and an
+  exterior-face derivation (footprint offset outward by exterior wall
+  thickness). Informational: it never blocks export, because there is no
+  correct value to fail against and an export whose bias is honestly reported
+  is the goal. Thickness comes from `IfcMaterialLayerSet` sums first
+  (analytical, per roadmap item 1), then `BimElement.thickness_m`; with
+  neither it **skips and says the bias is unmeasurable, never zero** — a
+  guessed thickness would produce a guessed bias. Warns in exactly two cases,
+  both of which mean the *number* is untrustworthy rather than the building
+  unusual: a thickness outside 0.05–1.20 m (a units slip, e.g. an inch value
+  in a metre field) and a bias above 10% of air volume. *Geometry:* offsetting
+  a ring outward by t grows area by perimeter × t plus the Steiner corner term
+  π t²; at t = 0.2 m that corner term is 0.13 m² in total, far below the 3%
+  conservation tolerances, while perimeter × t is the term that matters.
+  Non-convex plates make the corner term a slight overestimate only.
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -54,7 +71,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 34 + 3 = 37.
+and are run in addition to it, so `N_CHECKS` = 35 + 3 = 38.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -185,6 +202,14 @@ block export but surface code-compliance issues for human review.
 - **Envelope 1%:** assumes exterior runs and room faces differ only by
   wall thickness. Curtain-wall buildings with deep mullion zones may
   need more.
+- **`convention_bias` thickness band (0.05–1.20 m)** and **10% bias warn:**
+  neither is a physical law. The band exists to catch units slips, not to
+  judge assemblies, and 10% is roughly a 0.5 m wall on a 20 × 30 m plate.
+  Both are module constants (`THICKNESS_PLAUSIBLE_M`, `BIAS_WARN_FRACTION`)
+  rather than `ctx` tolerances, because a bias number is reported, not
+  enforced. The check averages thickness across exterior walls; a building
+  with genuinely mixed constructions needs per-segment thickness first, which
+  is roadmap item 6.
 - **`simplify_budget`** re-runs the simplifier from the raw footprint
   to verify the self-reported delta. If the re-verified original area
   differs from the stored value by more than 0.1 m², an error is raised.
