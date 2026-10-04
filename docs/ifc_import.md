@@ -37,8 +37,19 @@ is never coerced from another property. When every roof element that states
 one agrees (within 1e-6), one `IFC-RU<value>` construction is made
 (`ifc_import:tier0:roof_u`, confidence 0.9) and set as
 `BuildingModel.roof_construction_id`. Disagreeing values are not averaged:
-the roof stays generic and the import revision note says why. Roof layer
-sets are not derived yet (walls only).
+the roof stays generic and the import revision note says why.
+
+With no stated roof U anywhere, it is derived from roof layer sets with the
+same rules as walls but ISO 6946 upward heat flow (Rsi 0.10, Rse 0.04; air
+layers from the Table 2 upward column, 0.16 m²K/W at 25-300 mm):
+`IFC-RUL<value>` (`roof_u_layers`, 0.8) from the file's own conductivities,
+`IFC-RUM<value>` (`roof_u_lookup`, 0.6) when any layer needed the materials
+table. Every roof element that has a layer set must yield a value and all
+must agree, otherwise the roof stays generic with a note: one roof
+construction would otherwise guess for the element it could not derive.
+Roof elements without a layer set (an `IfcRoof` aggregating its slabs) are
+skipped. Upward flow is the heating-season case; ISO 6946 Table 1 note 1
+suggests horizontal values when a direction-independent U is wanted.
 
 ## Coordinate frame
 

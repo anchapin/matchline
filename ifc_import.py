@@ -1013,6 +1013,9 @@ def _wall_thermal_transmittance(wall):
 # ISO 6946 surface resistances for horizontal heat flow (walls), m2K/W.
 RSI_WALL_M2K_W = 0.13
 RSE_WALL_M2K_W = 0.04
+# ...and for upward heat flow (roofs, heating case), ISO 6946 Table 1.
+RSI_ROOF_M2K_W = 0.10
+RSE_ROOF_M2K_W = 0.04
 
 
 def _material_conductivity(material):
@@ -1033,11 +1036,36 @@ def _material_conductivity(material):
     return k if k > 0 and math.isfinite(k) else None
 
 
-def _layered_wall_u(wall, scale, use_lookup=False):
-    """Wall U in W/m2K from its IfcMaterialLayerSet, as (u, looked_up) or None.
+def _layer_sets(el):
+    """The IfcMaterialLayerSets associated with an element (usage unwrapped)."""
+    sets = []
+    for rel in getattr(el, "HasAssociations", None) or []:
+        if not rel.is_a("IfcRelAssociatesMaterial"):
+            continue
+        rm = rel.RelatingMaterial
+        if rm is not None and rm.is_a("IfcMaterialLayerSetUsage"):
+            rm = rm.ForLayerSet
+        if rm is not None and rm.is_a("IfcMaterialLayerSet"):
+            sets.append(rm)
+    return sets
 
-    U = 1 / (Rsi + sum(t_i / k_i) + Rse), ISO 6946 surface resistances.
-    Computed only when the wall has exactly one layer set and EVERY layer has
+
+def _layered_wall_u(wall, scale, use_lookup=False):
+    """Wall U from its layers, horizontal heat flow. See ``_layered_u``."""
+    return _layered_u(wall, scale, use_lookup, RSI_WALL_M2K_W, RSE_WALL_M2K_W, "horizontal")
+
+
+def _layered_roof_u(roof, scale, use_lookup=False):
+    """Roof U from its layers, upward heat flow. See ``_layered_u``."""
+    return _layered_u(roof, scale, use_lookup, RSI_ROOF_M2K_W, RSE_ROOF_M2K_W, "upward")
+
+
+def _layered_u(el, scale, use_lookup, rsi, rse, air_direction):
+    """Element U in W/m2K from its IfcMaterialLayerSet, as (u, looked_up) or None.
+
+    U = 1 / (Rsi + sum(t_i / k_i) + Rse), ISO 6946 surface resistances for
+    the heat flow direction (walls horizontal, roofs upward; air layers use
+    the matching Table 2 column). Computed only when the element has exactly one layer set and EVERY layer has
     a positive thickness and a known conductivity and is not ventilated. A
     layer's conductivity comes from its Pset_MaterialThermal; with
     ``use_lookup`` a layer without one falls back to ``materials``: an air
@@ -1050,18 +1078,10 @@ def _layered_wall_u(wall, scale, use_lookup=False):
     """
     from materials import air_layer_resistance, is_air_name, lookup_conductivity
 
-    sets = []
-    for rel in getattr(wall, "HasAssociations", None) or []:
-        if not rel.is_a("IfcRelAssociatesMaterial"):
-            continue
-        rm = rel.RelatingMaterial
-        if rm is not None and rm.is_a("IfcMaterialLayerSetUsage"):
-            rm = rm.ForLayerSet
-        if rm is not None and rm.is_a("IfcMaterialLayerSet"):
-            sets.append(rm)
+    sets = _layer_sets(el)
     if len(sets) != 1 or not sets[0].MaterialLayers:
         return None
-    r = RSI_WALL_M2K_W + RSE_WALL_M2K_W
+    r = rsi + rse
     looked_up = []
     for lay in sets[0].MaterialLayers:
         if getattr(lay, "IsVentilated", None) is True:
@@ -1078,7 +1098,7 @@ def _layered_wall_u(wall, scale, use_lookup=False):
                 is_air_name(mname) or is_air_name(lname)
             )
             if air:
-                r_air = air_layer_resistance(t)
+                r_air = air_layer_resistance(t, air_direction)
                 if r_air is None:
                     return None
                 r += r_air
@@ -1118,7 +1138,7 @@ def _roof_thermal_transmittance(el):
 ROOF_U_AGREE_TOL = 1e-6  # W/m2K; roof elements stating U must agree this closely
 
 
-def _read_roof_construction(model, f, prov):
+def _read_roof_construction(model, f, prov, scale=1.0):
     """Set ``model.roof_construction_id`` from the roofs' stated U.
 
     Roof elements are IfcRoof and IfcSlab with PredefinedType ROOF. When
@@ -1126,13 +1146,22 @@ def _read_roof_construction(model, f, prov):
     made (``ifc_import:tier0:roof_u``, conf 0.9). Disagreeing values are not
     averaged: the roof stays unset and the returned note (logged in the
     import revision summary) says why. Returns that note, or "".
+
+    With no stated U anywhere, the U is derived from roof layer sets (ISO
+    6946 upward heat flow): ``IFC-RUL<value>`` from the file's own
+    conductivities (``roof_u_layers``, 0.8) or ``IFC-RUM<value>`` when any
+    layer needed the materials table (``roof_u_lookup``, 0.6). Every roof
+    element WITH a layer set must yield a value and all must agree; one that
+    cannot be derived leaves the roof generic too, since a single roof
+    construction would then guess for it. Elements without a layer set (an
+    IfcRoof aggregating its slabs) are skipped.
     """
     roofs = list(f.by_type("IfcRoof")) + [
         s for s in f.by_type("IfcSlab") if getattr(s, "PredefinedType", None) == "ROOF"
     ]
     stated = [(r.GlobalId, u) for r in roofs if (u := _roof_thermal_transmittance(r)) is not None]
     if not stated:
-        return ""
+        return _derive_roof_construction(model, roofs, prov, scale)
     us = [u for _, u in stated]
     if max(us) - min(us) > ROOF_U_AGREE_TOL:
         detail = ", ".join(f"{g}={u:g}" for g, u in stated[:5])
@@ -1150,6 +1179,63 @@ def _read_roof_construction(model, f, prov):
                 f"roof ThermalTransmittance; {len(stated)} roof element(s) agree",
                 gid,
             ),
+        )
+    model.roof_construction_id = cid
+    return ""
+
+
+def _derive_roof_construction(model, roofs, prov, scale):
+    """Layer-derived roof construction (see ``_read_roof_construction``)."""
+    derived, failed = [], []
+    for r in roofs:
+        if not _layer_sets(r):
+            continue
+        got, src = _layered_roof_u(r, scale), "layers"
+        if got is None:
+            got, src = _layered_roof_u(r, scale, use_lookup=True), "lookup"
+        if got is None:
+            failed.append(r.GlobalId)
+        else:
+            derived.append((r.GlobalId, got[0], src, got[1]))
+    if failed:
+        return (
+            f"roof layer U not derivable for {len(failed)} roof element(s) "
+            f"({', '.join(failed[:5])}); roof left generic"
+        )
+    if not derived:
+        return ""
+    us = [u for _, u, _, _ in derived]
+    if max(us) - min(us) > ROOF_U_AGREE_TOL:
+        detail = ", ".join(f"{g}={u:.4f}" for g, u, _, _ in derived[:5])
+        return f"roof layer sets give different U-values ({detail}); roof left generic"
+    gid, u = derived[0][0], derived[0][1]
+    lookups = [x for _, _, s, lu in derived if s == "lookup" for x in lu]
+    if lookups:
+        from materials import AIR_SOURCE_UPWARD, SOURCE
+
+        names = "; ".join(f"{n!r}->{eid}" for n, eid in dict.fromkeys(lookups))
+        air = any(eid == "air_iso6946" for _, eid in lookups)
+        cid, conf, method = f"IFC-RUM{u:.4f}", 0.6, "ifc_import:tier0:roof_u_lookup"
+        name = f"IFC roof, U {u:.4f} W/m2K from material layers + conductivity lookup"
+        why = (
+            f"U from roof layer sets, ISO 6946 Rsi 0.10 + Rse 0.04 (upward); "
+            f"looked up {names}; {SOURCE}"
+            + (f"; air layers per {AIR_SOURCE_UPWARD}" if air else "")
+        )
+    else:
+        cid, conf, method = f"IFC-RUL{u:.4f}", 0.8, "ifc_import:tier0:roof_u_layers"
+        name = f"IFC roof, U {u:.4f} W/m2K from material layers (ISO 6946)"
+        why = (
+            "U from roof IfcMaterialLayerSet thickness / Pset_MaterialThermal "
+            "conductivity, ISO 6946 Rsi 0.10 + Rse 0.04 (upward)"
+        )
+    why += f"; {len(derived)} roof element(s) agree"
+    if cid not in model.constructions:
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=name,
+            u_value_w_m2k=round(u, 6),
+            provenance=prov(method, conf, why, gid),
         )
     model.roof_construction_id = cid
     return ""
@@ -1698,7 +1784,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         from constructions import apply_wall_u_rollup
 
         apply_wall_u_rollup(model)
-    roof_note = _read_roof_construction(model, f, prov)
+    roof_note = _read_roof_construction(model, f, prov, scale)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
