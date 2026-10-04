@@ -36,7 +36,7 @@ disclosed, not hidden.
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
 | `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `ci.md` | CI gates, test count regression policy, and merge requirements |
-| `validation.md` | The 42-check invariant battery and tolerance rationales |
+| `validation.md` | The 43-check invariant battery and tolerance rationales |
 
 ## Quick Start
 
