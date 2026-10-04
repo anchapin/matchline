@@ -60,6 +60,13 @@ documented handedness choice, recorded in provenance.
   distinct positive U (`ifc_import:tier0:wall_u`, conf 0.9), each envelope
   segment names it, and `apply_wall_u_rollup` runs after Tier 1 assigns
   spaces. Zero, negative or non-numeric values are ignored, never coerced.
+  When the pset is absent, U is derived from the wall's single
+  `IfcMaterialLayerSet` as 1 / (Rsi + Σ tᵢ/kᵢ + Rse), ISO 6946 Rsi 0.13 and
+  Rse 0.04 m²K/W, using `Pset_MaterialThermal.ThermalConductivity` per layer
+  material: one `IFC-UL<value>` construction per distinct U
+  (`ifc_import:tier0:wall_u_layers`, conf 0.8). Any layer without a
+  conductivity, a ventilated layer, or more than one layer set means no value
+  (never guessed); a stated `ThermalTransmittance` always wins.
 - **MEP quality varies wildly**: ducts/zones are opportunistic, never
   load-bearing.
 - **Multi-storey**: the hierarchy walk handles N storeys; the fixture only
