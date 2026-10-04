@@ -7,9 +7,10 @@ scattering the numbers across validation messages:
 - ``volume_bias``: interior-face vs exterior-face air volume (item 1), taken
   verbatim from the ``convention_bias`` check so the two can never disagree.
 - ``non_room_area``: floor area held by shafts, closets, elevator/stair
-  cores and unclassified spaces (item 4), per level and per type. These
-  spaces are kept as their own spaces; the table says how much area that is
-  so loads and LPD can be read against rooms only.
+  cores and unclassified spaces (item 4), per level and per type. Closets and
+  shafts are merged by space_merge where the rule settles it; what is left
+  stays its own space and the table says how much area that is, so loads and
+  LPD can be read against rooms only.
 - ``area_budget``: how far envelope simplification moved the envelope area
   against its budget.
 
@@ -89,7 +90,7 @@ def _non_room_area(model) -> dict:
         "by_level_m2": levels,
         "spaces": rows,
         "spaces_without_area": missing_area,
-        "treatment": "kept as own spaces; not merged into or split between neighbours",
+        "treatment": "closets merge into the room their door opens onto; shafts into the room with the largest share of their wall area; spaces the rule cannot settle are kept and flagged for review",
     }
 
 

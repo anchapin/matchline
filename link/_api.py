@@ -12,6 +12,7 @@ from link._mech import _link_mech
 from link._report import LinkReport
 from link._schedules import _schedules
 from link._spaces import _build_spaces
+from space_merge import merge_closets_and_shafts
 
 FT2_PER_M2 = 10.7639
 OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup
@@ -67,6 +68,11 @@ def build_model(
     # linking so that two runs of the same facade produce one SpaceOpening
     # per physical window.
     _dedupe_space_openings(model)
+
+    # Closets fold into the room their door opens onto; shafts into the
+    # room sharing the largest share of their wall area. Anything the rule
+    # cannot settle stays its own space and goes on the review queue.
+    merge_closets_and_shafts(model)
 
     report.review_items = len(model.review_queue)
     return model, report

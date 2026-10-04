@@ -1347,13 +1347,13 @@ VALID_POLY_TYPES = ("room", "shaft", "closet", "elevator_core", "unassigned")
 
 
 def _check_space_type_accounting(ctx: _Ctx) -> CheckResult:
-    """Every space has a known poly_type; non-room area is reported, not merged.
+    """Every space has a known poly_type; remaining non-room area is reported.
 
-    Roadmap item 4. Shafts, closets and elevator/stair cores stay their own
-    spaces: no area is merged into a corridor or split between neighbours
-    (the split rule is still an open question), so nothing is inflated and
-    nothing vanishes. This check reports how much floor area each non-room
-    type holds, so loads and LPD can be read against rooms only.
+    Roadmap item 4. space_merge folds closets into the room their door opens
+    onto and shafts into the room sharing the largest share of their wall
+    area; whatever that rule cannot settle (and every elevator/stair core)
+    stays its own space and is reported here, so nothing is inflated and
+    nothing vanishes. Loads and LPD can be read against rooms only.
 
     error -- a space has a poly_type outside the known set.
     warn  -- the classifier could not decide on one or more spaces
