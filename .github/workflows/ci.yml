@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1285 # +10: space_merge closet/shaft rule on top of #566 (1275)
+          EXPECTED_TEST_COUNT=1287 # +2: plan door positions on top of #567 (1285)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
