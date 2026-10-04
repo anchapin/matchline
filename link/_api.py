@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import numpy as np
+
 from building_model import (
     BuildingModel,
     Level,
 )
+from door_detect import detect_door_swings
 from link._dedupe import _dedupe_space_openings
 from link._elevation import _link_elevation
 from link._envelope import _build_envelope
@@ -73,25 +76,38 @@ def build_model(
     # Closets fold into the room their door opens onto; shafts into the
     # room sharing the largest share of their wall area. Anything the rule
     # cannot settle stays its own space and goes on the review queue.
-    merge_closets_and_shafts(model, doors=_arch_doors(bldg, level_id))
+    merge_closets_and_shafts(model, doors=_arch_doors(bldg, level_id, model))
 
     report.review_items = len(model.review_queue)
     return model, report
 
 
-def _arch_doors(bldg: dict, level_id: str) -> list:
-    """Door symbols read off the arch plan, registered into plan metres.
+def _arch_doors(bldg: dict, level_id: str, model=None) -> list:
+    """Door swings found in the arch plan image, registered into plan metres.
 
-    Uses only the sheet's detector-style output (pixels) and its title-block
-    scale; the generator's GT door list is never read here.
+    Reads only the sheet image and its title-block scale; neither the
+    generator's GT list (``bldg["doors"]``) nor the sheet's pixel-space GT
+    (``sheets["arch"]["doors"]``) is used. Doors only feed closet merging, so
+    the image is searched only when the model has a closet.
     """
     arch = bldg.get("sheets", {}).get("arch", {})
-    meta = arch.get("meta")
-    if not meta:
+    meta, img = arch.get("meta"), arch.get("image")
+    if not meta or img is None:
+        return []
+    if model is not None and not any(s.poly_type == "closet" for s in model.spaces.values()):
         return []
     aff = Affine2D.from_scale_translate(meta["px_per_m"], *meta["origin_px"])
     out = []
-    for det in arch.get("doors", []):
+    for det in detect_door_swings(np.asarray(img), meta["px_per_m"]):
         x_m, y_m = aff.apply(det["x_px"], det["y_px"])
-        out.append({"id": det["id"], "level_id": level_id, "plan_center_m": [x_m, y_m]})
+        out.append(
+            {
+                "id": det["id"],
+                "level_id": level_id,
+                "plan_center_m": [x_m, y_m],
+                "width_m": det["width_px"] / meta["px_per_m"],
+                "method": det["method"],
+                "score": det["score"],
+            }
+        )
     return out

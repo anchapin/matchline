@@ -246,7 +246,8 @@ def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed, doors=
         cx, cy = dr["plan_center_m"]
         half = dr["width_m"] / 2
         xp, yh, ye = X(cx), Y(cy - half), Y(cy + half)
-        d.rectangle([xp - wt / 2 - 2, yh, xp + wt / 2 + 2, ye], fill=255)
+        # shared walls are two outlines (one per room), so clear both
+        d.rectangle([xp - wt - 1, yh, xp + wt + 1, ye], fill=255)
         r_px = ye - yh
         d.line([xp, yh, xp + r_px, yh], fill=0, width=3)  # open leaf
         d.arc([xp - r_px, yh - r_px, xp + r_px, yh + r_px], start=0, end=90, fill=0, width=2)
@@ -717,7 +718,8 @@ def generate_building(seed: int, open_office_span: bool = False, service_rooms: 
             "arch": {
                 "image": arch_img,
                 "meta": sheet_meta("arch_A101", "arch_plan", arch_origin, PLAN_PX_PER_M),
-                # detector-style door symbols in SHEET PIXELS (GT is bldg["doors"])
+                # where each door symbol is drawn, in SHEET PIXELS: GT for scoring
+                # the image detector (door_detect.py); the linker never reads it
                 "doors": door_dets,
             },
             "lighting": {
