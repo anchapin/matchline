@@ -154,6 +154,10 @@ class SpaceOpening:
     # None for wall openings and for skylights whose roof plane is unknown.
     tilt_deg: Optional[float] = None
     azimuth_deg: Optional[float] = None
+    # Skylights only: plan centre [x, y] in the space polygon's frame (y-down
+    # metres); width_m runs along x, height_m along y. None when the position
+    # is unknown (drawing takeoff lines carry a count, not a position).
+    plan_center_m: Optional[list] = None
 
 
 @dataclass
@@ -205,7 +209,7 @@ class DaylitZone:
     """
 
     id: str
-    zone_class: str  # "primary" | "secondary"
+    zone_class: str  # "primary" | "secondary" | "under_skylight"
     window_id: str  # the SpaceOpening this derives from
     polygon_m: List[list] = field(default_factory=list)
     area_m2: float = 0.0
@@ -219,6 +223,13 @@ class SpaceDaylight:
     secondary: List[DaylitZone] = field(default_factory=list)
     params_note: str = ""  # e.g. "90.1-2019 approx: P=1.0xH, S=2.0xH"
     provenance: Provenance | None = None
+    # Daylight area under skylights (roadmap item 3, toplighting). One zone
+    # per placed skylight; toplit_m2 is the area of their union within the
+    # space, so overlapping zones are not double counted. Skylights with no
+    # known plan position are named in unplaced_skylights, never guessed.
+    toplit: List[DaylitZone] = field(default_factory=list)
+    toplit_m2: float = 0.0
+    unplaced_skylights: List[str] = field(default_factory=list)
 
     @property
     def primary_m2(self) -> float:

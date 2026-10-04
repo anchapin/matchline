@@ -723,8 +723,24 @@ def _attach_skylights_to_spaces(model):
                     host_facade="roof",
                     area_m2=round(w * h, 4) if w and h else None,
                     provenance=bo.provenance,
+                    plan_center_m=list(bo.plan_center_m),
                 )
             )
+
+
+def _apply_skylight_daylight(model):
+    """Daylight area under each space's skylights (roadmap item 3).
+
+    Ceiling height is taken as the storey wall height: IFC spaces here carry
+    no separate ceiling, and the wall height is the floor-to-structure
+    height the import already derives. Spaces without skylights are untouched.
+    """
+    from daylight_skylights import compute_skylight_daylight
+
+    heights = {lv.id: lv.wall_height_m for lv in model.levels}
+    for sp in model.spaces.values():
+        if any(o.category == "skylight" for o in sp.openings):
+            compute_skylight_daylight(sp, heights.get(sp.level_id))
 
 
 def _attach_openings_to_spaces(model):
@@ -1814,6 +1830,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         _assign_air_terminal_to_space(ref, terminal_sids.get(gid, []), model)
 
     _attach_openings_to_spaces(model)
+    _apply_skylight_daylight(model)
     facade_summary = _classify_envelope(model)
     if model.constructions:
         # space_id is known only after classification; interior walls have

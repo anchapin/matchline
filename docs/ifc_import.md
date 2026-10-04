@@ -232,3 +232,25 @@ exact, zone membership exact.
 - **Refusing to guess loses openings**: when several same-length edges share a wall's origin, or none coincides, the wall direction resolves to `None` and its openings are dropped rather than mis-attributed. This trades completeness for correctness; the count of such walls is not yet reported as a metric, so the loss is only visible through the `opening_attachment` review queue.
 - **Geometry-less spaces are not handled**: Spaces without geometry are currently skipped; they do not appear in the BIM model output.
 - **No IFC4 multi-level spatial structure**: The importer flattens the spatial hierarchy into a single building model; site, building, and floor levels are not preserved as separate entities.
+
+
+## Daylight area under skylights
+
+After skylights are attached to the space under them, each space with
+skylights gets `daylight.toplit` zones (roadmap item 3, toplighting), per
+ASHRAE 90.1 Section 3.2 "daylight area under skylights" as revised by the
+addenda package t ... co to 90.1-2016 (Figure 3.2-2): the opening beneath the
+skylight, extended horizontally in each direction by the smaller of 0.7 x
+ceiling height and the distance to an opaque obstruction. `toplit_m2` is the
+union of the zones, so overlaps are not double counted. Code:
+`daylight_skylights.compute_skylight_daylight`.
+
+- Ceiling height is the storey wall height (IFC spaces here carry no
+  separate ceiling).
+- Obstructions: only full-height ones, i.e. the space's own boundary walls
+  (the zone is clipped to the space polygon). Partial-height obstructions
+  inside a space are not in the model, so zones may be optimistic there.
+- Multistory spaces (Figure 3.2-5) are not handled.
+- A skylight with no plan position or size goes in
+  `daylight.unplaced_skylights`, never placed by guess. On the drawing path,
+  takeoff skylights carry a count and no position, so nothing is computed yet.
