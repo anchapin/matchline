@@ -1010,20 +1010,120 @@ def _wall_thermal_transmittance(wall):
     return u if u > 0 and math.isfinite(u) else None
 
 
-def _wall_construction(model, u, provenance):
-    """Construction id for a wall with this U, one construction per distinct U.
+# ISO 6946 surface resistances for horizontal heat flow (walls), m2K/W.
+RSI_WALL_M2K_W = 0.13
+RSE_WALL_M2K_W = 0.04
 
+
+def _material_conductivity(material):
+    """Pset_MaterialThermal.ThermalConductivity of an IfcMaterial in W/mK, or None."""
+    if material is None:
+        return None
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(material) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return None
+    k = (psets.get("Pset_MaterialThermal") or {}).get("ThermalConductivity")
+    try:
+        k = float(k)
+    except (TypeError, ValueError):
+        return None
+    return k if k > 0 and math.isfinite(k) else None
+
+
+def _layered_wall_u(wall, scale):
+    """Wall U in W/m2K from its IfcMaterialLayerSet, or None.
+
+    U = 1 / (Rsi + sum(t_i / k_i) + Rse), ISO 6946 surface resistances.
+    Computed only when the wall has exactly one layer set and EVERY layer has
+    a positive thickness, a material, a Pset_MaterialThermal conductivity and
+    is not ventilated. A single unknown layer (an air gap, an unnamed
+    material, a missing conductivity) means no value: the layer's resistance
+    is not guessed.
+    """
+    sets = []
+    for rel in getattr(wall, "HasAssociations", None) or []:
+        if not rel.is_a("IfcRelAssociatesMaterial"):
+            continue
+        rm = rel.RelatingMaterial
+        if rm is not None and rm.is_a("IfcMaterialLayerSetUsage"):
+            rm = rm.ForLayerSet
+        if rm is not None and rm.is_a("IfcMaterialLayerSet"):
+            sets.append(rm)
+    if len(sets) != 1 or not sets[0].MaterialLayers:
+        return None
+    r = RSI_WALL_M2K_W + RSE_WALL_M2K_W
+    for lay in sets[0].MaterialLayers:
+        if getattr(lay, "IsVentilated", None) is True:
+            return None
+        try:
+            t = float(lay.LayerThickness) * scale
+        except (TypeError, ValueError):
+            return None
+        k = _material_conductivity(lay.Material)
+        if k is None or not (t > 0 and math.isfinite(t)):
+            return None
+        r += t / k
+    return 1.0 / r
+
+
+def _wall_construction(model, u, provenance, source="pset"):
+    """Construction id for a wall with this U, one construction per distinct U
+    and source.
+
+    ``source`` is "pset" (Pset_WallCommon.ThermalTransmittance, id IFC-U...)
+    or "layers" (computed from the material layer set, id IFC-UL...), so a
+    stated and a derived value never share a construction.
     ``provenance`` records the first wall seen carrying the value.
     """
-    cid = f"IFC-U{u:.4f}"
+    if source == "layers":
+        cid = f"IFC-UL{u:.4f}"
+        name = f"IFC wall, U {u:.4f} W/m2K from material layers (ISO 6946)"
+    else:
+        cid = f"IFC-U{u:.4f}"
+        name = f"IFC wall, ThermalTransmittance {u:.4f} W/m2K"
     if cid not in model.constructions:
         model.constructions[cid] = Construction(
             id=cid,
-            name=f"IFC wall, ThermalTransmittance {u:.4f} W/m2K",
+            name=name,
             u_value_w_m2k=round(u, 6),
             provenance=provenance,
         )
     return cid
+
+
+def _wall_construction_id(model, wall, scale, prov, gid):
+    """Construction for an imported wall: the stated U first, else the U
+    derived from its layers, else "" (left for the coverage check)."""
+    u = _wall_thermal_transmittance(wall)
+    if u is not None:
+        return _wall_construction(
+            model,
+            u,
+            prov(
+                "ifc_import:tier0:wall_u",
+                0.9,
+                "Pset_WallCommon.ThermalTransmittance; first wall carrying it",
+                gid,
+            ),
+        )
+    u = _layered_wall_u(wall, scale)
+    if u is not None:
+        return _wall_construction(
+            model,
+            u,
+            prov(
+                "ifc_import:tier0:wall_u_layers",
+                0.8,
+                "U from IfcMaterialLayerSet thickness / Pset_MaterialThermal "
+                "conductivity, ISO 6946 Rsi 0.13 + Rse 0.04; first wall carrying it",
+                gid,
+            ),
+            source="layers",
+        )
+    return ""
 
 
 def _classify_envelope(model):
@@ -1359,20 +1459,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         length_m=round(length_m, 4),
                         height_m=round(height_m, 4) if height_m else None,
                         area_m2=round(length_m * height_m, 4) if height_m else None,
-                        construction_id=(
-                            _wall_construction(
-                                model,
-                                wall_u,
-                                prov(
-                                    "ifc_import:tier0:wall_u",
-                                    0.9,
-                                    "Pset_WallCommon.ThermalTransmittance; first wall carrying it",
-                                    gid,
-                                ),
-                            )
-                            if (wall_u := _wall_thermal_transmittance(el)) is not None
-                            else ""
-                        ),
+                        construction_id=_wall_construction_id(model, el, scale, prov, gid),
                         provenance=prov(
                             "ifc_import:tier0:envelope",
                             0.95,
