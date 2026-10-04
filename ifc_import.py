@@ -37,6 +37,7 @@ from building_model import (
     BimOpening,
     BuildingModel,
     ComponentRef,
+    Construction,
     EnvelopeWall,
     Level,
     Provenance,
@@ -955,6 +956,43 @@ def _facade_of(nx, ny):
     return "south" if ny > 0 else "north"
 
 
+def _wall_thermal_transmittance(wall):
+    """Pset_WallCommon.ThermalTransmittance in W/m2K, or None.
+
+    Read as written (IFC's ThermalTransmittance is SI unless the file
+    declares otherwise, which no tested authoring tool does). Non-numeric
+    or non-positive values are ignored rather than coerced.
+    """
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(wall) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return None
+    u = (psets.get("Pset_WallCommon") or {}).get("ThermalTransmittance")
+    try:
+        u = float(u)
+    except (TypeError, ValueError):
+        return None
+    return u if u > 0 and math.isfinite(u) else None
+
+
+def _wall_construction(model, u, provenance):
+    """Construction id for a wall with this U, one construction per distinct U.
+
+    ``provenance`` records the first wall seen carrying the value.
+    """
+    cid = f"IFC-U{u:.4f}"
+    if cid not in model.constructions:
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=f"IFC wall, ThermalTransmittance {u:.4f} W/m2K",
+            u_value_w_m2k=round(u, 6),
+            provenance=provenance,
+        )
+    return cid
+
+
 def _classify_envelope(model):
     """Tier 1: decide exterior/interior and facade for imported wall segments.
 
@@ -1288,6 +1326,20 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         length_m=round(length_m, 4),
                         height_m=round(height_m, 4) if height_m else None,
                         area_m2=round(length_m * height_m, 4) if height_m else None,
+                        construction_id=(
+                            _wall_construction(
+                                model,
+                                wall_u,
+                                prov(
+                                    "ifc_import:tier0:wall_u",
+                                    0.9,
+                                    "Pset_WallCommon.ThermalTransmittance; first wall carrying it",
+                                    gid,
+                                ),
+                            )
+                            if (wall_u := _wall_thermal_transmittance(el)) is not None
+                            else ""
+                        ),
                         provenance=prov(
                             "ifc_import:tier0:envelope",
                             0.95,
@@ -1407,6 +1459,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     _attach_openings_to_spaces(model)
     facade_summary = _classify_envelope(model)
+    if model.constructions:
+        # space_id is known only after classification; interior walls have
+        # left the envelope, so the rollup sees exterior segments only
+        from constructions import apply_wall_u_rollup
+
+        apply_wall_u_rollup(model)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)

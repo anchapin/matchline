@@ -55,6 +55,11 @@ documented handedness choice, recorded in provenance.
 
 - **Thermal properties** (`Pset_MaterialThermal`) are usually absent in
   practice — the same material→property lookup table the drawing path needs.
+  Wall U-values are read when the wall carries
+  `Pset_WallCommon.ThermalTransmittance`: one `IFC-U<value>` construction per
+  distinct positive U (`ifc_import:tier0:wall_u`, conf 0.9), each envelope
+  segment names it, and `apply_wall_u_rollup` runs after Tier 1 assigns
+  spaces. Zero, negative or non-numeric values are ignored, never coerced.
 - **MEP quality varies wildly**: ducts/zones are opportunistic, never
   load-bearing.
 - **Multi-storey**: the hierarchy walk handles N storeys; the fixture only
