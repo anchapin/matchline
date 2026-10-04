@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1294 # +7: synth closets/shafts/doors on top of #568 (1287)
+          EXPECTED_TEST_COUNT=1297 # +3: door swing drawn + linker reads sheet doors on top of #569 (1294)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

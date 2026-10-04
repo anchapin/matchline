@@ -12,6 +12,7 @@ from link._mech import _link_mech
 from link._report import LinkReport
 from link._schedules import _schedules
 from link._spaces import _build_spaces
+from registration import Affine2D
 from space_merge import merge_closets_and_shafts
 
 FT2_PER_M2 = 10.7639
@@ -72,10 +73,25 @@ def build_model(
     # Closets fold into the room their door opens onto; shafts into the
     # room sharing the largest share of their wall area. Anything the rule
     # cannot settle stays its own space and goes on the review queue.
-    merge_closets_and_shafts(
-        model,
-        doors=[{**d, "level_id": d.get("level_id", level_id)} for d in bldg.get("doors", [])],
-    )
+    merge_closets_and_shafts(model, doors=_arch_doors(bldg, level_id))
 
     report.review_items = len(model.review_queue)
     return model, report
+
+
+def _arch_doors(bldg: dict, level_id: str) -> list:
+    """Door symbols read off the arch plan, registered into plan metres.
+
+    Uses only the sheet's detector-style output (pixels) and its title-block
+    scale; the generator's GT door list is never read here.
+    """
+    arch = bldg.get("sheets", {}).get("arch", {})
+    meta = arch.get("meta")
+    if not meta:
+        return []
+    aff = Affine2D.from_scale_translate(meta["px_per_m"], *meta["origin_px"])
+    out = []
+    for det in arch.get("doors", []):
+        x_m, y_m = aff.apply(det["x_px"], det["y_px"])
+        out.append({"id": det["id"], "level_id": level_id, "plan_center_m": [x_m, y_m]})
+    return out
