@@ -38,6 +38,13 @@ in the gbXML file comment.
   constructions (generic wall/roof/slab with nominal U-values 0.50/0.30/
   0.40 W/m²K). Real assemblies are a v2 enrichment — drawings don't carry
   them.
+- Per-space wall constructions (roadmap item 6): when a space carries an
+  area-weighted wall U (`Space.wall_u_value_w_m2k`, written by
+  `constructions.apply_wall_u_rollup`), the export adds a
+  `const-wall-<space id>` construction with that U-value and every exterior
+  wall assigned to the space references it. Spaces without one keep
+  `const-wall`. The IFC4 writer puts the same value on each wall as
+  `Pset_WallCommon.ThermalTransmittance`.
 - Spaces get a full closed `ShellGeometry` (floor + roof + wall quads with
   outward normals), `Area`, `Volume` (= area × wall height), and
   `CADObjectId` = room number. All spaces share one `Zone` ("Zone 1") —
@@ -102,8 +109,9 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 2. **Single storey, uniform 3.0 m height** — no multi-storey or
    floor-to-floor variation; roof/slab adjacency points at the largest
    space (approximation).
-3. **Placeholder constructions** — generic U-values; real assemblies need
-   spec/schedule input.
+3. **Placeholder constructions** — generic U-values unless a space has an
+   area-weighted wall U from its wall constructions; roof and slab are
+   always generic, and layered assemblies still need spec/schedule input.
 4. **Opening positions are synthetic** (counts are real, positions are
    apportioned) — true positions need elevation-view parsing.
 5. **IFC roof/slab missing** — walls + spaces + openings only; roof as

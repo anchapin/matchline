@@ -100,6 +100,16 @@ def centroid(sp: BEMSpace):
 # ---- write_gbxml ----
 
 
+def _space_wall_constructions(spaces) -> dict:
+    """sid -> (construction id, U) for spaces with a usable wall U-value."""
+    out = {}
+    for sp in spaces:
+        u = getattr(sp, "wall_u_value_w_m2k", None)
+        if u is not None and u > 0:
+            out[sp.sid] = (f"const-wall-{sp.sid}", float(u))
+    return out
+
+
 def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     """Write a gbXML 6.01 file for the model. Returns the path written."""
     ET.register_namespace("", GBXML_NS)
@@ -151,6 +161,13 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         co = _el(root, "Construction", id=cid)
         _el(co, "Name", cname)
         _el(co, "U-value", uval, unit="WPerSquareMeterK")
+    # Per-space exterior wall constructions (roadmap item 6): a space with an
+    # area-weighted wall U gets its own construction; its walls reference it.
+    wall_cons = _space_wall_constructions(model.spaces)
+    for sid, (cid, u) in wall_cons.items():
+        co = _el(root, "Construction", id=cid)
+        _el(co, "Name", f"Exterior wall, area-weighted ({sid})")
+        _el(co, "U-value", _fmt(u), unit="WPerSquareMeterK")
     if getattr(model, "shades", None):
         # gbXML requires constructionIdRef on every Surface, Shade included.
         # Shading carries no heat; this construction only names the surface
@@ -218,7 +235,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             "Surface",
             id=f"wall-{i + 1:03d}",
             surfaceType="ExteriorWall",
-            constructionIdRef="const-wall",
+            constructionIdRef=wall_cons.get(sp.sid, ("const-wall", None))[0],
         )
         _el(su, "Name", f"Wall {i + 1}")
         _el(su, "AdjacentSpaceId", spaceIdRef=sp.sid)

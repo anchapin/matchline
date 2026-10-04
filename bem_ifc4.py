@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bem_geometry import BEMModel
 from bem_helpers import (
+    _assign_wall_to_space,
     _distribute_openings,
     _place_openings_on_wall,
     _place_skylights_on_roof,
@@ -139,6 +140,19 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         _Gm.assign_representation(f, product=wall, representation=rep)
         _Sp.assign_container(f, products=[wall], relating_structure=storey)
         walls.append((wall, p0, p1, L))
+        # per-space area-weighted wall U (roadmap item 6), best effort
+        host = _assign_wall_to_space(p0, p1, model.spaces)
+        u = getattr(host, "wall_u_value_w_m2k", None)
+        if u is not None and u > 0:
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=wall, name="Pset_WallCommon")
+                _Ps.edit_pset(
+                    f, pset=pset, properties={"ThermalTransmittance": float(u), "IsExternal": True}
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass  # thermal property is enrichment, not core validity
 
         # openings hosted in this wall
         placements, _ = _place_openings_on_wall(opening_assign[i], L, h)

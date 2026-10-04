@@ -73,6 +73,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                 area_m2=space.area_m2 or 0.0,
                 volume_m3=vol or 0.0,
                 lighting_w=(space.lighting or SpaceLighting()).total_w or 0.0,
+                wall_u_value_w_m2k=space.wall_u_value_w_m2k,
             )
         )
 
