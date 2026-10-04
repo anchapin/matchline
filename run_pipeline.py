@@ -686,21 +686,8 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
 
     # --- Space with minimal openings ---
     openings: list[SpaceOpening] = []
-    for i, wr in enumerate(by_cat.get("wall", [])):
-        tag = f"W{i:02d}"
-        openings.append(
-            SpaceOpening(
-                id=tag,
-                tag=tag,
-                category="door",
-                width_m=0.9,
-                height_m=2.1,
-                area_m2=0.9 * 2.1,
-                provenance=prov,
-                needs_review=False,
-            )
-        )
-
+    # Wall regions are walls, not openings: doors come only from door
+    # symbols (below), so a sheet's door count is never inflated by its walls.
     for i, dr in enumerate(by_cat.get("door", [])):
         tag = f"D{i:02d}"
         # Plan position of the door symbol (centroid of its detected

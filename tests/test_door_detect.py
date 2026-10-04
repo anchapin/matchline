@@ -103,3 +103,38 @@ def test_default_building_has_no_false_doors():
     b = generate_building(5)
     arch = b["sheets"]["arch"]
     assert detect_door_swings(arch["image"], arch["meta"]["px_per_m"]) == []
+
+
+def test_larger_scale_drawing():
+    """Tolerances grow with the scale: a 3x NEAREST upscale still reads."""
+    from synth.multidiscipline import generate_building
+
+    b = generate_building(3, service_rooms=True)
+    a = b["sheets"]["arch"]
+    img = a["image"]
+    big = np.asarray(
+        Image.fromarray(img).resize((img.shape[1] * 3, img.shape[0] * 3), Image.NEAREST)
+    )
+    (det,) = detect_door_swings(big, 3 * a["meta"]["px_per_m"])
+    (g,) = a["doors"]
+    assert np.hypot(det["x_px"] / 3 - g["x_px"], det["y_px"] / 3 - g["y_px"]) <= 3
+    assert abs(det["width_px"] / 3 - g["width_px"]) <= 3
+
+
+def test_double_line_wall_and_outlined_leaf():
+    """Thin-line drafting: wall as two lines, leaf as an outlined panel."""
+    ppm = 164  # ~200 dpi at 1/4" = 1'-0"
+    img = Image.new("L", (900, 900), 255)
+    d = ImageDraw.Draw(img)
+    x, t2 = 300, int(0.15 * ppm)
+    for xx in (x - t2 // 2, x + t2 // 2):
+        d.line([xx, 60, xx, 840], fill=0, width=2)
+    r, yh = int(0.9 * ppm), 250
+    d.rectangle([x - t2 // 2 - 2, yh, x + t2 // 2 + 2, yh + r], fill=255)
+    d.line([x - t2 // 2, yh, x + t2 // 2, yh], fill=0, width=2)
+    d.line([x - t2 // 2, yh + r, x + t2 // 2, yh + r], fill=0, width=2)
+    d.rectangle([x, yh - 3, x + r, yh + 3], outline=0, width=2)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    (det,) = detect_door_swings(np.asarray(img), float(ppm))
+    assert np.hypot(det["x_px"] - x, det["y_px"] - (yh + r / 2)) <= 4
+    assert abs(det["width_px"] - r) <= 6
