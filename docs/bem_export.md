@@ -114,12 +114,17 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
    floor-to-floor variation; roof/slab adjacency points at the largest
    space (approximation).
 3. **Placeholder constructions** — generic U-values unless a space has an
-   area-weighted wall U from its wall constructions; roof and slab are
-   always generic, and layered assemblies still need spec/schedule input.
+   area-weighted wall U from its wall constructions. The roof uses the
+   model's `roof_construction_id` U-value when one is set (gbXML
+   `const-roof` "Exterior roof (from model)", IFC4
+   `Pset_SlabCommon.ThermalTransmittance` on the `IfcSlab ROOF`), else the
+   generic 0.30. The slab is always generic, and drawing-derived
+   assemblies still need spec/schedule input.
 4. **Opening positions are synthetic** (counts are real, positions are
    apportioned) — true positions need elevation-view parsing.
-5. **IFC roof/slab missing** — walls + spaces + openings only; roof as
-   `IfcSlab`/`IfcRoof` is straightforward to add.
+5. **IFC roof written only when it carries something**: an `IfcSlab ROOF`
+   is emitted when skylights need a host or the model has a roof U-value.
+   No ground slab yet.
 6. **IfcSpace has no solid geometry** in v1 (placement + quantities only).
 7. Window/door opening areas are not yet reconciled against the simplified
    envelope (double-count risk noted in `docs/geometry_simplify.md`).

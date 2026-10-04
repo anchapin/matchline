@@ -76,3 +76,11 @@ def apply_wall_u_rollup(model) -> Dict[str, WallURollup]:
         r = roll.get(sid)
         sp.wall_u_value_w_m2k = r.u_value_w_m2k if r else None
     return roll
+
+
+def roof_u_value(model) -> Optional[float]:
+    """U of ``model.roof_construction_id`` (W/m2K), or None when unset/unusable."""
+    cid = getattr(model, "roof_construction_id", "") or ""
+    c = (getattr(model, "constructions", None) or {}).get(cid) if cid else None
+    u = getattr(c, "u_value_w_m2k", None)
+    return float(u) if u is not None and u > 0 else None

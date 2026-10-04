@@ -564,6 +564,8 @@ class BuildingModel:
         envelope: All envelope wall segments (walls, windows, doors).
         constructions: Exterior wall assemblies keyed by ``Construction.id``;
             ``EnvelopeWall.construction_id`` points here.
+        roof_construction_id: ``Construction.id`` of the roof assembly, or
+            "" when unknown (exports then use the generic roof).
         shading: Exterior shading projections hosted on envelope walls;
             kept out of ``envelope`` so they never enter the area budget.
         bim_elements: All BIM elements from IFC import.
@@ -601,6 +603,9 @@ class BuildingModel:
     zones: Dict[str, Zone] = field(default_factory=dict)
     envelope: List[EnvelopeWall] = field(default_factory=list)
     constructions: Dict[str, Construction] = field(default_factory=dict)
+    # Construction.id of the roof assembly, when known (IFC import reads it
+    # from the roof's ThermalTransmittance); "" -> generic roof on export
+    roof_construction_id: str = ""
     shading: List[ShadingSurface] = field(default_factory=list)
     # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
