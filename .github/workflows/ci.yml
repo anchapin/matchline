@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1214 # +9: roof U-value through IFC import, gbXML and IFC4 export
+          EXPECTED_TEST_COUNT=1224 # +10: roof U derived from layer sets (ISO 6946 upward)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

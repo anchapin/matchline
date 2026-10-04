@@ -121,18 +121,42 @@ AIR_LAYER_R_HORIZONTAL: Tuple[Tuple[float, float], ...] = (
 )
 
 
+AIR_SOURCE_UPWARD = "ISO 6946:2007 Table 2, upward heat flow"
+
+# Same table, upward heat flow (roofs, heating case).
+AIR_LAYER_R_UPWARD: Tuple[Tuple[float, float], ...] = (
+    (0.0, 0.00),
+    (5.0, 0.11),
+    (7.0, 0.13),
+    (10.0, 0.15),
+    (15.0, 0.16),
+    (25.0, 0.16),
+    (50.0, 0.16),
+    (100.0, 0.16),
+    (300.0, 0.16),
+)
+
+
 def is_air_name(name: str) -> bool:
     """Does a material or layer name describe an air layer (air/cavity/void/gap)?"""
     return bool(_AIR.search(_norm(name)))
 
 
-def air_layer_resistance(thickness_m: float) -> Optional[float]:
-    """R of an unventilated wall air layer (m2K/W), or None outside 0 < t <= 0.3 m."""
+def air_layer_resistance(thickness_m: float, direction: str = "horizontal") -> Optional[float]:
+    """R of an unventilated air layer (m2K/W), or None outside 0 < t <= 0.3 m.
+
+    ``direction`` is the heat flow: "horizontal" (walls) or "upward" (roofs).
+    """
     try:
         t = float(thickness_m) * 1000.0
     except (TypeError, ValueError):
         return None
-    rows = AIR_LAYER_R_HORIZONTAL
+    if direction == "upward":
+        rows = AIR_LAYER_R_UPWARD
+    elif direction == "horizontal":
+        rows = AIR_LAYER_R_HORIZONTAL
+    else:
+        raise ValueError(f"unknown heat flow direction {direction!r}")
     if not (t > 0 and t <= rows[-1][0]):
         return None
     for (t0, r0), (t1, r1) in zip(rows, rows[1:]):
