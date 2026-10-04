@@ -48,17 +48,28 @@ random stream and is off by default, so default buildings are unchanged. Across
 seeds 0 to 29 (both layouts) 59 of 60 buildings merge both spaces into the host
 room with no review items; the other has no room large enough to host the strip.
 
-## Where door positions come from (synthetic buildings)
+## Where door positions come from
 
-With `service_rooms=True` the arch sheet draws the closet door as a standard
-plan symbol: a gap in the wall, the open leaf, and a quarter-circle swing into
-the closet. The sheet also carries detector-style door outputs in sheet pixels
-(`sheets["arch"]["doors"]`: opening centre `x_px`/`y_px`, `bbox_px`,
-`width_px`). `build_model` registers those through the arch title-block scale
-and hands them to `merge_closets_and_shafts`; the generator's GT list
-(`bldg["doors"]`, with the host `room_number`) is for scoring only and is never
-read by the linker.
+`build_model` finds doors in the arch plan image itself with
+`door_detect.detect_door_swings` (numpy only) and registers them through the
+arch title-block scale. A door counts only when the image shows the whole
+symbol: a thin leaf from the hinge jamb, an inked quarter-circle arc of the
+same radius back to the far jamb, a wall band behind the hinge or past the far
+jamb (seen on two rows with the same centre), and a clear opening between the
+jambs. The hinge is snapped to the wall's centre line; the width is the radius
+whose arc best sits on the ink. All 8 hinge/swing orientations are searched.
+A wall gap with no swing is never treated as a door. The image is searched
+only when the model has a closet, since doors only feed closet merging.
 
-These pixel outputs are simulated the same way lighting fixtures and
-diffusers are. No image-based door detector reads the drawn swing yet; tests
-check that the swing is drawn exactly where the pixel output says it is.
+With `service_rooms=True` the synthetic arch sheet draws the closet door as
+that symbol. `sheets["arch"]["doors"]` records where it was drawn, in sheet
+pixels, and `bldg["doors"]` names the host room: both are GT for scoring and
+the linker reads neither.
+
+Measured on seeds 0-29, both layouts, with and without service rooms (120
+sheets, 59 doors): 56 found, 3 missed, 0 false doors. Found doors land within
+4.4 px (9 cm) of the drawn centre, 1.6 px on average. All 3 misses are doors
+hard against the closet's north wall with the CLOSET label printed over the
+leaf, so the leaf is not separable; those closets stay their own space with a
+`space_merge` review item rather than being guessed. One found door had its
+width off by 12 px (0.24 m); the merge only uses the centre.

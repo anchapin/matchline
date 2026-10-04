@@ -63,12 +63,13 @@ def test_unnumbered_spaces_keep_their_own_classification():
 def test_linker_reads_the_door_off_the_sheet_not_gt():
     b = _first_with_service(3)
     gt = b["doors"][0]
-    b["doors"] = []  # linker must not need GT
+    b["doors"] = []  # linker must not need GT ...
     (det,) = b["sheets"]["arch"]["doors"]
     meta = b["sheets"]["arch"]["meta"]
     x_m = (det["x_px"] - meta["origin_px"][0]) / meta["px_per_m"]
     y_m = (det["y_px"] - meta["origin_px"][1]) / meta["px_per_m"]
     assert abs(x_m - gt["plan_center_m"][0]) < 1e-6 and abs(y_m - gt["plan_center_m"][1]) < 1e-6
+    b["sheets"]["arch"]["doors"] = []  # ... nor the pixel GT: it reads the image
     m, _ = build_model(b)
     assert len(m.spaces[f"L1-{gt['room_number']}"].merged_from) == 2
 
