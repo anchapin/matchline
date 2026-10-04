@@ -95,6 +95,11 @@ def _run_auto_triage(model) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _north_up(pts) -> list:
+    """Canonical plan frame (x right, y down) -> BEM frame (x east, y north)."""
+    return [(float(p[0]), -float(p[1])) for p in pts]
+
+
 def model_from_linked_model(
     model, simplified_ring: list, wall_height_m: float, simplify_tolerance: float
 ) -> BEMModel:
@@ -107,7 +112,8 @@ def model_from_linked_model(
     # --- spaces -----------------------------------------------------------
     bem_spaces = []
     for i, sp in enumerate(model.spaces.values()):
-        poly = _ensure_ccw(sp.polygon_m)
+        # canonical plan frame is y-down; gbXML/IFC want x=east, y=north
+        poly = _ensure_ccw(_north_up(sp.polygon_m))
         # Compute area from polygon
         area = 0.0
         n = len(poly)
@@ -168,7 +174,7 @@ def model_from_linked_model(
         )
 
     # --- envelope ring ---------------------------------------------------
-    ring_ccw = _ensure_ccw(simplified_ring)
+    ring_ccw = _ensure_ccw(_north_up(simplified_ring))
 
     # --- area delta from simplifier (approximate from ring change) ----------
     # The simplifier reports relative area change; we pass it through
@@ -195,7 +201,7 @@ def model_from_linked_model(
     from bem_shading import shades_from_model
 
     shades, shade_notes = shades_from_model(
-        model, lambda p: (p[0], p[1]), [sp.polygon_m for sp in bem_spaces]
+        model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in bem_spaces]
     )
     notes.extend(shade_notes)
 
@@ -203,8 +209,9 @@ def model_from_linked_model(
         building_name=model.name,
         spaces=bem_spaces,
         openings=bem_openings,
-        # this adapter keeps the canonical y-down plan frame (no flip)
-        ring_facades=_edge_facades(ring_ccw, y_north=False),
+        # y flipped above (canonical y-down -> north-up), same as the IFC
+        # and takeoff adapters; before this the ring was written mirrored N-S
+        ring_facades=_edge_facades(ring_ccw, y_north=True),
         ring_m=ring_ccw,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
