@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (42 checks)
+## The battery (43 checks)
 
 ### Conservation laws (error)
 
@@ -119,6 +119,16 @@ are consistent with each other but implausible for a real building).
   error: a dimension line or a neighbouring building read as a projection),
   runs past the ends of its host wall by more than 5 cm, sits above the
   wall's height, or projects more than 5 m. Skips when there is no shading.
+- `space_type_accounting` — **roadmap item 4, non-room polygons.** Shafts,
+  closets and elevator/stair cores (`Space.poly_type`, set by
+  `polygon_classify` with its confidence and reasons in the space history)
+  stay their own spaces: no area is merged into a corridor or split between
+  neighbours, so nothing is inflated and nothing vanishes. Error when a space
+  has a type outside room/shaft/closet/elevator_core/unassigned. Warn when
+  the classifier could not decide (`unassigned`), naming the spaces to
+  review. Otherwise pass, reporting each non-room type's floor area and
+  share so loads and LPD can be read against rooms only. Skips with no
+  spaces.
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -126,7 +136,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 39 + 3 = 42.
+and are run in addition to it, so `N_CHECKS` = 40 + 3 = 43.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area

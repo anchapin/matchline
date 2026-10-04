@@ -32,6 +32,7 @@ from bem_export import (
     write_ifc4,
 )
 from bem_helpers import _edge_facades
+from convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
     load_aec_bench,
@@ -557,6 +558,10 @@ def main(args, config: dict | None = None) -> None:
         try:
             gbxml_path, ifc_path = _stage_6_bem_export(
                 model, sres, wall_height, simplify_tol, out_dir
+            )
+            write_json(
+                out_dir / "stage_06_bem" / "convention_report.json",
+                build_convention_report(model, report, sres),
             )
             _print_pipeline_complete(out_dir, report)
         except StageError:
