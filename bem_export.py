@@ -160,10 +160,16 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         if roof_u is not None and roof_u > 0
         else ("const-roof", "Generic roof", "0.30")
     )
+    slab_u = getattr(model, "slab_u_value_w_m2k", None)
+    slab_row = (
+        ("const-slab", "Slab on grade (from model)", f"{float(slab_u):.6g}")
+        if slab_u is not None and slab_u > 0
+        else ("const-slab", "Generic slab on grade", "0.40")
+    )
     for cid, cname, uval in (
         ("const-wall", "Generic exterior wall", "0.50"),
         roof_row,
-        ("const-slab", "Generic slab on grade", "0.40"),
+        slab_row,
     ):
         co = _el(root, "Construction", id=cid)
         _el(co, "Name", cname)

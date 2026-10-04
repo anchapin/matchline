@@ -82,6 +82,9 @@ class BEMModel:
     # roof assembly U (W/m2K) from BuildingModel.roof_construction_id;
     # None -> the generic roof construction
     roof_u_value_w_m2k: Optional[float] = None
+    # ground slab U (W/m2K) from BuildingModel.slab_construction_id;
+    # None -> the generic slab-on-grade construction
+    slab_u_value_w_m2k: Optional[float] = None
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 

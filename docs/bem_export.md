@@ -118,13 +118,16 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
    model's `roof_construction_id` U-value when one is set (gbXML
    `const-roof` "Exterior roof (from model)", IFC4
    `Pset_SlabCommon.ThermalTransmittance` on the `IfcSlab ROOF`), else the
-   generic 0.30. The slab is always generic, and drawing-derived
+   generic 0.30. The ground slab likewise uses `slab_construction_id` when
+   set (gbXML `const-slab` "Slab on grade (from model)", IFC4 `IfcSlab
+   BASESLAB` with `Pset_SlabCommon`), else the generic 0.40. Drawing-derived
    assemblies still need spec/schedule input.
 4. **Opening positions are synthetic** (counts are real, positions are
    apportioned) — true positions need elevation-view parsing.
 5. **IFC roof written only when it carries something**: an `IfcSlab ROOF`
-   is emitted when skylights need a host or the model has a roof U-value.
-   No ground slab yet.
+   is emitted when skylights need a host or the model has a roof U-value;
+   an `IfcSlab BASESLAB` (nominal 0.15 m, top at z=0) only when the model
+   has a ground slab U-value.
 6. **IfcSpace has no solid geometry** in v1 (placement + quantities only).
 7. Window/door opening areas are not yet reconciled against the simplified
    envelope (double-count risk noted in `docs/geometry_simplify.md`).

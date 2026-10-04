@@ -19,6 +19,7 @@ from bem_helpers import (
 )
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
+GROUND_SLAB_THICKNESS_M = 0.15  # nominal; geometry only, the U-value is what matters
 SHADE_THICKNESS_M = 0.05  # drawings give shade extents, not build-up; thin plate
 
 
@@ -223,6 +224,34 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                 RelatedBuildingElement=fill,
             )
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
+
+    # --- ground slab -------------------------------------------------------
+    # Written only when the model knows its U (Pset_SlabCommon), so files
+    # without one are unchanged. BASESLAB under the footprint, top at z=0.
+    slab_u = getattr(model, "slab_u_value_w_m2k", None)
+    slab_u = float(slab_u) if slab_u is not None and slab_u > 0 else None
+    if slab_u is not None:
+        ground = _R.create_entity(
+            f, ifc_class="IfcSlab", name="Ground slab", predefined_type="BASESLAB"
+        )
+        ground.ObjectPlacement = placement((0.0, 0.0, -GROUND_SLAB_THICKNESS_M), parent=storey_pl)
+        rep = _Gm.add_slab_representation(
+            f,
+            context=body,
+            depth=GROUND_SLAB_THICKNESS_M,
+            polyline=[(float(x), float(y)) for x, y in model.ring_m],
+        )
+        _Gm.assign_representation(f, product=ground, representation=rep)
+        _Sp.assign_container(f, products=[ground], relating_structure=storey)
+        try:
+            import ifcopenshell.api.pset as _Ps
+
+            pset = _Ps.add_pset(f, product=ground, name="Pset_SlabCommon")
+            _Ps.edit_pset(
+                f, pset=pset, properties={"ThermalTransmittance": slab_u, "IsExternal": True}
+            )
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            pass  # thermal property is enrichment, not core validity
 
     # --- roof slab + skylights (roadmap item 3, wave 2b) ------------------
     # Flat-roof convention from #540: one roof over the footprint at the wall
@@ -488,6 +517,11 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             else ""
         )
         + (f" Roof U {roof_u:.4g} W/m2K (Pset_SlabCommon)." if roof_u is not None else "")
+        + (
+            f" Ground slab U {slab_u:.4g} W/m2K (BASESLAB, Pset_SlabCommon)."
+            if slab_u is not None
+            else ""
+        )
         + ("".join(f" Roof: {n}" for n in sky_notes))
         + (f" {shades_written} shading device(s)." if shades_written else "")
         + ("".join(f" Shading: {n}" for n in shade_notes))
