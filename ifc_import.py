@@ -568,6 +568,30 @@ def _envelope_edge_dir(ew, origin):
     return (dx / norm, dy / norm)
 
 
+def _own_envelope_edge(el, model):
+    """The Tier 0 envelope segment read from wall ``el`` itself, or None.
+
+    Matched on the GlobalId the segment's provenance records, and only when
+    the segment still starts at the wall's placement (so a later edit that
+    moved it cannot hand back a stale direction). Exactly one match or None.
+    """
+    gid = getattr(el, "global_id", "") or ""
+    if not gid:
+        return None
+    token = f"GlobalId={gid}"
+    origin = (float(el.placement_m[0]), float(el.placement_m[1]))
+    hits = [
+        ew
+        for ew in model.envelope
+        if ew.provenance is not None
+        and ew.provenance.method == "ifc_import:tier0:envelope"
+        and (ew.provenance.note or "").split(" ", 1)[0] == token
+        and ew.from_m
+        and math.dist(ew.from_m, origin) <= _ENVELOPE_TOL_M
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
 def _wall_direction_from_envelope(el, model):
     """Direction of the wall's own envelope edge, or None if it cannot be pinned down.
 
@@ -596,6 +620,15 @@ def _wall_direction_from_envelope(el, model):
     if el.length_m is None or not el.placement_m:
         return (None, _WALL_DIR_NO_EDGE)
     origin = (float(el.placement_m[0]), float(el.placement_m[1]))
+    # Identity first: the Tier 0 envelope segment built from this very wall
+    # carries its GlobalId. Position alone ties wherever two collinear runs
+    # meet at the wall's origin (a facade split into one segment per space),
+    # since both neighbours touch that point and can share a length.
+    own = _own_envelope_edge(el, model)
+    if own is not None:
+        d = _envelope_edge_dir(own, origin)
+        if d is not None:
+            return (d, None)
     best_rank, dirs = 2, set()
     for ew in model.envelope:
         d = _envelope_edge_dir(ew, origin)

@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1145 # +8: import_ifc reads Pset_WallCommon.ThermalTransmittance into wall constructions
+          EXPECTED_TEST_COUNT=1153 # +8: split-facade IFC walls matched to their own envelope segment by GlobalId
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
