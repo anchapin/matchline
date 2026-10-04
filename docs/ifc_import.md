@@ -73,8 +73,17 @@ documented handedness choice, recorded in provenance.
   `IFC-UM<value>` construction per distinct U (`ifc_import:tier0:wall_u_lookup`,
   conf 0.6, the note lists each looked-up material and its table entry). A
   file-stated conductivity always wins per layer. Matching is all-keywords,
-  most-specific-wins; names that match entries with different conductivities,
-  mention air/cavity/void/gap, or match nothing give no value.
+  most-specific-wins; names that match entries with different conductivities
+  or match nothing give no value.
+  Air layers without a stated conductivity (`IsVentilated` UNKNOWN, which IFC4
+  defines as an air gap without air exchange, or a material/layer name saying
+  air/cavity/void/gap) get the ISO 6946:2007 Table 2 resistance for
+  unventilated layers, horizontal heat flow (0.11 at 5 mm rising to 0.18 m²K/W
+  from 25 mm, linearly interpolated), on the same `IFC-UM` tier; the note cites
+  the standard. `IsVentilated` TRUE (open to outside air) and air layers
+  thicker than 0.3 m (no single U per ISO 6946 5.3.1) give no value. The table
+  assumes high-emissivity faces (≥ 0.8); reflective foil-faced cavities would
+  be overstated in U terms and are not detected.
 - **MEP quality varies wildly**: ducts/zones are opportunistic, never
   load-bearing.
 - **Multi-storey**: the hierarchy walk handles N storeys; the fixture only

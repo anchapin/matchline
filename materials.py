@@ -98,3 +98,44 @@ def lookup_conductivity(name: str) -> Optional[MaterialEntry]:
     if not keep or len({e.conductivity_w_mk for e in keep}) != 1:
         return None
     return keep[0]
+
+
+# --- unventilated air layers ------------------------------------------------
+
+AIR_SOURCE = "ISO 6946:2007 Table 2, horizontal heat flow"
+
+# (thickness mm, R m2K/W) for unventilated air layers with high-emissivity
+# faces, horizontal heat flow (walls). Linear interpolation between rows, as
+# the standard's note allows. ISO 6946 5.3.1: no single U for air layers
+# thicker than 0.3 m, so those get no value.
+AIR_LAYER_R_HORIZONTAL: Tuple[Tuple[float, float], ...] = (
+    (0.0, 0.00),
+    (5.0, 0.11),
+    (7.0, 0.13),
+    (10.0, 0.15),
+    (15.0, 0.17),
+    (25.0, 0.18),
+    (50.0, 0.18),
+    (100.0, 0.18),
+    (300.0, 0.18),
+)
+
+
+def is_air_name(name: str) -> bool:
+    """Does a material or layer name describe an air layer (air/cavity/void/gap)?"""
+    return bool(_AIR.search(_norm(name)))
+
+
+def air_layer_resistance(thickness_m: float) -> Optional[float]:
+    """R of an unventilated wall air layer (m2K/W), or None outside 0 < t <= 0.3 m."""
+    try:
+        t = float(thickness_m) * 1000.0
+    except (TypeError, ValueError):
+        return None
+    rows = AIR_LAYER_R_HORIZONTAL
+    if not (t > 0 and t <= rows[-1][0]):
+        return None
+    for (t0, r0), (t1, r1) in zip(rows, rows[1:]):
+        if t <= t1:
+            return r0 + (r1 - r0) * (t - t0) / (t1 - t0)
+    return None  # unreachable
