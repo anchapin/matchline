@@ -67,6 +67,14 @@ documented handedness choice, recorded in provenance.
   (`ifc_import:tier0:wall_u_layers`, conf 0.8). Any layer without a
   conductivity, a ventilated layer, or more than one layer set means no value
   (never guessed); a stated `ThermalTransmittance` always wins.
+  When a layer has no `Pset_MaterialThermal`, its conductivity falls back to
+  `materials.lookup_conductivity` by material name (ASHRAE HOF 2005 values as
+  published in EnergyPlus `datasets/ASHRAE_2005_HOF_Materials.idf`): one
+  `IFC-UM<value>` construction per distinct U (`ifc_import:tier0:wall_u_lookup`,
+  conf 0.6, the note lists each looked-up material and its table entry). A
+  file-stated conductivity always wins per layer. Matching is all-keywords,
+  most-specific-wins; names that match entries with different conductivities,
+  mention air/cavity/void/gap, or match nothing give no value.
 - **MEP quality varies wildly**: ducts/zones are opportunistic, never
   load-bearing.
 - **Multi-storey**: the hierarchy walk handles N storeys; the fixture only

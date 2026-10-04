@@ -1033,16 +1033,19 @@ def _material_conductivity(material):
     return k if k > 0 and math.isfinite(k) else None
 
 
-def _layered_wall_u(wall, scale):
-    """Wall U in W/m2K from its IfcMaterialLayerSet, or None.
+def _layered_wall_u(wall, scale, use_lookup=False):
+    """Wall U in W/m2K from its IfcMaterialLayerSet, as (u, looked_up) or None.
 
     U = 1 / (Rsi + sum(t_i / k_i) + Rse), ISO 6946 surface resistances.
     Computed only when the wall has exactly one layer set and EVERY layer has
-    a positive thickness, a material, a Pset_MaterialThermal conductivity and
-    is not ventilated. A single unknown layer (an air gap, an unnamed
-    material, a missing conductivity) means no value: the layer's resistance
-    is not guessed.
+    a positive thickness and a known conductivity and is not ventilated. A
+    layer's conductivity comes from its Pset_MaterialThermal; with
+    ``use_lookup`` a layer without one falls back to ``materials`` by
+    material name, and ``looked_up`` lists those (material name, entry id).
+    A single layer still unknown means no value: it is never guessed.
     """
+    from materials import lookup_conductivity
+
     sets = []
     for rel in getattr(wall, "HasAssociations", None) or []:
         if not rel.is_a("IfcRelAssociatesMaterial"):
@@ -1055,6 +1058,7 @@ def _layered_wall_u(wall, scale):
     if len(sets) != 1 or not sets[0].MaterialLayers:
         return None
     r = RSI_WALL_M2K_W + RSE_WALL_M2K_W
+    looked_up = []
     for lay in sets[0].MaterialLayers:
         if getattr(lay, "IsVentilated", None) is True:
             return None
@@ -1063,22 +1067,31 @@ def _layered_wall_u(wall, scale):
         except (TypeError, ValueError):
             return None
         k = _material_conductivity(lay.Material)
+        if k is None and use_lookup and lay.Material is not None:
+            entry = lookup_conductivity(lay.Material.Name or "")
+            if entry is not None:
+                k = entry.conductivity_w_mk
+                looked_up.append((lay.Material.Name, entry.id))
         if k is None or not (t > 0 and math.isfinite(t)):
             return None
         r += t / k
-    return 1.0 / r
+    return 1.0 / r, looked_up
 
 
 def _wall_construction(model, u, provenance, source="pset"):
     """Construction id for a wall with this U, one construction per distinct U
     and source.
 
-    ``source`` is "pset" (Pset_WallCommon.ThermalTransmittance, id IFC-U...)
-    or "layers" (computed from the material layer set, id IFC-UL...), so a
-    stated and a derived value never share a construction.
-    ``provenance`` records the first wall seen carrying the value.
+    ``source`` is "pset" (Pset_WallCommon.ThermalTransmittance, id IFC-U...),
+    "layers" (computed from the file's own layer conductivities, IFC-UL...)
+    or "lookup" (at least one layer's conductivity from the materials table,
+    IFC-UM...), so stated, derived and looked-up values never share a
+    construction. ``provenance`` records the first wall seen carrying it.
     """
-    if source == "layers":
+    if source == "lookup":
+        cid = f"IFC-UM{u:.4f}"
+        name = f"IFC wall, U {u:.4f} W/m2K from material layers + conductivity lookup"
+    elif source == "layers":
         cid = f"IFC-UL{u:.4f}"
         name = f"IFC wall, U {u:.4f} W/m2K from material layers (ISO 6946)"
     else:
@@ -1109,11 +1122,11 @@ def _wall_construction_id(model, wall, scale, prov, gid):
                 gid,
             ),
         )
-    u = _layered_wall_u(wall, scale)
-    if u is not None:
+    got = _layered_wall_u(wall, scale)
+    if got is not None:
         return _wall_construction(
             model,
-            u,
+            got[0],
             prov(
                 "ifc_import:tier0:wall_u_layers",
                 0.8,
@@ -1122,6 +1135,24 @@ def _wall_construction_id(model, wall, scale, prov, gid):
                 gid,
             ),
             source="layers",
+        )
+    got = _layered_wall_u(wall, scale, use_lookup=True)
+    if got is not None:
+        from materials import SOURCE
+
+        names = "; ".join(f"{n!r}->{eid}" for n, eid in got[1])
+        return _wall_construction(
+            model,
+            got[0],
+            prov(
+                "ifc_import:tier0:wall_u_lookup",
+                0.6,
+                f"U from IfcMaterialLayerSet, ISO 6946 Rsi 0.13 + Rse 0.04; "
+                f"conductivity looked up by material name ({names}) in {SOURCE}; "
+                "first wall carrying it",
+                gid,
+            ),
+            source="lookup",
         )
     return ""
 
