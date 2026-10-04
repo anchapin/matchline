@@ -269,6 +269,9 @@ class Space:
     # constructions.apply_wall_u_rollup. None until the rollup runs or when
     # no segment of the space has a construction with a known U-value.
     wall_u_value_w_m2k: Optional[float] = None
+    # Ids of closets/shafts folded into this space by space_merge (the user's
+    # rule, 2026-10-04). Empty for a space that absorbed nothing.
+    merged_from: List[str] = field(default_factory=list)
     history: List[Provenance] = field(default_factory=list)
 
     @property
@@ -518,6 +521,7 @@ class ReviewItem:
         "elevation_extraction",
         "facade_takeoff",
         "opening_attachment",
+        "space_merge",
     ]
     description: str
     confidence: float
@@ -691,6 +695,7 @@ class BuildingModel:
             "window_reconciliation",
             "gd_complex_row",
             "opening_attachment",
+            "space_merge",
         ],
         description: str,
         confidence: float,
