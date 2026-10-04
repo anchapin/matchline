@@ -1094,6 +1094,67 @@ def _layered_wall_u(wall, scale, use_lookup=False):
     return 1.0 / r, looked_up
 
 
+def _roof_thermal_transmittance(el):
+    """ThermalTransmittance (W/m2K) stated on a roof element, or None.
+
+    IfcSlab reads Pset_SlabCommon, IfcRoof reads Pset_RoofCommon. Same rules
+    as walls: read as written, non-numeric or non-positive values ignored.
+    """
+    pset_name = "Pset_RoofCommon" if el.is_a("IfcRoof") else "Pset_SlabCommon"
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(el) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return None
+    u = (psets.get(pset_name) or {}).get("ThermalTransmittance")
+    try:
+        u = float(u)
+    except (TypeError, ValueError):
+        return None
+    return u if u > 0 and math.isfinite(u) else None
+
+
+ROOF_U_AGREE_TOL = 1e-6  # W/m2K; roof elements stating U must agree this closely
+
+
+def _read_roof_construction(model, f, prov):
+    """Set ``model.roof_construction_id`` from the roofs' stated U.
+
+    Roof elements are IfcRoof and IfcSlab with PredefinedType ROOF. When
+    every one that states a U agrees, one ``IFC-RU<value>`` construction is
+    made (``ifc_import:tier0:roof_u``, conf 0.9). Disagreeing values are not
+    averaged: the roof stays unset and the returned note (logged in the
+    import revision summary) says why. Returns that note, or "".
+    """
+    roofs = list(f.by_type("IfcRoof")) + [
+        s for s in f.by_type("IfcSlab") if getattr(s, "PredefinedType", None) == "ROOF"
+    ]
+    stated = [(r.GlobalId, u) for r in roofs if (u := _roof_thermal_transmittance(r)) is not None]
+    if not stated:
+        return ""
+    us = [u for _, u in stated]
+    if max(us) - min(us) > ROOF_U_AGREE_TOL:
+        detail = ", ".join(f"{g}={u:g}" for g, u in stated[:5])
+        return f"roof elements state different U-values ({detail}); roof left generic"
+    gid, u = stated[0]
+    cid = f"IFC-RU{u:.4f}"
+    if cid not in model.constructions:
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=f"IFC roof, ThermalTransmittance {u:.4f} W/m2K",
+            u_value_w_m2k=round(u, 6),
+            provenance=prov(
+                "ifc_import:tier0:roof_u",
+                0.9,
+                f"roof ThermalTransmittance; {len(stated)} roof element(s) agree",
+                gid,
+            ),
+        )
+    model.roof_construction_id = cid
+    return ""
+
+
 def _wall_construction(model, u, provenance, source="pset"):
     """Construction id for a wall with this U, one construction per distinct U
     and source.
@@ -1637,6 +1698,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         from constructions import apply_wall_u_rollup
 
         apply_wall_u_rollup(model)
+    roof_note = _read_roof_construction(model, f, prov)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
@@ -1657,6 +1719,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     ]
     if not unattached.is_empty():
         summary_parts.append(unattached.summary_line())
+    if model.roof_construction_id:
+        summary_parts.append(f"roof construction {model.roof_construction_id}")
+    if roof_note:
+        summary_parts.append(roof_note)
     model.log_revision(sheet, revision, "ingest", "; ".join(summary_parts))
     return model
 

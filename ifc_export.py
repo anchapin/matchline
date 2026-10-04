@@ -141,6 +141,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     ring_ccw = _ensure_ccw(ring) if ring else []
 
     from bem_shading import shades_from_model
+    from constructions import roof_u_value
 
     shades, shade_notes = shades_from_model(
         model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in spaces]
@@ -162,6 +163,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         },
         shades=shades,
         notes=shade_notes,
+        roof_u_value_w_m2k=roof_u_value(model),
     )
 
 

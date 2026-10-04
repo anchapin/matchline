@@ -29,6 +29,17 @@ Deliberately **not** attached in Tier 0: openings to spaces, and facade
 (N/S/E/W) classification of envelope walls — both need adjacency, which is
 Tier 1.
 
+### Roof U-value
+
+`IfcRoof` (`Pset_RoofCommon`) and `IfcSlab` with PredefinedType ROOF
+(`Pset_SlabCommon`) are read for a stated `ThermalTransmittance`; the value
+is never coerced from another property. When every roof element that states
+one agrees (within 1e-6), one `IFC-RU<value>` construction is made
+(`ifc_import:tier0:roof_u`, confidence 0.9) and set as
+`BuildingModel.roof_construction_id`. Disagreeing values are not averaged:
+the roof stays generic and the import revision note says why. Roof layer
+sets are not derived yet (walls only).
+
 ## Coordinate frame
 
 IFC is Z-up. The canonical model is y-down (drawing frame); `bem_export`

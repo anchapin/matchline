@@ -226,13 +226,16 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     # --- roof slab + skylights (roadmap item 3, wave 2b) ------------------
     # Flat-roof convention from #540: one roof over the footprint at the wall
-    # top. The slab is written only when it has skylights to host, so files
-    # without skylights are unchanged. Skylights reuse the gbXML layout
+    # top. The slab is written only when it has skylights to host or a known
+    # roof U (Pset_SlabCommon.ThermalTransmittance), so files with neither are
+    # unchanged. Skylights reuse the gbXML layout
     # (_place_skylights_on_roof), so both exports put them in the same spots.
     sky_units = [u for u in model.openings if u.category == "skylight"]
     regions = {sp.sid: sp.polygon_m for sp in model.spaces}
     sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m, regions=regions)
-    if sky_placed:
+    roof_u = getattr(model, "roof_u_value_w_m2k", None)
+    roof_u = float(roof_u) if roof_u is not None and roof_u > 0 else None
+    if sky_placed or roof_u is not None:
         roof = _R.create_entity(f, ifc_class="IfcSlab", name="Roof", predefined_type="ROOF")
         roof.ObjectPlacement = placement((0.0, 0.0, h), parent=storey_pl)
         rep = _Gm.add_slab_representation(
@@ -243,6 +246,16 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         )
         _Gm.assign_representation(f, product=roof, representation=rep)
         _Sp.assign_container(f, products=[roof], relating_structure=storey)
+        if roof_u is not None:
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=roof, name="Pset_SlabCommon")
+                _Ps.edit_pset(
+                    f, pset=pset, properties={"ThermalTransmittance": roof_u, "IsExternal": True}
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass  # thermal property is enrichment, not core validity
         for pl_ in sky_placed:
             u = pl_["unit"]
             xs_ = [pt[0] for pt in pl_["rect"]]
@@ -474,6 +487,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             if sky_units
             else ""
         )
+        + (f" Roof U {roof_u:.4g} W/m2K (Pset_SlabCommon)." if roof_u is not None else "")
         + ("".join(f" Roof: {n}" for n in sky_notes))
         + (f" {shades_written} shading device(s)." if shades_written else "")
         + ("".join(f" Shading: {n}" for n in shade_notes))

@@ -154,9 +154,15 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     # Placeholder constructions (v1): drawings carry no assembly data, so
     # every surface references a generic construction. Real U-values /
     # layered assemblies are a v2 enrichment from the spec or user input.
+    roof_u = getattr(model, "roof_u_value_w_m2k", None)
+    roof_row = (
+        ("const-roof", "Exterior roof (from model)", f"{float(roof_u):.6g}")
+        if roof_u is not None and roof_u > 0
+        else ("const-roof", "Generic roof", "0.30")
+    )
     for cid, cname, uval in (
         ("const-wall", "Generic exterior wall", "0.50"),
-        ("const-roof", "Generic roof", "0.30"),
+        roof_row,
         ("const-slab", "Generic slab on grade", "0.40"),
     ):
         co = _el(root, "Construction", id=cid)
