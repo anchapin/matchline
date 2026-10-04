@@ -73,3 +73,18 @@ hard against the closet's north wall with the CLOSET label printed over the
 leaf, so the leaf is not separable; those closets stay their own space with a
 `space_merge` review item rather than being guessed. One found door had its
 width off by 12 px (0.24 m); the merge only uses the centre.
+
+## Real drawings
+
+The detector's pixel tolerances are tuned at 50 px/m and grow with the
+drawing scale. Walls may be a solid band or two parallel lines, and a leaf may
+be a single line or an outlined panel, so thin-line drafting at 200 dpi
+(about 164 px/m at 1/4" = 1'-0") reads too. It has not yet been scored on a
+real sheet: `scripts/eval_door_swings.py --aec-bench <dataset dir>` does that
+on AEC-geometric-bench, matching detections to the annotated swing doors and
+printing recall, precision and seconds per sheet. Title blocks there are
+redacted, so the script takes the scale from the annotated door boxes (0.9 m
+leaf) and uses the annotations for nothing else.
+
+The AEC-Bench path in `run_pipeline.py` no longer turns wall regions into door
+openings; its doors come only from door regions.
