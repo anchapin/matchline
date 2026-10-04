@@ -703,6 +703,14 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
 
     for i, dr in enumerate(by_cat.get("door", [])):
         tag = f"D{i:02d}"
+        # Plan position of the door symbol (centroid of its detected
+        # polygon), so space_merge can tell which rooms a door connects.
+        # A degenerate polygon leaves it None rather than guessing.
+        center = None
+        if len(dr.polygon_px) >= 3:
+            c = ShapelyPolygon([px_to_m(pt) for pt in dr.polygon_px]).centroid
+            if not c.is_empty:
+                center = [round(c.x, 6), round(c.y, 6)]
         openings.append(
             SpaceOpening(
                 id=tag,
@@ -713,6 +721,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
                 area_m2=0.9 * 2.1,
                 provenance=prov,
                 needs_review=False,
+                plan_center_m=center,
             )
         )
 
