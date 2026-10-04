@@ -1040,11 +1040,15 @@ def _layered_wall_u(wall, scale, use_lookup=False):
     Computed only when the wall has exactly one layer set and EVERY layer has
     a positive thickness and a known conductivity and is not ventilated. A
     layer's conductivity comes from its Pset_MaterialThermal; with
-    ``use_lookup`` a layer without one falls back to ``materials`` by
-    material name, and ``looked_up`` lists those (material name, entry id).
-    A single layer still unknown means no value: it is never guessed.
+    ``use_lookup`` a layer without one falls back to ``materials``: an air
+    layer (IsVentilated UNKNOWN, which IFC4 defines as an air gap without air
+    exchange, or a material/layer name saying air, cavity, void or gap) gets
+    the ISO 6946 Table 2 resistance for its thickness, anything else a
+    conductivity by material name. ``looked_up`` lists those
+    (name, entry id). IsVentilated TRUE (an air gap open to outside air) and
+    any layer still unknown mean no value: never guessed.
     """
-    from materials import lookup_conductivity
+    from materials import air_layer_resistance, is_air_name, lookup_conductivity
 
     sets = []
     for rel in getattr(wall, "HasAssociations", None) or []:
@@ -1067,11 +1071,23 @@ def _layered_wall_u(wall, scale, use_lookup=False):
         except (TypeError, ValueError):
             return None
         k = _material_conductivity(lay.Material)
-        if k is None and use_lookup and lay.Material is not None:
-            entry = lookup_conductivity(lay.Material.Name or "")
+        mname = (lay.Material.Name or "") if lay.Material is not None else ""
+        lname = getattr(lay, "Name", None) or ""
+        if k is None and use_lookup:
+            air = getattr(lay, "IsVentilated", None) == "UNKNOWN" or (
+                is_air_name(mname) or is_air_name(lname)
+            )
+            if air:
+                r_air = air_layer_resistance(t)
+                if r_air is None:
+                    return None
+                r += r_air
+                looked_up.append((mname or lname or "(air gap)", "air_iso6946"))
+                continue
+            entry = lookup_conductivity(mname) if mname else None
             if entry is not None:
                 k = entry.conductivity_w_mk
-                looked_up.append((lay.Material.Name, entry.id))
+                looked_up.append((mname, entry.id))
         if k is None or not (t > 0 and math.isfinite(t)):
             return None
         r += t / k
@@ -1138,9 +1154,14 @@ def _wall_construction_id(model, wall, scale, prov, gid):
         )
     got = _layered_wall_u(wall, scale, use_lookup=True)
     if got is not None:
-        from materials import SOURCE
+        from materials import AIR_SOURCE, SOURCE
 
         names = "; ".join(f"{n!r}->{eid}" for n, eid in got[1])
+        sources = SOURCE + (
+            f"; air layers per {AIR_SOURCE}"
+            if any(eid == "air_iso6946" for _, eid in got[1])
+            else ""
+        )
         return _wall_construction(
             model,
             got[0],
@@ -1148,7 +1169,7 @@ def _wall_construction_id(model, wall, scale, prov, gid):
                 "ifc_import:tier0:wall_u_lookup",
                 0.6,
                 f"U from IfcMaterialLayerSet, ISO 6946 Rsi 0.13 + Rse 0.04; "
-                f"conductivity looked up by material name ({names}) in {SOURCE}; "
+                f"conductivity looked up by material name ({names}) in {sources}; "
                 "first wall carrying it",
                 gid,
             ),
