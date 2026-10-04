@@ -15,8 +15,9 @@ Only `poly_type == "room"` spaces receive merges.
 The space is kept as its own space and a `space_merge` review item names why when:
 
 - the closet has no door with a known plan position (`SpaceOpening.plan_center_m`)
-  on its boundary; the drawing path records door counts, not positions, so today
-  every drawing-path closet lands here;
+  on its boundary (doors come from `SpaceOpening.plan_center_m` and from the
+  building's `doors` list; the AEC-Bench plan path builds a single space, so it
+  has no closets to merge yet);
 - its door opens onto no room, onto more than one room (a corner door), or its
   doors open onto different rooms;
 - the shaft shares no wall with any room, or two rooms tie for the largest share
@@ -35,3 +36,14 @@ The target keeps its id; `Space.merged_from` lists absorbed ids; openings, fixtu
 HVAC components, daylight zones, zone membership and envelope segments move to the
 target; `toplit_m2` is recomputed as the union of toplit zones; LPD is recomputed on
 the merged area.
+
+## Synthetic coverage
+
+`generate_building(seed, service_rooms=True)` carves a 1.0 m strip off the east
+side of one room: an unnumbered CLOSET (2 to 8 m2) with a door onto that room, and
+a 1.0 x 1.5 m SHAFT at the strip's south end. The building's `doors` list carries
+the closet door's plan position, and `link.build_model` passes it to the merge.
+Closets and shafts get no fixtures, diffusers or windows. The option uses its own
+random stream and is off by default, so default buildings are unchanged. Across
+seeds 0 to 29 (both layouts) 59 of 60 buildings merge both spaces into the host
+room with no review items; the other has no room large enough to host the strip.

@@ -72,7 +72,10 @@ def build_model(
     # Closets fold into the room their door opens onto; shafts into the
     # room sharing the largest share of their wall area. Anything the rule
     # cannot settle stays its own space and goes on the review queue.
-    merge_closets_and_shafts(model)
+    merge_closets_and_shafts(
+        model,
+        doors=[{**d, "level_id": d.get("level_id", level_id)} for d in bldg.get("doors", [])],
+    )
 
     report.review_items = len(model.review_queue)
     return model, report
