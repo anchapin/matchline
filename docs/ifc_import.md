@@ -51,6 +51,16 @@ Roof elements without a layer set (an `IfcRoof` aggregating its slabs) are
 skipped. Upward flow is the heating-season case; ISO 6946 Table 1 note 1
 suggests horizontal values when a direction-independent U is wanted.
 
+### Ground slab U-value
+
+`IfcSlab` with PredefinedType BASESLAB is read for a stated
+`Pset_SlabCommon.ThermalTransmittance`. Agreeing values make one
+`IFC-SU<value>` construction (`ifc_import:tier0:slab_u`, confidence 0.9) set
+as `BuildingModel.slab_construction_id`; disagreeing values leave the slab
+generic with a revision note. FLOOR slabs are not assumed to touch the
+ground. Slab U is never derived from layers: a slab on grade's U depends on
+the ground and its perimeter (ISO 13370), which ISO 6946 layer sums ignore.
+
 ## Coordinate frame
 
 IFC is Z-up. The canonical model is y-down (drawing frame); `bem_export`

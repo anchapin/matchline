@@ -1184,6 +1184,43 @@ def _read_roof_construction(model, f, prov, scale=1.0):
     return ""
 
 
+def _read_slab_construction(model, f, prov):
+    """Set ``model.slab_construction_id`` from ground slabs' stated U.
+
+    Ground slabs are IfcSlab with PredefinedType BASESLAB (a FLOOR slab may be
+    suspended or intermediate, so it is not assumed to touch the ground).
+    Only a stated Pset_SlabCommon.ThermalTransmittance is used: a slab on
+    grade's U depends on the ground (ISO 13370), so it is never derived from
+    layers with ISO 6946. Agreeing values make one ``IFC-SU<value>``
+    construction (``ifc_import:tier0:slab_u``, conf 0.9); disagreeing values
+    leave the slab generic and the returned note says why.
+    """
+    slabs = [s for s in f.by_type("IfcSlab") if getattr(s, "PredefinedType", None) == "BASESLAB"]
+    stated = [(s.GlobalId, u) for s in slabs if (u := _roof_thermal_transmittance(s)) is not None]
+    if not stated:
+        return ""
+    us = [u for _, u in stated]
+    if max(us) - min(us) > ROOF_U_AGREE_TOL:
+        detail = ", ".join(f"{g}={u:g}" for g, u in stated[:5])
+        return f"ground slabs state different U-values ({detail}); slab left generic"
+    gid, u = stated[0]
+    cid = f"IFC-SU{u:.4f}"
+    if cid not in model.constructions:
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=f"IFC ground slab, ThermalTransmittance {u:.4f} W/m2K",
+            u_value_w_m2k=round(u, 6),
+            provenance=prov(
+                "ifc_import:tier0:slab_u",
+                0.9,
+                f"BASESLAB ThermalTransmittance; {len(stated)} slab(s) agree",
+                gid,
+            ),
+        )
+    model.slab_construction_id = cid
+    return ""
+
+
 def _derive_roof_construction(model, roofs, prov, scale):
     """Layer-derived roof construction (see ``_read_roof_construction``)."""
     derived, failed = [], []
@@ -1785,6 +1822,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
         apply_wall_u_rollup(model)
     roof_note = _read_roof_construction(model, f, prov, scale)
+    slab_note = _read_slab_construction(model, f, prov)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
@@ -1809,6 +1847,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         summary_parts.append(f"roof construction {model.roof_construction_id}")
     if roof_note:
         summary_parts.append(roof_note)
+    if model.slab_construction_id:
+        summary_parts.append(f"slab construction {model.slab_construction_id}")
+    if slab_note:
+        summary_parts.append(slab_note)
     model.log_revision(sheet, revision, "ingest", "; ".join(summary_parts))
     return model
 

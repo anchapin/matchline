@@ -78,9 +78,18 @@ def apply_wall_u_rollup(model) -> Dict[str, WallURollup]:
     return roll
 
 
-def roof_u_value(model) -> Optional[float]:
-    """U of ``model.roof_construction_id`` (W/m2K), or None when unset/unusable."""
-    cid = getattr(model, "roof_construction_id", "") or ""
+def _construction_u(model, attr) -> Optional[float]:
+    cid = getattr(model, attr, "") or ""
     c = (getattr(model, "constructions", None) or {}).get(cid) if cid else None
     u = getattr(c, "u_value_w_m2k", None)
     return float(u) if u is not None and u > 0 else None
+
+
+def roof_u_value(model) -> Optional[float]:
+    """U of ``model.roof_construction_id`` (W/m2K), or None when unset/unusable."""
+    return _construction_u(model, "roof_construction_id")
+
+
+def slab_u_value(model) -> Optional[float]:
+    """U of ``model.slab_construction_id`` (W/m2K), or None when unset/unusable."""
+    return _construction_u(model, "slab_construction_id")

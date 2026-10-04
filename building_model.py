@@ -566,6 +566,8 @@ class BuildingModel:
             ``EnvelopeWall.construction_id`` points here.
         roof_construction_id: ``Construction.id`` of the roof assembly, or
             "" when unknown (exports then use the generic roof).
+        slab_construction_id: ``Construction.id`` of the ground slab, or ""
+            when unknown (exports then use the generic slab on grade).
         shading: Exterior shading projections hosted on envelope walls;
             kept out of ``envelope`` so they never enter the area budget.
         bim_elements: All BIM elements from IFC import.
@@ -606,6 +608,9 @@ class BuildingModel:
     # Construction.id of the roof assembly, when known (IFC import reads it
     # from the roof's ThermalTransmittance); "" -> generic roof on export
     roof_construction_id: str = ""
+    # Construction.id of the ground slab (IFC import reads a BASESLAB's stated
+    # ThermalTransmittance); "" -> generic slab on grade on export
+    slab_construction_id: str = ""
     shading: List[ShadingSurface] = field(default_factory=list)
     # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
