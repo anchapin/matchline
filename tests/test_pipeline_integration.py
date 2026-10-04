@@ -148,6 +148,10 @@ class TestPipelineIntegration:
         extensions = {f.suffix for f in files}
         assert ".xml" in extensions, f"gbXML .xml not found in stage_06_bem for seed={seed}"
         assert ".ifc" in extensions, f"IFC4 .ifc not found in stage_06_bem for seed={seed}"
+        conv = json.loads((bem_dir / "convention_report.json").read_text())
+        assert conv["schema"] == "matchline.convention_report/1", seed
+        assert set(conv) >= {"volume_bias", "non_room_area", "area_budget"}
+        assert conv["area_budget"]["available"], seed
 
     # -------------------------------------------------------------------------
     # Issue #340: conservation-violation exit-code integration test
