@@ -34,9 +34,11 @@ class BEMOpeningUnit:
     height_m: float
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
-    # Skylights only: the space whose roof hosts it, when known (IFC export
-    # path from a BuildingModel). Empty means "anywhere on the roof"
-    # (takeoff lines carry no space).
+    # The space that owns the opening, when known (IFC export path from a
+    # BuildingModel). Skylights stay over that room on the roof; wall
+    # openings stay on that room's share of their facade. Empty means
+    # "anywhere on the roof" / "any wall of the facade" (takeoff lines carry
+    # no space).
     space_sid: str = ""
     # Wall openings: the facade the drawing/model put it on ("south", ...),
     # when known. Writers use it to keep the opening on that facade's walls;

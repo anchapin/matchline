@@ -71,6 +71,10 @@ but synthetic:
 
 1. Openings are apportioned to walls by **largest remainder** proportional
    to wall length, per category (window/door totals exact).
+   An opening that knows its space and facade goes only on that space's
+   share of that facade (so a facade split per room keeps each room's
+   windows on its own wall); with only a facade known it goes on that
+   facade's walls; with neither, on all walls.
 2. On a wall, units are evenly spaced (centers at (j+0.5)·L/k), sorted by
    (category, tag).
 3. Sills: windows 0.9 m, doors 0.0 m. Heights/widths clamped to fit the

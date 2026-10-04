@@ -122,6 +122,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     width_m=op.width_m,
                     height_m=op.height_m,
                     host_facade=op.host_facade or "",
+                    space_sid=space.id,
                 )
             )
     openings = wall_units + sky

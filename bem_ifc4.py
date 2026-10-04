@@ -10,6 +10,7 @@ from bem_geometry import BEMModel
 from bem_helpers import (
     _assign_wall_to_space,
     _distribute_openings,
+    _edge_spaces,
     _place_openings_on_wall,
     _place_skylights_on_roof,
     _roof_outline,
@@ -122,7 +123,10 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     # --- walls ------------------------------------------------------------
     edges = _wall_edges(model.ring_m)
     opening_assign = _distribute_openings(
-        model.openings, edges, getattr(model, "ring_facades", None)
+        model.openings,
+        edges,
+        getattr(model, "ring_facades", None),
+        _edge_spaces(edges, model.spaces),
     )
     walls = []
     for i, (p0, p1) in enumerate(edges):
