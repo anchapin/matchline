@@ -131,6 +131,7 @@ def model_from_linked_model(
                 polygon_m=poly,
                 area_m2=area,
                 volume_m3=area * wall_height_m,
+                wall_u_value_w_m2k=getattr(sp, "wall_u_value_w_m2k", None),
                 provenance=sp.core_provenance,
                 history=list(sp.history),
             )

@@ -17,6 +17,9 @@ class BEMSpace:
     area_m2: float
     volume_m3: float
     lighting_w: float = 0.0  # total lighting power (watts), from SpaceLighting
+    # area-weighted exterior wall U (roadmap item 6), from Space.wall_u_value_w_m2k;
+    # None -> walls in this space use the generic construction
+    wall_u_value_w_m2k: Optional[float] = None
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 
