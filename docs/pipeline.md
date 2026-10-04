@@ -15,7 +15,7 @@ Stage 3: simplify_ring            → stage_03_simplified.json
 Stage 4: run_checks                → stage_04_validation.json
 Stage 4b: _run_auto_triage (opt)  → stage_04b_auto_triage.json  [ENABLE_AUTO_TRIAGE=1]
 Stage 5: fail-fast gate           (no artifact — exits 1 on validation errors)
-Stage 6: BEM export               → stage_06_bem/{name}.xml + {name}.ifc
+Stage 6: BEM export               → stage_06_bem/{name}.xml + {name}.ifc + convention_report.json
 ```
 
 ## What each stage consumes / produces
@@ -28,7 +28,7 @@ Stage 6: BEM export               → stage_06_bem/{name}.xml + {name}.ifc
 | 4 | `run_checks` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_04_validation.json` | 41-check invariant battery; errors **block export** |
 | 4b | `_run_auto_triage` | `stage_04_validation.json` | `stage_04b_auto_triage.json` | Opt-in via `ENABLE_AUTO_TRIAGE=1`; mutates `model.review_queue` |
 | 5 | `export_gate` | `stage_04_validation.json` | — | Exits with code 1 if any error; no artifact written |
-| 6 | `write_gbxml` + `write_ifc4` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_06_bem/{name}.xml`, `{name}.ifc` | gbXML 6.01 + IFC4 from `BEMModel` |
+| 6 | `write_gbxml` + `write_ifc4` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_06_bem/{name}.xml`, `{name}.ifc`, `convention_report.json` | gbXML 6.01 + IFC4 from `BEMModel` |
 
 ## Intermediate JSON schema (summary)
 
@@ -89,6 +89,19 @@ Written only when `ENABLE_AUTO_TRIAGE=1`. Each `ReviewItem` carries `needs_revie
 
 ### `stage_06_bem/`
 Contains `gbXML` and `IFC4` files named after `model.name` (fallback: `building.xml` / `building.ifc`).
+
+
+`convention_report.json` (schema `matchline.convention_report/1`) puts the
+export's measured biases in one auditable place (ROADMAP cross-cutting note):
+
+- `volume_bias`: interior- vs exterior-face air volume, copied from the
+  `convention_bias` check (per level, thickness and its source). When no wall
+  thickness is known it says `available: false` with the reason; the bias is
+  unmeasured, not zero.
+- `non_room_area`: floor area of shafts, closets, elevator/stair cores and
+  unclassified spaces, by type and by level, with each space listed. These
+  stay their own spaces; spaces with no area are named, not counted.
+- `area_budget`: envelope simplification's area change against its budget.
 
 ## Auto-triage integration
 
