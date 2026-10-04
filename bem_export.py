@@ -50,6 +50,7 @@ from bem_helpers import (
     _assign_wall_to_space,
     _cartesian,
     _distribute_openings,
+    _edge_spaces,
     _el,
     _fmt,
     _opening_type,
@@ -209,7 +210,10 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     # --- envelope surfaces ------------------------------------------------
     edges = _wall_edges(model.ring_m)
     opening_assign = _distribute_openings(
-        model.openings, edges, getattr(model, "ring_facades", None)
+        model.openings,
+        edges,
+        getattr(model, "ring_facades", None),
+        _edge_spaces(edges, model.spaces),
     )
     surf_count = 0
     open_count = 0

@@ -110,25 +110,42 @@ def _apportion(units, idxs, lengths, assign):
         k += base[i]
 
 
-def _distribute_openings(openings, edges, edge_facades=None):
+def _edge_spaces(edges, spaces):
+    """Space id owning each wall edge (``_assign_wall_to_space``), or [] when no spaces."""
+    spaces = [sp for sp in (spaces or []) if getattr(sp, "polygon_m", None)]
+    if not spaces:
+        return []
+    return [_assign_wall_to_space(p0, p1, spaces).sid for p0, p1 in edges]
+
+
+def _distribute_openings(openings, edges, edge_facades=None, edge_spaces=None):
     """Assign opening units to walls.
 
-    An opening with a ``host_facade`` that matches at least one edge in
-    ``edge_facades`` goes on that facade's edges (split by length when the
-    facade has several). Everything else -- no facade known, or no edge
-    with that facade -- is apportioned over all edges by length, as before.
-    Largest-remainder apportionment per category and facade, so totals are
-    exact and the assignment is deterministic. Returns {wall_idx: [units]}.
+    Most specific first. An opening whose ``space_sid`` and ``host_facade``
+    both match at least one edge (``edge_spaces`` / ``edge_facades``) goes on
+    that space's share of that facade, so a window in one room stays on that
+    room's wall when the facade is split per space. Otherwise an opening with
+    a matching ``host_facade`` goes on that facade's edges (split by length
+    when the facade has several). Everything else -- no facade known, or no
+    edge with that facade -- is apportioned over all edges by length.
+    Largest-remainder apportionment per group, so totals are exact and the
+    assignment is deterministic. Returns {wall_idx: [units]}.
     """
     lengths = [math.hypot(p1[0] - p0[0], p1[1] - p0[1]) for p0, p1 in edges]
     assign = {i: [] for i in range(len(edges))}
     facades = list(edge_facades or [])
     if len(facades) != len(edges):
         facades = []
+    spaces = list(edge_spaces or [])
+    if len(spaces) != len(edges) or not facades:
+        spaces = []
     by_facade = {}
+    by_space_facade = {}
     for i, f in enumerate(facades):
         if lengths[i] > 1e-6:
             by_facade.setdefault(f, []).append(i)
+            if spaces and spaces[i]:
+                by_space_facade.setdefault((spaces[i], f), []).append(i)
     all_idx = list(range(len(edges)))
     for cat in ("window", "door"):
         units = [u for u in openings if u.category == cat]
@@ -136,12 +153,16 @@ def _distribute_openings(openings, edges, edge_facades=None):
         groups = {}
         for u in units:
             f = getattr(u, "host_facade", "") or ""
-            if f in by_facade:
-                groups.setdefault(f, []).append(u)
+            sid = getattr(u, "space_sid", "") or ""
+            if (sid, f) in by_space_facade:
+                groups.setdefault((sid, f), []).append(u)
+            elif f in by_facade:
+                groups.setdefault(("", f), []).append(u)
             else:
                 loose.append(u)
-        for f in sorted(groups):
-            _apportion(groups[f], by_facade[f], lengths, assign)
+        for key in sorted(groups):
+            idxs = by_space_facade[key] if key[0] else by_facade[key[1]]
+            _apportion(groups[key], idxs, lengths, assign)
         _apportion(loose, all_idx, lengths, assign)
     for i in assign:
         assign[i].sort(key=lambda u: (u.category, u.tag))

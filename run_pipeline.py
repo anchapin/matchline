@@ -164,6 +164,7 @@ def model_from_linked_model(
                     provenance=op.provenance,
                     history=list(op.history),
                     host_facade=op.host_facade or "",
+                    space_sid=sp.id,
                 )
             )
 
