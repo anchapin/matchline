@@ -155,7 +155,7 @@ def _carve_service_rooms(rooms, seed):
             "id": "DR1",
             "plan_center_m": [round(xs, 6), round(door_y, 6)],
             "width_m": DOOR_W_M,
-            "room_number": host["number"],  # GT: the room the closet opens onto
+            "room_number": host["number"],  # GT only: the room the closet opens onto
         }
     ]
     return out, doors
@@ -201,7 +201,7 @@ def _paste_lighting_glyph(img, glyph_fn, w_px, cpx, cpy, rng):
 # ---------------------------------------------------------------------------
 
 
-def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
+def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed, doors=None):
     ppm = PLAN_PX_PER_M
     ox, oy = 120, 150
     sw = int(ox + W * ppm + 90)
@@ -238,6 +238,29 @@ def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
         x0, y0, x1, y1 = r["rect"]
         d.rectangle([X(x0), Y(y0), X(x1), Y(y1)], outline=0, width=wt)
 
+    # doors: gap in the wall + leaf + quarter-circle swing (standard plan
+    # symbol). Doors sit on vertical walls; the leaf swings into the room
+    # east of the wall (the closet), hinged at the door's north jamb.
+    door_dets = []
+    for dr in doors or ():
+        cx, cy = dr["plan_center_m"]
+        half = dr["width_m"] / 2
+        xp, yh, ye = X(cx), Y(cy - half), Y(cy + half)
+        d.rectangle([xp - wt / 2 - 2, yh, xp + wt / 2 + 2, ye], fill=255)
+        r_px = ye - yh
+        d.line([xp, yh, xp + r_px, yh], fill=0, width=3)  # open leaf
+        d.arc([xp - r_px, yh - r_px, xp + r_px, yh + r_px], start=0, end=90, fill=0, width=2)
+        door_dets.append(
+            {
+                "id": dr["id"],
+                "category": "door",
+                "x_px": float(xp),  # opening centre, on the wall line
+                "y_px": float((yh + ye) / 2),
+                "bbox_px": [float(xp - 2), float(yh), float(xp + r_px), float(ye)],
+                "width_px": float(r_px),
+            }
+        )
+
     # windows on south facade: gap in wall + triple line marker
     for w in south_windows:
         x0p, x1p, yp = X(w["s0_m"]), X(w["s1_m"]), Y(D)
@@ -259,7 +282,7 @@ def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
         d.text((X((x0 + x1) / 2) - tw / 2, Y((y0 + y1) / 2) - 20), text, fill=0, font=f)
 
     d.text((ox, 40), f"ARCH PLAN A101 -- bldg_{seed:03d}", fill=0, font=_font(30))
-    return sh_.finalize(), (ox, oy)
+    return sh_.finalize(), (ox, oy), door_dets
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +652,9 @@ def generate_building(seed: int, open_office_span: bool = False, service_rooms: 
             }
         )
 
-    arch_img, arch_origin = _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed)
+    arch_img, arch_origin, door_dets = _render_arch(
+        rooms, grids_v, grids_h, south_windows, W, D, rng, seed, doors=doors
+    )
     light_img, light_origin, fixtures = _render_lighting(rooms, W, D, rng)
     mech_img, mech_origin, components, zones = _render_mech(rooms, strips, n_zones, W, D, rng)
     elev_g_img, elev_g_data = _render_elevation(south_windows, grids_v, W, True, px_per_m=40.0)
@@ -692,6 +717,8 @@ def generate_building(seed: int, open_office_span: bool = False, service_rooms: 
             "arch": {
                 "image": arch_img,
                 "meta": sheet_meta("arch_A101", "arch_plan", arch_origin, PLAN_PX_PER_M),
+                # detector-style door symbols in SHEET PIXELS (GT is bldg["doors"])
+                "doors": door_dets,
             },
             "lighting": {
                 "image": light_img,

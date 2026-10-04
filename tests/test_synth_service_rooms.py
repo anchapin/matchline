@@ -58,3 +58,36 @@ def test_unnumbered_spaces_keep_their_own_classification():
     host = m.spaces[f"L1-{b['doors'][0]['room_number']}"]
     notes = [h.note for h in host.history if h.method.startswith("space_merge")]
     assert any("closet" in n for n in notes) and any("shaft" in n for n in notes)
+
+
+def test_linker_reads_the_door_off_the_sheet_not_gt():
+    b = _first_with_service(3)
+    gt = b["doors"][0]
+    b["doors"] = []  # linker must not need GT
+    (det,) = b["sheets"]["arch"]["doors"]
+    meta = b["sheets"]["arch"]["meta"]
+    x_m = (det["x_px"] - meta["origin_px"][0]) / meta["px_per_m"]
+    y_m = (det["y_px"] - meta["origin_px"][1]) / meta["px_per_m"]
+    assert abs(x_m - gt["plan_center_m"][0]) < 1e-6 and abs(y_m - gt["plan_center_m"][1]) < 1e-6
+    m, _ = build_model(b)
+    assert len(m.spaces[f"L1-{gt['room_number']}"].merged_from) == 2
+
+
+def test_door_swing_is_drawn_where_the_detection_says():
+    b = _first_with_service(3)
+    img = b["sheets"]["arch"]["image"]
+    (det,) = b["sheets"]["arch"]["doors"]
+    x = int(round(det["x_px"]))
+    y0, y1 = int(det["bbox_px"][1]), int(det["bbox_px"][3])
+    # the wall is cleared across the opening ...
+    assert (img[y0 + 3 : y1 - 3, x] > 200).all()
+    # ... the open leaf runs east from the hinge jamb ...
+    r = int(det["width_px"])
+    assert (img[y0 - 1 : y0 + 2, x + 5 : x + r - 5] < 100).any(axis=0).all()
+    # ... and the swing arc reaches the far jamb
+    assert (img[y1 - 3 : y1 + 2, x - 2 : x + 6] < 100).any()
+
+
+def test_default_building_draws_no_doors():
+    b = generate_building(5)
+    assert b["sheets"]["arch"]["doors"] == []

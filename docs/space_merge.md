@@ -47,3 +47,18 @@ Closets and shafts get no fixtures, diffusers or windows. The option uses its ow
 random stream and is off by default, so default buildings are unchanged. Across
 seeds 0 to 29 (both layouts) 59 of 60 buildings merge both spaces into the host
 room with no review items; the other has no room large enough to host the strip.
+
+## Where door positions come from (synthetic buildings)
+
+With `service_rooms=True` the arch sheet draws the closet door as a standard
+plan symbol: a gap in the wall, the open leaf, and a quarter-circle swing into
+the closet. The sheet also carries detector-style door outputs in sheet pixels
+(`sheets["arch"]["doors"]`: opening centre `x_px`/`y_px`, `bbox_px`,
+`width_px`). `build_model` registers those through the arch title-block scale
+and hands them to `merge_closets_and_shafts`; the generator's GT list
+(`bldg["doors"]`, with the host `room_number`) is for scoring only and is never
+read by the linker.
+
+These pixel outputs are simulated the same way lighting fixtures and
+diffusers are. No image-based door detector reads the drawn swing yet; tests
+check that the swing is drawn exactly where the pixel output says it is.
