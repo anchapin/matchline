@@ -789,3 +789,11 @@ def break_shading_unhosted(m: BuildingModel):
     """A projection read with no host wall: likely a detection error."""
     add_shading(m)
     m.shading[1].host_wall_id = ""
+
+
+def break_space_type_invalid(m: BuildingModel):
+    next(iter(m.spaces.values())).poly_type = "garage"
+
+
+def break_space_type_unassigned(m: BuildingModel):
+    next(iter(m.spaces.values())).poly_type = "unassigned"

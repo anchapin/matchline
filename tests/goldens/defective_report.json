@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 41,
+  "n_checks": 42,
   "errors": 5,
   "warnings": 4,
-  "passes": 20,
+  "passes": 21,
   "skipped": 12
  },
  "results": [
@@ -73,6 +73,13 @@
    "name": "Shading host reference",
    "severity": "skip",
    "message": "no shading surfaces in model",
+   "entities": []
+  },
+  {
+   "check_id": "space_type_accounting",
+   "name": "Space type accounting",
+   "severity": "pass",
+   "message": "all 2 spaces are rooms",
    "entities": []
   },
   {

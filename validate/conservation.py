@@ -1229,3 +1229,71 @@ def _check_shading_host_reference(ctx: _Ctx) -> CheckResult:
         "pass",
         f"{len(shades)} shading surface(s) ({breakdown}), each on an existing host",
     )
+
+
+VALID_POLY_TYPES = ("room", "shaft", "closet", "elevator_core", "unassigned")
+
+
+def _check_space_type_accounting(ctx: _Ctx) -> CheckResult:
+    """Every space has a known poly_type; non-room area is reported, not merged.
+
+    Roadmap item 4. Shafts, closets and elevator/stair cores stay their own
+    spaces: no area is merged into a corridor or split between neighbours
+    (the split rule is still an open question), so nothing is inflated and
+    nothing vanishes. This check reports how much floor area each non-room
+    type holds, so loads and LPD can be read against rooms only.
+
+    error -- a space has a poly_type outside the known set.
+    warn  -- the classifier could not decide on one or more spaces
+             (poly_type "unassigned"); they need a person to look.
+    pass  -- every space has a decided type; the message gives the non-room
+             area share by type.
+    skip  -- no spaces.
+    """
+    cid_ = "space_type_accounting"
+    title = "Space type accounting"
+    spaces = list(ctx.model.spaces.values())
+    if not spaces:
+        return CheckResult(cid_, title, "skip", "no spaces")
+    bad = sorted(s.id for s in spaces if getattr(s, "poly_type", "room") not in VALID_POLY_TYPES)
+    if bad:
+        first = ctx.model.spaces[bad[0]]
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(bad)} space(s) have an unknown type, e.g. {bad[0]} -> {first.poly_type!r} "
+            f"(known: {', '.join(VALID_POLY_TYPES)})",
+            entities=bad[:20],
+        )
+    area = {}
+    for s in spaces:
+        a = abs(s.area_m2 or 0.0)
+        area[s.poly_type] = area.get(s.poly_type, 0.0) + a
+    total = sum(area.values())
+    non_room = sorted(s.id for s in spaces if s.poly_type != "room")
+    if not non_room:
+        return CheckResult(cid_, title, "pass", f"all {len(spaces)} spaces are rooms")
+
+    def share(t):
+        pct = 100.0 * area[t] / total if total > 0 else 0.0
+        return f"{t} {area[t]:.1f} m2 ({pct:.1f}%)"
+
+    breakdown = "; ".join(share(t) for t in VALID_POLY_TYPES if t != "room" and t in area)
+    undecided = sorted(s.id for s in spaces if s.poly_type == "unassigned")
+    if undecided:
+        return CheckResult(
+            cid_,
+            title,
+            "warn",
+            f"{len(undecided)} space(s) could not be classified and need review, "
+            f"e.g. {undecided[0]}. Non-room area: {breakdown}",
+            entities=undecided[:20],
+        )
+    return CheckResult(
+        cid_,
+        title,
+        "pass",
+        f"{len(non_room)} non-room space(s) kept as their own spaces: {breakdown}",
+        entities=non_room[:20],
+    )
