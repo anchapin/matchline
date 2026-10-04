@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (41 checks)
+## The battery (42 checks)
 
 ### Conservation laws (error)
 
@@ -78,6 +78,18 @@ are consistent with each other but implausible for a real building).
   counted as zero. Skips when there are no skylights. Sloped roofs (roadmap
   item 2) replace the flat-roof assumption when they land. Skylights are
   excluded from `facade_opening_closure`, which is about walls.
+- `daylight_zones` — **roadmap item 3, toplighting, plus sidelighting.**
+  Every daylight zone (primary, secondary, under-skylight) must lie inside
+  its space (at most 1% of the zone outside) and its stored area must match
+  its polygon within the area tolerance. The toplit area of each space is
+  recomputed here as the union of the toplit polygons, with code separate
+  from `daylight_skylights.py`, and must match `toplit_m2` and not exceed the
+  floor area; overlapping skylight zones are therefore never double counted.
+  A toplit zone must be classed `under_skylight` and name a skylight of the
+  same space. Errors for any of these. Warns when skylights are listed as
+  unplaced (no plan position or no ceiling height), since the toplit area is
+  then a lower bound. Skips when no space has a daylight zone; on the drawing
+  path, skylights carry no position yet, so nothing is computed there.
 - `wall_construction_coverage` — **roadmap item 6, per-space wall
   constructions.** Each `EnvelopeWall` segment carries a `construction_id`
   (a key into `BuildingModel.constructions`) and the `space_id` it encloses;
@@ -114,7 +126,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 38 + 3 = 41.
+and are run in addition to it, so `N_CHECKS` = 39 + 3 = 42.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area

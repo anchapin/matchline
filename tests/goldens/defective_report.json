@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 41,
+  "n_checks": 42,
   "errors": 5,
   "warnings": 4,
   "passes": 20,
-  "skipped": 12
+  "skipped": 13
  },
  "results": [
   {
@@ -59,6 +59,13 @@
    "name": "Skylight within roof",
    "severity": "skip",
    "message": "no skylights in model",
+   "entities": []
+  },
+  {
+   "check_id": "daylight_zones",
+   "name": "Daylight zones",
+   "severity": "skip",
+   "message": "no daylight zones in model",
    "entities": []
   },
   {

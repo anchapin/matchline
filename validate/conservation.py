@@ -983,6 +983,118 @@ def _check_skylight_within_roof(ctx: _Ctx) -> CheckResult:
     )
 
 
+def _zone_poly(z):
+    from shapely.geometry import Polygon
+
+    if not z.polygon_m or len(z.polygon_m) < 3:
+        return None
+    g = Polygon(z.polygon_m)
+    return g if g.is_valid else g.buffer(0)
+
+
+def _check_daylight_zones(ctx: _Ctx) -> CheckResult:
+    """Daylight zones are inside their space and their areas add up.
+
+    Roadmap item 3 (toplighting) plus the existing sidelighting zones. The
+    toplit area is recomputed here as the union of the zone polygons, with
+    its own code, rather than trusting ``SpaceDaylight.toplit_m2``.
+
+    error -- a zone polygon sticks out of its space by more than 1% of the
+             zone; a zone's stored area disagrees with its polygon by more
+             than the area tolerance; ``toplit_m2`` disagrees with the union
+             of the toplit polygons, or exceeds the space's floor area; a
+             toplit zone names an opening that is not a skylight of that
+             space, or is not classed ``under_skylight``.
+    warn  -- skylights listed as unplaced: they have no daylight area
+             because their position or the ceiling height is unknown, so the
+             space's toplit area is a lower bound.
+    skip  -- no space has a daylight zone or an unplaced skylight.
+    """
+    cid_ = "daylight_zones"
+    title = "Daylight zones"
+    try:
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+    except ImportError:  # pragma: no cover - shapely is a core dependency
+        return CheckResult(cid_, title, "skip", "shapely not available")
+
+    tol = ctx.tol_area
+    bad: list = []
+    unplaced: list = []
+    n_zones = 0
+    toplit_total = 0.0
+    for sid, sp in ctx.model.spaces.items():
+        dl = getattr(sp, "daylight", None)
+        if dl is None:
+            continue
+        top = list(getattr(dl, "toplit", []) or [])
+        zones = list(dl.primary) + list(dl.secondary) + top
+        unplaced += [f"{sid}:{o}" for o in getattr(dl, "unplaced_skylights", []) or []]
+        if not zones:
+            continue
+        n_zones += len(zones)
+        room = Polygon(sp.polygon_m) if sp.polygon_m and len(sp.polygon_m) >= 3 else None
+        if room is not None and not room.is_valid:
+            room = room.buffer(0)
+        skylights = {o.id for o in sp.openings if o.category == "skylight"}
+        top_polys = []
+        for z in zones:
+            g = _zone_poly(z)
+            if g is None or g.is_empty:
+                bad.append((sid, f"zone {z.id} has no polygon"))
+                continue
+            if abs(g.area - z.area_m2) > tol * max(g.area, 1e-9) + 1e-6:
+                bad.append((sid, f"zone {z.id} area {z.area_m2:.2f} m^2 vs polygon {g.area:.2f} m^2"))
+            if room is not None and g.difference(room).area > 0.01 * g.area + 1e-6:
+                bad.append((sid, f"zone {z.id} extends outside its space"))
+        for z in top:
+            if z.zone_class != "under_skylight":
+                bad.append((sid, f"toplit zone {z.id} is classed {z.zone_class!r}"))
+            if z.window_id not in skylights:
+                bad.append((sid, f"toplit zone {z.id} names {z.window_id}, not a skylight here"))
+            g = _zone_poly(z)
+            if g is not None and not g.is_empty:
+                top_polys.append(g)
+        if top:
+            union = unary_union(top_polys).area if top_polys else 0.0
+            stored = dl.toplit_m2
+            if abs(union - stored) > tol * max(union, 1e-9) + 1e-6:
+                bad.append((sid, f"toplit_m2 {stored:.2f} vs union of zones {union:.2f}"))
+            floor = sp.area_m2 if sp.area_m2 is not None else (room.area if room else None)
+            if floor is not None and stored > floor * (1.0 + tol) + 1e-6:
+                bad.append((sid, f"toplit_m2 {stored:.2f} exceeds floor area {floor:.2f}"))
+            toplit_total += stored
+
+    if bad:
+        sid, why = bad[0]
+        return CheckResult(
+            cid_,
+            title,
+            "error",
+            f"{len(bad)} daylight zone problem(s), e.g. {sid}: {why}",
+            entities=sorted({b[0] for b in bad})[:20],
+        )
+    if unplaced:
+        return CheckResult(
+            cid_,
+            title,
+            "warn",
+            f"{len(unplaced)} skylight(s) have no daylight area (position or "
+            f"ceiling height unknown); toplit area {toplit_total:.2f} m^2 is a "
+            f"lower bound",
+            entities=sorted(unplaced)[:20],
+        )
+    if not n_zones:
+        return CheckResult(cid_, title, "skip", "no daylight zones in model")
+    return CheckResult(
+        cid_,
+        title,
+        "pass",
+        f"{n_zones} daylight zone(s) inside their spaces; toplit area "
+        f"{toplit_total:.2f} m^2 matches the union of its zones",
+    )
+
+
 def _check_wall_construction_coverage(ctx: _Ctx) -> CheckResult:
     """Every exterior wall segment has one known construction; per-space U holds.
 

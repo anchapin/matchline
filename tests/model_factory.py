@@ -669,6 +669,34 @@ def break_skylight_below_top(m: BuildingModel):
     _add_skylight(m, "L1-101", "roof-SK-LOW", 1.2, 1.2)
 
 
+def _add_toplit(m: BuildingModel, sid: str, oid: str, cx: float, cy: float, ch: float = H):
+    """Add a positioned skylight and compute its daylight area (L1-101 is 5 x 6 m)."""
+    from daylight_skylights import compute_skylight_daylight
+
+    _add_skylight(m, sid, oid, 1.0, 1.0)
+    m.spaces[sid].openings[-1].plan_center_m = [cx, cy]
+    compute_skylight_daylight(m.spaces[sid], ch)
+
+
+def break_daylight_zone_outside(m: BuildingModel):
+    """A toplit zone polygon that runs past its space boundary.
+
+    Realistic cause: zones computed against an older room polygon, then the
+    room was re-traced smaller without recomputing daylight.
+    """
+    _add_toplit(m, "L1-101", "roof-SK-DL", 2.5, 3.0)
+    z = m.spaces["L1-101"].daylight.toplit[0]
+    z.polygon_m = [[x + 3.0, y] for x, y in z.polygon_m]
+
+
+def break_daylight_unplaced(m: BuildingModel):
+    """A skylight with no plan position: its daylight area is unknown."""
+    from daylight_skylights import compute_skylight_daylight
+
+    _add_skylight(m, "L1-101", "roof-SK-NOPOS", 1.0, 1.0)
+    compute_skylight_daylight(m.spaces["L1-101"], H)
+
+
 # -- roadmap item 6: wall constructions ------------------------------------
 
 
