@@ -37,7 +37,12 @@ def _build_spaces(bldg, model: BuildingModel, level_id: str, wall_height_m: floa
             confidence=1.0,
             note=f"polygon + label '{r['name']} {r['number']}'",
         )
-        clf = classifications.get(number)
+        if number:
+            clf = classifications.get(number)
+        else:
+            # Unnumbered polygons all share the "" key in the batch result,
+            # so classify each one on its own (same evidence, own answer).
+            clf = classify_polygons([r], south_windows, grids_h).get("")
         poly_type = clf.poly_type if clf else "room"
         history = []
         if clf is not None:

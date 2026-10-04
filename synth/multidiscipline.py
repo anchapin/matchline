@@ -112,6 +112,55 @@ def _layout(rng, open_office_span: bool):
     return W, D, n_zones, strips, named
 
 
+SERVICE_STRIP_M = 1.0  # width of the closet + shaft strip carved off a room
+SHAFT_DEPTH_M = 1.5  # shaft 1.0 x 1.5 = 1.5 m2 (< 2 m2, unnumbered -> shaft)
+DOOR_W_M = 0.9
+
+
+def _carve_service_rooms(rooms, seed):
+    """Carve one closet and one shaft off the east side of a room.
+
+    The strip (SERVICE_STRIP_M wide, full room depth) becomes an unnumbered
+    CLOSET (2-8 m2) with a SHAFT (1.5 m2) at its south end; the parent room
+    keeps its number and shrinks to a rectangle. The closet's door sits on
+    the face it shares with the parent. Uses its own RNG so the rest of the
+    building is generated exactly as without service rooms.
+
+    Returns (rooms, doors); doors are plan positions in meters.
+    """
+    rng = np.random.default_rng(seed + 7919)
+    ok = [
+        i
+        for i, r in enumerate(rooms)
+        if r["zone"] is not None
+        and (r["rect"][2] - r["rect"][0]) >= MIN_ROOM_M + SERVICE_STRIP_M
+        and 2.0 + SHAFT_DEPTH_M * SERVICE_STRIP_M <= (r["rect"][3] - r["rect"][1]) * SERVICE_STRIP_M
+        and (r["rect"][3] - r["rect"][1] - SHAFT_DEPTH_M) * SERVICE_STRIP_M < 8.0
+    ]
+    if not ok:
+        return rooms, []
+    i = ok[int(rng.integers(len(ok)))]
+    host = rooms[i]
+    x0, y0, x1, y1 = host["rect"]
+    xs = x1 - SERVICE_STRIP_M
+    ys = y1 - SHAFT_DEPTH_M
+    out = [dict(r) for r in rooms]
+    out[i] = {**host, "rect": (x0, y0, xs, y1)}
+    closet = {"rect": (xs, y0, x1, ys), "zone": host["zone"], "name": "CLOSET", "number": "", "service": "closet"}
+    shaft = {"rect": (xs, ys, x1, y1), "zone": host["zone"], "name": "SHAFT", "number": "", "service": "shaft"}
+    out += [closet, shaft]
+    door_y = float(rng.uniform(y0 + DOOR_W_M / 2 + 0.2, ys - DOOR_W_M / 2 - 0.2))
+    doors = [
+        {
+            "id": "DR1",
+            "plan_center_m": [round(xs, 6), round(door_y, 6)],
+            "width_m": DOOR_W_M,
+            "room_number": host["number"],  # GT: the room the closet opens onto
+        }
+    ]
+    return out, doors
+
+
 def _grids(W, D):
     return ({"A": 0.0, "B": W / 3, "C": 2 * W / 3, "D": W}, {"1": 0.0, "2": D / 2, "3": D})
 
@@ -239,6 +288,8 @@ def _render_lighting(rooms, W, D, rng):
     fixtures = []
     fi = 0
     for r in rooms:
+        if r.get("service"):
+            continue  # closets/shafts get no fixtures
         x0, y0, x1, y1 = r["rect"]
         fclass, m2_per, mn, mx = ROOM_FIXTURE_PLAN.get(r["name"], DEFAULT_PLAN)
         area = (x1 - x0) * (y1 - y0)
@@ -341,7 +392,7 @@ def _render_mech(rooms, strips, n_zones, W, D, rng):
         # rooms served: strip rooms + the spanning open office (both zones)
         for r in rooms:
             x0, y0, x1, y1 = r["rect"]
-            serves = (r["zone"] == zi) or (r["zone"] is None)
+            serves = ((r["zone"] == zi) or (r["zone"] is None)) and not r.get("service")
             if not serves:
                 continue
             # diffuser(s): office gets one per zone, in that zone's half
@@ -506,7 +557,7 @@ def _south_windows(rooms, D, rng):
     south_rooms = []
     for r in rooms:
         x0, y0, x1, y1 = r["rect"]
-        if abs(y1 - D) > 1e-6:
+        if abs(y1 - D) > 1e-6 or r.get("service"):
             continue
         south_rooms.append(r)
         wdt = x1 - x0
@@ -546,11 +597,19 @@ def _south_windows(rooms, D, rng):
 # ---------------------------------------------------------------------------
 
 
-def generate_building(seed: int, open_office_span: bool = False) -> dict:
+def generate_building(seed: int, open_office_span: bool = False, service_rooms: bool = False) -> dict:
     """Generate one multi-discipline building. Returns the building dict
-    (images as uint8 arrays + GT)."""
+    (images as uint8 arrays + GT).
+
+    service_rooms: carve an unnumbered closet (with a door onto its parent
+    room) and a shaft off one room, so the closet/shaft merge rule runs end
+    to end. Off by default; with it off the building is unchanged.
+    """
     rng = np.random.default_rng(seed)
     W, D, n_zones, strips, rooms = _layout(rng, open_office_span)
+    doors: list = []
+    if service_rooms:
+        rooms, doors = _carve_service_rooms(rooms, seed)
     grids_v, grids_h = _grids(W, D)
     south_windows = _south_windows(rooms, D, rng)
 
@@ -566,6 +625,7 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
                 "polygon_m": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
                 "area_m2": round((x1 - x0) * (y1 - y0), 3),
                 "zone": r["zone"],
+                **({"service": r["service"]} if r.get("service") else {}),
             }
         )
 
@@ -616,7 +676,9 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
         "wall_height_m": WALL_H_M,
         "level_id": "L1",
         "open_office_span": open_office_span,
+        "service_rooms": service_rooms,
         "rooms": gt_rooms,
+        "doors": doors,
         "grids_v": grids_v,
         "grids_h": grids_h,
         "zones": zones,
