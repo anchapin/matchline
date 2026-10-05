@@ -882,7 +882,9 @@ def _ifc_doors(model):
     for el in model.bim_elements:
         for bo in el.openings:
             if bo.category == "door" and bo.plan_center_m:
-                out.append({"id": bo.id, "level_id": el.level_id, "plan_center_m": bo.plan_center_m})
+                out.append(
+                    {"id": bo.id, "level_id": el.level_id, "plan_center_m": bo.plan_center_m}
+                )
     return out
 
 
@@ -1681,12 +1683,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
                 core_provenance=prov(method, conf, f"{note}; name/number via {name_source}", gid),
-                label_confidence=(0.95 if name_source == "ifc_longname" else 0.9) if number else 0.6,
+                label_confidence=(0.95 if name_source == "ifc_longname" else 0.9)
+                if number
+                else 0.6,
             )
             cls = _ifc_space_class(sp)
             if cls is not None:
                 space.poly_type, space.poly_type_confidence, word = cls
-                space.core_provenance.note += f"; poly_type {cls[0]} from IfcSpace name word '{word}'"
+                space.core_provenance.note += (
+                    f"; poly_type {cls[0]} from IfcSpace name word '{word}'"
+                )
             lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
             if lighting is not None:
                 space.lighting = lighting
@@ -2053,6 +2059,62 @@ def _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=""):
     )
 
 
+_DOOR_OP_UNDEFINED = {"NOTDEFINED", "USERDEFINED", ""}
+_DOOR_OP_NO_LEAVES = {"REVOLVING", "ROLLINGUP"}
+
+
+def _door_semantics(fill):
+    """(operation_type, leaf_count, hinge_side, glazing_fraction, note) for an IfcDoor (#573).
+
+    OperationType comes from the occurrence (IFC4), else its type (IfcDoorType,
+    IFC2X3 IfcDoorStyle). Leaf count and hinge side are read straight off the
+    enum; anything it does not state stays None. GlazingAreaFraction comes from
+    Pset_DoorCommon (occurrence overrides type) and must lie in 0..1.
+    Mapping idea from the Pascal editor IFC importer (MIT, door-semantics.ts).
+    """
+    import ifcopenshell.util.element as _El
+
+    op = getattr(fill, "OperationType", None)
+    src = "occurrence"
+    if not op:
+        try:
+            typ = _El.get_type(fill)
+        except Exception:  # noqa: BLE001 -- malformed typing, treat as untyped
+            typ = None
+        op = getattr(typ, "OperationType", None) if typ is not None else None
+        src = "type"
+    op = str(op) if op else None
+    leaves = hinge = None
+    notes = []
+    if op and op not in _DOOR_OP_UNDEFINED:
+        notes.append(f"OperationType {op} from {src}")
+        if op not in _DOOR_OP_NO_LEAVES:
+            leaves = 2 if op.startswith("DOUBLE_DOOR") else 1
+        if "SWING" in op and op.endswith("_LEFT"):
+            hinge = "left"
+        elif "SWING" in op and op.endswith("_RIGHT"):
+            hinge = "right"
+    elif op:
+        notes.append(f"OperationType {op}: leaves/hinge unknown")
+    frac = None
+    try:
+        psets = _El.get_psets(fill) or {}
+    except Exception:  # noqa: BLE001
+        psets = {}
+    raw = (psets.get("Pset_DoorCommon") or {}).get("GlazingAreaFraction")
+    if raw is not None:
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            v = None
+        if v is not None and 0.0 <= v <= 1.0:
+            frac = v
+            notes.append(f"GlazingAreaFraction {v:g} from Pset_DoorCommon")
+        else:
+            notes.append(f"GlazingAreaFraction {raw!r} out of 0..1 -- ignored")
+    return op, leaves, hinge, frac, "; ".join(notes)
+
+
 def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):
     """One BimOpening from void/fill relationships + opening geometry.
 
@@ -2114,7 +2176,9 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         to_world = _placement_transform(opening, scale)
         wxs, wys = [], []
         for i in range(0, len(verts), 3):
-            wx, wy, _ = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+            wx, wy, _ = _apply(
+                to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale
+            )
             wxs.append(wx)
             wys.append(wy)
         cx, cy = _to_canonical(0.5 * (min(wxs) + max(wxs)), 0.5 * (min(wys) + max(wys)))
@@ -2130,6 +2194,13 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
     if tag:
         # tag itself is a convention-dependent parse of the fill Name
         p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
+    op_type = leaves = hinge = glaze = glazed = None
+    if category == "door":
+        op_type, leaves, hinge, glaze, dnote = _door_semantics(fill)
+        if dnote:
+            p.note += f"; {dnote}"
+        if glaze is not None and width_m and height_m:
+            glazed = glaze * width_m * height_m
     return BimOpening(
         id=ogid,
         category=category,
@@ -2142,4 +2213,9 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         fill_global_id=fgid,
         provenance=p,
         plan_center_m=plan_center,
+        operation_type=op_type,
+        leaf_count=leaves,
+        hinge_side=hinge,
+        glazing_area_fraction=_r4(glaze),
+        glazed_area_m2=_r4(glazed),
     )

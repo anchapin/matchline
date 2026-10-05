@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1332 # +14: IFC closets/shafts by name + IFC doors drive closet merge (#574) on top of #572 (1318)
+          EXPECTED_TEST_COUNT=1353 # +8 IfcSpace LongName/Name (#580), +13 IfcDoor OperationType + glazing (#573) on top of #574 (1332)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
