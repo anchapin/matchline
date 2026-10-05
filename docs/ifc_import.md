@@ -306,6 +306,15 @@ After end joins, two passes run on the Tier 0 IFC segments of each level
 - Interior pieces still leave the envelope at classification, so interior
   shared-wall bookkeeping has no home in the model yet.
 
+## Determinism (#586)
+
+The same IFC file imports to byte-identical model JSON in every process.
+Ties are broken by GlobalId (or another stable key), never by object id or
+set/dict order. `tests/test_ifc_determinism.py` imports each IFC fixture in
+separate interpreters with different `PYTHONHASHSEED` values and compares
+the JSON. All fixtures passed with no code change when the test was added;
+any new tie-break must keep it green.
+
 ## Fragmented walls and doubled openings (#578)
 
 Defect-injection tests (`tests/test_ifc_fragment_parity.py`, cases modelled
