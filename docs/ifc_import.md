@@ -430,3 +430,39 @@ Not covered yet: curtain-wall facades that close a space's open side, and
 using virtual borders in the closet/shaft merge. Idea from Pascal's
 room-first.ts (MIT, Copyright (c) 2026 Pascal Group Inc., commit 67f8041); no
 code ported verbatim.
+
+## Lining walls in series with their host (#597)
+
+A lining wall kept out of the envelope (#577) still counts toward its host's U:
+
+- Only face-to-face and cladding linings add resistance. Embedded and
+  run-through walls sit inside the host's body and add nothing (a note on the
+  host says so).
+- A host whose U is stated (`Pset_WallCommon.ThermalTransmittance`, IFC-U)
+  keeps it. The file's value is for the whole assembly and may already include
+  the lining; a provenance note records that a lining is present.
+- A host whose U came from its layers (IFC-UL / IFC-UM) gets
+  `U = 1 / (Rsi + R_host + sum R_lining + Rse)` with one Rsi 0.13 and one
+  Rse 0.04. The result is a new construction: `IFC-ULL<U>` when every
+  conductivity is from the file (conf 0.8), `IFC-UML<U>` when any came from
+  the materials lookup (conf 0.6). Provenance lists the host and lining
+  GlobalIds and each R.
+- A lining's R comes from its own layer set (file conductivities, then the
+  lookup), else from one directly associated IfcMaterial over the wall's
+  thickness.
+- Coverage is the lining's share of the host's face area: run overlap times
+  the lower of the two heights. The host's run reaches into the corner walls
+  that cross it, so a strip between the host's end and the lining's end that
+  lies inside one crossing wall's body counts as covered.
+- A single lining covering part of the face gives the parallel-path,
+  area-weighted `U = f * U_lined + (1 - f) * U_bare` (a full-length 1.2 m
+  wainscot on a 3 m wall is f = 0.4). Provenance records f and both U's.
+- A lining with no usable material or no height, one covering under 25% of
+  the host's area, or several linings on one host when any is partial (their
+  zones may overlap), leave the host U as it was and add a `lining_u` review
+  item.
+- A cladding run adds its resistance to every host it lies on.
+- Summary: `lining U: N host walls with linings in series, M left for review`.
+
+Documented gap: a ventilated rainscreen cavity between cladding and host that
+is in neither layer set is not modelled (same as foil-faced cavities).

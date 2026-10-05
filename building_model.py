@@ -551,6 +551,7 @@ class ReviewItem:
         "space_merge",
         "unclaimed_wall_loop",
         "ceiling",
+        "lining_u",
     ]
     description: str
     confidence: float
@@ -747,6 +748,8 @@ class BuildingModel:
             "space_merge",
             "unclaimed_wall_loop",
             "ceiling",
+            "lining_u",
+            "lining_u",
         ],
         description: str,
         confidence: float,
