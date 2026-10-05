@@ -1908,6 +1908,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     _attach_openings_to_spaces(model)
     _apply_skylight_daylight(model)
     merge_note = _merge_ifc_closets_and_shafts(model)
+    # after opening attachment (it matches envelope segments to wall
+    # placements by start point), before facade classification (#575)
+    from ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends
+
+    join_counts = join_wall_ends(
+        model.envelope,
+        {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m},
+        connected_pairs_from_ifc(f),
+    )
     facade_summary = _classify_envelope(model)
     if model.constructions:
         # space_id is known only after classification; interior walls have
@@ -1935,6 +1944,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         ),
         f"scale={scale}",
     ]
+    if join_counts["moved"] or join_counts["ambiguous"]:
+        summary_parts.append(
+            f"wall joins: {join_counts['moved']} ends moved onto neighbour centrelines"
+            + (f", {join_counts['ambiguous']} left (tie)" if join_counts["ambiguous"] else "")
+        )
     if merge_note:
         summary_parts.append(merge_note)
     if not unattached.is_empty():
