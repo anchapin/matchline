@@ -271,6 +271,9 @@ class Space:
     wall_u_value_w_m2k: Optional[float] = None
     # Ids of closets/shafts folded into this space by space_merge (the user's
     # rule, 2026-10-04). Empty for a space that absorbed nothing.
+    # finish floors laid on this space's structural slab (#584):
+    # [{"global_id": str, "thickness_m": float}]; never floor area or a BEM surface
+    floor_finishes: List[dict] = field(default_factory=list)
     merged_from: List[str] = field(default_factory=list)
     history: List[Provenance] = field(default_factory=list)
 

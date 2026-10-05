@@ -372,3 +372,18 @@ stays in the envelope with a note. The import summary reports
 `linings: N walls kept out of the envelope`. A lining's own material layers are
 not added to its host's U-value yet. Tests and tolerances follow
 `redundantWallIds` in the Pascal editor IFC converter (MIT, commit 67f8041).
+
+## Finish floors on structural slabs (#584)
+
+A slab no thicker than 0.06 m whose bottom sits within 2 cm of the top of a
+thicker slab on the same level, with at least 95% of its plan on that slab,
+is a finish floor (a Revit "Finish Floor", screed, tile). It keeps its
+`BimElement` with `role="finish"`, never adds floor area or a floor surface,
+and never takes part in the ground-slab U (so a screed typed `BASESLAB` with
+its own U does not knock the slab back to generic). Each space whose floor it
+covers by at least half records it in `Space.floor_finishes` as
+`{"global_id", "thickness_m"}`. A thin slab with nothing under it (a
+mezzanine deck) or one mostly off the slab stays an ordinary slab. Plans are
+the convex hulls of the solids. The import summary reports
+`finish slabs: N on structural floors`. Idea from Pascal's `room-first.ts`
+(MIT, Copyright (c) 2026 Pascal Group Inc., commit 67f8041).
