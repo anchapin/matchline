@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1421  # +8 IFC import determinism across hash seeds (#586) on top of #578 (1413)
+          EXPECTED_TEST_COUNT=1435  # +14 IFC storey-by-elevation fallback (#585) on top of #586 (1421)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

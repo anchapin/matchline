@@ -306,6 +306,25 @@ After end joins, two passes run on the Tier 0 IFC segments of each level
 - Interior pieces still leave the envelope at classification, so interior
   shared-wall bookkeeping has no home in the model yet.
 
+## Elements outside any storey (#585)
+
+Elements are normally read from their storey's
+`IfcRelContainedInSpatialStructure`. Walls, slabs, roofs, columns, beams,
+curtain walls and duct/distribution elements contained in the IfcBuilding
+or IfcSite instead, or not contained anywhere, are now placed by height
+(idea from Pascal's `storey-semantics.ts`):
+
+- A storey's band runs from its elevation less 0.1 m up to the next
+  storey's elevation less 0.1 m; the top band is open.
+- When exactly one storey fits, the element goes there with
+  `storey_method="elevation"`, confidence at most 0.6 and a provenance
+  note. Elements already in a storey keep `storey_method=""`.
+- Below the lowest band, or two storeys at the fitting elevation, the
+  element is not read and is listed as unassigned with its GlobalId and
+  reason. There is no fallback to the lowest storey.
+- Summary line: `storey fallback: N by elevation, M unassigned: <GlobalId (reason)>, ...`.
+- Elements contained in an IfcSpace are out of scope here.
+
 ## Determinism (#586)
 
 The same IFC file imports to byte-identical model JSON in every process.

@@ -553,6 +553,66 @@ def _contained(storey):
     return out
 
 
+_ELEMENT_CLASSES = (
+    "IfcWall",
+    "IfcWallStandardCase",
+    "IfcSlab",
+    "IfcRoof",
+    "IfcColumn",
+    "IfcBeam",
+    "IfcCurtainWall",
+    "IfcDuctSegment",
+    "IfcDistributionElement",
+)
+STOREY_ELEVATION_TOL_M = 0.1  # Pascal storey-semantics.ts
+
+
+def _storey_by_elevation(z, elevations, tol=STOREY_ELEVATION_TOL_M):
+    """Index of the one storey whose band holds height ``z`` (#585).
+
+    A storey's band runs from its elevation (less ``tol``) up to the next
+    higher storey's elevation (less ``tol``); the top band is open. Returns
+    ``(index, "")`` when exactly one storey fits, else ``(None, reason)``:
+    "below" when ``z`` is under the lowest band, "tie" when two storeys
+    share the fitting elevation. Never falls back to the lowest storey.
+    Idea from Pascal's storey-semantics.ts (MIT, Copyright (c) 2026 Pascal
+    Group Inc., commit 67f8041).
+    """
+    fit = [i for i, e in enumerate(elevations) if e <= z + tol + 1e-9]
+    if not fit:
+        return None, "below"
+    top = max(elevations[i] for i in fit)
+    best = [i for i in fit if abs(elevations[i] - top) <= 1e-9]
+    if len(best) > 1:
+        return None, "tie"
+    return best[0], ""
+
+
+def _storey_less_elements(f, storeys, classes):
+    """Elements of ``classes`` no listed storey contains: contained in the
+    building or site, or not contained anywhere. GlobalId order."""
+    held = {id(s) for s in storeys}
+    out = []
+    for cls in classes:
+        for el in f.by_type(cls, include_subtypes=False):
+            rels = [
+                r
+                for r in getattr(el, "ContainedInStructure", None) or []
+                if r.is_a("IfcRelContainedInSpatialStructure")
+            ]
+            if any(id(r.RelatingStructure) in held for r in rels):
+                continue
+            if any(
+                r.RelatingStructure.is_a("IfcSpatialStructureElement")
+                and not r.RelatingStructure.is_a("IfcBuilding")
+                and not r.RelatingStructure.is_a("IfcSite")
+                for r in rels
+            ):
+                continue  # in a space or zone: its own route, not this fallback
+            out.append(el)
+    return sorted(out, key=lambda e: e.GlobalId)
+
+
 _ROOMNUM = re.compile(r"^[A-Za-z]?\d+[A-Za-z]?$")
 
 
@@ -1860,6 +1920,20 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     shade_jobs = []  # (IfcShadingDevice, level id, storey elevation)
     duplicate_openings = []  # BimOpenings dropped as doubled copies (#578)
+    # elements no storey contains: assign by placement height when exactly
+    # one storey band fits, else report them unassigned (#585)
+    storey_elevs = [_storey_elevation(st) * scale for st in storeys]
+    by_elevation = {}  # storey index -> [element]
+    elevation_gids = set()
+    storey_unassigned = []  # (GlobalId, reason)
+    for el in _storey_less_elements(f, storeys, _ELEMENT_CLASSES) if storeys else []:
+        z = _placement_transform(el, scale)[3]
+        idx, why = _storey_by_elevation(z, storey_elevs)
+        if idx is None:
+            storey_unassigned.append((el.GlobalId, why))
+        else:
+            by_elevation.setdefault(idx, []).append(el)
+            elevation_gids.add(el.GlobalId)
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
@@ -1906,22 +1980,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             model.spaces[sid] = space
 
         # --- elements -----------------------------------------------------
-        elements = _contained(storey)
+        elements = _contained(storey) + by_elevation.get(li, [])
         wall_heights = []
         env_start = len(model.envelope)
         for el in elements:
             cls = el.is_a()
-            if cls not in (
-                "IfcWall",
-                "IfcWallStandardCase",
-                "IfcSlab",
-                "IfcRoof",
-                "IfcColumn",
-                "IfcBeam",
-                "IfcCurtainWall",
-                "IfcDuctSegment",
-                "IfcDistributionElement",
-            ):
+            if cls not in _ELEMENT_CLASSES:
                 continue
             gid = el.GlobalId
             ang, tx, ty, tz = _placement_transform(el, scale)
@@ -1958,6 +2022,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             if layers:
                 conf = max(conf, 0.9)
 
+            storey_method = ""
+            if gid in elevation_gids:
+                storey_method = "elevation"
+                conf = min(conf, 0.6)
+                note += "; storey from placement height (no storey containment)"
             cx, cy = _to_canonical(tx, ty)
             be = BimElement(
                 global_id=gid,
@@ -1973,6 +2042,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 material_layers=layers,
                 placement_m=[round(cx, 4), round(cy, 4), round(tz, 4)],
                 provenance=prov(method, conf, note, gid),
+                storey_method=storey_method,
             )
             model.bim_elements.append(be)
 
@@ -2201,6 +2271,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
     if n_junction_splits:
         summary_parts.append(f"wall splits: {n_junction_splits} at X/T junctions")
+    if elevation_gids or storey_unassigned:
+        part = f"storey fallback: {len(elevation_gids)} by elevation"
+        if storey_unassigned:
+            shown = ", ".join(f"{g} ({why})" for g, why in storey_unassigned[:5])
+            more = len(storey_unassigned) - 5
+            part += f", {len(storey_unassigned)} unassigned: {shown}" + (
+                f" +{more} more" if more > 0 else ""
+            )
+        summary_parts.append(part)
     if duplicate_openings:
         summary_parts.append(
             f"duplicate openings: {len(duplicate_openings)} doubled copies dropped"

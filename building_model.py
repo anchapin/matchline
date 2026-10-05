@@ -461,6 +461,10 @@ class BimElement:
     # "" for an ordinary element; "lining" for an IfcWall that only lines or
     # hides inside another wall and was kept out of the envelope (#577)
     role: str = ""
+    # "" when the file contains the element in its storey; "elevation" when
+    # it had no storey containment and exactly one storey fitted its
+    # placement height (#585)
+    storey_method: str = ""
 
 
 @dataclass
