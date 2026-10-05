@@ -1932,7 +1932,8 @@ def _wall_construction_id(model, wall, scale, prov, gid):
     return ""
 
 
-LINING_COVER_FRAC = 0.9  # a lining must cover this share of its host's run (#597)
+LINING_FULL_FRAC = 0.999  # a lining covering this share of its host's area is full (#597)
+LINING_MIN_FRAC = 0.25  # below this share of the host's area a lining goes to review (#597)
 
 
 def _direct_material(el):
@@ -1972,6 +1973,69 @@ def _lining_resistance(el, scale, thickness_m):
     return thickness_m / k, True, f"{thickness_m:g} m / {k:g} W/mK ({entry.id})"
 
 
+LINING_BODY_TOL_M = 0.03  # slack around a crossing wall's body (#597)
+
+
+def _corner_credit(cover, lining, host_gid, segs, thickness_by_gid):
+    """Count the host's run hidden inside a corner wall as covered (#597).
+
+    A host's run reaches into the walls that cross it at its ends, so a
+    lining that stops at a crossing wall's face leaves a strip on paper that
+    has no exposed face. The strip between the host's end and the lining's
+    end is credited as covered only when both its ends lie within one other
+    wall's body on the same level (centreline distance at most half its
+    thickness plus LINING_BODY_TOL_M). Anything else stays bare.
+    """
+    import math
+
+    host = segs[host_gid][0]
+    h0, h1 = host.from_m, host.to_m
+    hL = math.dist(h0, h1)
+    if hL < 1e-9 or cover <= 0.0:
+        return cover
+    d = ((h1[0] - h0[0]) / hL, (h1[1] - h0[1]) / hL)
+
+    def proj(p):
+        return (p[0] - h0[0]) * d[0] + (p[1] - h0[1]) * d[1]
+
+    def at(t):
+        return (h0[0] + d[0] * t, h0[1] + d[1] * t)
+
+    def seg_dist(p, q0, q1):
+        vx, vy = q1[0] - q0[0], q1[1] - q0[1]
+        L2 = vx * vx + vy * vy
+        u = (
+            0.0
+            if L2 < 1e-12
+            else max(0.0, min(1.0, ((p[0] - q0[0]) * vx + (p[1] - q0[1]) * vy) / L2))
+        )
+        return math.dist(p, (q0[0] + u * vx, q0[1] + u * vy))
+
+    lo, hi = sorted((proj(lining[0]), proj(lining[1])))
+    lo, hi = max(lo, 0.0), min(hi, hL)
+    level = host.id.split("-EW")[0]
+
+    def inside_one_body(p, q):
+        for g, ws in segs.items():
+            if g == host_gid or ws[0].id.split("-EW")[0] != level:
+                continue
+            t = thickness_by_gid.get(g)
+            if not t:
+                continue
+            lim = t / 2 + LINING_BODY_TOL_M
+            for w in ws:
+                if seg_dist(p, w.from_m, w.to_m) <= lim and seg_dist(q, w.from_m, w.to_m) <= lim:
+                    return True
+        return False
+
+    credit = 0.0
+    if lo > 0.0 and inside_one_body(at(0.0), at(lo)):
+        credit += lo
+    if hi < hL and inside_one_body(at(hL), at(hi)):
+        credit += hL - hi
+    return min(1.0, cover + credit / hL)
+
+
 def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision):
     """Add excluded face-to-face and cladding linings to their host's U (#597).
 
@@ -1979,9 +2043,14 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
     (IFC-U) keeps it with a note. A host whose U came from its layers
     (IFC-UL / IFC-UM) gets ``1 / (Rsi + R_host + sum R_lining + Rse)`` as a
     new construction IFC-ULL (all file conductivities) or IFC-UML (any
-    lookup). A lining with no usable material, or covering less than
-    LINING_COVER_FRAC of its host, leaves the host as it was plus a review
-    item. A cladding run adds its resistance to every host it lies on.
+    lookup). Coverage is the lining's share of the host's face area (run
+    overlap x the lower of the two heights). A single lining covering less
+    than the whole face gives the parallel-path area-weighted
+    ``f * U_lined + (1 - f) * U_bare``. A lining with no usable material,
+    no height, or under LINING_MIN_FRAC of the host's area, and several
+    linings on one host when any is partial (their zones may overlap),
+    leave the host as it was plus a review item. A cladding run adds its
+    resistance to every host it lies on.
     Returns {"combined": hosts changed, "review": review items}.
     """
     from ifc_wall_linings import _gid, cladding_hosts, host_cover
@@ -2012,7 +2081,8 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
         else:
             covers = []
         for h, c in covers:
-            per_host.setdefault(h, []).append((lg, kind, c))
+            c = _corner_credit(c, (lw.from_m, lw.to_m), h, segs, thickness_by_gid)
+            per_host.setdefault(h, []).append((lg, kind, c, lw.height_m))
     elements = {e.global_id: e for e in model.bim_elements}
 
     def note(gid, text):
@@ -2038,13 +2108,13 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
     for hg in sorted(per_host):
         linings = sorted(per_host[hg])
         adding = [x for x in linings if x[1] in ("face to face", "cladding")]
-        for lg, kind, _ in linings:
+        for lg, kind, _, _ in linings:
             if kind not in ("face to face", "cladding"):
                 note(hg, f"{kind} lining {lg} adds no resistance (#597)")
         if not adding:
             continue
         cid = segs[hg][0].construction_id
-        ids = ", ".join(lg for lg, _, _ in adding)
+        ids = ", ".join(lg for lg, _, _, _ in adding)
         if cid.startswith(("IFC-UL", "IFC-UM")):
             pass
         elif cid.startswith("IFC-U"):
@@ -2053,15 +2123,34 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
         else:
             note(hg, f"lining(s) {ids} present; host has no U to add them to (#597)")
             continue
-        partial = [(lg, c) for lg, _, c in adding if c < LINING_COVER_FRAC]
-        if partial:
-            lg, c = partial[0]
+        host_h = segs[hg][0].height_m
+        no_h = [lg for lg, _, _, h in adding if not h or not host_h]
+        if no_h:
             review(
                 hg,
-                f"lining {lg} covers {c:.0%} of host wall {hg}; host U left as it was "
-                "(partial linings are not combined)",
+                f"lining {no_h[0]} or host wall {hg} has no height, so its covered area "
+                "is unknown; host U left as it was",
             )
             continue
+        fracs = {lg: min(1.0, c * min(1.0, h / host_h)) for lg, _, c, h in adding}
+        small = [lg for lg in fracs if fracs[lg] < LINING_MIN_FRAC]
+        if small:
+            review(
+                hg,
+                f"lining {small[0]} covers {fracs[small[0]]:.0%} of host wall {hg}'s area; "
+                "host U left as it was",
+            )
+            continue
+        partial = [lg for lg in fracs if fracs[lg] < LINING_FULL_FRAC]
+        if partial and len(adding) > 1:
+            review(
+                hg,
+                f"host wall {hg} has {len(adding)} linings and {partial[0]} covers "
+                f"{fracs[partial[0]]:.0%} of its area; where they overlap is unknown, "
+                "host U left as it was",
+            )
+            continue
+        frac = fracs[partial[0]] if partial else 1.0
         host_el = f.by_guid(hg)
         got = _layered_wall_u(host_el, scale, cid.startswith("IFC-UM"))
         if got is None:
@@ -2069,7 +2158,7 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
         r_host = 1.0 / got[0] - RSI_WALL_M2K_W - RSE_WALL_M2K_W
         looked = bool(got[1])
         parts, missing = [], []
-        for lg, kind, _ in adding:
+        for lg, kind, _, _ in adding:
             r = _lining_resistance(f.by_guid(lg), scale, thickness_by_gid.get(lg))
             if r is None:
                 missing.append(lg)
@@ -2083,8 +2172,14 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
                 "host U left as it was",
             )
             continue
-        u = 1.0 / (RSI_WALL_M2K_W + r_host + sum(p[2] for p in parts) + RSE_WALL_M2K_W)
+        u_lined = 1.0 / (RSI_WALL_M2K_W + r_host + sum(p[2] for p in parts) + RSE_WALL_M2K_W)
+        u = frac * u_lined + (1.0 - frac) * got[0]
         detail = "; ".join(f"{lg} ({kind}) R {r:.4f} from {how}" for lg, kind, r, how in parts)
+        if frac < 1.0:
+            detail += (
+                f"; lined U {u_lined:.4f} over {frac:.1%} of the area, bare U {got[0]:.4f} "
+                "over the rest, area-weighted (parallel paths)"
+            )
         prov = Provenance(
             sheet_id=sheet,
             revision=revision,
@@ -2099,13 +2194,21 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
         if new not in model.constructions:
             model.constructions[new] = Construction(
                 id=new,
-                name=f"IFC wall + lining, U {u:.4f} W/m2K from layers in series (ISO 6946)",
+                name=(
+                    f"IFC wall + lining, U {u:.4f} W/m2K from layers in series (ISO 6946)"
+                    + (", area-weighted for partial cover" if frac < 1.0 else "")
+                ),
                 u_value_w_m2k=round(u, 6),
                 provenance=prov,
             )
         for w in segs[hg]:
             w.construction_id = new
-        note(hg, f"U {u:.4f} with lining(s) {ids} in series ({new}) (#597)")
+        note(
+            hg,
+            f"U {u:.4f} with lining(s) {ids} in series ({new})"
+            + (f", area-weighted at {frac:.1%} cover" if frac < 1.0 else "")
+            + " (#597)",
+        )
         out["combined"] += 1
     return out
 

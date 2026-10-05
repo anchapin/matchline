@@ -450,9 +450,17 @@ A lining wall kept out of the envelope (#577) still counts toward its host's U:
 - A lining's R comes from its own layer set (file conductivities, then the
   lookup), else from one directly associated IfcMaterial over the wall's
   thickness.
-- A lining with no usable material, or one covering less than 90% of its
-  host's run, leaves the host U as it was and adds a `lining_u` review item.
-  Partial linings are never averaged in.
+- Coverage is the lining's share of the host's face area: run overlap times
+  the lower of the two heights. The host's run reaches into the corner walls
+  that cross it, so a strip between the host's end and the lining's end that
+  lies inside one crossing wall's body counts as covered.
+- A single lining covering part of the face gives the parallel-path,
+  area-weighted `U = f * U_lined + (1 - f) * U_bare` (a full-length 1.2 m
+  wainscot on a 3 m wall is f = 0.4). Provenance records f and both U's.
+- A lining with no usable material or no height, one covering under 25% of
+  the host's area, or several linings on one host when any is partial (their
+  zones may overlap), leave the host U as it was and add a `lining_u` review
+  item.
 - A cladding run adds its resistance to every host it lies on.
 - Summary: `lining U: N host walls with linings in series, M left for review`.
 

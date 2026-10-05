@@ -28,10 +28,11 @@ def _south(path):
     return w.provenance.note.split(" ", 1)[0][len("GlobalId=") :]
 
 
-def _build(tmp_path, host_layers=BLOCK, host_u=None, lining=None):
+def _build(tmp_path, host_layers=BLOCK, host_u=None, lining=None, height=3.0, more=()):
     """Base fixture; the south wall (IFC y 0..0.2) gets ``host_layers``.
 
-    ``lining``: (start (x, y), length, thickness, layers or None).
+    ``lining``: (start (x, y), length, thickness, layers or None), ``height``
+    tall; ``more``: further linings, full height.
     """
     path = make_ifc_fixture(tmp_path / "base.ifc")
     gid = _south(path)
@@ -50,18 +51,18 @@ def _build(tmp_path, host_layers=BLOCK, host_u=None, lining=None):
     if host_u is not None:
         pset = _Ps.add_pset(f, product=host, name="Pset_WallCommon")
         _Ps.edit_pset(f, pset=pset, properties={"ThermalTransmittance": host_u})
-    lid = ""
-    if lining is not None:
-        (x, y), length, t, layers = lining
-        st = f.by_type("IfcBuildingStorey")[0]
-        body = [
-            c
-            for c in f.by_type("IfcGeometricRepresentationSubContext")
-            if c.ContextIdentifier == "Body"
-        ][0]
+    st = f.by_type("IfcBuildingStorey")[0]
+    body = [
+        c
+        for c in f.by_type("IfcGeometricRepresentationSubContext")
+        if c.ContextIdentifier == "Body"
+    ][0]
+
+    def add(spec, h):
+        (x, y), length, t, layers = spec
         w = f.create_entity("IfcWall", GlobalId=guid.new(), Name="Lining")
         w.ObjectPlacement = _place(f, (x, y, 0), st.ObjectPlacement, refdir=(1, 0, 0))
-        _add_solid(f, w, _rect_profile(f, length, t, ox=length / 2), 3.0, body)
+        _add_solid(f, w, _rect_profile(f, length, t, ox=length / 2), h, body)
         _Sp.assign_container(f, products=[w], relating_structure=st)
         if layers:
             f.create_entity(
@@ -70,7 +71,11 @@ def _build(tmp_path, host_layers=BLOCK, host_u=None, lining=None):
                 RelatedObjects=[w],
                 RelatingMaterial=_layer_set(f, layers),
             )
-        lid = w.GlobalId
+        return w.GlobalId
+
+    lid = add(lining, height) if lining is not None else ""
+    for spec in more:
+        add(spec, 3.0)
     out = tmp_path / "lined.ifc"
     f.write(str(out))
     return import_ifc(out), gid, lid
@@ -86,12 +91,18 @@ def _note(m, gid):
     return next(e.provenance.note for e in m.bim_elements if e.global_id == gid)
 
 
-# 100 mm wool on the inner face (IFC y 0.2..0.3), 19 of the host's 20 m
+# 100 mm wool on the inner face (IFC y 0.2..0.3). The host's run is 0..20 m
+# (to the outer corners); FULL stops at the crossing walls' inner faces, so
+# its 0.2 m end strips sit inside the corner walls and count as covered.
+FULL = ((0.2, 0.25), 19.6, 0.1, WOOL)
+# INNER leaves 0.5 m bare at each end: 19 of 20 m.
 INNER = ((0.5, 0.25), 19.0, 0.1, WOOL)
+U_BARE = 1 / (RS + 0.2 / 0.5)
+U_LINED = 1 / (RS + 0.2 / 0.5 + 0.1 / 0.035)
 
 
 def test_face_to_face_wool_adds_in_series(tmp_path):
-    m, gid, lid = _build(tmp_path, lining=INNER)
+    m, gid, lid = _build(tmp_path, lining=FULL)
     w, c = _host(m, gid)
     assert w.construction_id.startswith("IFC-ULL")
     assert c.u_value_w_m2k == pytest.approx(1 / (RS + 0.2 / 0.5 + 0.1 / 0.035), abs=1e-6)
@@ -103,7 +114,7 @@ def test_face_to_face_wool_adds_in_series(tmp_path):
 
 def test_other_walls_keep_their_construction(tmp_path):
     base, _, _ = _build(tmp_path / "a")
-    lined, _, _ = _build(tmp_path / "b", lining=INNER)
+    lined, _, _ = _build(tmp_path / "b", lining=FULL)
 
     def others(m):
         return sorted((w.facade, w.construction_id) for w in m.envelope if w.facade != "south")
@@ -118,7 +129,7 @@ def _south_gid(m):
 
 
 def test_stated_u_is_never_altered(tmp_path):
-    m, gid, lid = _build(tmp_path, host_u=0.3, lining=INNER)
+    m, gid, lid = _build(tmp_path, host_u=0.3, lining=FULL)
     w, c = _host(m, gid)
     assert w.construction_id == "IFC-U0.3000"
     assert f"lining(s) {lid} present; stated ThermalTransmittance kept" in _note(m, gid)
@@ -132,24 +143,61 @@ def test_embedded_wall_adds_nothing(tmp_path):
 
 
 def test_lining_without_material_leaves_host_and_flags(tmp_path):
-    m, gid, lid = _build(tmp_path, lining=((0.5, 0.25), 19.0, 0.1, None))
+    m, gid, lid = _build(tmp_path, lining=((0.2, 0.25), 19.6, 0.1, None))
     w, c = _host(m, gid)
     assert c.u_value_w_m2k == pytest.approx(1 / (RS + 0.2 / 0.5), abs=1e-6)
     items = [it for it in m.review_queue if it.kind == "lining_u"]
     assert len(items) == 1 and lid in items[0].description
 
 
-def test_partial_lining_leaves_host_and_flags(tmp_path):
-    m, gid, lid = _build(tmp_path, lining=((0.5, 0.25), 10.0, 0.1, WOOL))
+def test_partial_run_is_area_weighted(tmp_path):
+    m, gid, lid = _build(tmp_path, lining=INNER)
     w, c = _host(m, gid)
-    assert c.u_value_w_m2k == pytest.approx(1 / (RS + 0.2 / 0.5), abs=1e-6)
+    assert w.construction_id.startswith("IFC-ULL")
+    assert c.u_value_w_m2k == pytest.approx(0.95 * U_LINED + 0.05 * U_BARE, abs=1e-6)
+    assert "over 95.0% of the area" in c.provenance.note
+    assert "area-weighted at 95.0% cover" in _note(m, gid)
+    assert not [it for it in m.review_queue if it.kind == "lining_u"]
+
+
+def test_partial_height_is_area_weighted(tmp_path):
+    # full-length wainscot, 1.2 of the host's 3.0 m
+    m, gid, _ = _build(tmp_path, lining=FULL, height=1.2)
+    w, c = _host(m, gid)
+    assert c.u_value_w_m2k == pytest.approx(0.4 * U_LINED + 0.6 * U_BARE, abs=1e-6)
+
+
+def test_bare_ends_outside_corner_walls_stay_bare(tmp_path):
+    # 0.5 m short of each corner: the strip is past the crossing wall's body
+    m, gid, _ = _build(tmp_path, lining=((0.5, 0.25), 19.0, 0.1, WOOL))
+    _, c = _host(m, gid)
+    assert c.u_value_w_m2k > U_LINED + 1e-3
+
+
+def test_small_lining_leaves_host_and_flags(tmp_path):
+    m, gid, lid = _build(tmp_path, lining=((5, 0.25), 4.0, 0.1, WOOL))
+    _, c = _host(m, gid)
+    assert c.u_value_w_m2k == pytest.approx(U_BARE, abs=1e-6)
     (it,) = [it for it in m.review_queue if it.kind == "lining_u"]
-    assert "covers 50%" in it.description
+    assert lid in it.description and "covers 20%" in it.description
+
+
+def test_several_partial_linings_go_to_review(tmp_path):
+    # two 9.5 m wool runs side by side on the same face
+    m, gid, _ = _build(
+        tmp_path,
+        lining=((0.2, 0.25), 9.5, 0.1, WOOL),
+        more=[((10.2, 0.25), 9.5, 0.1, WOOL)],
+    )
+    _, c = _host(m, gid)
+    assert c.u_value_w_m2k == pytest.approx(U_BARE, abs=1e-6)
+    (it,) = [it for it in m.review_queue if it.kind == "lining_u"]
+    assert "where they overlap is unknown" in it.description
 
 
 def test_looked_up_conductivity_is_its_own_construction(tmp_path):
     m, gid, _ = _build(
-        tmp_path, lining=((0.5, 0.25), 19.0, 0.1, [("Mineral wool", 0.1, None, False)])
+        tmp_path, lining=((0.2, 0.25), 19.6, 0.1, [("Mineral wool", 0.1, None, False)])
     )
     w, c = _host(m, gid)
     assert w.construction_id.startswith("IFC-UML")
