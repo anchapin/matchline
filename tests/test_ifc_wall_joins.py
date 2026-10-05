@@ -182,14 +182,23 @@ def test_ifc_face_stopped_walls_join_on_import(tmp_path):
     ]
     assert len(mine) == 2
     assert sorted(round(e.length_m, 3) for e in mine) == [4.0, 5.0]
-    assert "wall joins: 2 ends moved" in model.revision_log[-1].note
+    # 2 for the L, plus the base fixture's 8 corner ends closing on centrelines
+    assert "wall joins: 10 ends moved" in model.revision_log[-1].note
 
 
-def test_exporter_walls_already_on_centrelines(tmp_path):
+def test_exporter_corners_close_on_centrelines(tmp_path):
+    """Exporter walls sit on the exterior face; after the centreline move (#579)
+    their corners no longer meet, and the joins close every one (#575)."""
     pytest.importorskip("ifcopenshell")
     from ifc_import import import_ifc
     from tests.test_ifc_import import make_ifc_fixture
 
     make_ifc_fixture(tmp_path / "t.ifc")
     model = import_ifc(tmp_path / "t.ifc")
-    assert "wall joins" not in model.revision_log[-1].note
+    note = model.revision_log[-1].note
+    assert "wall centrelines: 4 segments moved off the reference line" in note
+    assert "wall joins: 8 ends moved" in note
+    ext = [e for e in model.envelope if e.facade]
+    ends = [tuple(e.from_m) for e in ext] + [tuple(e.to_m) for e in ext]
+    for p in ends:
+        assert sum(math.dist(p, q) < 1e-6 for q in ends) == 2, f"open corner at {p}"

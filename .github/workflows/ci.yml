@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1393 # +14 IFC lining walls (#577) on top of #581 (1379)
+          EXPECTED_TEST_COUNT=1397  # +4 IFC wall centrelines (#579) on top of #577 (1393)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

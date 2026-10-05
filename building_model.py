@@ -343,7 +343,8 @@ class ShadingSurface:
     Placement is relative to the host wall segment, in its own frame:
     ``along_m`` runs from the segment's ``from_m`` end toward ``to_m``,
     ``z_m`` is height above the host level's floor, and ``depth_m`` is the
-    projection outward from the exterior wall face. An overhang or balcony
+    projection outward from the exterior wall face, which sits ``offset_m``
+    outside the segment's line. An overhang or balcony
     is horizontal (``width_m`` along the wall at height ``z_m``); a fin is
     vertical (at ``along_m``, from ``z_m`` up ``height_m``).
     """
@@ -357,6 +358,10 @@ class ShadingSurface:
     z_m: Optional[float] = None
     depth_m: Optional[float] = None  # projection from the wall face
     height_m: Optional[float] = None  # vertical extent (fin)
+    # gap from the host segment's line out to the plate's inner edge: half
+    # the wall thickness when the segment is a wall centreline (IFC #579),
+    # 0 when the segment is drawn on the exterior face
+    offset_m: float = 0.0
     provenance: Provenance | None = None
 
 

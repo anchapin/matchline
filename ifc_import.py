@@ -253,6 +253,148 @@ def _rect_profile_dims(solid, scale):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Wall body centreline vs reference line (#579)
+# ---------------------------------------------------------------------------
+
+_AXIS_SAME_M = 1e-4  # offsets below this leave the segment where it is
+_USAGE_AGREE_M = 1e-3  # body vs layer-set usage disagreement worth a note
+
+
+def _unit_ok(direction, want, tol=1e-6):
+    if direction is None:
+        return True
+    r = [float(v) for v in direction.DirectionRatios]
+    n = math.sqrt(sum(v * v for v in r)) or 1.0
+    return all(abs(a / n - b) <= tol for a, b in zip(r, want))
+
+
+def _body_axis_local(el, solids, from_extents, scale):
+    """(x0, y_mid, source) of the wall body's centreline in the wall's own frame.
+
+    x0 is where the body starts along local X, y_mid its middle across local
+    Y. From an axis-aligned rectangle profile (solid and profile positions
+    read), else from the geometry kernel's local extents when those supplied
+    the wall's dimensions. None when the body cannot be located without
+    guessing (a rotated profile or solid, or no geometry).
+    """
+    if solids and not from_extents:
+        sol = solids[0]
+        p = sol.SweptArea
+        if not p.is_a("IfcRectangleProfileDef"):
+            return None
+        lx = ly = 0.0
+        pos = getattr(sol, "Position", None)
+        if pos is not None:
+            if not (
+                _unit_ok(pos.Axis, (0.0, 0.0, 1.0)) and _unit_ok(pos.RefDirection, (1.0, 0.0, 0.0))
+            ):
+                return None
+            c = pos.Location.Coordinates
+            lx, ly = float(c[0]), float(c[1])
+        px = py = 0.0
+        ppos = getattr(p, "Position", None)
+        if ppos is not None:
+            if not _unit_ok(getattr(ppos, "RefDirection", None), (1.0, 0.0)):
+                return None
+            c = ppos.Location.Coordinates
+            px, py = float(c[0]), float(c[1])
+        cx, cy = (lx + px) * scale, (ly + py) * scale
+        return cx - float(p.XDim) * scale / 2, cy, "body profile"
+    if from_extents:
+        verts = _geom_verts(el)
+        if not verts:
+            return None
+        xs = [verts[i] * scale for i in range(0, len(verts), 3)]
+        ys = [verts[i + 1] * scale for i in range(0, len(verts), 3)]
+        return min(xs), 0.5 * (min(ys) + max(ys)), "body geometry extents"
+    return None
+
+
+def _layer_usage_mid(el, scale):
+    """Middle of the layer band across the wall from IfcMaterialLayerSetUsage.
+
+    Measured from the reference line (the wall's local X axis): POSITIVE
+    sense puts the layers at [offset, offset + total], NEGATIVE at
+    [offset - total, offset]. Only LayerSetDirection AXIS2 (across a wall)
+    is read. None when the wall has no such usage or no layer thickness.
+    """
+    for rel in getattr(el, "HasAssociations", None) or []:
+        if not rel.is_a("IfcRelAssociatesMaterial"):
+            continue
+        u = rel.RelatingMaterial
+        if u is None or not u.is_a("IfcMaterialLayerSetUsage"):
+            continue
+        if str(u.LayerSetDirection or "").upper() != "AXIS2" or u.ForLayerSet is None:
+            continue
+        total = (
+            sum(float(l.LayerThickness or 0) for l in u.ForLayerSet.MaterialLayers or []) * scale
+        )
+        off = float(u.OffsetFromReferenceLine or 0) * scale
+        if not (total > 0 and math.isfinite(off)):
+            continue
+        if str(u.DirectionSense or "").upper() == "NEGATIVE":
+            return off - total / 2
+        return off + total / 2
+    return None
+
+
+def _wall_centreline_fix(el, solids, from_extents, scale):
+    """(x0, y_mid, note) moving a wall's axis onto its body centreline.
+
+    The body geometry is what the file draws, so it wins; the layer-set
+    usage is the fallback, and a disagreement between the two is noted.
+    With neither, the axis stays (0, 0) and the note says so.
+    """
+    body = _body_axis_local(el, solids, from_extents, scale)
+    usage = _layer_usage_mid(el, scale)
+    if body is not None:
+        x0, ym, src = body
+        note = f"body centreline {ym:+.3f} m across, {x0:+.3f} m along the axis (from {src})"
+        if usage is not None and abs(usage - ym) > _USAGE_AGREE_M:
+            note += (
+                f"; layer-set usage puts the layers' middle at {usage:+.3f} m, body geometry used"
+            )
+        return x0, ym, note
+    if usage is not None:
+        return 0.0, usage, f"body centreline {usage:+.3f} m across the axis (from layer-set usage)"
+    return 0.0, 0.0, "body not located and no layer-set usage; wall axis used as centreline"
+
+
+def _apply_wall_centrelines(model, fixes):
+    """Shift Tier 0 IFC envelope segments onto their wall body centrelines.
+
+    Runs after opening attachment (which matches segments to wall placements
+    by start point) and before linings, joins, wall loops and facade
+    classification, which all assume centrelines (#579). Returns how many
+    segments moved.
+    """
+    moved = 0
+    for w in model.envelope:
+        if w.provenance is None or w.provenance.method != "ifc_import:tier0:envelope":
+            continue
+        gid = (w.provenance.note or "").split(" ", 1)[0][len("GlobalId=") :]
+        fix = fixes.get(gid)
+        if fix is None or len(w.from_m) < 2 or len(w.to_m) < 2:
+            continue
+        x0, ym, note = fix
+        (ax, ay), (bx, by) = w.from_m, w.to_m
+        L = math.hypot(bx - ax, by - ay)
+        if L < 1e-9:
+            continue
+        dx, dy = (bx - ax) / L, (by - ay) / L
+        # local +Y in the canonical (y-down) frame is (dy, -dx)
+        sx, sy = dx * x0 + dy * ym, dy * x0 - dx * ym
+        if abs(x0) > _AXIS_SAME_M or abs(ym) > _AXIS_SAME_M:
+            w.from_m = [round(ax + sx, 4), round(ay + sy, 4)]
+            w.to_m = [round(bx + sx, 4), round(by + sy, 4)]
+            moved += 1
+            w.provenance.note += f"; moved onto {note}"
+        elif "wall axis used" in note:
+            w.provenance.note += f"; {note}"
+    return moved
+
+
 def _polyline_footprint(solid, scale):
     """([(x, y)] solid-local, depth_m) for arbitrary closed profiles."""
     p = solid.SweptArea
@@ -612,8 +754,10 @@ def _own_envelope_edge(el, model):
     """The Tier 0 envelope segment read from wall ``el`` itself, or None.
 
     Matched on the GlobalId the segment's provenance records, and only when
-    the segment still starts at the wall's placement (so a later edit that
-    moved it cannot hand back a stale direction). Exactly one match or None.
+    the wall's placement still lies near one end of the segment, within the
+    wall thickness of its line and of that end (so an edit that moved it elsewhere
+    cannot hand back a stale direction). Centreline moves (#579) and end
+    joins (#575) keep a segment on its wall. Exactly one match or None.
     """
     gid = getattr(el, "global_id", "") or ""
     if not gid:
@@ -624,12 +768,28 @@ def _own_envelope_edge(el, model):
         ew
         for ew in model.envelope
         if ew.provenance is not None
-        and ew.provenance.method == "ifc_import:tier0:envelope"
+        # facade classification re-stamps the method but keeps the note
+        and ew.provenance.method in ("ifc_import:tier0:envelope", "ifc_import:tier1:facade")
         and (ew.provenance.note or "").split(" ", 1)[0] == token
         and ew.from_m
-        and math.dist(ew.from_m, origin) <= _ENVELOPE_TOL_M
+        and ew.to_m
+        and _on_own_line(ew, origin, _ENVELOPE_TOL_M + float(getattr(el, "thickness_m", 0) or 0))
     ]
     return hits[0] if len(hits) == 1 else None
+
+
+def _on_own_line(ew, origin, tol):
+    """True when ``origin`` lies within ``tol`` of segment ``ew``'s line, near one end."""
+    fx, fy = float(ew.from_m[0]), float(ew.from_m[1])
+    tx, ty = float(ew.to_m[0]), float(ew.to_m[1])
+    L = math.hypot(tx - fx, ty - fy)
+    if L <= 1e-9:
+        return math.dist((fx, fy), origin) <= tol
+    ux, uy = (tx - fx) / L, (ty - fy) / L
+    ox, oy = origin[0] - fx, origin[1] - fy
+    along = ox * ux + oy * uy
+    perp = abs(ox * uy - oy * ux)
+    return perp <= tol and (abs(along) <= tol or abs(along - L) <= tol)
 
 
 def _wall_direction_from_envelope(el, model):
@@ -961,9 +1121,12 @@ def _shading_device_quad(dev, scale):
 def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
     """One IfcShadingDevice -> ShadingSurface hosted on the nearest wall line.
 
-    The host is found geometrically: the wall whose centreline the plate's
-    inner edge lies on (within SHADE_HOST_TOL_M) and within its length.
-    Placement is then measured in that wall's own frame. A plate with no such
+    The host is found geometrically: the wall segment whose line the plate's
+    inner edge lies nearest (within SHADE_HOST_TOL_M) and within its length.
+    Placement is then measured in that segment's own frame; the gap from the
+    segment line to the plate's inner edge (half the wall when the segment
+    is a centreline, #579) is kept as ``offset_m`` so depth stays measured
+    from the wall face. A plate with no such
     wall comes back unhosted with no placement, so the shading_host_reference
     check flags it instead of the importer guessing.
     """
@@ -1015,9 +1178,11 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
                 "ifc_import:tier0:shading", 0.5, "no wall line under the plate; unhosted", gid
             ),
         )
-    _, w, ss, ds = best
+    near, w, ss, ds = best
     s_rng = max(ss) - min(ss)
     depth = max(ds) - min(ds)
+    # a centreline host sits half a wall inside the face the plate touches
+    offset = round(near, 4) if near > 1e-4 else 0.0
     z0 = min(zs) - elev
     if z_rng <= _SHADE_FLAT_EPS_M:
         kind = kind_from_type if kind_from_type in ("overhang", "balcony", "other") else "overhang"
@@ -1029,6 +1194,7 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
             width_m=round(s_rng, 4),
             z_m=round(z0, 4),
             depth_m=round(depth, 4),
+            offset_m=offset,
             provenance=prov(
                 "ifc_import:tier0:shading", 0.9, f"horizontal plate on wall {w.id}", gid
             ),
@@ -1041,6 +1207,7 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
             along_m=round(sum(ss) / len(ss), 4),
             z_m=round(z0, 4),
             depth_m=round(depth, 4),
+            offset_m=offset,
             height_m=round(z_rng, 4),
             provenance=prov("ifc_import:tier0:shading", 0.9, f"vertical fin on wall {w.id}", gid),
         )
@@ -1618,6 +1785,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 bname = bldg.Name or ""
     model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
     slab_voids = {}  # level_id -> plan rectangles of unfilled slab openings (#581)
+    wall_axis_fix = {}  # GlobalId -> (x0, y_mid, note), body centreline (#579)
 
     # --- spatial hierarchy ------------------------------------------------
     storeys = []
@@ -1654,6 +1822,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
     unlabeled = 0
 
+    shade_jobs = []  # (IfcShadingDevice, level id, storey elevation)
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
@@ -1773,6 +1942,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             # walls also feed the BEM envelope (facade classification
             # needs adjacency -> Tier 1, so facade stays empty here)
             if cls in ("IfcWall", "IfcWallStandardCase") and length_m:
+                wall_axis_fix[gid] = _wall_centreline_fix(
+                    el, solids, dims_note.startswith("local extents"), scale
+                )
                 dx, dy = math.cos(ang), -math.sin(ang)  # canonical frame
                 p0 = (cx, cy)
                 p1 = (cx + dx * length_m, cy + dy * length_m)
@@ -1859,12 +2031,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         )
 
         # --- shading devices (roadmap item 5) -----------------------------
-        storey_walls = model.envelope[env_start:]
-        for el in elements:
-            if not el.is_a("IfcShadingDevice"):
-                continue
-            taken = {sh.id for sh in model.shading}
-            model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
+        # hosted after the envelope segments reach their final place
+        # (centrelines, linings, joins, classification; #579)
+        shade_jobs.extend((el, level_id, elev) for el in elements if el.is_a("IfcShadingDevice"))
 
     # --- zones (opportunistic) ---------------------------------------------
     terminals_seen = {}  # IfcAirTerminal GlobalId -> ComponentRef (one per terminal)
@@ -1918,6 +2087,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     from ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends
     from ifc_wall_linings import exclude_linings
 
+    # openings are attached; segments may now leave the wall placement (#579)
+    centreline_moved = _apply_wall_centrelines(model, wall_axis_fix)
     wall_t = {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m}
     # linings first, so they neither join nor carve wall loops (#577)
     lining_counts = exclude_linings(model, wall_t)
@@ -1933,6 +2104,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         revision,
     )
     facade_summary = _classify_envelope(model)
+    for el, lid, elev in shade_jobs:
+        storey_walls = [w for w in model.envelope if w.id.startswith(lid + "-")]
+        taken = {sh.id for sh in model.shading}
+        model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
     if model.constructions:
         # space_id is known only after classification; interior walls have
         # left the envelope, so the rollup sees exterior segments only
@@ -1959,6 +2134,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         ),
         f"scale={scale}",
     ]
+    if centreline_moved:
+        summary_parts.append(
+            f"wall centrelines: {centreline_moved} segments moved off the reference line"
+        )
     if lining_counts["lining"] or lining_counts["kept"]:
         summary_parts.append(
             f"linings: {lining_counts['lining']} walls kept out of the envelope"

@@ -109,7 +109,9 @@ def _ifc_with_shaft(tmp_path, with_void=False):
         if c.ContextIdentifier == "Body"
     ][0]
     prods = []
-    # partition stops at the ring faces; shaft walls meet the ring and each other
+    # partition stops at the ring faces; shaft walls meet the ring and each other.
+    # Ring bodies sit inward of the exporter's axis, so the shaft loop closes
+    # on centrelines x 5..5.9, y 0.1..1.5: 0.9 x 1.4 = 1.26 m^2 (#579)
     for name, start, ref, length in (
         ("P1", (4, 0.1, 0), (0, 1, 0), 2.8),
         ("P2", (5, 0.05, 0), (0, 1, 0), 1.45),
@@ -149,10 +151,10 @@ def test_ifc_unmodelled_shaft_flagged_not_created(tmp_path):
     model = import_ifc(_ifc_with_shaft(tmp_path))
     items = _loop_items(model)
     assert len(items) == 1
-    assert "1.50 m^2 at wall centrelines" in items[0].description
+    assert "1.26 m^2 at wall centrelines" in items[0].description
     assert "candidate=unknown" in items[0].provenance.note
     assert sorted(model.spaces) == ["L1-101", "L1-102"]  # nothing invented
-    assert "unclaimed wall loops: 1 (1.50 m^2)" in model.revision_log[-1].note
+    assert "unclaimed wall loops: 1 (1.26 m^2)" in model.revision_log[-1].note
 
 
 def test_ifc_slab_void_marks_shaft_candidate(tmp_path):
@@ -171,7 +173,7 @@ def test_area_closure_reports_unclaimed_area(tmp_path):
 
     model = import_ifc(_ifc_with_shaft(tmp_path))
     res = area_closure(model)
-    assert "1 unclaimed wall loop(s), 1.50 m^2" in res.message
+    assert "1 unclaimed wall loop(s), 1.26 m^2" in res.message
 
 
 def test_exporter_round_trip_has_no_loops(tmp_path):

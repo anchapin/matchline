@@ -129,15 +129,16 @@ def test_ifc_cladding_and_buried_wall_leave_envelope_area_unchanged(tmp_path):
     from ifc_import import import_ifc
 
     base = import_ifc(_ifc_with(tmp_path, ()))
-    # the base south wall runs (0,0)->(20,0) in IFC, 200 mm thick; outside is
-    # IFC y < 0. A 12 mm rainscreen panel on its outer face and a 100 mm wall
-    # buried in its body both read as exterior walls without #577.
+    # the base south wall's axis runs (0,0)->(20,0) in IFC on its exterior
+    # face, body 200 mm inward (IFC y 0..0.2); outside is IFC y < 0. A 12 mm
+    # rainscreen panel on its outer face and a 100 mm wall buried in its body
+    # both read as exterior walls without #577.
     lined = import_ifc(
         _ifc_with(
             tmp_path,
             (
-                ("Tile", (2, -0.106, 0), (1, 0, 0), 6.0, 0.012),
-                ("Buried", (12, 0, 0), (1, 0, 0), 4.0, 0.1),
+                ("Tile", (2, -0.006, 0), (1, 0, 0), 6.0, 0.012),
+                ("Buried", (12, 0.1, 0), (1, 0, 0), 4.0, 0.1),
             ),
         )
     )
