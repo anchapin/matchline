@@ -462,6 +462,41 @@ def validate_bem_conservation(
     return results
 
 
+def _centreline_perimeters(model, lid, ring, perim):
+    """Footprint perimeter, plus it offset by +-t/2 when IFC walls give a thickness t."""
+    out = [perim]
+    if not ring or len(ring) < 3:
+        return out
+    thick = {
+        e.global_id: e.thickness_m
+        for e in getattr(model, "bim_elements", []) or []
+        if getattr(e, "thickness_m", None)
+    }
+    ts = []
+    for w in model.envelope:
+        if not w.id.startswith(lid + "-") or w.provenance is None:
+            continue
+        tok = (w.provenance.note or "").split(" ", 1)[0]
+        if tok.startswith("GlobalId=") and tok[9:] in thick:
+            ts.append(thick[tok[9:]])
+    if not ts:
+        return out
+    ts.sort()
+    t = ts[len(ts) // 2]
+    try:
+        from shapely.geometry import Polygon
+    except ImportError:  # pragma: no cover
+        return out
+    poly = Polygon(ring)
+    if not poly.is_valid or poly.area <= 0:
+        return out
+    for d in (-t / 2, t / 2):
+        g = poly.buffer(d, join_style=2, mitre_limit=10.0)
+        if not g.is_empty and g.geom_type == "Polygon":
+            out.append(g.exterior.length)
+    return out
+
+
 def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
     """SUM(envelope wall areas) ~= footprint perimeter x height.
 
@@ -469,6 +504,11 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
     code paths (arch-plan wall runs vs space-polygon union); >1% drift
     means one of them is wrong. The 1% tolerance absorbs exterior-vs-
     interior wall-face representation differences (wall thickness).
+
+    IFC-imported segments sit on wall body centrelines (#579) while spaces
+    may be drawn to the exterior or the interior face, so where the level's
+    segments carry a known wall thickness t, the footprint is also compared
+    offset by -t/2 and +t/2 and the closest of the three counts.
     """
     if not _HAS_SIMPLIFY:
         return CheckResult(
@@ -486,8 +526,11 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
             else 0.0
         )
         h = ctx.wall_height.get(lid, 0.0)
-        exp = perim * h
         got = sum(w.area_m2 or 0.0 for w in ctx.model.envelope if w.id.startswith(lid + "-"))
+        exp = min(
+            (p * h for p in _centreline_perimeters(ctx.model, lid, ring, perim)),
+            key=lambda e: _rel_err(got, e),
+        )
         if _rel_err(got, exp) > ctx.tol_envelope:
             bad.append((lid, got, exp))
     if bad:

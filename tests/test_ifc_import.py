@@ -286,11 +286,17 @@ def test_walls_roundtrip(model):
         assert w.provenance.confidence >= 0.9
     # envelope mirror
     assert len(model.envelope) == 4
-    assert sum(e.area_m2 for e in model.envelope) == pytest.approx(2 * (20 * H + 12 * H))
-    # canonical frame spot check: wall (20,0)->(20,12) in IFC
-    # becomes (20,0)->(20,-12)
-    seg = next(e for e in model.envelope if e.from_m == pytest.approx([20.0, 0.0]))
-    assert seg.to_m == pytest.approx([20.0, -12.0])
+    # segments sit on the body centrelines (#579): the exporter draws each
+    # axis on the exterior face with a 0.2 m body inward, so every wall
+    # loses 0.1 m at each end once the corners join
+    t = 0.2
+    assert sum(e.area_m2 for e in model.envelope) == pytest.approx(
+        2 * ((20 - t) * H + (12 - t) * H)
+    )
+    # canonical frame spot check: wall (20,0)->(20,12) in IFC becomes
+    # (20,0)->(20,-12), moved 0.1 m inward onto its centreline
+    seg = next(e for e in model.envelope if e.from_m == pytest.approx([19.9, -0.1]))
+    assert seg.to_m == pytest.approx([19.9, -11.9])
 
 
 def test_openings_roundtrip(model):

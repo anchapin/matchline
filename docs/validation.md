@@ -44,6 +44,10 @@ are consistent with each other but implausible for a real building).
   union are built by *different code paths*, so this cross-checks them.
   *Why 1%:* exterior wall runs vs room-face polygons differ by wall
   thickness; on a 100 m perimeter with 0.2 m walls that's ~0.8%.
+  IFC-imported segments sit on wall body centrelines (#579), so when a
+  level's segments carry a known wall thickness *t*, the footprint is also
+  compared offset by −t/2 and +t/2 (spaces drawn to the exterior or the
+  interior face) and the closest of the three counts.
 - `simplify_budget` — the simplifier's own area delta stays within its
   budget (default 2%, configurable 1–5%). Pass a `SimplifyResult` as
   `sres=`; skipped otherwise.

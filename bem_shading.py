@@ -38,14 +38,16 @@ def _inside(pt, poly) -> bool:
     return hit
 
 
-def _outward(p0, p1, polys) -> Tuple[float, float] | None:
+def _outward(p0, p1, polys, off=0.0) -> Tuple[float, float] | None:
+    """Outward unit normal of a host segment, probing just past ``off`` (the wall face)."""
     L = math.dist(p0, p1)
     ux, uy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
     mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
     a = (uy, -ux)
     b = (-uy, ux)
-    in_a = any(_inside((mx + a[0] * _PROBE_M, my + a[1] * _PROBE_M), p) for p in polys)
-    in_b = any(_inside((mx + b[0] * _PROBE_M, my + b[1] * _PROBE_M), p) for p in polys)
+    r = off + _PROBE_M
+    in_a = any(_inside((mx + a[0] * r, my + a[1] * r), p) for p in polys)
+    in_b = any(_inside((mx + b[0] * r, my + b[1] * r), p) for p in polys)
     if in_a == in_b:
         return None
     return b if in_a else a
@@ -88,14 +90,15 @@ def shades_from_model(
         if any(v is None for v in need) or sh.depth_m <= 0:
             notes.append(f"shade {sh.id} skipped: placement or size incomplete")
             continue
-        n = _outward(p0, p1, space_polys)
+        off = float(getattr(sh, "offset_m", 0.0) or 0.0)
+        n = _outward(p0, p1, space_polys, off)
         if n is None:
             notes.append(f"shade {sh.id} skipped: cannot tell the outside of wall {w.id}")
             continue
         u = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
 
         def at(s, d, z):
-            return (p0[0] + u[0] * s + n[0] * d, p0[1] + u[1] * s + n[1] * d, z)
+            return (p0[0] + u[0] * s + n[0] * (off + d), p0[1] + u[1] * s + n[1] * (off + d), z)
 
         D, z = sh.depth_m, sh.z_m
         if fin:

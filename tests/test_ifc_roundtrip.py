@@ -8,7 +8,10 @@ export via ifc_export, re-import via ifc_import, assert zone memberships and
 lighting watt totals are preserved within 1% tolerance.
 """
 
+import math
 from collections import defaultdict
+
+import pytest
 
 from bem_export import validate_ifc4
 from building_model import (
@@ -367,13 +370,25 @@ def test_envelope_wall_matching_uses_position_not_length(tmp_path):
         d, _ = _wall_direction_from_envelope(el, model)
         assert d is not None, f"wall {el.global_id} should resolve to an envelope edge"
         baseline[el.global_id] = d
-        # The direction must run along the wall's own centerline: stepping the
-        # full length from the placement must land on a real envelope endpoint.
+        # The direction must run along the wall's own segment (now on the body
+        # centreline, #579), pointing away from the end nearer the placement.
         cx, cy = el.placement_m[0], el.placement_m[1]
-        far = (cx + d[0] * el.length_m, cy + d[1] * el.length_m)
-        ends = [tuple(e.from_m) for e in model.envelope] + [tuple(e.to_m) for e in model.envelope]
-        assert any(abs(far[0] - ex) < 0.05 and abs(far[1] - ey) < 0.05 for ex, ey in ends), (
-            f"direction {d} for wall {el.global_id} does not follow its centerline"
+        own = [
+            e
+            for e in model.envelope
+            if (e.provenance.note or "").split(" ", 1)[0] == f"GlobalId={el.global_id}"
+        ]
+        assert len(own) == 1, f"wall {el.global_id} should own one envelope segment"
+        e = own[0]
+        near, far = (
+            (e.from_m, e.to_m)
+            if math.dist(e.from_m, (cx, cy)) <= math.dist(e.to_m, (cx, cy))
+            else (e.to_m, e.from_m)
+        )
+        L = math.dist(near, far)
+        seg = ((far[0] - near[0]) / L, (far[1] - near[1]) / L)
+        assert d == pytest.approx(seg, abs=1e-6), (
+            f"direction {d} for wall {el.global_id} does not follow its segment {seg}"
         )
 
     # Reordering the envelope must not change any answer. Under the old

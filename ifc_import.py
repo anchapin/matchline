@@ -754,8 +754,10 @@ def _own_envelope_edge(el, model):
     """The Tier 0 envelope segment read from wall ``el`` itself, or None.
 
     Matched on the GlobalId the segment's provenance records, and only when
-    the segment still starts at the wall's placement (so a later edit that
-    moved it cannot hand back a stale direction). Exactly one match or None.
+    the wall's placement still lies near one end of the segment, within the
+    wall thickness of its line and of that end (so an edit that moved it elsewhere
+    cannot hand back a stale direction). Centreline moves (#579) and end
+    joins (#575) keep a segment on its wall. Exactly one match or None.
     """
     gid = getattr(el, "global_id", "") or ""
     if not gid:
@@ -766,12 +768,28 @@ def _own_envelope_edge(el, model):
         ew
         for ew in model.envelope
         if ew.provenance is not None
-        and ew.provenance.method == "ifc_import:tier0:envelope"
+        # facade classification re-stamps the method but keeps the note
+        and ew.provenance.method in ("ifc_import:tier0:envelope", "ifc_import:tier1:facade")
         and (ew.provenance.note or "").split(" ", 1)[0] == token
         and ew.from_m
-        and math.dist(ew.from_m, origin) <= _ENVELOPE_TOL_M
+        and ew.to_m
+        and _on_own_line(ew, origin, _ENVELOPE_TOL_M + float(getattr(el, "thickness_m", 0) or 0))
     ]
     return hits[0] if len(hits) == 1 else None
+
+
+def _on_own_line(ew, origin, tol):
+    """True when ``origin`` lies within ``tol`` of segment ``ew``'s line, near one end."""
+    fx, fy = float(ew.from_m[0]), float(ew.from_m[1])
+    tx, ty = float(ew.to_m[0]), float(ew.to_m[1])
+    L = math.hypot(tx - fx, ty - fy)
+    if L <= 1e-9:
+        return math.dist((fx, fy), origin) <= tol
+    ux, uy = (tx - fx) / L, (ty - fy) / L
+    ox, oy = origin[0] - fx, origin[1] - fy
+    along = ox * ux + oy * uy
+    perp = abs(ox * uy - oy * ux)
+    return perp <= tol and (abs(along) <= tol or abs(along - L) <= tol)
 
 
 def _wall_direction_from_envelope(el, model):
@@ -1103,9 +1121,12 @@ def _shading_device_quad(dev, scale):
 def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
     """One IfcShadingDevice -> ShadingSurface hosted on the nearest wall line.
 
-    The host is found geometrically: the wall whose centreline the plate's
-    inner edge lies on (within SHADE_HOST_TOL_M) and within its length.
-    Placement is then measured in that wall's own frame. A plate with no such
+    The host is found geometrically: the wall segment whose line the plate's
+    inner edge lies nearest (within SHADE_HOST_TOL_M) and within its length.
+    Placement is then measured in that segment's own frame; the gap from the
+    segment line to the plate's inner edge (half the wall when the segment
+    is a centreline, #579) is kept as ``offset_m`` so depth stays measured
+    from the wall face. A plate with no such
     wall comes back unhosted with no placement, so the shading_host_reference
     check flags it instead of the importer guessing.
     """
@@ -1157,9 +1178,11 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
                 "ifc_import:tier0:shading", 0.5, "no wall line under the plate; unhosted", gid
             ),
         )
-    _, w, ss, ds = best
+    near, w, ss, ds = best
     s_rng = max(ss) - min(ss)
     depth = max(ds) - min(ds)
+    # a centreline host sits half a wall inside the face the plate touches
+    offset = round(near, 4) if near > 1e-4 else 0.0
     z0 = min(zs) - elev
     if z_rng <= _SHADE_FLAT_EPS_M:
         kind = kind_from_type if kind_from_type in ("overhang", "balcony", "other") else "overhang"
@@ -1171,6 +1194,7 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
             width_m=round(s_rng, 4),
             z_m=round(z0, 4),
             depth_m=round(depth, 4),
+            offset_m=offset,
             provenance=prov(
                 "ifc_import:tier0:shading", 0.9, f"horizontal plate on wall {w.id}", gid
             ),
@@ -1183,6 +1207,7 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
             along_m=round(sum(ss) / len(ss), 4),
             z_m=round(z0, 4),
             depth_m=round(depth, 4),
+            offset_m=offset,
             height_m=round(z_rng, 4),
             provenance=prov("ifc_import:tier0:shading", 0.9, f"vertical fin on wall {w.id}", gid),
         )
@@ -1797,6 +1822,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
     unlabeled = 0
 
+    shade_jobs = []  # (IfcShadingDevice, level id, storey elevation)
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
@@ -2005,12 +2031,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         )
 
         # --- shading devices (roadmap item 5) -----------------------------
-        storey_walls = model.envelope[env_start:]
-        for el in elements:
-            if not el.is_a("IfcShadingDevice"):
-                continue
-            taken = {sh.id for sh in model.shading}
-            model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
+        # hosted after the envelope segments reach their final place
+        # (centrelines, linings, joins, classification; #579)
+        shade_jobs.extend((el, level_id, elev) for el in elements if el.is_a("IfcShadingDevice"))
 
     # --- zones (opportunistic) ---------------------------------------------
     terminals_seen = {}  # IfcAirTerminal GlobalId -> ComponentRef (one per terminal)
@@ -2081,6 +2104,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         revision,
     )
     facade_summary = _classify_envelope(model)
+    for el, lid, elev in shade_jobs:
+        storey_walls = [w for w in model.envelope if w.id.startswith(lid + "-")]
+        taken = {sh.id for sh in model.shading}
+        model.shading.append(_read_shading_device(el, storey_walls, elev, scale, prov, taken))
     if model.constructions:
         # space_id is known only after classification; interior walls have
         # left the envelope, so the rollup sees exterior segments only

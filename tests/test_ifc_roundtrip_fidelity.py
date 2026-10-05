@@ -47,11 +47,14 @@ def test_envelope_ids_are_level_prefixed(roundtrip):
 
 def test_facades_classified_and_areas_match(roundtrip):
     m, bm = roundtrip
-    orig = {w.facade: w.area_m2 for w in m.envelope}
+    orig = {w.facade: w for w in m.envelope}
     got = {w.facade: w.area_m2 for w in bm.envelope}
     assert set(got) == {"north", "south", "east", "west"}
-    for f, a in orig.items():
-        assert got[f] == pytest.approx(a, rel=1e-3)
+    # the exporter draws walls on the exterior face; import puts segments on
+    # the body centreline (#579), so each wall loses half a wall at each end
+    (t,) = {e.thickness_m for e in bm.bim_elements if e.ifc_class == "IfcWall"}
+    for f, w in orig.items():
+        assert got[f] == pytest.approx(w.area_m2 - t * w.height_m, rel=1e-3)
     for w in bm.envelope:
         assert w.provenance.method == "ifc_import:tier1:facade"
 

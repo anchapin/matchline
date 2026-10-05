@@ -228,7 +228,7 @@ exact, zone membership exact.
 - **Polygon-based adjacency inference**: `infer_adjacency` uses 2D polygon containment for opening attachment and space adjacency. Non-planar walls, curved geometry, and complex openings may produce incorrect attachments.
 - **Facade classification threshold is heuristic**: Walls within ~45° of diagonal are flagged `facade_unclear`. The 0.7 dot-product threshold is not validated against real buildings with oblique facade orientations.
 - **No IfcOpenShell geometry for Tier 1**: Opening attachment in Tier 1 uses a fallback polygon-containment test; proper 3D clash detection is deferred to future tiers.
-- **Host-wall matching relies on an import-side invariant**: the positional envelope match assumes an envelope edge endpoint coincides with the wall's placement, which holds because `_read_bim_elements` builds envelope edges from walls. A model whose envelope was populated some other way — with edges offset from wall centrelines, or split into sub-segments — will not match positionally, and those openings fall through to `RefDirection` or are left unattached and flagged. The 0.1 m endpoint tolerance is also a tolerance on that assumption, not a measured survey tolerance.
+- **Host-wall matching relies on an import-side invariant**: the positional envelope match assumes an envelope edge endpoint coincides with the wall's placement, which holds because `_read_bim_elements` builds envelope edges from walls and openings attach before segments move onto centrelines (#579). After that, a wall's own segment is matched by GlobalId with its placement within the wall thickness of one end. A model whose envelope was populated some other way — with edges offset from wall centrelines, or split into sub-segments — will not match positionally, and those openings fall through to `RefDirection` or are left unattached and flagged. The 0.1 m endpoint tolerance is also a tolerance on that assumption, not a measured survey tolerance.
 - **Refusing to guess loses openings**: when several same-length edges share a wall's origin, or none coincides, the wall direction resolves to `None` and its openings are dropped rather than mis-attributed. This trades completeness for correctness; the count of such walls is not yet reported as a metric, so the loss is only visible through the `opening_attachment` review queue.
 - **Geometry-less spaces are not handled**: Spaces without geometry are currently skipped; they do not appear in the BIM model output.
 - **No IFC4 multi-level spatial structure**: The importer flattens the spatial hierarchy into a single building model; site, building, and floor levels are not preserved as separate entities.
@@ -254,6 +254,32 @@ union of the zones, so overlaps are not double counted. Code:
 - A skylight with no plan position or size goes in
   `daylight.unplaced_skylights`, never placed by guess. On the drawing path,
   takeoff skylights carry a count and no position, so nothing is computed yet.
+
+## Wall centrelines (#579)
+
+An IFC wall's axis (its placement and RefDirection) is a reference line
+the author chose: Revit puts it on the centre, a face, or a core face, and
+matchline's own exporter puts it on the exterior face with the body
+inward. After openings attach, each Tier 0 envelope segment is moved onto
+the wall's **body centreline**, the line every later step assumes (end
+joins #575, linings #577, unclaimed loops #581).
+
+- The centre comes from the body profile's extents across the wall
+  (geometry), or else from `IfcMaterialLayerSetUsage` (only when
+  `LayerSetDirection` is `AXIS2`; POSITIVE spans `[offset, offset+total]`,
+  NEGATIVE `[offset−total, offset]`). Geometry wins; a disagreement over
+  1 mm is noted on the segment. With neither, the axis is kept and noted.
+- Moved segments are counted in the import summary
+  (`wall centrelines: N segments moved off the reference line`).
+- Exterior-face walls lose half a wall at each corner once the joins close
+  them, so envelope areas on a round trip of our own export come back at
+  centreline length (a 20 m face wall of 0.2 m returns 19.8 m).
+- Shading devices are hosted after the move; `ShadingSurface.offset_m`
+  keeps the gap from the centreline out to the face the plate touches, so
+  `depth_m` stays measured from the face and re-export puts the plate back
+  on the same quad.
+- `envelope_area_matches_perimeter` compares against the footprint offset
+  by ±t/2 as well, since spaces may be drawn to either face.
 
 ## Lining and hidden walls (#577)
 
