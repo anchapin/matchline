@@ -1617,6 +1617,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             for bldg in _aggregated(site, "IfcBuilding"):
                 bname = bldg.Name or ""
     model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
+    slab_voids = {}  # level_id -> plan rectangles of unfilled slab openings (#581)
 
     # --- spatial hierarchy ------------------------------------------------
     storeys = []
@@ -1828,6 +1829,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         continue
                     opening = openings_by_gid.get(ogid)
                     fill = fills.get(ogid)
+                    if opening is not None and fill is None and cls == "IfcSlab":
+                        rect = _plan_rect(opening, scale)
+                        if rect is not None:
+                            slab_voids.setdefault(level_id, []).append(rect)
                     if opening is None or fill is None or not fill.is_a("IfcWindow"):
                         continue
                     be.openings.append(
@@ -1917,6 +1922,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m},
         connected_pairs_from_ifc(f),
     )
+    # needs interior walls too, so before classification drops them (#581)
+    from ifc_wall_loops import flag_unclaimed_wall_loops
+
+    loops_n, loops_area = flag_unclaimed_wall_loops(
+        model,
+        {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m},
+        slab_voids,
+        sheet,
+        revision,
+    )
     facade_summary = _classify_envelope(model)
     if model.constructions:
         # space_id is known only after classification; interior walls have
@@ -1948,6 +1963,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         summary_parts.append(
             f"wall joins: {join_counts['moved']} ends moved onto neighbour centrelines"
             + (f", {join_counts['ambiguous']} left (tie)" if join_counts["ambiguous"] else "")
+        )
+    if loops_n:
+        summary_parts.append(
+            f"unclaimed wall loops: {loops_n} ({loops_area:.2f} m^2) flagged for review"
         )
     if merge_note:
         summary_parts.append(merge_note)
@@ -2127,6 +2146,24 @@ def _door_semantics(fill):
         else:
             notes.append(f"GlazingAreaFraction {raw!r} out of 0..1 -- ignored")
     return op, leaves, hinge, frac, "; ".join(notes)
+
+
+def _plan_rect(product, scale):
+    """Canonical-frame plan bounding rectangle of a product's solid, or None."""
+    verts = _geom_verts(product)
+    if not verts:
+        return None
+    to_world = _placement_transform(product, scale)
+    xs, ys = [], []
+    for i in range(0, len(verts), 3):
+        wx, wy, _ = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+        cx, cy = _to_canonical(wx, wy)
+        xs.append(cx)
+        ys.append(cy)
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    if x1 - x0 < 1e-6 or y1 - y0 < 1e-6:
+        return None
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
 def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):

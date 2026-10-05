@@ -511,6 +511,16 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
     )
 
 
+def _unclaimed_note(model) -> str:
+    """Unclaimed wall-loop area flagged on IFC import (#581), for the area summary."""
+    from ifc_wall_loops import unclaimed_loop_area
+
+    n, total = unclaimed_loop_area(model)
+    if not n:
+        return ""
+    return f"; plus {n} unclaimed wall loop(s), {total:.2f} m^2 at centrelines, not in any space"
+
+
 def area_closure(model: BuildingModel) -> CheckResult:
     """Total floor area ~= sum of individual room areas.
 
@@ -546,7 +556,7 @@ def area_closure(model: BuildingModel) -> CheckResult:
                 "Area closure",
                 "error",
                 f"room areas sum to {room_area_sum:.2f} m^2 vs footprint {footprint_area:.2f} m^2 "
-                f"(error {rel_err:.1%}, tol 3%)",
+                f"(error {rel_err:.1%}, tol 3%)" + _unclaimed_note(model),
                 expected=footprint_area,
                 actual=room_area_sum,
             )
@@ -555,7 +565,7 @@ def area_closure(model: BuildingModel) -> CheckResult:
             "Area closure",
             "pass",
             f"room areas sum {room_area_sum:.2f} m^2 matches footprint {footprint_area:.2f} m^2 "
-            f"within 3%",
+            f"within 3%" + _unclaimed_note(model),
             expected=footprint_area,
             actual=room_area_sum,
         )

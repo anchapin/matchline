@@ -530,6 +530,7 @@ class ReviewItem:
         "facade_takeoff",
         "opening_attachment",
         "space_merge",
+        "unclaimed_wall_loop",
     ]
     description: str
     confidence: float
@@ -704,6 +705,7 @@ class BuildingModel:
             "gd_complex_row",
             "opening_attachment",
             "space_merge",
+            "unclaimed_wall_loop",
         ],
         description: str,
         confidence: float,

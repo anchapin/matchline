@@ -108,3 +108,17 @@ a `space_merge` review item, as on drawings. The import summary line reports
 
 The importer does not read `IfcRelSpaceBoundary` yet; see #573-#589 for the
 other IFC follow-ups.
+
+## Wall loops no IfcSpace claims (#581)
+
+Shafts and closets are often not modelled as IfcSpaces at all. After wall ends
+are joined onto neighbour centrelines (#575), the importer closes the wall
+centrelines on each level into loops. A loop whose inside (shrunk by half the
+level's median wall thickness) is less than 10% covered by IfcSpace footprints
+becomes an `unclaimed_wall_loop` review item with its polygon, centreline area
+and inside area. The candidate class is `shaft` when an unfilled IfcSlab
+opening lies mostly inside the loop, otherwise `unknown` (it may be a shaft,
+a closet, a courtyard or a modelling gap). Loops under 0.25 m^2 are ignored.
+No space is created, so the shaft rule still only runs on modelled spaces;
+the area closure check reports the total unclaimed area alongside its result.
+Partly covered loops are a coverage question for the area checks, not this one.
