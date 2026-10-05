@@ -433,6 +433,27 @@ def _parse_space_name(name):
 _TAG_RE = re.compile(r"^(.+?)\s*\(")
 
 
+# IFC spaces are authored, so their class comes from what the author named
+# them and nothing else (Alex, 2026-10-05, #574 option A): no size-based
+# defaults. Word match on Name + LongName; shaft wins over closet.
+_IFC_SHAFT_RE = re.compile(r"\b(shaft|chase)s?\b", re.IGNORECASE)
+_IFC_CLOSET_RE = re.compile(r"\b(closet|storage)s?\b", re.IGNORECASE)
+IFC_SHAFT_CONFIDENCE = 0.90
+IFC_CLOSET_CONFIDENCE = 0.85
+
+
+def _ifc_space_class(sp):
+    """('shaft'|'closet', confidence, word) from IfcSpace Name/LongName, or None."""
+    text = " ".join(str(v) for v in (getattr(sp, "Name", None), getattr(sp, "LongName", None)) if v)
+    m = _IFC_SHAFT_RE.search(text)
+    if m:
+        return "shaft", IFC_SHAFT_CONFIDENCE, m.group(1).lower()
+    m = _IFC_CLOSET_RE.search(text)
+    if m:
+        return "closet", IFC_CLOSET_CONFIDENCE, m.group(1).lower()
+    return None
+
+
 def _parse_fill_tag(name):
     """'A (window 1.50x1.20 m)' -> 'A'. Convention-dependent."""
     m = _TAG_RE.match((name or "").strip())
@@ -834,6 +855,32 @@ def _attach_openings_to_spaces(model):
                         )
                     )
                     break
+
+
+def _ifc_doors(model):
+    """Door connectors for space_merge from IFC door openings with a plan centre."""
+    out = []
+    for el in model.bim_elements:
+        for bo in el.openings:
+            if bo.category == "door" and bo.plan_center_m:
+                out.append({"id": bo.id, "level_id": el.level_id, "plan_center_m": bo.plan_center_m})
+    return out
+
+
+def _merge_ifc_closets_and_shafts(model):
+    """Apply the closet/shaft rule (space_merge) to name-classified IFC spaces.
+
+    Runs before envelope classification so walls, openings and daylight land
+    on the merged space. Returns a summary fragment, or "" when the model has
+    no closets or shafts.
+    """
+    if not any(s.poly_type in ("closet", "shaft") for s in model.spaces.values()):
+        return ""
+    from space_merge import merge_closets_and_shafts
+
+    res = merge_closets_and_shafts(model, doors=_ifc_doors(model))
+    kept = sum(1 for it in model.review_queue if it.kind == "space_merge")
+    return f"space_merge: {len(res.merged)} merged, {kept} kept for review"
 
 
 # ---------------------------------------------------------------------------
@@ -1617,6 +1664,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 core_provenance=prov(method, conf, note, gid),
                 label_confidence=0.9 if number else 0.6,
             )
+            cls = _ifc_space_class(sp)
+            if cls is not None:
+                space.poly_type, space.poly_type_confidence, word = cls
+                space.core_provenance.note += f"; poly_type {cls[0]} from IfcSpace name word '{word}'"
             lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
             if lighting is not None:
                 space.lighting = lighting
@@ -1831,6 +1882,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     _attach_openings_to_spaces(model)
     _apply_skylight_daylight(model)
+    merge_note = _merge_ifc_closets_and_shafts(model)
     facade_summary = _classify_envelope(model)
     if model.constructions:
         # space_id is known only after classification; interior walls have
@@ -1858,6 +1910,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         ),
         f"scale={scale}",
     ]
+    if merge_note:
+        summary_parts.append(merge_note)
     if not unattached.is_empty():
         summary_parts.append(unattached.summary_line())
     if model.roof_construction_id:
@@ -2033,6 +2087,20 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
             note = "dims from opening solid, wall-local frame"
             if wall_len and not (-0.01 <= min(xs) <= max(xs) <= wall_len + 0.01):
                 note += " (outside wall extent -- flagged)"
+    plan_center = None
+    if category == "door" and verts:
+        # Plan centre of the door opening solid in the world frame, so the
+        # closet rule can tell which spaces it connects. No solid, no centre:
+        # the wall axis can sit on a face, and a guessed point is worse than none.
+        to_world = _placement_transform(opening, scale)
+        wxs, wys = [], []
+        for i in range(0, len(verts), 3):
+            wx, wy, _ = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+            wxs.append(wx)
+            wys.append(wy)
+        cx, cy = _to_canonical(0.5 * (min(wxs) + max(wxs)), 0.5 * (min(wys) + max(wys)))
+        plan_center = [round(cx, 4), round(cy, 4)]
+        note += "; plan centre from opening solid, world frame"
     p = Provenance(
         sheet_id=sheet,
         revision=revision,
@@ -2054,4 +2122,5 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         host_global_id=host_gid,
         fill_global_id=fgid,
         provenance=p,
+        plan_center_m=plan_center,
     )

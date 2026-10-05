@@ -88,3 +88,23 @@ leaf) and uses the annotations for nothing else.
 
 The AEC-Bench path in `run_pipeline.py` no longer turns wall regions into door
 openings; its doors come only from door regions.
+
+## IFC models (#574)
+
+IFC spaces are authored, so the importer marks one as a closet or shaft only
+from its IfcSpace `Name` or `LongName` (Alex, 2026-10-05): the words
+`closet`/`storage` give a closet (0.85), `shaft`/`chase` give a shaft (0.90),
+and shaft wins when both appear. Whole-word match only, and none of the
+size-based defaults the drawing classifier uses: a small, unnamed IfcSpace
+stays a room.
+
+Each IfcDoor whose opening has a solid gets a plan centre in the world frame
+(the centre of the opening solid). Those doors go to `merge_closets_and_shafts`
+as connectors, before envelope classification, so walls, openings and
+daylight land on the merged space. A door with no opening solid has no plan
+centre and is not used; a closet with no usable door stays its own space with
+a `space_merge` review item, as on drawings. The import summary line reports
+`space_merge: N merged, M kept for review`.
+
+The importer does not read `IfcRelSpaceBoundary` yet; see #573-#589 for the
+other IFC follow-ups.
