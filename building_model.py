@@ -419,6 +419,14 @@ class BimOpening:
     # Skylights only (roof-hosted): plan centre [x, y] in the canonical
     # y-down frame, used to attach the skylight to the space under it.
     plan_center_m: Optional[list] = None
+    # Doors only (#573): IfcDoor.OperationType as written (IFC4 occurrence or
+    # its type; IFC2X3 IfcDoorStyle), and what it says without guessing.
+    operation_type: Optional[str] = None
+    leaf_count: Optional[int] = None  # 1 | 2; None for revolving/rolling/undefined
+    hinge_side: Optional[str] = None  # "left" | "right" for swing doors only
+    # Pset_DoorCommon.GlazingAreaFraction (0..1) and the glazed area it gives.
+    glazing_area_fraction: Optional[float] = None
+    glazed_area_m2: Optional[float] = None
 
 
 @dataclass
