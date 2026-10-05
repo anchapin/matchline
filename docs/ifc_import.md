@@ -254,3 +254,26 @@ union of the zones, so overlaps are not double counted. Code:
 - A skylight with no plan position or size goes in
   `daylight.unplaced_skylights`, never placed by guess. On the drawing path,
   takeoff skylights carry a count and no position, so nothing is computed yet.
+
+## Lining and hidden walls (#577)
+
+Exporters often write tiles, skirting, rainscreen panels and furring as their
+own `IfcWall` on a real wall's face, or leave a short wall buried inside a
+thicker one. Before wall ends are joined, `ifc_wall_linings.exclude_linings`
+takes such walls out of the envelope, so they add no opaque area, take no part
+in facade classification, U averaging or wall-loop detection, and cannot be
+joined onto. A wall on the same level, parallel to a host, is a lining when:
+
+- **embedded**: the host is thicker and the wall's body lies inside it;
+- **face to face**: the wall is shorter than the host and lies against its face
+  (or runs through its body) over at least 90% of its length;
+- **cladding**: the wall is at most 35 mm thick, the host more than twice as
+  thick, and at least half its length lies on such hosts' faces.
+
+The `BimElement` stays in the inventory with `role="lining"` and a provenance
+note naming the host and the test that matched. Never guessed: a wall with
+unknown thickness is neither lining nor host, and a lining that hosts openings
+stays in the envelope with a note. The import summary reports
+`linings: N walls kept out of the envelope`. A lining's own material layers are
+not added to its host's U-value yet. Tests and tolerances follow
+`redundantWallIds` in the Pascal editor IFC converter (MIT, commit 67f8041).

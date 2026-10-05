@@ -453,6 +453,9 @@ class BimElement:
     placement_m: Optional[list] = None  # [x, y, z], canonical frame
     openings: List["BimOpening"] = field(default_factory=list)
     provenance: Provenance | None = None
+    # "" for an ordinary element; "lining" for an IfcWall that only lines or
+    # hides inside another wall and was kept out of the envelope (#577)
+    role: str = ""
 
 
 @dataclass
