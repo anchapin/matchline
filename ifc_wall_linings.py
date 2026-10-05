@@ -124,11 +124,13 @@ def _gid(ew):
     return tok[len("GlobalId=") :] if tok.startswith("GlobalId=") else ""
 
 
-def exclude_linings(model, thickness_by_gid):
+def exclude_linings(model, thickness_by_gid, pairs_out=None):
     """Remove lining walls from ``model.envelope`` in place (#577).
 
     Only Tier 0 IFC envelope segments take part. Returns
     {"lining": walls excluded, "kept": linings kept because they host openings}.
+    ``pairs_out``, when given, receives (lining GlobalId, host GlobalId, kind,
+    lining segment) for each excluded lining (#597).
     """
     walls = [
         w
@@ -171,6 +173,8 @@ def exclude_linings(model, thickness_by_gid):
             continue
         counts["lining"] += 1
         drop.add(id(w))
+        if pairs_out is not None:
+            pairs_out.append((g, host, kind, w))
         if el is not None:
             el.role = "lining"
             if el.provenance is not None:
@@ -180,3 +184,51 @@ def exclude_linings(model, thickness_by_gid):
                 )
     model.envelope = [w for w in model.envelope if id(w) not in drop]
     return counts
+
+
+def host_cover(lining, host):
+    """Share of ``host``'s run that ``lining`` lies along, 0..1 (#597).
+
+    Both are (p0, p1) centreline end points; the lining is projected onto the
+    host's direction. Parallelism and offset are find_linings' business.
+    """
+    (h0, h1), (l0, l1) = host, lining
+    hL = math.dist(h0, h1)
+    if hL < 1e-9:
+        return 0.0
+    d = ((h1[0] - h0[0]) / hL, (h1[1] - h0[1]) / hL)
+
+    def proj(p):
+        return (p[0] - h0[0]) * d[0] + (p[1] - h0[1]) * d[1]
+
+    a, b = sorted((proj(l0), proj(l1)))
+    return max(0.0, min(b, hL) - max(a, 0.0)) / hL
+
+
+def cladding_hosts(lining, hosts, t_lining, level):
+    """Hosts a cladding run lies on, as [(key, cover 0..1)] (#597).
+
+    ``lining`` is (p0, p1); ``hosts`` a sequence of (key, level, p0, p1,
+    thickness). Same tests find_linings uses for cladding: parallel, host more
+    than twice as thick, standing within CLADDING_FACE_TOL_M of its face.
+    """
+    l0, l1 = lining
+    L = math.dist(l0, l1)
+    if L < 1e-9:
+        return []
+    sd = ((l1[0] - l0[0]) / L, (l1[1] - l0[1]) / L)
+    out = []
+    for key, lv, o0, o1, ot in hosts:
+        oL = math.dist(o0, o1)
+        if lv != level or ot is None or oL < 1e-9 or ot <= 2 * t_lining:
+            continue
+        od = ((o1[0] - o0[0]) / oL, (o1[1] - o0[1]) / oL)
+        if abs(_cross(sd[0], sd[1], od[0], od[1])) > PARALLEL_SINE:
+            continue
+        offset = abs(_cross(l0[0] - o0[0], l0[1] - o0[1], od[0], od[1]))
+        if offset > (ot + t_lining) / 2 + CLADDING_FACE_TOL_M:
+            continue
+        c = host_cover((l0, l1), (o0, o1))
+        if c > 0:
+            out.append((key, c))
+    return out
