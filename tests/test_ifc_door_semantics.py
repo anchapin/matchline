@@ -16,10 +16,19 @@ def _door_ifc(tmp_path, op=None, frac=None, type_op=None, type_frac=None):
     if op is not None:
         door.OperationType = op
     if type_op is not None or type_frac is not None:
-        typ = f.create_entity("IfcDoorType", GlobalId=ifcopenshell.guid.new(), Name="DT",
-                              PredefinedType="DOOR", OperationType=type_op or "NOTDEFINED")
-        f.create_entity("IfcRelDefinesByType", GlobalId=ifcopenshell.guid.new(),
-                        RelatedObjects=[door], RelatingType=typ)
+        typ = f.create_entity(
+            "IfcDoorType",
+            GlobalId=ifcopenshell.guid.new(),
+            Name="DT",
+            PredefinedType="DOOR",
+            OperationType=type_op or "NOTDEFINED",
+        )
+        f.create_entity(
+            "IfcRelDefinesByType",
+            GlobalId=ifcopenshell.guid.new(),
+            RelatedObjects=[door],
+            RelatingType=typ,
+        )
         if type_frac is not None:
             ps = api.run("pset.add_pset", f, product=typ, name="Pset_DoorCommon")
             api.run("pset.edit_pset", f, pset=ps, properties={"GlazingAreaFraction": type_frac})
@@ -82,5 +91,7 @@ def test_type_supplies_operation_and_glazing(tmp_path):
 
 
 def test_occurrence_overrides_type_glazing(tmp_path):
-    d = _door(import_ifc(_door_ifc(tmp_path, type_op="SINGLE_SWING_LEFT", type_frac=0.25, frac=0.4)))
+    d = _door(
+        import_ifc(_door_ifc(tmp_path, type_op="SINGLE_SWING_LEFT", type_frac=0.25, frac=0.4))
+    )
     assert d.glazing_area_fraction == 0.4

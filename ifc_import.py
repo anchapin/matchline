@@ -882,7 +882,9 @@ def _ifc_doors(model):
     for el in model.bim_elements:
         for bo in el.openings:
             if bo.category == "door" and bo.plan_center_m:
-                out.append({"id": bo.id, "level_id": el.level_id, "plan_center_m": bo.plan_center_m})
+                out.append(
+                    {"id": bo.id, "level_id": el.level_id, "plan_center_m": bo.plan_center_m}
+                )
     return out
 
 
@@ -1681,12 +1683,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
                 core_provenance=prov(method, conf, f"{note}; name/number via {name_source}", gid),
-                label_confidence=(0.95 if name_source == "ifc_longname" else 0.9) if number else 0.6,
+                label_confidence=(0.95 if name_source == "ifc_longname" else 0.9)
+                if number
+                else 0.6,
             )
             cls = _ifc_space_class(sp)
             if cls is not None:
                 space.poly_type, space.poly_type_confidence, word = cls
-                space.core_provenance.note += f"; poly_type {cls[0]} from IfcSpace name word '{word}'"
+                space.core_provenance.note += (
+                    f"; poly_type {cls[0]} from IfcSpace name word '{word}'"
+                )
             lighting = _read_lighting(sp, model, prov("lighting_import", 0.3))
             if lighting is not None:
                 space.lighting = lighting
@@ -2170,7 +2176,9 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         to_world = _placement_transform(opening, scale)
         wxs, wys = [], []
         for i in range(0, len(verts), 3):
-            wx, wy, _ = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+            wx, wy, _ = _apply(
+                to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale
+            )
             wxs.append(wx)
             wys.append(wy)
         cx, cy = _to_canonical(0.5 * (min(wxs) + max(wxs)), 0.5 * (min(wys) + max(wys)))
