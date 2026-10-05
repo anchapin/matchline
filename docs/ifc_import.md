@@ -281,6 +281,31 @@ joins #575, linings #577, unclaimed loops #581).
 - `envelope_area_matches_perimeter` compares against the footprint offset
   by ±t/2 as well, since spaces may be drawn to either face.
 
+## Junction splits and in-line continuations (#576)
+
+After end joins, two passes run on the Tier 0 IFC segments of each level
+(`ifc_wall_split.py`, idea from Pascal's `joinInLineEnds` and
+`splitCrossingWalls`, MIT):
+
+- **In-line continuations.** A thinner wall continuing a thicker one flush
+  with one face ends beside the other's end, offset sideways by half the
+  thickness difference. Its end moves onto the thicker wall's end so the
+  two form one continuous run: near-parallel (sine ≤ 0.03), lateral offset
+  within the thicker half-thickness + 0.01 m, along-axis gap ≤ 0.1 m, move
+  ≤ 10% of the wall's length. Only the thinner wall moves; unknown
+  thickness or two equally near candidates leave it as-is (tie noted).
+- **Junction splits.** Two segments crossing mid-span (X) both split at the
+  crossing; a segment end landing mid-span on another (T) splits the
+  through segment. Junctions within the thicker half-thickness + 0.05 m of
+  an end are corners, not splits. Pieces are `<id>.1`, `<id>.2`, … and keep
+  the wall's GlobalId, construction and provenance, so facade
+  classification names one space behind each piece (a 20 m exterior wall
+  behind two rooms now gives each its own `space_id`). The BimElement
+  inventory is untouched.
+- Summary lines: `in-line walls: N ends joined`, `wall splits: N at X/T junctions`.
+- Interior pieces still leave the envelope at classification, so interior
+  shared-wall bookkeeping has no home in the model yet.
+
 ## Lining and hidden walls (#577)
 
 Exporters often write tiles, skirting, rainscreen panels and furring as their

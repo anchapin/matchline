@@ -2093,6 +2093,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     # linings first, so they neither join nor carve wall loops (#577)
     lining_counts = exclude_linings(model, wall_t)
     join_counts = join_wall_ends(model.envelope, wall_t, connected_pairs_from_ifc(f))
+    # flush in-line continuations, then split at X/T junctions so facade
+    # classification can name one space behind each piece (#576)
+    from ifc_wall_split import join_inline_ends, split_at_junctions
+
+    inline_counts = join_inline_ends(model.envelope, wall_t)
+    n_junction_splits = split_at_junctions(model.envelope, wall_t)
     # needs interior walls too, so before classification drops them (#581)
     from ifc_wall_loops import flag_unclaimed_wall_loops
 
@@ -2148,6 +2154,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             f"wall joins: {join_counts['moved']} ends moved onto neighbour centrelines"
             + (f", {join_counts['ambiguous']} left (tie)" if join_counts["ambiguous"] else "")
         )
+    if inline_counts["joined"] or inline_counts["ambiguous"]:
+        summary_parts.append(
+            f"in-line walls: {inline_counts['joined']} ends joined"
+            + (f", {inline_counts['ambiguous']} left (tie)" if inline_counts["ambiguous"] else "")
+        )
+    if n_junction_splits:
+        summary_parts.append(f"wall splits: {n_junction_splits} at X/T junctions")
     if loops_n:
         summary_parts.append(
             f"unclaimed wall loops: {loops_n} ({loops_area:.2f} m^2) flagged for review"
