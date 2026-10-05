@@ -1044,7 +1044,9 @@ def _check_daylight_zones(ctx: _Ctx) -> CheckResult:
                 bad.append((sid, f"zone {z.id} has no polygon"))
                 continue
             if abs(g.area - z.area_m2) > tol * max(g.area, 1e-9) + 1e-6:
-                bad.append((sid, f"zone {z.id} area {z.area_m2:.2f} m^2 vs polygon {g.area:.2f} m^2"))
+                bad.append(
+                    (sid, f"zone {z.id} area {z.area_m2:.2f} m^2 vs polygon {g.area:.2f} m^2")
+                )
             if room is not None and g.difference(room).area > 0.01 * g.area + 1e-6:
                 bad.append((sid, f"zone {z.id} extends outside its space"))
         for z in top:

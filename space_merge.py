@@ -108,7 +108,9 @@ def _collect_doors(model: BuildingModel, doors: Optional[Iterable[dict]]) -> Lis
         if did in seen or not d.get("plan_center_m"):
             continue
         seen.add(did)
-        out.append({"id": did, "level_id": d.get("level_id", ""), "xy": tuple(d["plan_center_m"][:2])})
+        out.append(
+            {"id": did, "level_id": d.get("level_id", ""), "xy": tuple(d["plan_center_m"][:2])}
+        )
     return out
 
 
@@ -153,7 +155,9 @@ def _ring(p: Polygon) -> list:
     return [[round(x, 6), round(y, 6)] for x, y in pts]
 
 
-def _absorb(model: BuildingModel, src: Space, tgt: Space, joined: Polygon, rec: MergeRecord) -> None:
+def _absorb(
+    model: BuildingModel, src: Space, tgt: Space, joined: Polygon, rec: MergeRecord
+) -> None:
     old_area = tgt.area_m2 or 0.0
     h = _wall_height(model, tgt)
     new_area = joined.area
@@ -237,11 +241,17 @@ def _shared_wall_len(p: Polygon, q: Polygon) -> float:
         ux, uy = dx / L, dy / L
         nx, ny = uy, -ux  # outward normal of a CCW ring
         t = ADJ_TOL_M
-        strip = Polygon([(x0, y0), (x1, y1), (x1 + nx * t, y1 + ny * t), (x0 + nx * t, y0 + ny * t)])
+        strip = Polygon(
+            [(x0, y0), (x1, y1), (x1 + nx * t, y1 + ny * t), (x0 + nx * t, y0 + ny * t)]
+        )
         inter = strip.intersection(q)
         if inter.is_empty or inter.area < 1e-9:
             continue
-        proj = [(cx - x0) * ux + (cy - y0) * uy for g in getattr(inter, "geoms", [inter]) for cx, cy in g.exterior.coords]
+        proj = [
+            (cx - x0) * ux + (cy - y0) * uy
+            for g in getattr(inter, "geoms", [inter])
+            for cx, cy in g.exterior.coords
+        ]
         total += max(0.0, min(L, max(proj)) - max(0.0, min(proj)))
     return total
 
@@ -251,14 +261,22 @@ def _merge_closet(model, sp, doors, result) -> None:
     if p is None:
         _flag(model, sp, "no usable polygon", result)
         return
-    mine = [d for d in doors if d["level_id"] == sp.level_id and p.exterior.distance(Point(d["xy"])) <= DOOR_TOL_M]
+    mine = [
+        d
+        for d in doors
+        if d["level_id"] == sp.level_id and p.exterior.distance(Point(d["xy"])) <= DOOR_TOL_M
+    ]
     if not mine:
         _flag(model, sp, "no door with a known plan position on its boundary", result)
         return
     targets: dict = {}
     for d in mine:
         pt = Point(d["xy"])
-        hits = [n for n in _neighbours(model, sp) if (q := _poly(n)) is not None and q.distance(pt) <= DOOR_TOL_M]
+        hits = [
+            n
+            for n in _neighbours(model, sp)
+            if (q := _poly(n)) is not None and q.distance(pt) <= DOOR_TOL_M
+        ]
         if len(hits) > 1:
             names = ", ".join(sorted(n.id for n in hits))
             _flag(model, sp, f"door {d['id']} touches more than one room ({names})", result)
@@ -269,15 +287,19 @@ def _merge_closet(model, sp, doors, result) -> None:
         _flag(model, sp, "its door opens onto no room (exterior or non-room space)", result)
         return
     if len(targets) > 1:
-        _flag(model, sp, f"doors open onto more than one room ({', '.join(sorted(targets))})", result)
+        _flag(
+            model, sp, f"doors open onto more than one room ({', '.join(sorted(targets))})", result
+        )
         return
-    (tid, dids), = targets.items()
+    ((tid, dids),) = targets.items()
     tgt = model.spaces[tid]
     joined = _joined(_poly(tgt), p)
     if joined is None:
         _flag(model, sp, f"could not join its outline to {tid}", result)
         return
-    rec = MergeRecord(sp.id, tid, METHOD_CLOSET, sp.poly_type, round(p.area, 6), door_ids=sorted(dids))
+    rec = MergeRecord(
+        sp.id, tid, METHOD_CLOSET, sp.poly_type, round(p.area, 6), door_ids=sorted(dids)
+    )
     _absorb(model, sp, tgt, joined, rec)
     result.merged.append(rec)
 
@@ -328,7 +350,9 @@ def _merge_shaft(model, sp, result) -> None:
     result.merged.append(rec)
 
 
-def merge_closets_and_shafts(model: BuildingModel, doors: Optional[Iterable[dict]] = None) -> MergeResult:
+def merge_closets_and_shafts(
+    model: BuildingModel, doors: Optional[Iterable[dict]] = None
+) -> MergeResult:
     """Apply the closet/shaft rule to ``model`` in place and report what happened.
 
     Closets go first so a shaft beside a closet sees the room that absorbed
@@ -343,11 +367,15 @@ def merge_closets_and_shafts(model: BuildingModel, doors: Optional[Iterable[dict
         for it in model.review_queue
         if it.kind == "space_merge"
     }
-    for sp in sorted((s for s in model.spaces.values() if s.poly_type == "closet"), key=lambda s: s.id):
+    for sp in sorted(
+        (s for s in model.spaces.values() if s.poly_type == "closet"), key=lambda s: s.id
+    ):
         if sp.id in flagged:
             continue
         _merge_closet(model, sp, door_list, result)
-    for sp in sorted((s for s in model.spaces.values() if s.poly_type == "shaft"), key=lambda s: s.id):
+    for sp in sorted(
+        (s for s in model.spaces.values() if s.poly_type == "shaft"), key=lambda s: s.id
+    ):
         if sp.id in flagged:
             continue
         _merge_shaft(model, sp, result)

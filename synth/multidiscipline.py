@@ -146,8 +146,20 @@ def _carve_service_rooms(rooms, seed):
     ys = y1 - SHAFT_DEPTH_M
     out = [dict(r) for r in rooms]
     out[i] = {**host, "rect": (x0, y0, xs, y1)}
-    closet = {"rect": (xs, y0, x1, ys), "zone": host["zone"], "name": "CLOSET", "number": "", "service": "closet"}
-    shaft = {"rect": (xs, ys, x1, y1), "zone": host["zone"], "name": "SHAFT", "number": "", "service": "shaft"}
+    closet = {
+        "rect": (xs, y0, x1, ys),
+        "zone": host["zone"],
+        "name": "CLOSET",
+        "number": "",
+        "service": "closet",
+    }
+    shaft = {
+        "rect": (xs, ys, x1, y1),
+        "zone": host["zone"],
+        "name": "SHAFT",
+        "number": "",
+        "service": "shaft",
+    }
     out += [closet, shaft]
     door_y = float(rng.uniform(y0 + DOOR_W_M / 2 + 0.2, ys - DOOR_W_M / 2 - 0.2))
     doors = [
@@ -621,7 +633,9 @@ def _south_windows(rooms, D, rng):
 # ---------------------------------------------------------------------------
 
 
-def generate_building(seed: int, open_office_span: bool = False, service_rooms: bool = False) -> dict:
+def generate_building(
+    seed: int, open_office_span: bool = False, service_rooms: bool = False
+) -> dict:
     """Generate one multi-discipline building. Returns the building dict
     (images as uint8 arrays + GT).
 
