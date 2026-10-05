@@ -306,6 +306,22 @@ After end joins, two passes run on the Tier 0 IFC segments of each level
 - Interior pieces still leave the envelope at classification, so interior
   shared-wall bookkeeping has no home in the model yet.
 
+## Fragmented walls and doubled openings (#578)
+
+Defect-injection tests (`tests/test_ifc_fragment_parity.py`, cases modelled
+on Pascal's `cleanup.test.ts`) compare the fixture with versions whose
+south wall is exported as three collinear fragments, as fragments of
+different height, or with a window doubled on itself.
+
+- Fragments already conserve wall area, opening counts and opening
+  attachment, so there is **no fragment merge**. Fragments of different
+  height keep their own heights and areas.
+- A doubled window did not: it counted twice. Openings in one host wall
+  that share category and tag and agree on width, height, sill and position
+  along the wall within 0.05 m are now copies; the one whose GlobalId sorts
+  first is kept. Any of those values missing means never a copy. Summary
+  line: `duplicate openings: N doubled copies dropped`.
+
 ## Lining and hidden walls (#577)
 
 Exporters often write tiles, skirting, rainscreen panels and furring as their
