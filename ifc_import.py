@@ -1577,6 +1577,134 @@ def _classify_finish_slabs(model, f, scale):
     return finishes, left
 
 
+CEILING_FLAT_TOL_M = 0.01  # every vertex within this of the bottom or top face
+CEILING_AGREE_TOL_M = 0.01  # coverings over one space must agree this closely
+CEILING_SPACE_FRAC = 0.5  # space floor share a covering must cover
+
+
+def _flat_shape(el, scale):
+    """(hull, z bottom, z top) of a flat solid, ("sloped", None, None), or None."""
+    shape = _slab_shape(el, scale)
+    if shape is None:
+        return None
+    _, z0, z1 = shape
+    t = _placement_transform(el, scale)
+    v = _geom_verts(el) or []
+    for i in range(0, len(v), 3):
+        z = _apply(t, v[i] * scale, v[i + 1] * scale, v[i + 2] * scale)[2]
+        if min(abs(z - z0), abs(z - z1)) > CEILING_FLAT_TOL_M:
+            return ("sloped", None, None)
+    return shape
+
+
+def _read_ceilings(model, f, scale, space_by_gid, level_by_storey, prov):
+    """Ceiling height and plenum depth per space from IfcCovering CEILING (#583).
+
+    A covering serves the spaces named by IfcRelCoversSpaces, else the spaces
+    on its storey whose floor it covers by at least CEILING_SPACE_FRAC.
+    ``ceiling_height_m`` is the covering underside above the level elevation;
+    ``plenum_depth_m`` runs from the covering top to the underside of the
+    lowest flat slab or roof above it over that space (None when there is
+    none). A sloped covering, or coverings over one space that disagree, leave
+    the space at None with a review item: never averaged. Idea from Pascal's
+    ceiling handling (MIT, Copyright (c) 2026 Pascal Group Inc., commit
+    67f8041). Returns (spaces with a ceiling, spaces without, coverings read).
+    """
+    from shapely.geometry import Polygon
+
+    covs = [c for c in f.by_type("IfcCovering") if getattr(c, "PredefinedType", None) == "CEILING"]
+    if not covs:
+        return 0, 0, 0
+    named = {}  # covering GlobalId -> [space id]
+    for rel in f.by_type("IfcRelCoversSpaces"):
+        sid = space_by_gid.get(getattr(rel.RelatingSpace, "GlobalId", None))
+        for c in rel.RelatedCoverings or []:
+            if sid:
+                named.setdefault(c.GlobalId, []).append(sid)
+    level_of = {}
+    for rel in f.by_type("IfcRelContainedInSpatialStructure"):
+        lid = level_by_storey.get(getattr(rel.RelatingStructure, "GlobalId", None))
+        for o in rel.RelatedElements or []:
+            if lid:
+                level_of[o.GlobalId] = lid
+    polys = {
+        sid: Polygon(sp.polygon_m)
+        for sid, sp in model.spaces.items()
+        if sp.polygon_m and len(sp.polygon_m) >= 3
+    }
+    above = []  # flat slabs/roofs: (hull, z bottom)
+    for e in model.bim_elements:
+        if e.ifc_class not in ("IfcSlab", "IfcRoof") or e.role:
+            continue
+        try:
+            shape = _flat_shape(f.by_guid(e.global_id), scale)
+        except RuntimeError:
+            continue
+        if shape and shape[0] != "sloped":
+            above.append((shape[0], shape[1]))
+    found = {}  # space id -> [(GlobalId, "sloped") | (GlobalId, underside, top)]
+    for c in sorted(covs, key=lambda c: c.GlobalId):
+        shape = _flat_shape(c, scale)
+        if shape is None:
+            continue
+        if c.GlobalId in named:
+            sids = named[c.GlobalId]
+        elif shape[0] == "sloped":
+            continue  # no plan footprint to place it by; nothing claimed
+        else:
+            lid = level_of.get(c.GlobalId)
+            sids = [
+                sid
+                for sid, poly in polys.items()
+                if model.spaces[sid].level_id == lid
+                and poly.area > 0
+                and poly.intersection(shape[0]).area >= CEILING_SPACE_FRAC * poly.area
+            ]
+        for sid in sids:
+            if shape[0] == "sloped":
+                found.setdefault(sid, []).append((c.GlobalId, "sloped"))
+            else:
+                found.setdefault(sid, []).append((c.GlobalId, shape[1], shape[2]))
+    with_c = 0
+    for sid, hits in sorted(found.items()):
+        sp = model.spaces[sid]
+        gids = ", ".join(h[0] for h in hits)
+        why = ""
+        if any(h[1] == "sloped" for h in hits):
+            why = f"sloped ceiling covering ({gids}); height not averaged"
+        elif max(h[1] for h in hits) - min(h[1] for h in hits) > CEILING_AGREE_TOL_M:
+            why = f"ceiling coverings at different heights ({gids}); left unresolved"
+        if why:
+            model.flag_for_review(
+                kind="ceiling",
+                description=f"Space {sid}: {why}",
+                confidence=0.4,
+                provenance=prov("ifc_import:tier0:ceiling", 0.4, why, hits[0][0]),
+            )
+            continue
+        gid, under, top = hits[0]
+        elev = next((lv.elevation_z_m for lv in model.levels if lv.id == sp.level_id), None)
+        if elev is None:
+            continue
+        sp.ceiling_height_m = round(under - elev, 4)
+        poly = polys.get(sid)
+        over = [
+            z0
+            for h, z0 in above
+            if z0 >= top - CEILING_FLAT_TOL_M
+            and poly is not None
+            and poly.area > 0
+            and poly.intersection(h).area >= CEILING_SPACE_FRAC * poly.area
+        ]
+        sp.plenum_depth_m = round(min(over) - top, 4) if over else None
+        note = f"ceiling {sp.ceiling_height_m} m from IfcCovering CEILING"
+        if sp.plenum_depth_m is not None:
+            note += f"; plenum {sp.plenum_depth_m} m to the slab above"
+        sp.history.append(prov("ifc_import:tier0:ceiling", 0.9, note, gid))
+        with_c += 1
+    return with_c, len(model.spaces) - with_c, len(covs)
+
+
 def _read_slab_construction(model, f, prov, skip=()):
     """Set ``model.slab_construction_id`` from ground slabs' stated U.
 
@@ -2001,6 +2129,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         fills[rel.RelatingOpeningElement.GlobalId] = rel.RelatedBuildingElement
 
     space_by_gid = {}
+    level_by_storey = {}  # IfcBuildingStorey GlobalId -> level id
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
     unlabeled = 0
 
@@ -2025,6 +2154,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         elev = _storey_elevation(storey) * scale
         level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
         model.levels.append(level)
+        level_by_storey[storey.GlobalId] = level_id
 
         # --- spaces -------------------------------------------------------
         for sp in _aggregated(storey, "IfcSpace"):
@@ -2319,6 +2449,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     roof_note = _read_roof_construction(model, f, prov, scale)
     finish_gids, thin_left = _classify_finish_slabs(model, f, scale)
     slab_note = _read_slab_construction(model, f, prov, skip=finish_gids)
+    ceil_with, ceil_without, ceil_covs = _read_ceilings(
+        model, f, scale, space_by_gid, level_by_storey, prov
+    )
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
@@ -2367,6 +2500,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 f" +{more} more" if more > 0 else ""
             )
         summary_parts.append(part)
+    if ceil_covs:
+        summary_parts.append(
+            f"ceilings: {ceil_with} spaces from {ceil_covs} IfcCovering CEILING, "
+            f"{ceil_without} without"
+        )
     if finish_gids:
         summary_parts.append(f"finish slabs: {len(finish_gids)} on structural floors")
     if duplicate_openings:

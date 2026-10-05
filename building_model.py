@@ -274,6 +274,10 @@ class Space:
     # finish floors laid on this space's structural slab (#584):
     # [{"global_id": str, "thickness_m": float}]; never floor area or a BEM surface
     floor_finishes: List[dict] = field(default_factory=list)
+    # ceiling from IfcCovering CEILING (#583): underside above the floor, and
+    # covering top to the underside of the slab above; None when not known
+    ceiling_height_m: Optional[float] = None
+    plenum_depth_m: Optional[float] = None
     merged_from: List[str] = field(default_factory=list)
     history: List[Provenance] = field(default_factory=list)
 
@@ -546,6 +550,7 @@ class ReviewItem:
         "opening_attachment",
         "space_merge",
         "unclaimed_wall_loop",
+        "ceiling",
     ]
     description: str
     confidence: float
@@ -721,6 +726,7 @@ class BuildingModel:
             "opening_attachment",
             "space_merge",
             "unclaimed_wall_loop",
+            "ceiling",
         ],
         description: str,
         confidence: float,

@@ -387,3 +387,20 @@ mezzanine deck) or one mostly off the slab stays an ordinary slab. Plans are
 the convex hulls of the solids. The import summary reports
 `finish slabs: N on structural floors`. Idea from Pascal's `room-first.ts`
 (MIT, Copyright (c) 2026 Pascal Group Inc., commit 67f8041).
+
+## Ceilings and plenums (#583)
+
+`IfcCovering` with PredefinedType `CEILING` sets two fields per space:
+`ceiling_height_m` (the covering's underside above the level elevation) and
+`plenum_depth_m` (from the covering's top face to the underside of the lowest
+flat slab or roof above it over that space). A covering serves the spaces
+named by `IfcRelCoversSpaces`, otherwise the spaces on its storey whose floor
+it covers by at least half. Both stay `None` when a space has no covering,
+and `plenum_depth_m` stays `None` when nothing flat lies above. A sloped
+covering, or coverings over one space more than 1 cm apart, leave the space
+at `None` with a `ceiling` review item: heights are never averaged. Each
+resolved ceiling adds an `ifc_import:tier0:ceiling` entry (conf 0.9) to the
+space's history. The import summary reports
+`ceilings: N spaces from M IfcCovering CEILING, K without`. Idea from
+Pascal's ceiling handling (MIT, Copyright (c) 2026 Pascal Group Inc., commit
+67f8041).
