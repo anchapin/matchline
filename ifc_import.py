@@ -1495,7 +1495,89 @@ def _read_roof_construction(model, f, prov, scale=1.0):
     return ""
 
 
-def _read_slab_construction(model, f, prov):
+MAX_FINISH_THICKNESS_M = 0.06  # Pascal room-first.ts
+FLOOR_TOP_TOL_M = 0.02  # Pascal room-first.ts FLOOR_TOP_TOLERANCE
+FINISH_ON_SLAB_FRAC = 0.95  # finish plan area that must lie on the slab
+FINISH_SPACE_FRAC = 0.5  # space floor share a finish must cover to be recorded
+
+
+def _slab_shape(el, scale):
+    """(plan hull in the canonical frame, z bottom, z top) or None."""
+    from shapely.geometry import MultiPoint
+
+    verts = _geom_verts(el)
+    if not verts:
+        return None
+    t = _placement_transform(el, scale)
+    pts, zs = [], []
+    for i in range(0, len(verts), 3):
+        wx, wy, wz = _apply(t, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+        pts.append(_to_canonical(wx, wy))
+        zs.append(wz)
+    hull = MultiPoint(pts).convex_hull
+    if hull.area < 1e-6:
+        return None
+    return hull, min(zs), max(zs)
+
+
+def _classify_finish_slabs(model, f, scale):
+    """Mark finish floors so they never count as a second floor (#584).
+
+    A slab no thicker than MAX_FINISH_THICKNESS_M is a finish when it sits on
+    a thicker slab of the same level (its bottom within FLOOR_TOP_TOL_M of
+    that slab's top) and at least FINISH_ON_SLAB_FRAC of its plan lies on it.
+    A thin slab with nothing under it stays an ordinary slab. Finishes get
+    ``role="finish"``, stay out of the ground-slab U, and are recorded on the
+    spaces whose floor they mostly cover. Plans are convex hulls of the
+    solids. Idea from Pascal's room-first.ts (MIT, Copyright (c) 2026 Pascal
+    Group Inc., commit 67f8041). Returns (finish GlobalIds, thin slabs left).
+    """
+    from shapely.geometry import Polygon
+
+    slabs = []
+    for e in model.bim_elements:
+        if e.ifc_class != "IfcSlab" or e.role:
+            continue
+        try:
+            el = f.by_guid(e.global_id)
+        except RuntimeError:
+            continue
+        shape = _slab_shape(el, scale)
+        if shape is not None:
+            slabs.append((e, *shape))
+    finishes, left = set(), 0
+    for e, hull, z0, z1 in sorted(slabs, key=lambda s: s[0].global_id):
+        if z1 - z0 > MAX_FINISH_THICKNESS_M + 1e-9:
+            continue
+        under = [
+            (s, h)
+            for s, h, b0, b1 in slabs
+            if s is not e
+            and s.level_id == e.level_id
+            and b1 - b0 > MAX_FINISH_THICKNESS_M + 1e-9
+            and abs(b1 - z0) <= FLOOR_TOP_TOL_M + 1e-9
+        ]
+        on = max((hull.intersection(h).area for _, h in under), default=0.0)
+        if not under or on < FINISH_ON_SLAB_FRAC * hull.area:
+            left += 1
+            continue
+        e.role = "finish"
+        thick = round(z1 - z0, 4)
+        if e.provenance is not None:
+            e.provenance.note += (
+                f"; finish floor ({thick} m) on a structural slab, not a floor surface"
+            )
+        finishes.add(e.global_id)
+        for sp in model.spaces.values():
+            if sp.level_id != e.level_id or not sp.polygon_m or len(sp.polygon_m) < 3:
+                continue
+            poly = Polygon(sp.polygon_m)
+            if poly.area > 0 and poly.intersection(hull).area >= FINISH_SPACE_FRAC * poly.area:
+                sp.floor_finishes.append({"global_id": e.global_id, "thickness_m": thick})
+    return finishes, left
+
+
+def _read_slab_construction(model, f, prov, skip=()):
     """Set ``model.slab_construction_id`` from ground slabs' stated U.
 
     Ground slabs are IfcSlab with PredefinedType BASESLAB (a FLOOR slab may be
@@ -1506,7 +1588,11 @@ def _read_slab_construction(model, f, prov):
     construction (``ifc_import:tier0:slab_u``, conf 0.9); disagreeing values
     leave the slab generic and the returned note says why.
     """
-    slabs = [s for s in f.by_type("IfcSlab") if getattr(s, "PredefinedType", None) == "BASESLAB"]
+    slabs = [
+        s
+        for s in f.by_type("IfcSlab")
+        if getattr(s, "PredefinedType", None) == "BASESLAB" and s.GlobalId not in skip
+    ]
     stated = [(s.GlobalId, u) for s in slabs if (u := _roof_thermal_transmittance(s)) is not None]
     if not stated:
         return ""
@@ -2231,7 +2317,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
         apply_wall_u_rollup(model)
     roof_note = _read_roof_construction(model, f, prov, scale)
-    slab_note = _read_slab_construction(model, f, prov)
+    finish_gids, thin_left = _classify_finish_slabs(model, f, scale)
+    slab_note = _read_slab_construction(model, f, prov, skip=finish_gids)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
@@ -2280,6 +2367,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 f" +{more} more" if more > 0 else ""
             )
         summary_parts.append(part)
+    if finish_gids:
+        summary_parts.append(f"finish slabs: {len(finish_gids)} on structural floors")
     if duplicate_openings:
         summary_parts.append(
             f"duplicate openings: {len(duplicate_openings)} doubled copies dropped"
