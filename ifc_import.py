@@ -1916,18 +1916,18 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     # after opening attachment (it matches envelope segments to wall
     # placements by start point), before facade classification (#575)
     from ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends
+    from ifc_wall_linings import exclude_linings
 
-    join_counts = join_wall_ends(
-        model.envelope,
-        {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m},
-        connected_pairs_from_ifc(f),
-    )
+    wall_t = {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m}
+    # linings first, so they neither join nor carve wall loops (#577)
+    lining_counts = exclude_linings(model, wall_t)
+    join_counts = join_wall_ends(model.envelope, wall_t, connected_pairs_from_ifc(f))
     # needs interior walls too, so before classification drops them (#581)
     from ifc_wall_loops import flag_unclaimed_wall_loops
 
     loops_n, loops_area = flag_unclaimed_wall_loops(
         model,
-        {e.global_id: e.thickness_m for e in model.bim_elements if e.thickness_m},
+        wall_t,
         slab_voids,
         sheet,
         revision,
@@ -1959,6 +1959,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         ),
         f"scale={scale}",
     ]
+    if lining_counts["lining"] or lining_counts["kept"]:
+        summary_parts.append(
+            f"linings: {lining_counts['lining']} walls kept out of the envelope"
+            + (f", {lining_counts['kept']} kept (host openings)" if lining_counts["kept"] else "")
+        )
     if join_counts["moved"] or join_counts["ambiguous"]:
         summary_parts.append(
             f"wall joins: {join_counts['moved']} ends moved onto neighbour centrelines"
