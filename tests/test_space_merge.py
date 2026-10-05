@@ -36,7 +36,9 @@ def _space(sid, rect, poly_type="room", conf=None):
 
 
 def _door(did, xy):
-    return SpaceOpening(id=did, tag="D1", category="door", width_m=0.9, height_m=2.1, plan_center_m=list(xy))
+    return SpaceOpening(
+        id=did, tag="D1", category="door", width_m=0.9, height_m=2.1, plan_center_m=list(xy)
+    )
 
 
 def _model(*spaces):
@@ -82,7 +84,9 @@ def test_closet_without_located_door_is_kept_and_flagged():
 def test_door_at_corner_of_two_rooms_is_ambiguous():
     clo = _space("L1-103", (6, 0, 8, 2), "closet")
     m = _model(_space("L1-101", (0, 0, 6, 2)), _space("L1-102", (0, 2, 8, 6)), clo)
-    res = merge_closets_and_shafts(m, doors=[{"id": "D3", "level_id": "L1", "plan_center_m": [6.0, 2.0]}])
+    res = merge_closets_and_shafts(
+        m, doors=[{"id": "D3", "level_id": "L1", "plan_center_m": [6.0, 2.0]}]
+    )
     assert res.merged == [] and "more than one room" in res.kept[0].reason
 
 
@@ -132,7 +136,10 @@ def test_shaft_next_to_merged_closet_sees_the_room():
     shaft = _space("L1-S1", (6, 0, 7, 3), "shaft")  # only touches the closet
     m = _model(_space("L1-101", (0, 0, 4, 3)), clo, shaft)
     res = merge_closets_and_shafts(m)
-    assert [(r.source_id, r.target_id) for r in res.merged] == [("L1-103", "L1-101"), ("L1-S1", "L1-101")]
+    assert [(r.source_id, r.target_id) for r in res.merged] == [
+        ("L1-103", "L1-101"),
+        ("L1-S1", "L1-101"),
+    ]
     assert m.spaces["L1-101"].merged_from == ["L1-103", "L1-S1"]
     assert abs(m.spaces["L1-101"].area_m2 - 21.0) < 1e-6
 
@@ -153,12 +160,24 @@ def test_toplit_area_recomputed_after_merge():
     clo = _space("L1-103", (6, 0, 8, 2), "closet")
     clo.openings.append(_door("D7", (6.0, 1.0)))
     clo.daylight.toplit.append(
-        DaylitZone(id="T1", zone_class="under_skylight", window_id="SK1", polygon_m=_rect(6, 0, 8, 2), area_m2=4.0)
+        DaylitZone(
+            id="T1",
+            zone_class="under_skylight",
+            window_id="SK1",
+            polygon_m=_rect(6, 0, 8, 2),
+            area_m2=4.0,
+        )
     )
     clo.daylight.toplit_m2 = 4.0
     room = _space("L1-101", (0, 0, 6, 4))
     room.daylight.toplit.append(
-        DaylitZone(id="T2", zone_class="under_skylight", window_id="SK2", polygon_m=_rect(5, 0, 7, 2), area_m2=2.0)
+        DaylitZone(
+            id="T2",
+            zone_class="under_skylight",
+            window_id="SK2",
+            polygon_m=_rect(5, 0, 7, 2),
+            area_m2=2.0,
+        )
     )
     room.daylight.toplit_m2 = 2.0
     m = _model(room, clo)

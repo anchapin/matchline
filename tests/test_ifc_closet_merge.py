@@ -24,10 +24,14 @@ class _Named:
 
 
 def _place(f, xyz, parent, refdir=None):
-    kw = {"Location": f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in xyz))}
+    kw = {
+        "Location": f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in xyz))
+    }
     if refdir:
         kw["Axis"] = f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0))
-        kw["RefDirection"] = f.create_entity("IfcDirection", DirectionRatios=tuple(float(v) for v in refdir))
+        kw["RefDirection"] = f.create_entity(
+            "IfcDirection", DirectionRatios=tuple(float(v) for v in refdir)
+        )
     ax = f.create_entity("IfcAxis2Placement3D", **kw)
     return f.create_entity("IfcLocalPlacement", PlacementRelTo=parent, RelativePlacement=ax)
 
@@ -35,18 +39,40 @@ def _place(f, xyz, parent, refdir=None):
 def _build(path, closet_name="CLOSET 102", closet_long=None, with_door=True, extra=()):
     """Office (0,0)-(4,3), closet (4.2,0)-(6,1.5), 0.2 m partition on x=4.1."""
     spaces = [
-        BEMSpace(sid="a", name="OFFICE 101", number="101",
-                 polygon_m=[(0, 0), (4, 0), (4, 3), (0, 3)], area_m2=12.0, volume_m3=36.0),
-        BEMSpace(sid="b", name=closet_name, number="102",
-                 polygon_m=[(4.2, 0), (6, 0), (6, 1.5), (4.2, 1.5)], area_m2=2.7, volume_m3=8.1),
+        BEMSpace(
+            sid="a",
+            name="OFFICE 101",
+            number="101",
+            polygon_m=[(0, 0), (4, 0), (4, 3), (0, 3)],
+            area_m2=12.0,
+            volume_m3=36.0,
+        ),
+        BEMSpace(
+            sid="b",
+            name=closet_name,
+            number="102",
+            polygon_m=[(4.2, 0), (6, 0), (6, 1.5), (4.2, 1.5)],
+            area_m2=2.7,
+            volume_m3=8.1,
+        ),
         *extra,
     ]
-    bem = BEMModel(building_name="T", spaces=spaces, openings=[],
-                   ring_m=[(0, 0), (6, 0), (6, 3), (0, 3)], wall_height_m=H,
-                   area_delta_pct=0.0, simplify_tolerance=2.0)
+    bem = BEMModel(
+        building_name="T",
+        spaces=spaces,
+        openings=[],
+        ring_m=[(0, 0), (6, 0), (6, 3), (0, 3)],
+        wall_height_m=H,
+        area_delta_pct=0.0,
+        simplify_tolerance=2.0,
+    )
     write_ifc4(bem, path)
     f = ifcopenshell.open(str(path))
-    body = [c for c in f.by_type("IfcGeometricRepresentationSubContext") if c.ContextIdentifier == "Body"][0]
+    body = [
+        c
+        for c in f.by_type("IfcGeometricRepresentationSubContext")
+        if c.ContextIdentifier == "Body"
+    ][0]
     storey = f.by_type("IfcBuildingStorey")[0]
     by = {s.Name: s for s in f.by_type("IfcSpace")}
     if closet_long:
@@ -59,13 +85,23 @@ def _build(path, closet_name="CLOSET 102", closet_long=None, with_door=True, ext
         op = f.create_entity("IfcOpeningElement", GlobalId=_guid.new(), Name="Op")
         op.ObjectPlacement = _place(f, (0.75, 0.0, 0.0), wall.ObjectPlacement)
         _add_solid(f, op, _rect_profile(f, 0.9, 0.2), 2.1, body)
-        f.create_entity("IfcRelVoidsElement", GlobalId=_guid.new(),
-                        RelatingBuildingElement=wall, RelatedOpeningElement=op)
-        door = f.create_entity("IfcDoor", GlobalId=_guid.new(), Name="D1", OverallWidth=0.9, OverallHeight=2.1)
+        f.create_entity(
+            "IfcRelVoidsElement",
+            GlobalId=_guid.new(),
+            RelatingBuildingElement=wall,
+            RelatedOpeningElement=op,
+        )
+        door = f.create_entity(
+            "IfcDoor", GlobalId=_guid.new(), Name="D1", OverallWidth=0.9, OverallHeight=2.1
+        )
         door.ObjectPlacement = _place(f, (0, 0, 0), op.ObjectPlacement)
         _add_solid(f, door, _rect_profile(f, 0.9, 0.04), 2.1, body)
-        f.create_entity("IfcRelFillsElement", GlobalId=_guid.new(),
-                        RelatingOpeningElement=op, RelatedBuildingElement=door)
+        f.create_entity(
+            "IfcRelFillsElement",
+            GlobalId=_guid.new(),
+            RelatingOpeningElement=op,
+            RelatedBuildingElement=door,
+        )
         prods.append(door)
     _Sp.assign_container(f, products=prods, relating_structure=storey)
     f.write(str(path))
