@@ -1703,6 +1703,42 @@ def _classify_envelope(model):
     return counts
 
 
+OPENING_DUPLICATE_TOL_M = 0.05  # Pascal cleanup.ts OPENING_DUPLICATE_TOLERANCE
+
+
+def _drop_duplicate_openings(openings):
+    """Drop openings doubled on top of each other in one host wall (#578).
+
+    Two openings are copies when they share category and tag and their
+    width, height, sill and position along the wall all agree within
+    OPENING_DUPLICATE_TOL_M. The copy whose GlobalId sorts first is kept, so
+    the result does not depend on file order. An opening missing any of those
+    values is never treated as a copy. Idea from Pascal's cleanup.ts (MIT,
+    Copyright (c) 2026 Pascal Group Inc., commit 67f8041).
+    """
+    tol = OPENING_DUPLICATE_TOL_M + 1e-9
+    keys = ("width_m", "height_m", "sill_m", "s_center_m")
+    kept, dropped = [], []
+    for o in sorted(openings, key=lambda o: o.id):
+        vals = [getattr(o, k) for k in keys]
+        twin = None
+        if all(v is not None for v in vals):
+            for k in kept:
+                kv = [getattr(k, n) for n in keys]
+                if (
+                    k.category == o.category
+                    and k.tag == o.tag
+                    and all(v is not None for v in kv)
+                    and all(abs(a - b) <= tol for a, b in zip(vals, kv))
+                ):
+                    twin = k
+                    break
+        (dropped if twin is not None else kept).append(o)
+    order = {o.id: i for i, o in enumerate(openings)}
+    kept.sort(key=lambda o: order[o.id])
+    return kept, dropped
+
+
 def _facades_onto_openings(model):
     """Give attached wall openings the facade Tier 1 found for their host wall.
 
@@ -1823,6 +1859,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     unlabeled = 0
 
     shade_jobs = []  # (IfcShadingDevice, level id, storey elevation)
+    duplicate_openings = []  # BimOpenings dropped as doubled copies (#578)
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
@@ -1991,6 +2028,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                             host_gid=gid,
                         )
                     )
+
+                be.openings, dup = _drop_duplicate_openings(be.openings)
+                duplicate_openings.extend(dup)
 
             # skylights: windows hosted in a roof or slab (roadmap item 3).
             # Only window fills are read; an unfilled slab void is a shaft
@@ -2161,6 +2201,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
     if n_junction_splits:
         summary_parts.append(f"wall splits: {n_junction_splits} at X/T junctions")
+    if duplicate_openings:
+        summary_parts.append(
+            f"duplicate openings: {len(duplicate_openings)} doubled copies dropped"
+        )
     if loops_n:
         summary_parts.append(
             f"unclaimed wall loops: {loops_n} ({loops_area:.2f} m^2) flagged for review"
