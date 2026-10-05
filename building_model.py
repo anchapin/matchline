@@ -578,6 +578,25 @@ class ReviewItem:
 
 
 @dataclass
+class SpaceAdjacency:
+    """Two spaces sharing a border with no wall on it (#582).
+
+    ``from_m``/``to_m`` run along the midline of the shared border in the
+    canonical frame. A virtual border carries no wall area and no U-value.
+    """
+
+    space_a: str
+    space_b: str
+    level_id: str
+    from_m: List[float] = field(default_factory=list)
+    to_m: List[float] = field(default_factory=list)
+    length_m: float = 0.0
+    boundary: str = "virtual"
+    virtual_element_id: str = ""  # IfcVirtualElement GlobalId when the file models it
+    provenance: Provenance | None = None
+
+
+@dataclass
 class BuildingModel:
     """Canonical building model: cross-discipline linking layer.
 
@@ -659,6 +678,7 @@ class BuildingModel:
     # ThermalTransmittance); "" -> generic slab on grade on export
     slab_construction_id: str = ""
     shading: List[ShadingSurface] = field(default_factory=list)
+    space_adjacencies: List[SpaceAdjacency] = field(default_factory=list)
     # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
     bim_elements: List[BimElement] = field(default_factory=list)

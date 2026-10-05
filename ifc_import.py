@@ -1705,6 +1705,51 @@ def _read_ceilings(model, f, scale, space_by_gid, level_by_storey, prov):
     return with_c, len(model.spaces) - with_c, len(covs)
 
 
+def _plan_geom(el, scale):
+    """Canonical-frame plan footprint (shapely convex hull, any dimension) or None."""
+    from shapely.geometry import MultiPoint
+
+    verts = _geom_verts(el)
+    if not verts:
+        return None
+    t = _placement_transform(el, scale)
+    pts = []
+    for i in range(0, len(verts), 3):
+        wx, wy, _ = _apply(t, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+        pts.append(_to_canonical(wx, wy))
+    hull = MultiPoint(pts).convex_hull
+    return None if hull.is_empty else hull
+
+
+def _find_virtual_borders(model, f, scale, level_by_storey, sheet, revision):
+    """Wall-less space borders (#582); see ifc_space_borders."""
+    from ifc_space_borders import find_virtual_borders
+
+    level_of = {}
+    for rel in f.by_type("IfcRelContainedInSpatialStructure"):
+        lid = level_by_storey.get(getattr(rel.RelatingStructure, "GlobalId", None))
+        for o in rel.RelatedElements or []:
+            if lid:
+                level_of[o.GlobalId] = lid
+    walls = {}
+    for e in model.bim_elements:
+        if not e.ifc_class.startswith(("IfcWall", "IfcCurtainWall")):
+            continue
+        try:
+            g = _plan_geom(f.by_guid(e.global_id), scale)
+        except RuntimeError:
+            continue
+        if g is not None:
+            walls.setdefault(e.level_id, []).append(g)
+    virtual = {}
+    for v in sorted(f.by_type("IfcVirtualElement"), key=lambda v: v.GlobalId):
+        lid = level_of.get(v.GlobalId)
+        g = _plan_geom(v, scale) if lid else None
+        if g is not None:
+            virtual.setdefault(lid, []).append((v.GlobalId, g))
+    return find_virtual_borders(model, walls, virtual, sheet=sheet, revision=revision)
+
+
 def _read_slab_construction(model, f, prov, skip=()):
     """Set ``model.slab_construction_id`` from ground slabs' stated U.
 
@@ -2452,6 +2497,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     ceil_with, ceil_without, ceil_covs = _read_ceilings(
         model, f, scale, space_by_gid, level_by_storey, prov
     )
+    borders = _find_virtual_borders(model, f, scale, level_by_storey, sheet, revision)
     _facades_onto_openings(model)
 
     total_openings = sum(len(e.openings) for e in model.bim_elements)
@@ -2500,6 +2546,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 f" +{more} more" if more > 0 else ""
             )
         summary_parts.append(part)
+    if borders:
+        n_file = sum(1 for b in borders if b.virtual_element_id)
+        summary_parts.append(
+            f"space borders: {len(borders)} virtual ({n_file} from IfcVirtualElement), "
+            f"{sum(b.length_m for b in borders):.2f} m"
+        )
     if ceil_covs:
         summary_parts.append(
             f"ceilings: {ceil_with} spaces from {ceil_covs} IfcCovering CEILING, "

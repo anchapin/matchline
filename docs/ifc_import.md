@@ -404,3 +404,29 @@ space's history. The import summary reports
 `ceilings: N spaces from M IfcCovering CEILING, K without`. Idea from
 Pascal's ceiling handling (MIT, Copyright (c) 2026 Pascal Group Inc., commit
 67f8041).
+
+## Open-plan borders between spaces (#582)
+
+An open floor split into several IfcSpaces has no wall between them, so the
+envelope alone never says the spaces touch. The importer now records each
+wall-less border as a `SpaceAdjacency` with `boundary="virtual"` in
+`BuildingModel.space_adjacencies`.
+
+- Two spaces on the same level share a border when their edges run parallel
+  (sine ≤ 0.05), sit within 0.35 m of each other and overlap along their
+  length. The border runs on the midline between the two edges.
+- Any part of that midline inside an IFC wall or curtain-wall footprint is
+  walled and dropped. A border that meets a crossing wall (an exterior wall at
+  its end) stops at that wall's face. Pieces under 0.08 m are dropped.
+- A virtual border adds no wall area, no envelope segment and no U-value.
+- When the file models an `IfcVirtualElement` along the border (covering at
+  least half of it), the adjacency names its GlobalId and carries provenance
+  `ifc_import:tier0:virtual_element` at conf 0.9. A border found from the
+  space polygons alone is `ifc_import:tier1:space_border` at conf 0.7.
+- The import summary reports `space borders: N virtual (M from
+  IfcVirtualElement), L m`.
+
+Not covered yet: curtain-wall facades that close a space's open side, and
+using virtual borders in the closet/shaft merge. Idea from Pascal's
+room-first.ts (MIT, Copyright (c) 2026 Pascal Group Inc., commit 67f8041); no
+code ported verbatim.
