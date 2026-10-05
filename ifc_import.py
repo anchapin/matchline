@@ -430,6 +430,25 @@ def _parse_space_name(name):
     return name, None
 
 
+def _space_name_number(sp):
+    """(name, number, source) for an IfcSpace.
+
+    IFC convention (Revit, ArchiCAD): LongName is the room name and Name is
+    the room number (#580). Used when LongName is set and Name is a single
+    room-number token; otherwise the convention-dependent Name parse runs,
+    keeping LongName as the name when there is one.
+    """
+    raw_name = (getattr(sp, "Name", None) or "").strip()
+    long_name = (getattr(sp, "LongName", None) or "").strip()
+    if long_name:
+        if raw_name and _ROOMNUM.match(raw_name) and any(c.isdigit() for c in raw_name):
+            return long_name, raw_name, "ifc_longname"
+        _label, number = _parse_space_name(raw_name)
+        return long_name, number, "ifc_longname+name_parse"
+    label, number = _parse_space_name(raw_name)
+    return label, number, "name_parse"
+
+
 _TAG_RE = re.compile(r"^(.+?)\s*\(")
 
 
@@ -1640,7 +1659,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
         # --- spaces -------------------------------------------------------
         for sp in _aggregated(storey, "IfcSpace"):
-            label, number = _parse_space_name(sp.Name)
+            label, number, name_source = _space_name_number(sp)
             if number is None:
                 unlabeled += 1
                 sid = f"{level_id}-UNLABELED-{unlabeled}"
@@ -1661,8 +1680,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 polygon_m=[[round(x, 4), round(y, 4)] for x, y in polygon],
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
-                core_provenance=prov(method, conf, note, gid),
-                label_confidence=0.9 if number else 0.6,
+                core_provenance=prov(method, conf, f"{note}; name/number via {name_source}", gid),
+                label_confidence=(0.95 if name_source == "ifc_longname" else 0.9) if number else 0.6,
             )
             cls = _ifc_space_class(sp)
             if cls is not None:
