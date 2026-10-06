@@ -661,7 +661,8 @@ def load_aec_bench(
     if not xml_path.exists():
         raise FileNotFoundError(
             f"AEC Bench annotations file not found: {xml_path}\n"
-            "Hint: The dataset directory should contain 'annotations_15.xml' and a 'pdf/' subdirectory."
+            "Hint: The dataset directory should contain 'annotations_15.xml' "
+            "and a 'pdf/' subdirectory."
         )
     tree = safe_xml_parse(xml_path)
     samples: list[SymbolSample] = []

@@ -67,6 +67,13 @@ def _dim_bucket(dim_m: float) -> int:
     return round(dim_m / OPENING_DIM_TOL_M)
 
 
+def _entry_sheets(entries) -> list:
+    """Sorted distinct source sheet ids of (index, opening) dedup entries."""
+    return sorted(
+        {o.provenance.sheet_id for _, o in entries if o.provenance and o.provenance.sheet_id}
+    )
+
+
 def _dedupe_space_openings(model: BuildingModel) -> None:
     """Merge duplicate SpaceOpening entries across ALL spaces (Issue #404).
 
@@ -119,7 +126,10 @@ def _dedupe_space_openings(model: BuildingModel) -> None:
                 confidence=max(
                     (o.provenance.confidence for _, o in entries if o.provenance), default=0.9
                 ),
-                note=f"deduplicated {len(entries)} entries for facade='{facade}' tag='{tag}'; sheets: {sorted({o.provenance.sheet_id for _, o in entries if o.provenance and o.provenance.sheet_id})}",
+                note=(
+                    f"deduplicated {len(entries)} entries for facade='{facade}' tag='{tag}'; "
+                    f"sheets: {_entry_sheets(entries)}"
+                ),
             )
             best_op.needs_review = any(o.needs_review for _, o in entries)
             kept_op_ids.add(best_op.id)

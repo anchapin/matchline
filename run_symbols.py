@@ -36,7 +36,8 @@ def main(out_path: str = "symbols_results.json"):
     pred_lo = clf.predict_logodds(Xte, alpha=0.1)
     acc_lo = float((pred_lo == yte).mean())
     print(
-        f"symbols WiSARD: sum acc={acc * 100:.2f}%  logodds(a=0.1) acc={acc_lo * 100:.2f}% train={t_train:.3f}s",
+        f"symbols WiSARD: sum acc={acc * 100:.2f}%  "
+        f"logodds(a=0.1) acc={acc_lo * 100:.2f}% train={t_train:.3f}s",
         flush=True,
     )
     cm = np.zeros((10, 10), int)
@@ -112,7 +113,8 @@ def main(out_path: str = "symbols_results.json"):
         if is_complex_invariant(inv):
             complex_rows.append({"label": label, "inv": inv})
             print(
-                f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'} [COMPLEX — gd_complex_row]"
+                f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'} "
+                "[COMPLEX — gd_complex_row]"
             )
         else:
             print(f"  {label:22s} {got} expected {expect} {'OK' if ok else 'MISMATCH'}")

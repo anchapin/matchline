@@ -537,24 +537,24 @@ def break_gbxml_wall_areas(m: BuildingModel):
         lines.append("        <Azimuth>0</Azimuth>")
         lines.append("        <Tilt>90</Tilt>")
         lines.append(
-            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append("      </RectangularGeometry>")
         lines.append("      <PlanarGeometry><Polygon>")
         lines.append(
-            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append("      </Polygon></PlanarGeometry>")
         lines.append("    </Surface>")

@@ -306,7 +306,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "facade-takeoff",
-        help="facade area takeoffs on CMP Facade (see DATASETS.md for setup; use --data-root to specify)",
+        help=(
+            "facade area takeoffs on CMP Facade "
+            "(see DATASETS.md for setup; use --data-root to specify)"
+        ),
     )
     p.add_argument("--n", type=int, default=5, help="facades for the detailed demo")
     p.add_argument("--data-root", default=None, help="CMP Facade dataset root")

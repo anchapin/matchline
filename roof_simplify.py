@@ -200,7 +200,9 @@ def simplify_roof(
                 skipped.append(
                     {
                         "pair": list(key),
-                        "reason": f"{which} budget: area {da * 100:+.3f}%, aperture {dap * 100:+.3f}%",
+                        "reason": (
+                            f"{which} budget: area {da * 100:+.3f}%, aperture {dap * 100:+.3f}%"
+                        ),
                     }
                 )
                 continue

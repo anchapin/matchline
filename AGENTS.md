@@ -66,7 +66,7 @@ External datasets (AEC Bench, CMP Facade, CubiCasa5K, FloorPlanCAD) live under `
 
 ## Style
 
-`ruff` (E, F, I, W, FA; ignores `E501`, `E701`, `E702`, `E741`). `ruff-format` for formatting. Type hints on public functions. `from __future__ import annotations` where it helps.
+`ruff` (E, F, I, W, FA; enforces 100-col `E501`; ignores `E701`, `E702`, `E741`). Long geometry or XML literals opt out per line with `# noqa: E501`. `ruff-format` for formatting. Type hints on public functions. `from __future__ import annotations` where it helps.
 
 ## Adding a module
 

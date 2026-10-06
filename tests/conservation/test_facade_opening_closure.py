@@ -58,7 +58,8 @@ class TestFacadeOpeningClosureIntegration:
         err = errors[0]
         assert err.message, "facade_opening_closure error should have a message"
         assert "opening" in err.message.lower() or "facade" in err.message.lower(), (
-            f"facade_opening_closure error message should mention 'opening' or 'facade': {err.message}"
+            "facade_opening_closure error message should mention 'opening' or 'facade': "
+            f"{err.message}"
         )
 
     def test_error_not_warn_severity(self):

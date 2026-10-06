@@ -9,7 +9,8 @@ After centreline moves (#579), linings (#577) and end joins (#575):
   with one face leaves its end beside the other's end, offset sideways by
   half the thickness difference, where no L or T join can close it. That
   end moves sideways onto the other wall's end, so the two read as one
-  continuous run. Only the thinner wall moves; equal thicknesses never do. Openings are held on spaces in absolute coordinates, so
+  continuous run. Only the thinner wall moves; equal thicknesses never do.
+  Openings are held on spaces in absolute coordinates, so
   nothing else moves.
 * **Junction splits.** Where two segments cross mid-span (X), both split at
   the crossing; where one segment's end lands mid-span on another (T), the
