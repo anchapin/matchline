@@ -481,3 +481,197 @@ def appendix_g_split(model, depth_m: float = PERIMETER_DEPTH_M):
         notes=list(model.notes) + [note] + res.notes,
     )
     return new, res
+
+
+def _recut_air_wall(aw, pieces_of, k0):
+    """An existing air wall re-cut onto the pieces of whichever side was split."""
+    out = [aw]
+    for side in (0, 1):
+        nxt = []
+        for a in out:
+            sid = a.space_ids[side]
+            if sid not in pieces_of:
+                nxt.append(a)
+                continue
+            L = math.hypot(a.p1[0] - a.p0[0], a.p1[1] - a.p0[1])
+            ux, uy = (a.p1[0] - a.p0[0]) / L, (a.p1[1] - a.p0[1]) / L
+            seg = LineString([a.p0, a.p1])
+            ivs = []
+            for psid, pg in pieces_of[sid]:
+                g = seg.intersection(pg.buffer(_SNAP_M * 10, join_style=2))
+                for q0, q1 in _segments(g):
+                    t0 = (q0[0] - a.p0[0]) * ux + (q0[1] - a.p0[1]) * uy
+                    t1 = (q1[0] - a.p0[0]) * ux + (q1[1] - a.p0[1]) * uy
+                    ivs.append([max(0.0, min(t0, t1)), min(L, max(t0, t1)), psid])
+            ivs.sort(key=lambda iv: (iv[0], iv[1], iv[2]))
+            for i in range(1, len(ivs)):
+                if ivs[i][0] < ivs[i - 1][1]:  # buffered pieces overlap at shared lines
+                    mid = (ivs[i][0] + ivs[i - 1][1]) / 2
+                    ivs[i - 1][1] = ivs[i][0] = mid
+            for t0, t1, psid in ivs:
+                if t1 - t0 < AIR_WALL_MIN_M:
+                    continue
+                ids = list(a.space_ids)
+                ids[side] = psid
+                nxt.append(
+                    AirWall(
+                        a.id,
+                        (ids[0], ids[1]),
+                        (a.p0[0] + t0 * ux, a.p0[1] + t0 * uy),
+                        (a.p0[0] + t1 * ux, a.p0[1] + t1 * uy),
+                    )
+                )
+        out = nxt
+    if len(out) == 1 and out[0] is aw:
+        return out
+    return [
+        dataclasses.replace(a, id=f"{aw.id}-{k0 + n + 1}" if len(out) > 1 else aw.id)
+        for n, a in enumerate(out)
+    ]
+
+
+def _recut_horizontal(hz, pieces_of):
+    """Floor/ceiling/roof surfaces re-cut so each names one piece above and below."""
+    lo, up = hz.lower_space_id, hz.upper_space_id
+    if lo not in pieces_of and up not in pieces_of:
+        return [hz], 0.0
+    los = pieces_of.get(lo) or [(lo, None)]
+    ups = pieces_of.get(up) or [(up, None)]
+    out, k, lost = [], 0, 0.0
+    before = sum(Polygon(lp).area for lp in hz.loops)
+    after = 0.0
+    for ls, lg in los:
+        for us, ug in ups:
+            loops = []
+            for lp in hz.loops:
+                g = make_valid(Polygon(lp))
+                if lg is not None:
+                    g = g.intersection(lg)
+                if ug is not None:
+                    g = g.intersection(ug)
+                for part in _polys(g):
+                    if part.area >= MIN_ZONE_M2 and not part.interiors:
+                        loops.append(_ring(part))
+                        after += part.area
+            if loops:
+                k += 1
+                out.append(
+                    dataclasses.replace(
+                        hz, id=f"{hz.id}-{k}", lower_space_id=ls, upper_space_id=us, loops=loops
+                    )
+                )
+    lost = before - after
+    return out, lost
+
+
+def appendix_g_split_levels(model, depth_m: float = PERIMETER_DEPTH_M):
+    """Appendix G room split on every storey of a multi-storey BEMModel (#648).
+
+    A single-storey model goes to :func:`appendix_g_split` unchanged. Each
+    level gets perimeter/core blocks from its outer wall loop (block ids
+    prefixed with the level id); rooms a block line cuts are split into
+    pieces joined by air walls; wall openings move to the piece owning their
+    facade on that level; floors, ceilings and roofs are re-cut so each
+    surface names one piece above and one below; air walls already in the
+    model (around atria) are re-cut onto the pieces. An atrium splits at its
+    base level and its pieces keep its full height. Courtyard loops are not
+    perimeter edges (noted). Returns ``(new_model, SplitResult)``.
+    """
+    levels = sorted(getattr(model, "levels", None) or [], key=lambda lv: (lv.elevation_m, lv.id))
+    if len(levels) <= 1:
+        return appendix_g_split(model, depth_m=depth_m)
+    from bem_helpers import _edge_spaces, _wall_edges
+    from bem_multistorey import _facade, _signed_area
+
+    spaces, air, zones, split_from, notes = [], [], [], {}, []
+    by_parent: Dict[str, Dict[str, float]] = {}
+    by_parent_facade: Dict[Tuple[str, str], Dict[str, float]] = {}
+    base = levels[0].id
+    for lv in levels:
+        lsp = [sp for sp in model.spaces if (sp.level_id or base) == lv.id]
+        if not lsp:
+            continue
+        outer = [r for r in lv.rings if _signed_area(r) > 0]
+        if not outer:
+            spaces.extend(lsp)
+            notes.append(f"level {lv.id}: no exterior wall loop, rooms not zoned")
+            continue
+        ring = max(outer, key=_signed_area)
+        if len(lv.rings) > 1:
+            notes.append(
+                f"level {lv.id}: {len(lv.rings) - 1} more wall loop(s) (courtyards) "
+                "not used as perimeter edges"
+            )
+        try:
+            blocks = perimeter_core(ring, depth_m=depth_m, prefix=f"{lv.id}-")
+        except ZoningError as e:
+            spaces.extend(lsp)
+            notes.append(f"level {lv.id}: not zoned ({e})")
+            continue
+        res = split_spaces(blocks, lsp)
+        spaces.extend(res.spaces)
+        air.extend(res.air_walls)
+        zones.extend(res.zones)
+        split_from.update(res.split_from)
+        notes.extend(res.notes)
+        edges = _wall_edges(ring)
+        for (p0, p1), sid in zip(edges, _edge_spaces(edges, res.spaces)):
+            parent = res.split_from.get(sid)
+            if parent is None:
+                continue
+            ln = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            d = by_parent.setdefault(parent, {})
+            d[sid] = d.get(sid, 0.0) + ln
+            d = by_parent_facade.setdefault((parent, _facade(p0, p1)), {})
+            d[sid] = d.get(sid, 0.0) + ln
+
+    pieces_of: Dict[str, list] = {}
+    for sp in spaces:
+        if sp.sid in split_from:
+            pieces_of.setdefault(split_from[sp.sid], []).append(
+                (sp.sid, Polygon(sp.polygon_m).buffer(0))
+            )
+
+    def _best(d):
+        return max(sorted(d), key=lambda s: d[s]) if d else ""
+
+    openings = []
+    for u in model.openings:
+        if u.space_sid in pieces_of:
+            if u.category == "skylight":
+                pieces = [s for s in spaces if split_from.get(s.sid) == u.space_sid]
+                sid = max(pieces, key=lambda s: (s.area_m2, s.sid)).sid
+            else:
+                d = by_parent_facade.get((u.space_sid, u.host_facade)) or by_parent.get(u.space_sid)
+                sid = _best(d or {}) or pieces_of[u.space_sid][0][0]
+            u = dataclasses.replace(u, space_sid=sid)
+        openings.append(u)
+
+    horizontals, lost = [], 0.0
+    for hz in getattr(model, "horizontals", None) or []:
+        cut, miss = _recut_horizontal(hz, pieces_of)
+        horizontals.extend(cut)
+        lost += miss
+    if lost > AREA_TOL_REL * 100:
+        notes.append(f"{lost:.6f} m2 of floor/ceiling/roof not matched to a room piece")
+
+    old_air = []
+    for aw in getattr(model, "air_walls", None) or []:
+        old_air.extend(_recut_air_wall(aw, pieces_of, 0))
+    n_split = len(set(split_from.values()))
+    note = (
+        f"Appendix G zoning on {len(levels)} storeys: {len(zones)} thermal zones; "
+        f"{n_split} room(s) split at block lines into {len(split_from)} pieces joined by "
+        f"{len(air)} air wall(s)."
+    )
+    res = SplitResult(spaces, air, zones, split_from, notes)
+    new = dataclasses.replace(
+        model,
+        spaces=spaces,
+        openings=openings,
+        horizontals=horizontals,
+        thermal_zones=zones,
+        air_walls=old_air + air,
+        notes=list(model.notes) + [note] + notes,
+    )
+    return new, res
