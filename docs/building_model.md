@@ -193,3 +193,28 @@ original roof: true sloped area (`area_tol`, default 2%) and solar aperture
   carry `roof_simplify:merge` provenance naming their sources) and
   `roof_simplify_report()` gives both deltas, every merge and every refusal.
   Output and report are the same for any input order.
+
+## gbXML export of sloped roofs (#618)
+
+When the model carries at least one tilted roof plane, `write_gbxml` writes:
+
+- One `Roof` surface per plane, clipped to the envelope ring, with its true 3-D
+  PolyLoop (CCW from above, outward normal up) and its tilt and azimuth in
+  `RectangularGeometry`.
+- Walls whose top meets the roof as a real outline: a wall under a gable end
+  gets a peaked `PlanarGeometry` loop, a wall under an eave keeps its
+  rectangle. Wall openings stay under the wall's lowest top point.
+- Each space's `ClosedShell` built from floor, roof-following walls and the
+  roof pieces over it, and its `Volume` from that closed shell
+  (`bem_roof.shell_volume`), not area x wall height.
+- Skylights laid out one roof surface at a time, so each sits wholly on one
+  plane, lifted onto that plane.
+
+`bem_volume_conservation` now compares the space volumes against the ring's
+closed shell under the roof planes. Models with no roof planes, or only flat
+ones, export byte for byte as before.
+
+Known gaps: roof overhang past the walls is dropped (noted in the file
+comment), not written as shading; the BEM writers are single-storey, so roof
+planes on upper levels are skipped with a note. Roof planes are top-of-roof
+faces, so shells run to the outside of the roof.

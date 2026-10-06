@@ -73,6 +73,21 @@ class BEMShade:
 
 
 @dataclass
+class BEMRoof:
+    """One roof plane in the BEM frame (x east, y north, z above the floor).
+
+    ``vertices`` is the 3-D outline of the top-of-roof face; ``tilt_deg``
+    and ``azimuth_deg`` (compass, clockwise from north; None when flat)
+    carry over from ``building_model.RoofPlane`` (#613, #618).
+    """
+
+    id: str
+    vertices: list
+    tilt_deg: float
+    azimuth_deg: Optional[float] = None
+
+
+@dataclass
 class BEMModel:
     building_name: str
     spaces: list  # BEMSpace
@@ -97,6 +112,8 @@ class BEMModel:
     # ground slab U (W/m2K) from BuildingModel.slab_construction_id;
     # None -> the generic slab-on-grade construction
     slab_u_value_w_m2k: Optional[float] = None
+    # BEMRoof planes (#618); empty -> flat roof at wall_height_m, as before
+    roof_planes: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 
