@@ -146,7 +146,7 @@ class SpaceOpening:
     sill_m: Optional[float] = None
     head_m: Optional[float] = None  # sill + height; drives daylighting
     host_facade: str = ""  # e.g. "south"
-    host_interval_m: Optional[list] = None  # [s0, s1] along facade, meters
+    host_interval_m: Optional[list] = None  # [s0, s1] along facade (IFC: along host wall), m
     s_center_m: Optional[float] = None  # exact along-wall position
     area_m2: Optional[float] = None
     provenance: Provenance | None = None
@@ -375,6 +375,9 @@ class OpeningAttachmentSummary:
     # NOT unattached: openings attached using the host wall's own RefDirection
     # because no envelope edge settled its direction (#666, confidence 0.85)
     ref_direction_fallback: int = 0
+    # NOT unattached: openings attached by their centre whose edges reach
+    # another room, flagged ``adjacency_ambiguous`` for review (#681)
+    adjacency_ambiguous: int = 0
 
     @property
     def total(self) -> int:
@@ -387,11 +390,12 @@ class OpeningAttachmentSummary:
 
     def summary_line(self) -> str:
         """Human-readable one-line summary for import logs."""
-        fb = (
-            f" ({self.ref_direction_fallback} attached via RefDirection)"
-            if self.ref_direction_fallback
-            else ""
-        )
+        notes = []
+        if self.ref_direction_fallback:
+            notes.append(f"{self.ref_direction_fallback} attached via RefDirection")
+        if self.adjacency_ambiguous:
+            notes.append(f"{self.adjacency_ambiguous} spanning a room boundary")
+        fb = f" ({'; '.join(notes)})" if notes else ""
         if self.is_empty():
             return f"0 openings unattached{fb}"
         parts = []
@@ -623,6 +627,8 @@ class ReviewItem:
         "elevation_extraction",
         "facade_takeoff",
         "opening_attachment",
+        "adjacency_ambiguous",
+        "facade_unclear",
         "space_merge",
         "unclaimed_wall_loop",
         "ceiling",
@@ -863,6 +869,8 @@ class BuildingModel:
             "window_reconciliation",
             "gd_complex_row",
             "opening_attachment",
+            "adjacency_ambiguous",
+            "facade_unclear",
             "space_merge",
             "unclaimed_wall_loop",
             "ceiling",
