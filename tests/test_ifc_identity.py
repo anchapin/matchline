@@ -96,7 +96,12 @@ def test_file_without_identity_keeps_derived_ids(tmp_path):
     assert not [r for r in m.review_queue if r.kind == "matchline_identity"]
 
 
-def test_duplicate_identity_keeps_globalid_and_flags_review(tmp_path):
+def _duplicate_opening_identity(tmp_path, gids=None):
+    """Round-trip, give the second opening the first one's id, re-import.
+
+    ``gids`` optionally pins the two openings' GlobalIds so the test controls
+    which one sorts first.
+    """
     _, _, out = _round_trip(tmp_path)
     f = ifcopenshell.open(str(out))
     ops = f.by_type("IfcOpeningElement")
@@ -107,13 +112,67 @@ def test_duplicate_identity_keeps_globalid_and_flags_review(tmp_path):
     for el in (ops[1], *[r.RelatedBuildingElement for r in ops[1].HasFillings]):
         pset = f.by_id(El.get_psets(el)[IDENTITY_PSET]["id"])
         Ps.edit_pset(f, pset=pset, properties={"MatchlineId": first})
+    if gids is not None:
+        ops[0].GlobalId, ops[1].GlobalId = gids
+    pair = (ops[0].GlobalId, ops[1].GlobalId)
+    f.write(str(tmp_path / "dup.ifc"))
+    return import_ifc(tmp_path / "dup.ifc"), first, pair
+
+
+def _assert_lowest_globalid_keeps_id(m, mid, pair):
+    keeper, loser = sorted(pair)
+    ids = [o.id for s in m.spaces.values() for o in s.openings]
+    assert ids.count(mid) == 1
+    assert loser in ids and keeper not in ids
+    items = [r for r in m.review_queue if r.kind == "matchline_identity"]
+    assert len(items) == 1 and loser in items[0].description
+
+
+def test_duplicate_identity_keeps_globalid_and_flags_review(tmp_path):
+    m, mid, pair = _duplicate_opening_identity(tmp_path)
+    _assert_lowest_globalid_keeps_id(m, mid, pair)
+
+
+@pytest.mark.parametrize(
+    "gids",
+    [
+        ("0000000000000000000001", "3zzzzzzzzzzzzzzzzzzzzz"),
+        ("3zzzzzzzzzzzzzzzzzzzzz", "0000000000000000000001"),
+    ],
+)
+def test_duplicate_opening_identity_goes_to_lowest_globalid(tmp_path, gids):
+    # either opening may be reached first; the lowest GlobalId keeps the id (#636)
+    m, mid, pair = _duplicate_opening_identity(tmp_path, gids)
+    assert pair == gids
+    _assert_lowest_globalid_keeps_id(m, mid, pair)
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_duplicate_space_identity_goes_to_lowest_globalid(tmp_path, swap):
+    b = IfcBuilder()
+    box_plan(b)
+    b.space("ROOM 102", [(10, 0), (16, 0), (16, 6), (10, 6)])
+    out = tmp_path / "b.ifc"
+    _export_ifc(import_ifc(b.write(tmp_path / "a.ifc")), out)
+    f = ifcopenshell.open(str(out))
+    sps = [sp for sp in f.by_type("IfcSpace") if IDENTITY_PSET in El.get_psets(sp)]
+    assert len(sps) >= 2
+    a, b = sps[0], sps[1]
+    mid = El.get_psets(a)[IDENTITY_PSET]["MatchlineId"]
+    import ifcopenshell.api.pset as Ps
+
+    pset = f.by_id(El.get_psets(b)[IDENTITY_PSET]["id"])
+    Ps.edit_pset(f, pset=pset, properties={"MatchlineId": mid})
+    low, high = "0000000000000000000001", "3zzzzzzzzzzzzzzzzzzzzz"
+    a.GlobalId, b.GlobalId = (high, low) if swap else (low, high)
     f.write(str(tmp_path / "dup.ifc"))
     m = import_ifc(tmp_path / "dup.ifc")
-    ids = [o.id for s in m.spaces.values() for o in s.openings]
-    assert ids.count(first) == 1
-    assert ops[1].GlobalId in ids
+    keeper, loser = (b, a) if swap else (a, b)
+    assert mid in m.spaces and len(m.spaces) == 2
     items = [r for r in m.review_queue if r.kind == "matchline_identity"]
-    assert len(items) == 1 and ops[1].GlobalId in items[0].description
+    assert len(items) == 1
+    assert loser.GlobalId in items[0].description
+    assert keeper.GlobalId not in items[0].description
 
 
 class _Op:
