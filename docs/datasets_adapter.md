@@ -17,7 +17,7 @@ The module has two distinct halves:
 
 Supported datasets:
 - **AEC-geometric-bench** — 15 real construction sheets with CVAT 1.1 XML annotations (validated).
-- **FloorPlanCAD** — HuggingFace parquet export (pending validation).
+- **FloorPlanCAD** — HuggingFace parquet export (`tilak1114/FloorPlanCAD`). `load_floorplancad` reads it; see below.
 - **ArchCAD** — 40K-sample subset on HuggingFace (`jackluoluo/ArchCAD`, gated, CC BY-NC 4.0). `load_archcad` reads its JSON modality; see below.
 
 ## Output contract
@@ -43,7 +43,27 @@ Measurement paths:
 - `normalize_tag(tag)` — canonical tag form: all whitespace removed, uppercased (`" w - 1 "` → `"W-1"`). Also used by `parse_schedule_csv`.
 - `measure_takeoff(regions, drawing_type, scale)` — sum polygon areas in m².
 - `normalize_crop(crop, size=28)` — prepare crops for WiSARD classifier input.
+- `load_floorplancad(root, size=28, scale_m_per_px=None, max_samples=None)` — FloorPlanCAD symbols + takeoff regions from the parquet export.
 - `load_archcad(root, size=28, scale_m_per_px=None, max_samples=None)` — ArchCAD symbols + takeoff regions.
+
+## FloorPlanCAD loader
+
+`load_floorplancad` reads the HuggingFace parquet export at [`tilak1114/FloorPlanCAD`](https://huggingface.co/datasets/tilak1114/FloorPlanCAD) (`data/train-00000-of-00001.parquet`, 5,308 drawings). Despite the file name it is the original release's *test* split. Put the file in `root` or `root/data/`. Reading it needs `pyarrow` (`pip install -e ".[datasets]"`). Schema, confirmed 2026-10-06 against the dataset viewer:
+
+| Column | Type | Used for |
+|---|---|---|
+| `image` | struct `{bytes: PNG, path}`, 1000 × 1000 px | cropped into each `SymbolSample` |
+| `image_id` | string | `source = "floorplancad:<image_id>"` |
+| `objects.id` | list of string | not used |
+| `objects.bbox` | list of `[x0, y0, x1, y1]` float32, 0–1000 frame | `bbox` (scaled to image px), takeoff box |
+| `objects.category` | list of string | `SymbolSample.label`, takeoff category |
+| `objects.mask` | list of per-object mask images | not used |
+
+Categories seen in the first 53 rows: `single_door`, `double_door`, `sliding_door`, `window`, `wall`, `railing`, `stair`, `escalator`, `parking`, `sink`, `urinal`, `toilet`, `bath`, `bath_tub`, `washing_machine`, `gas_stove`, `bed`, `bedside_cupboard`, `chair`, `sofa`, `table`, `tv_cabinet`, `wardrobe`, `half_height_cabinet`, `high_cabinet`, plus `class_31` and `class_32` for source ids the export left unnamed. The full FloorPlanCAD list also has folding, revolving and rolling doors, bay and blind windows, elevators, squat toilets, curtain walls and an opening symbol.
+
+Every object except the "stuff" classes (`wall`, `curtain_wall`, `railing`) becomes one `SymbolSample`, labelled with its category as stored. Doors become `door` regions, windows `window`, sinks, urinals, toilets and baths `fixture`, the opening symbol `opening`, and stairs, elevators and escalators `floor_area` (`FLOORPLANCAD_TO_TAKEOFF`). Furniture, appliances, parking and the unnamed classes are symbols with no takeoff category. `max_samples` caps the number of drawings read. The export states no scale, so areas stay px² unless `scale_m_per_px` is given.
+
+A missing column or object field, a non-struct `image`/`objects`, mismatched category and bbox counts, or a bbox that isn't 4 numbers raises `FloorPlanCADFormatError`. The original SVG release (`svg_gt/*.svg`) is detected but not decoded yet.
 
 ## ArchCAD loader
 
@@ -70,10 +90,10 @@ Only `LINE` and `CIRCLE` appear on the dataset card; the `ARC` and polyline keys
 ## Limitations
 
 - **v1 schedule input is CSV** — real drawings need Jesse's document-layout analysis (v2 gap).
-- **Tag text extraction is a v2 gap** — current annotation sets carry glyph labels but not schedule tag text.
+- **Tag text comes from OCR, not annotations** — the annotation sets carry glyph labels only; `extract_with_tags` (#668) reads the printed tags.
 - **Drawing scale must be parsed separately** — the module does not read title blocks or calibration marks.
 - **No HVAC quantities** — fixture counts are tracked but physical dimensions are not.
-- **FloorPlanCAD loader is pending validation**; the ArchCAD loader is built to the dataset card's documented JSON layout and not yet run on the real download (access is gated).
+- **FloorPlanCAD SVG path is not implemented**; only the parquet export loads. The ArchCAD loader is built to the dataset card's documented JSON layout and not yet run on the real download (access is gated).
 - **ArchCAD has no drawing scale** — areas stay in drawing units² unless `scale_m_per_px` is given.
 
 ## OCR schedule tags (#668)
