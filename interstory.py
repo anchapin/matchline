@@ -79,6 +79,7 @@ class InterstoryResult:
     surfaces: List[HorizontalSurface] = field(default_factory=list)
     stacks: List[ShaftStack] = field(default_factory=list)
     findings: List[str] = field(default_factory=list)
+    atria: Dict[str, List[str]] = field(default_factory=dict)  # sid -> levels opened through (#640)
 
     def floors_of(self, space_id: str) -> List[HorizontalSurface]:
         return [s for s in self.surfaces if s.upper_space_id == space_id]
@@ -197,11 +198,34 @@ def match_interstory(model, flag: bool = True) -> InterstoryResult:
         if flag:
             model.flag_for_review("interstory", text, REVIEW_CONF, _prov(sp, text))
 
-    first, last = levels[0], levels[-1]
+    # atria (#640): a space with a stated height past the next storey stays
+    # open through it; its ceiling or roof is found at the level it tops out in
+    from atria import find_atria
+
+    atria = find_atria(model, flag=False)
+    for text in atria.findings:
+        sid = text.split(" ", 1)[0]
+        note(model.spaces[sid], text)
+    idx = {lv.id: i for i, lv in enumerate(levels)}
+    top_idx: Dict[str, int] = {}
+    top_z: Dict[str, float] = {}
+    for lv in levels:
+        for sid, _g, _sp in by_level[lv.id]:
+            top_idx[sid] = idx[lv.id]
+            top_z[sid] = lv.elevation_z_m + lv.wall_height_m
+    for sid, through in atria.spans.items():
+        top_idx[sid] = idx[through[-1]]
+        top_z[sid] = atria.top_z[sid]
+    result.atria = dict(atria.spans)
+
+    first = levels[0]
     for sid, g, _ in by_level[first.id]:
         add("ground", first.elevation_z_m, None, sid, g)
 
-    for lo, up in zip(levels, levels[1:]):
+    def below(k):
+        return [(sid, g) for lv in levels[: k + 1] for sid, g, _ in by_level[lv.id]]
+
+    for k, (lo, up) in enumerate(zip(levels, levels[1:])):
         top_lo = lo.elevation_z_m + lo.wall_height_m
         if up.elevation_z_m < top_lo - LEVEL_GAP_TOL_M and by_level[lo.id]:
             note(
@@ -209,22 +233,28 @@ def match_interstory(model, flag: bool = True) -> InterstoryResult:
                 f"level {up.id} starts at {up.elevation_z_m:.3f} m, below the top of "
                 f"level {lo.id} ({top_lo:.3f} m); floor-to-floor not corrected",
             )
-        lower_rows, upper_rows = by_level[lo.id], by_level[up.id]
-        for lsid, lg, _ in lower_rows:
+        rows = below(k)
+        lower_rows = [(sid, g) for sid, g in rows if top_idx[sid] == k]
+        open_rows = [(sid, g) for sid, g in rows if top_idx[sid] > k]
+        upper_rows = by_level[up.id]
+        for lsid, lg in lower_rows:
             for usid, ug, _ in upper_rows:
                 if lg.intersects(ug):
                     add("interior", up.elevation_z_m, lsid, usid, lg.intersection(ug))
         upper_union = unary_union([g for _, g, _ in upper_rows]) if upper_rows else None
-        lower_union = unary_union([g for _, g, _ in lower_rows]) if lower_rows else None
-        for lsid, lg, _ in lower_rows:
+        under = lower_rows + open_rows
+        lower_union = unary_union([g for _, g in under]) if under else None
+        for lsid, lg in lower_rows:
             rest = lg.difference(upper_union) if upper_union is not None else lg
-            add("roof", top_lo, lsid, None, rest)
+            add("roof", top_z[lsid], lsid, None, rest)
         for usid, ug, _ in upper_rows:
             rest = ug.difference(lower_union) if lower_union is not None else ug
             add("exposed_floor", up.elevation_z_m, None, usid, rest)
 
-    for sid, g, _ in by_level[last.id]:
-        add("roof", last.elevation_z_m + last.wall_height_m, sid, None, g)
+    last_k = len(levels) - 1
+    for sid, g in below(last_k):
+        if top_idx[sid] == last_k:
+            add("roof", top_z[sid], sid, None, g)
 
     _check_conservation(result, by_level)
     result.stacks = _shaft_stacks(levels, by_level, note)

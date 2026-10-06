@@ -11,7 +11,11 @@ canonical BuildingModel with more than one level:
   gaps up to ``CLOSE_GAP_M``), courtyards included as clockwise loops;
 * floors, ceilings and roofs come from ``interstory.match_interstory`` and
   their gbXML types from ``below_grade.boundary_types``; a surface whose type
-  is unresolved is left out with a note rather than guessed.
+  is unresolved is left out with a note rather than guessed;
+* an atrium (``atria.find_atria``, #640) stays one space on its base level
+  with its full height and volume; it joins the wall loops of every level it
+  opens through, and each room on those levels that borders it gets an air
+  wall to it (the model carries no interior partitions, so none is invented).
 
 Single-storey models never come here, so their exports are unchanged.
 """
@@ -21,15 +25,17 @@ from __future__ import annotations
 from typing import List
 
 from shapely.affinity import scale
-from shapely.geometry import LineString, MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import split, unary_union
 
 from bem_geometry import BEMHorizontal, BEMLevel
+from thermal_zoning import AirWall
 
 CLOSE_GAP_M = 0.35  # close interior wall gaps between rooms (Pascal MAX_SEPARATOR_GAP)
 COVER_TOL = 0.02  # envelope loop must cover the level's rooms to within 2 %
 MIN_AREA_M2 = 1e-6
+MIN_AIR_WALL_M = 0.05  # shorter shared edges with an atrium are dropped
 
 
 def _flip(g):
@@ -93,6 +99,11 @@ def _level_rings(model, lv, bem_spaces, build_ring, ensure_ccw):
     rooms = unary_union(polys)
     ids = {sp.sid for sp in bem_spaces}
     walls = [w for w in model.envelope if w.space_id in ids]
+    # an atrium folded from a stack (#640) owns walls on every level it spans:
+    # take this level's own; another level's only for a space with none here
+    own = [w for w in walls if w.id.startswith(lv.id + "-")]
+    here = {w.space_id for w in own}
+    walls = own + [w for w in walls if not w.id.startswith(lv.id + "-") and w.space_id not in here]
     if walls:
         ring = build_ring(walls)
         if len(ring) >= 3:
@@ -103,6 +114,60 @@ def _level_rings(model, lv, bem_spaces, build_ring, ensure_ccw):
     return _room_rings(polys), (
         f"level {lv.id}: walls follow the room outlines (no closed envelope loop for this level)"
     )
+
+
+def _atrium_air_walls(bem, lv_id: str, atrium) -> List[AirWall]:
+    """Air walls from each room on ``lv_id`` to the atrium it borders.
+
+    A room edge counts when it runs alongside the atrium outline, within a
+    wall-thickness gap (``CLOSE_GAP_M``) along its whole shared length; an
+    edge that only touches it end-on is not a shared wall. Wound so the
+    atrium lies to the right (normal from the room into the atrium).
+    """
+    a = Polygon(atrium.polygon_m).buffer(0)
+    if a.area <= MIN_AREA_M2:
+        return []
+    zone = a.buffer(CLOSE_GAP_M, join_style="mitre")
+    out: List[AirWall] = []
+    rooms = sorted((sp for sp in bem.spaces if sp.level_id == lv_id), key=lambda sp: sp.sid)
+    for room in rooms:
+        ring = list(room.polygon_m)
+        if len(ring) < 3:
+            continue
+        k = 0
+        for i, p0 in enumerate(ring):
+            p1 = ring[(i + 1) % len(ring)]
+            edge = LineString([p0, p1])
+            if edge.length <= MIN_AIR_WALL_M:
+                continue
+            hit = edge.intersection(zone)
+            segs = [hit] if isinstance(hit, LineString) else list(getattr(hit, "geoms", []))
+            for seg in segs:
+                if not isinstance(seg, LineString) or seg.length <= MIN_AIR_WALL_M:
+                    continue
+                (x0, y0), (x1, y1) = seg.coords[0], seg.coords[-1]
+                d0 = a.exterior.distance(Point(x0, y0))
+                d1 = a.exterior.distance(Point(x1, y1))
+                if abs(d0 - d1) > 0.5 * seg.length:
+                    continue  # end-on touch, not a shared wall
+                dx, dy = x1 - x0, y1 - y0
+                L = (dx * dx + dy * dy) ** 0.5
+                mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                eps = min(0.05, CLOSE_GAP_M / 4)
+                right = Point(mx + dy / L * eps, my - dx / L * eps)
+                left = Point(mx - dy / L * eps, my + dx / L * eps)
+                if a.distance(right) > a.distance(left):
+                    x0, y0, x1, y1 = x1, y1, x0, y0
+                k += 1
+                out.append(
+                    AirWall(
+                        id=f"AW-{room.sid}-{atrium.sid}-{k}",
+                        space_ids=(room.sid, atrium.sid),
+                        p0=(round(x0, 4), round(y0, 4)),
+                        p1=(round(x1, 4), round(y1, 4)),
+                    )
+                )
+    return out
 
 
 def add_levels(model, bem, sloped: bool = False) -> None:
@@ -132,8 +197,23 @@ def add_levels(model, bem, sloped: bool = False) -> None:
     bt = boundary_types(model, ist, flag=False)
     below = set(bt.below_grade_levels)
 
+    # atria (#640): full height and volume on the base level
+    elev = {lv.id: float(lv.elevation_z_m) for lv in levels}
+    for sid, through in sorted(ist.atria.items()):
+        sp = by_sid.get(sid)
+        if sp is None:
+            continue
+        top = max((s.z_m for s in ist.surfaces if s.lower_space_id == sid), default=None)
+        if top is None:
+            continue
+        sp.spans = list(through)
+        sp.height_m = round(top - elev[sp.level_id], 4)
+        if model.spaces[sid].volume_m3 is None and not sloped:
+            sp.volume_m3 = (model.spaces[sid].area_m2 or 0.0) * sp.height_m
+        notes.append(f"{sid}: atrium open through {', '.join(through)} ({sp.height_m:g} m tall)")
+
     for lv in levels:
-        lsp = [sp for sp in bem.spaces if sp.level_id == lv.id]
+        lsp = [sp for sp in bem.spaces if sp.level_id == lv.id or lv.id in sp.spans]
         rings, note = _level_rings(model, lv, lsp, _build_ring, _ensure_ccw)
         if note:
             notes.append(note)
@@ -148,6 +228,10 @@ def add_levels(model, bem, sloped: bool = False) -> None:
                 above_ground=lv.above_ground,
             )
         )
+
+    for sp in sorted((sp for sp in bem.spaces if sp.spans), key=lambda sp: sp.sid):
+        for lv_id in sp.spans:
+            bem.air_walls.extend(_atrium_air_walls(bem, lv_id, sp))
 
     unresolved = 0
     for s in ist.surfaces:

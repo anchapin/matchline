@@ -278,6 +278,10 @@ class Space:
     # covering top to the underside of the slab above; None when not known
     ceiling_height_m: Optional[float] = None
     plenum_depth_m: Optional[float] = None
+    # full floor-to-top height of the space as the source states it (IFC space
+    # body extrusion or Qto_SpaceBaseQuantities.Height); a height past the next
+    # storey marks an atrium (#640). None when not stated.
+    height_m: Optional[float] = None
     merged_from: List[str] = field(default_factory=list)
     history: List[Provenance] = field(default_factory=list)
 

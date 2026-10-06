@@ -30,6 +30,10 @@ class BEMSpace:
     split_from: str = ""
     # storey this space sits on (#639); empty on single-storey models
     level_id: str = ""
+    # atrium (#640): the storeys above level_id it is open through, and its
+    # full height; empty / None for a space within one storey
+    spans: List[str] = field(default_factory=list)
+    height_m: Optional[float] = None
 
 
 @dataclass

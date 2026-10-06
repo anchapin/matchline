@@ -706,6 +706,7 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
     Qto_SpaceBaseQuantities.  Returns (polygon, area, volume, conf, method,
     note).  Flags for review when geometry is insufficient.
     """
+    height = None  # stated full height (#640): solid depth, else Qto Height
     polygon, area, volume, conf, method, note = (
         [],
         None,
@@ -722,6 +723,7 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
         polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in pts_local]
         area = abs(_shoelace(polygon))
         volume = area * depth
+        height = float(depth)
         conf, method = 0.95, "ifc_import:tier0:space:solid"
         note = f"footprint from IfcExtrudedAreaSolid ({len(polygon)} pts)"
     else:
@@ -744,7 +746,11 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
                 conf,
                 prov_fn("ifc_import:tier0:space", conf, note),
             )
-    return polygon, area, volume, conf, method, note
+    if height is None:
+        qh = _quantities(sp, "Qto_SpaceBaseQuantities", scale).get("Height")
+        if qh:
+            height = float(qh)
+    return polygon, area, volume, conf, method, note, height
 
 
 def _try_curve_set_footprint(sp, scale):
@@ -2607,6 +2613,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 model.site_latitude_deg = round(lat, 9)
                 break
     slab_voids = {}  # level_id -> plan rectangles of unfilled slab openings (#581)
+    floor_voids = []  # (plan rectangle, z min, z max) of the same openings (#640)
     wall_axis_fix = {}  # GlobalId -> (x0, y_mid, note), body centreline (#579)
 
     # --- spatial hierarchy ------------------------------------------------
@@ -2741,7 +2748,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 sid = f"{level_id}-{gid}"
             space_by_gid[gid] = sid
 
-            polygon, area, volume, conf, method, note = _extract_space_geometry(
+            polygon, area, volume, conf, method, note, height = _extract_space_geometry(
                 sp, scale, sid, sp.Name, prov, model
             )
 
@@ -2753,6 +2760,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 polygon_m=[[round(x, 4), round(y, 4)] for x, y in polygon],
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
+                height_m=round(height, 4) if height else None,
                 core_provenance=prov(
                     method, conf, f"{note}; name/number via {name_source}{ident_note}", gid
                 ),
@@ -2923,9 +2931,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                     opening = openings_by_gid.get(ogid)
                     fill = fills.get(ogid)
                     if opening is not None and fill is None and cls == "IfcSlab":
-                        rect = _plan_rect(opening, scale)
-                        if rect is not None:
-                            slab_voids.setdefault(level_id, []).append(rect)
+                        got = _plan_rect_z(opening, scale)
+                        if got is not None:
+                            slab_voids.setdefault(level_id, []).append(got[0])
+                            floor_voids.append(got)
                     if opening is None or fill is None or not fill.is_a("IfcWindow"):
                         continue
                     bo = _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=gid)
@@ -3020,8 +3029,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     join_counts = join_wall_ends(model.envelope, wall_t, connected_pairs_from_ifc(f))
     # flush in-line continuations, then split at X/T junctions so facade
     # classification can name one space behind each piece (#576)
+    # rooms stacked over slab openings are one atrium (#640)
+    from atria import merge_atrium_stacks
     from ifc_wall_split import join_inline_ends, split_at_junctions
 
+    n_atria = merge_atrium_stacks(model, floor_voids, sheet, revision)
     inline_counts = join_inline_ends(model.envelope, wall_t)
     n_junction_splits = split_at_junctions(model.envelope, wall_t)
     # needs interior walls too, so before classification drops them (#581)
@@ -3139,6 +3151,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
     if merge_note:
         summary_parts.append(merge_note)
+    if n_atria:
+        summary_parts.append(f"atria: {n_atria} room(s) over slab openings merged")
     if not unattached.is_empty():
         summary_parts.append(unattached.summary_line())
     if model.roof_construction_id:
@@ -3319,20 +3333,27 @@ def _door_semantics(fill):
 
 def _plan_rect(product, scale):
     """Canonical-frame plan bounding rectangle of a product's solid, or None."""
+    got = _plan_rect_z(product, scale)
+    return got[0] if got else None
+
+
+def _plan_rect_z(product, scale):
+    """(plan rectangle, z min, z max) of a product's solid in world metres, or None."""
     verts = _geom_verts(product)
     if not verts:
         return None
     to_world = _placement_transform(product, scale)
-    xs, ys = [], []
+    xs, ys, zs = [], [], []
     for i in range(0, len(verts), 3):
-        wx, wy, _ = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+        wx, wy, wz = _apply(to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
         cx, cy = _to_canonical(wx, wy)
         xs.append(cx)
         ys.append(cy)
+        zs.append(wz)
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
     if x1 - x0 < 1e-6 or y1 - y0 < 1e-6:
         return None
-    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], min(zs), max(zs)
 
 
 def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):
