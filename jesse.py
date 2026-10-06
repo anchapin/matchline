@@ -33,8 +33,6 @@ Paper spec (Section 2):
 
 from __future__ import annotations
 
-import re
-
 import numpy as np
 
 # --- Paper Section 2: thresholds ------------------------------------------------
@@ -511,58 +509,30 @@ def skeleton_invariants(skel: np.ndarray) -> dict:
     }
 
 
-def sliding_window_tag_extract(
-    image: np.ndarray,
-    detections: list,
-    window_px: int = 80,
-    stride_px: int = 20,
-    ocr_lang: str = "eng",
-) -> dict[int, str]:
-    """Extract schedule tag text adjacent to each detected symbol.
-
-    For each detection bbox, crops a window to the LEFT of the symbol
-    (where schedule tags typically appear on drawings) and runs OCR.
-    Returns {detection_index: tag_str}.
-
-    Returns empty string for detections where no tag was read.
-    """
-    import pytesseract
-
-    tags = {}
-    for i, det in enumerate(detections):
-        x0, y0, x1, y1 = det.bbox
-
-        # Crop: left of symbol, same height, up to window_px wide
-        tag_x0 = max(0, int(x0) - window_px)
-        tag_y0 = max(0, int(y0))
-        tag_x1 = max(0, int(x0) - 2)  # 2px gap from symbol edge
-        tag_y1 = min(image.shape[1], int(y1))
-
-        if tag_x1 <= tag_x0 or tag_y1 <= tag_y0:
-            tags[i] = ""
-            continue
-
-        crop = image[tag_y0:tag_y1, tag_x0:tag_x1]
-        if crop.size == 0:
-            tags[i] = ""
-            continue
-
-        text = pytesseract.image_to_string(crop, lang=ocr_lang, config="--psm 6").strip()
-        # Normalize: uppercase, remove spaces, extract tag pattern
-        m = re.search(r"[A-Z]\d*-\d+|[A-Z]\d+", text.upper())
-        tags[i] = m.group(0) if m else ""
-    return tags
-
-
 def tag_detections(
     detections: list,
     image: np.ndarray,
+    **kwargs,
 ) -> list:
-    """Fill .tag field on Detection objects using sliding-window OCR.
+    """Fill ``.tag`` (and ``.tag_score``) on Detection objects by OCR.
 
-    Modifies detections in place and also returns them.
+    Thin wrapper over :func:`datasets_adapter.extract_with_tags` (#668), the
+    one tag reader in the repo: switchable OCR backends, config precedence,
+    schedule-tag preference and a confidence score. Keyword arguments
+    (``config``, ``backend``, ``schedule_tags``, ``reader``) pass straight
+    through. The old left-of-symbol tesseract scan that lived here was retired
+    in #682 so the two readers cannot drift.
+
+    Modifies detections in place and also returns them, as before. Detections
+    that already carry a tag are left alone; with no OCR backend available
+    they come back unchanged.
     """
-    tags = sliding_window_tag_extract(image, detections)
-    for i, det in enumerate(detections):
-        det.tag = tags.get(i, "")
+    # local import keeps jesse.py numpy-only at import time
+    from datasets_adapter import extract_with_tags
+
+    tagged = extract_with_tags(detections, image, **kwargs)
+    for det, new in zip(detections, tagged):
+        det.tag = new.tag
+        if hasattr(det, "tag_score"):
+            det.tag_score = new.tag_score
     return detections
