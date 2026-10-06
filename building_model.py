@@ -599,6 +599,31 @@ class SpaceAdjacency:
 
 
 @dataclass
+class RoofPlane:
+    """One planar roof facet (roadmap item 2, #613).
+
+    ``vertices_m`` are [x, y, z] corners in the canonical frame: plan x east,
+    plan y down the sheet (south), z metres up from the host level's floor.
+    ``tilt_deg`` is from horizontal (0 = flat). ``azimuth_deg`` is the
+    outward (upward-facing) normal's compass bearing, degrees clockwise from
+    north, the same convention as skylights; None for a flat facet, where it
+    has no meaning. ``area_m2`` is the true sloped area, not the plan area.
+
+    ``BuildingModel.roof_planes`` empty means the flat roof at wall height that
+    every export assumed before this existed.
+    """
+
+    id: str
+    level_id: str = ""
+    vertices_m: List[List[float]] = field(default_factory=list)
+    tilt_deg: Optional[float] = None
+    azimuth_deg: Optional[float] = None
+    area_m2: Optional[float] = None
+    host_global_id: str = ""  # IfcRoof / IfcSlab it came from, if any
+    provenance: Provenance | None = None
+
+
+@dataclass
 class BuildingModel:
     """Canonical building model: cross-discipline linking layer.
 
@@ -638,6 +663,8 @@ class BuildingModel:
             when unknown (exports then use the generic slab on grade).
         shading: Exterior shading projections hosted on envelope walls;
             kept out of ``envelope`` so they never enter the area budget.
+        roof_planes: Planar roof facets with tilt and azimuth (#613); empty
+            means the flat roof at wall height.
         bim_elements: All BIM elements from IFC import.
         schedules: Lighting and other schedules as plain dicts, keyed by
             schedule tag. Revived from plain dict on model load.
@@ -681,6 +708,8 @@ class BuildingModel:
     slab_construction_id: str = ""
     shading: List[ShadingSurface] = field(default_factory=list)
     space_adjacencies: List[SpaceAdjacency] = field(default_factory=list)
+    # sloped roof facets (roadmap item 2, #613); empty -> flat roof at wall height
+    roof_planes: List[RoofPlane] = field(default_factory=list)
     # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
     bim_elements: List[BimElement] = field(default_factory=list)
