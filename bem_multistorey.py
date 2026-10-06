@@ -125,7 +125,11 @@ def level_walls(model, levels, space_level, notes):
         notes.append(f"{orphans} opening(s) with no space placed on level {fallback.id}")
     out = []
     for lv in levels:
-        lsp = [sp for sp in model.spaces if space_level.get(sp.sid) is lv]
+        lsp = [
+            sp
+            for sp in model.spaces
+            if space_level.get(sp.sid) is lv or lv.id in (getattr(sp, "spans", None) or [])
+        ]
         if not lsp or not lv.rings:
             continue
         edges, facades, flipped = [], [], []
@@ -176,6 +180,8 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
     for sp in model.spaces:
         lv = space_level[sp.sid]
         z0, h = lv.elevation_m, lv.height_m
+        if getattr(sp, "spans", None) and sp.height_m:
+            h = sp.height_m  # atrium: shelled at its full height (#640)
         attrs = {"id": sp.sid, "buildingStoreyIdRef": f"storey-{_nc(lv.id)}"}
         zref = zone_of.get(sp.sid) if tzones else "zone-1"
         if zref:

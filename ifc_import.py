@@ -706,6 +706,7 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
     Qto_SpaceBaseQuantities.  Returns (polygon, area, volume, conf, method,
     note).  Flags for review when geometry is insufficient.
     """
+    height = None  # stated full height (#640): solid depth, else Qto Height
     polygon, area, volume, conf, method, note = (
         [],
         None,
@@ -722,6 +723,7 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
         polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in pts_local]
         area = abs(_shoelace(polygon))
         volume = area * depth
+        height = float(depth)
         conf, method = 0.95, "ifc_import:tier0:space:solid"
         note = f"footprint from IfcExtrudedAreaSolid ({len(polygon)} pts)"
     else:
@@ -744,7 +746,11 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
                 conf,
                 prov_fn("ifc_import:tier0:space", conf, note),
             )
-    return polygon, area, volume, conf, method, note
+    if height is None:
+        qh = _quantities(sp, "Qto_SpaceBaseQuantities", scale).get("Height")
+        if qh:
+            height = float(qh)
+    return polygon, area, volume, conf, method, note, height
 
 
 def _try_curve_set_footprint(sp, scale):
@@ -2741,7 +2747,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 sid = f"{level_id}-{gid}"
             space_by_gid[gid] = sid
 
-            polygon, area, volume, conf, method, note = _extract_space_geometry(
+            polygon, area, volume, conf, method, note, height = _extract_space_geometry(
                 sp, scale, sid, sp.Name, prov, model
             )
 
@@ -2753,6 +2759,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 polygon_m=[[round(x, 4), round(y, 4)] for x, y in polygon],
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
+                height_m=round(height, 4) if height else None,
                 core_provenance=prov(
                     method, conf, f"{note}; name/number via {name_source}{ident_note}", gid
                 ),
