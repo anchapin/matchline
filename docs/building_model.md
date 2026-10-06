@@ -218,3 +218,24 @@ Known gaps: roof overhang past the walls is dropped (noted in the file
 comment), not written as shading; the BEM writers are single-storey, so roof
 planes on upper levels are skipped with a note. Roof planes are top-of-roof
 faces, so shells run to the outside of the roof.
+
+## IFC export of sloped roofs and the round trip (#619)
+
+When the model carries at least one tilted roof plane, `write_ifc4` writes one
+`IfcRoof` (contained in the storey) that aggregates one `IfcSlab` ROOF per
+plane. Each slab is a prism whose top face is the plane's full outline
+(overhang included) and which runs `ROOF_SLAB_THICKNESS_M` down along the
+plane normal, so `ifc_roof_planes` reads back the same plane. The roof U goes
+on every slab as `Pset_SlabCommon.ThermalTransmittance`.
+
+Skylights on a sloped roof use one shared layout (`bem_roof.place_skylights_on_pieces`)
+in both writers: one plane at a time, largest first, each skylight a true
+width x height rectangle in its plane (width along the eave, height up the
+slope). This replaces #618's lift of the plan rectangle, which stretched
+skylight area by 1/cos(tilt) on the slope. In IFC each gets a void through its
+slab and an `IfcWindow` SKYLIGHT in the plane's frame; on import
+`orient_skylights` gives it that plane's tilt and azimuth.
+
+Export, import, export again gives the same planes: count, tilt, azimuth,
+area and canonical vertices (gable, hip and shed tested). Models with no
+roof planes, or only flat ones, export as before.

@@ -17,6 +17,7 @@ from bem_helpers import (
     _validate_out_path,
     _wall_edges,
 )
+from bem_roof import is_sloped, place_skylights_on_pieces, plane_frame, roof_pieces
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
 GROUND_SLAB_THICKNESS_M = 0.15  # nominal; geometry only, the U-value is what matters
@@ -292,10 +293,18 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     # (_place_skylights_on_roof), so both exports put them in the same spots.
     sky_units = [u for u in model.openings if u.category == "skylight"]
     regions = {sp.sid: sp.polygon_m for sp in model.spaces}
-    sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m, regions=regions)
     roof_u = getattr(model, "roof_u_value_w_m2k", None)
     roof_u = float(roof_u) if roof_u is not None and roof_u > 0 else None
-    if sky_placed or roof_u is not None:
+    roofs = list(getattr(model, "roof_planes", None) or [])
+    sloped = is_sloped(roofs)
+    if sloped:
+        # sloped roof (#619): one IfcSlab ROOF per plane under one IfcRoof
+        sky_placed, sky_notes = _write_sloped_roof(
+            f, model, roofs, sky_units, regions, roof_u, body, storey, storey_pl, _R, _Gm, _Sp
+        )
+    else:
+        sky_placed, sky_notes = _place_skylights_on_roof(sky_units, model.ring_m, regions=regions)
+    if not sloped and (sky_placed or roof_u is not None):
         roof = _R.create_entity(f, ifc_class="IfcSlab", name="Roof", predefined_type="ROOF")
         roof.ObjectPlacement = placement((0.0, 0.0, h), parent=storey_pl)
         rep = _Gm.add_slab_representation(
@@ -551,12 +560,14 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         f"spaces, {len(model.openings) - len(sky_units)} wall openings hosted, "
         f"{len(model.zones)} zones, {len(terminals_by_id)} diffusers (IfcAirTerminal)."
         + (
-            f" Roof slab with {len(sky_placed)} of {len(sky_units)} skylight(s) "
+            f" Roof {'planes' if sloped else 'slab'} with {len(sky_placed)} of "
+            f"{len(sky_units)} skylight(s) "
             f"(IfcWindow SKYLIGHT)."
             if sky_units
             else ""
         )
         + (f" Roof U {roof_u:.4g} W/m2K (Pset_SlabCommon)." if roof_u is not None else "")
+        + (f" Sloped roof: {len(roofs)} IfcSlab ROOF plane(s) under one IfcRoof." if sloped else "")
         + (
             f" Ground slab U {slab_u:.4g} W/m2K (BASESLAB, Pset_SlabCommon)."
             if slab_u is not None
@@ -637,3 +648,162 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
             errors.append(f"shading device '{sd.Name}' not in a spatial container")
 
     return not errors, errors
+
+
+def _sloped_solid(f, origin, n, u, v, pts2d, depth):
+    """Prism under a plane: profile in the plane's (u, v) frame, extruded down -n."""
+    pos = f.create_entity(
+        "IfcAxis2Placement3D",
+        Location=f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(c) for c in origin)),
+        Axis=f.create_entity("IfcDirection", DirectionRatios=tuple(float(c) for c in n)),
+        RefDirection=f.create_entity("IfcDirection", DirectionRatios=tuple(float(c) for c in u)),
+    )
+    ring = [
+        f.create_entity("IfcCartesianPoint", Coordinates=(float(a), float(b))) for a, b in pts2d
+    ]
+    prof = f.create_entity(
+        "IfcArbitraryClosedProfileDef",
+        ProfileType="AREA",
+        OuterCurve=f.create_entity("IfcPolyline", Points=ring + [ring[0]]),
+    )
+    return f.create_entity(
+        "IfcExtrudedAreaSolid",
+        SweptArea=prof,
+        Position=pos,
+        ExtrudedDirection=f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, -1.0)),
+        Depth=float(depth),
+    )
+
+
+def _body_shape(f, body, solid):
+    return f.create_entity(
+        "IfcProductDefinitionShape",
+        Representations=[
+            f.create_entity(
+                "IfcShapeRepresentation",
+                ContextOfItems=body,
+                RepresentationIdentifier="Body",
+                RepresentationType="SweptSolid",
+                Items=[solid],
+            )
+        ],
+    )
+
+
+def _write_sloped_roof(
+    f, model, roofs, sky_units, regions, roof_u, body, storey, storey_pl, _R, _Gm, _Sp
+):
+    """Sloped roof: one IfcSlab ROOF per plane, aggregated by one IfcRoof (#619).
+
+    Each slab is a prism whose top face is the roof plane (the plane's full
+    outline, overhang included) and which runs ROOF_SLAB_THICKNESS_M down
+    along the plane normal, so the importer reads back the same plane. The
+    roof U goes on every slab (Pset_SlabCommon), matching the flat roof.
+    Skylights use the layout the gbXML writer uses
+    (bem_roof.place_skylights_on_pieces): a void through the slab under them
+    and an IfcWindow SKYLIGHT in the plane's frame.
+    """
+    import ifcopenshell
+    import ifcopenshell.api.aggregate as _Ag
+
+    def local(parent):
+        return f.create_entity(
+            "IfcLocalPlacement",
+            PlacementRelTo=parent,
+            RelativePlacement=f.create_entity(
+                "IfcAxis2Placement3D",
+                Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+            ),
+        )
+
+    roof = _R.create_entity(f, ifc_class="IfcRoof", name="Roof")
+    roof.ObjectPlacement = local(storey_pl)
+    _Sp.assign_container(f, products=[roof], relating_structure=storey)
+    slab_of = {}
+    slabs = []
+    for r in roofs:
+        n, u, v = plane_frame(r)
+        o = r.vertices[0]
+        pts2d = []
+        for x, y, z in r.vertices:
+            d = (x - o[0], y - o[1], z - o[2])
+            pts2d.append((sum(d[i] * u[i] for i in range(3)), sum(d[i] * v[i] for i in range(3))))
+        slab = _R.create_entity(
+            f, ifc_class="IfcSlab", name=f"Roof plane {r.id}", predefined_type="ROOF"
+        )
+        slab.ObjectPlacement = local(roof.ObjectPlacement)
+        slab.Representation = _body_shape(
+            f, body, _sloped_solid(f, o, n, u, v, pts2d, ROOF_SLAB_THICKNESS_M)
+        )
+        if roof_u is not None:
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=slab, name="Pset_SlabCommon")
+                _Ps.edit_pset(
+                    f, pset=pset, properties={"ThermalTransmittance": roof_u, "IsExternal": True}
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass  # thermal property is enrichment, not core validity
+        slab_of[r.id] = slab
+        slabs.append(slab)
+    _Ag.assign_object(f, products=slabs, relating_object=roof)
+
+    pieces, _ = roof_pieces(model.ring_m, roofs)
+    placed, notes = place_skylights_on_pieces(sky_units, pieces, regions)
+    for pl_ in placed:
+        u_ = pl_["unit"]
+        n, u, v = pl_["frame"]
+        c = pl_["centre"]
+        slab = slab_of[pl_["roof"].id]
+        frame = f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(k) for k in c)),
+            Axis=f.create_entity("IfcDirection", DirectionRatios=tuple(float(k) for k in n)),
+            RefDirection=f.create_entity(
+                "IfcDirection", DirectionRatios=tuple(float(k) for k in u)
+            ),
+        )
+        opening = _R.create_entity(f, ifc_class="IfcOpeningElement", name=f"{u_.tag} opening")
+        opening.ObjectPlacement = f.create_entity(
+            "IfcLocalPlacement", PlacementRelTo=slab.ObjectPlacement, RelativePlacement=frame
+        )
+        hw, hh = u_.width_m / 2.0, u_.height_m / 2.0
+        box = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+        opening.Representation = _body_shape(
+            f,
+            body,
+            _sloped_solid(
+                f,
+                (0.0, 0.0, 0.05),
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+                None,
+                box,
+                ROOF_SLAB_THICKNESS_M + 0.1,
+            ),
+        )
+        f.create_entity(
+            "IfcRelVoidsElement",
+            GlobalId=ifcopenshell.guid.new(),
+            RelatingBuildingElement=slab,
+            RelatedOpeningElement=opening,
+        )
+        fill = _R.create_entity(
+            f,
+            ifc_class="IfcWindow",
+            name=f"{u_.tag} (skylight {u_.width_m:.2f}x{u_.height_m:.2f} m)",
+            predefined_type="SKYLIGHT",
+        )
+        fill.OverallWidth = float(u_.width_m)
+        fill.OverallHeight = float(u_.height_m)
+        fill.ObjectPlacement = local(opening.ObjectPlacement)
+        f.create_entity(
+            "IfcRelFillsElement",
+            GlobalId=ifcopenshell.guid.new(),
+            RelatingOpeningElement=opening,
+            RelatedBuildingElement=fill,
+        )
+        _Sp.assign_container(f, products=[fill], relating_structure=storey)
+        _write_identity(f, [opening, fill], getattr(u_, "identity", None))
+    return placed, notes
