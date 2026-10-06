@@ -2327,12 +2327,31 @@ def _classify_envelope(model):
 OPENING_DUPLICATE_TOL_M = 0.05  # Pascal cleanup.ts OPENING_DUPLICATE_TOLERANCE
 
 
-def _apply_opening_identity(bo, openings_by_gid, fills, taken, model, prov):
+def _identity_winners(pairs):
+    """Map each Matchline_Identity id to the GlobalId that keeps it (#636).
+
+    ``pairs`` is (GlobalId, identity props or None). When several elements
+    carry the same id, the one whose GlobalId sorts first keeps it, the same
+    tie-break #586 uses elsewhere, so the result does not depend on the order
+    the importer happens to reach them.
+    """
+    winners = {}
+    for gid, ident in pairs:
+        if ident is None:
+            continue
+        mid = str(ident["MatchlineId"])
+        if mid not in winners or gid < winners[mid]:
+            winners[mid] = gid
+    return winners
+
+
+def _apply_opening_identity(bo, openings_by_gid, fills, taken, model, prov, winners=None):
     """Give an imported opening matchline's own id when the file carries one (#588).
 
     Reads Matchline_Identity off the IfcOpeningElement, else its fill.
     Returns True when the opening took the id (it is matchline-authored).
-    An id already taken keeps the GlobalId and adds a review item.
+    An id already taken keeps the GlobalId and adds a review item. When the
+    same id is on several openings, the lowest GlobalId keeps it (#636).
     """
     gid = bo.id
     ident = _matchline_identity(openings_by_gid.get(gid), fills.get(gid))
@@ -2340,7 +2359,7 @@ def _apply_opening_identity(bo, openings_by_gid, fills, taken, model, prov):
         taken.add(gid)
         return False
     mid = str(ident["MatchlineId"])
-    if mid in taken:
+    if mid in taken or (winners is not None and winners.get(mid, gid) != gid):
         model.flag_for_review(
             kind="matchline_identity",
             description=f"Opening {gid}: Matchline_Identity id {mid!r} already taken; kept GlobalId",
@@ -2522,6 +2541,27 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     opening_ids = set()  # opening ids already taken (#588)
     level_by_storey = {}  # IfcBuildingStorey GlobalId -> level id
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
+    # which opening/space keeps a duplicated Matchline_Identity id is decided
+    # up front by lowest GlobalId, not by walk order (#636). Only openings the
+    # walk imports compete: wall voids, and window-filled slab/roof voids.
+    opening_winners = _identity_winners(
+        (ogid, _matchline_identity(openings_by_gid.get(ogid), fills.get(ogid)))
+        for ogid, host in voids.items()
+        if ogid in openings_by_gid
+        and (
+            host.is_a() in ("IfcWall", "IfcWallStandardCase")
+            or (
+                host.is_a() in ("IfcSlab", "IfcRoof")
+                and fills.get(ogid) is not None
+                and fills[ogid].is_a("IfcWindow")
+            )
+        )
+    )
+    space_winners = _identity_winners(
+        (sp.GlobalId, _matchline_identity(sp))
+        for storey in storeys
+        for sp in _aggregated(storey, "IfcSpace")
+    )
     unlabeled = 0
 
     shade_jobs = []  # (IfcShadingDevice, level id, storey elevation)
@@ -2560,7 +2600,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             ident_note = ""
             if ident is not None:
                 mid = str(ident["MatchlineId"])
-                if mid in model.spaces or mid in space_by_gid.values():
+                if (
+                    space_winners.get(mid, gid) != gid
+                    or mid in model.spaces
+                    or mid in space_by_gid.values()
+                ):
+                    # the derived id may itself be the id another space keeps
+                    # (the copy usually came from the room it duplicates):
+                    # fall back to the GlobalId, as openings do (#636)
+                    if space_winners.get(sid, gid) != gid:
+                        sid = f"{level_id}-{gid}"
                     model.flag_for_review(
                         kind="matchline_identity",
                         description=(
@@ -2578,6 +2627,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         f"{ident.get('SourceMethod') or 'unknown'}, conf "
                         f"{ident.get('Confidence', 'unknown')})"
                     )
+            elif space_winners.get(sid, gid) != gid:
+                # an unauthored space whose derived id another space keeps
+                sid = f"{level_id}-{gid}"
             space_by_gid[gid] = sid
 
             polygon, area, volume, conf, method, note = _extract_space_geometry(
@@ -2740,7 +2792,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 authored = {
                     o.id
                     for o in be.openings
-                    if _apply_opening_identity(o, openings_by_gid, fills, opening_ids, model, prov)
+                    if _apply_opening_identity(
+                        o, openings_by_gid, fills, opening_ids, model, prov, opening_winners
+                    )
                 }
                 be.openings, dup = _drop_duplicate_openings(be.openings, keep=authored)
                 duplicate_openings.extend(dup)
@@ -2761,7 +2815,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                     if opening is None or fill is None or not fill.is_a("IfcWindow"):
                         continue
                     bo = _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=gid)
-                    _apply_opening_identity(bo, openings_by_gid, fills, opening_ids, model, prov)
+                    _apply_opening_identity(
+                        bo, openings_by_gid, fills, opening_ids, model, prov, opening_winners
+                    )
                     be.openings.append(bo)
 
         if wall_heights:

@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1633  # +18 inter-story surface matching and shaft stacks (#632)
+          EXPECTED_TEST_COUNT=1637  # +4 duplicate Matchline_Identity goes to lowest GlobalId (#636)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
