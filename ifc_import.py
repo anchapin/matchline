@@ -1142,6 +1142,97 @@ def _matchline_identity(*els):
     return None
 
 
+def _rejoin_split_spaces(model, groups, space_by_gid, authored_spaces, prov):
+    """Put rooms split at Appendix G block lines (#638) back together.
+
+    ``groups`` maps a parent id (Matchline_Identity.SplitFrom) to the ids of
+    its pieces on one storey. Pieces that union to one polygon without a hole
+    become one space with the parent id, at the first piece's place in
+    ``model.spaces``: polygon is the union, area/volume/lighting watts summed,
+    everything else from the first piece by id. Anything else (the parent id
+    already taken, pieces that do not touch) keeps the pieces and goes to
+    review.
+    """
+    import dataclasses
+
+    from shapely.geometry import Polygon as _Poly
+    from shapely.geometry.polygon import orient as _orient
+    from shapely.ops import unary_union as _union
+
+    for parent in sorted(groups):
+        sids = sorted(groups[parent])
+        pieces = [model.spaces[s] for s in sids if s in model.spaces]
+        why = None
+        if parent in model.spaces:
+            why = "the parent id is already a space"
+        geoms = [_Poly(p.polygon_m) for p in pieces if len(p.polygon_m) >= 3]
+        u = _union([g.buffer(0) for g in geoms]) if geoms and why is None else None
+        if why is None and (len(geoms) != len(pieces) or u.geom_type != "Polygon" or u.interiors):
+            why = "the pieces do not join into one polygon"
+        if why:
+            model.flag_for_review(
+                kind="matchline_identity",
+                description=(
+                    f"Spaces {', '.join(sids)} were split from {parent} but not rejoined: {why}"
+                ),
+                confidence=0.5,
+                provenance=prov("ifc_import:tier0:matchline_identity", 0.5, "", parent),
+            )
+            continue
+        first = pieces[0]
+        ring = [[round(x, 4), round(y, 4)] for x, y in list(_orient(u, 1.0).exterior.coords)[:-1]]
+        areas = [p.area_m2 for p in pieces]
+        vols = [p.volume_m3 for p in pieces]
+        area = round(sum(areas), 4) if None not in areas else round(u.area, 4)
+        lighting = first.lighting
+        total_w = sum(p.lighting.total_w for p in pieces)
+        if total_w > 0:
+            lpd = total_w / area if area else None
+            lighting = dataclasses.replace(
+                first.lighting,
+                fixtures=[f for p in pieces for f in p.lighting.fixtures],
+                total_w=total_w,
+                lpd_w_m2=lpd,
+                lpd_w_ft2=lpd / 10.7639104 if lpd is not None else None,
+                provenance=next(
+                    (p.lighting.provenance for p in pieces if p.lighting.provenance), None
+                ),
+                unmatched_tags=sorted({t for p in pieces for t in p.lighting.unmatched_tags}),
+            )
+        merged = []
+        for p in pieces:
+            merged += [m for m in p.merged_from if m not in merged]
+        prov_ = dataclasses.replace(first.core_provenance) if first.core_provenance else None
+        if prov_ is not None:
+            prov_.note += (
+                f"; rejoined from {len(pieces)} pieces split at Appendix G block lines "
+                f"(#638): {', '.join(sids)}"
+            )
+        joined = dataclasses.replace(
+            first,
+            id=parent,
+            polygon_m=ring,
+            area_m2=area,
+            volume_m3=round(sum(vols), 4) if None not in vols else None,
+            lighting=lighting,
+            merged_from=merged,
+            core_provenance=prov_,
+        )
+        rebuilt = {}
+        for k, v in model.spaces.items():
+            if k == first.id:
+                rebuilt[parent] = joined
+            elif k not in sids:
+                rebuilt[k] = v
+        model.spaces.clear()
+        model.spaces.update(rebuilt)
+        for gid, sid in list(space_by_gid.items()):
+            if sid in sids:
+                space_by_gid[gid] = parent
+        authored_spaces.difference_update(sids)
+        authored_spaces.add(parent)
+
+
 def _merge_ifc_closets_and_shafts(model, skip_ids=()):
     """Apply the closet/shaft rule (space_merge) to name-classified IFC spaces.
 
@@ -2605,6 +2696,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         level_by_storey[storey.GlobalId] = level_id
 
         # --- spaces -------------------------------------------------------
+        split_groups = {}  # parent id -> piece ids, from Matchline_Identity.SplitFrom (#638)
         for sp in _aggregated(storey, "IfcSpace"):
             label, number, name_source = _space_name_number(sp)
             if number is None:
@@ -2676,6 +2768,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 if pt in ("room", "closet", "shaft", "elevator_core", "unassigned"):
                     space.poly_type = pt
                 space.merged_from = [m for m in str(ident.get("MergedFrom") or "").split(",") if m]
+                if ident.get("SplitFrom"):
+                    split_groups.setdefault(str(ident["SplitFrom"]), []).append(sid)
             if cls is not None:
                 space.poly_type, space.poly_type_confidence, word = cls
                 space.core_provenance.note += (
@@ -2685,6 +2779,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             if lighting is not None:
                 space.lighting = lighting
             model.spaces[sid] = space
+
+        if split_groups:
+            _rejoin_split_spaces(model, split_groups, space_by_gid, authored_spaces, prov)
 
         # --- elements -----------------------------------------------------
         elements = _contained(storey) + by_elevation.get(li, [])

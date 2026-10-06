@@ -203,3 +203,22 @@ def test_ifc_writes_air_walls_as_virtual_space_boundaries(tmp_path):
                     if prop.Name == "SplitFrom":
                         split.add(prop.NominalValue.wrappedValue)
     assert split == {"L1-101"}
+
+
+def test_ifc_reimport_rejoins_split_pieces_under_the_parent_id(tmp_path):
+    pytest.importorskip("ifcopenshell")
+    from bem_ifc4 import write_ifc4
+    from ifc_import import import_ifc
+
+    ident = {"id": "L1-101", "method": "ifc", "confidence": 1.0}
+    other = _space("R2", [(10, 0), (14, 0), (14, 3), (10, 3)], ident={"id": "L1-102"})
+    whole = _space("R1", [(0, 3), (30, 3), (30, 20), (0, 20)], ident=ident)
+    new, res = appendix_g_split(_model([whole, other]))
+    assert len(res.split_from) > 1
+    m = import_ifc(write_ifc4(new, tmp_path / "m.ifc"))
+    ids = sorted(m.spaces)
+    assert "L1-101" in ids and "L1-102" in ids
+    assert not any(i.startswith("L1-101-") for i in ids)
+    sp = m.spaces["L1-101"]
+    assert Polygon(sp.polygon_m).area == pytest.approx(whole.area_m2, rel=1e-3)
+    assert "rejoined from" in sp.core_provenance.note
