@@ -39,7 +39,9 @@ from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, g
 
 from datasets_adapter import ScheduleEntry
 
-MODEL_VERSION = "1.0"
+MODEL_VERSION = "1.1"
+# 1.0 -> 1.1: SpaceOpening gained ``source_provenance`` (1-2 per-sheet records,
+# issue #663). 1.0 payloads are migrated on load by _migrate_model_dict.
 
 # Links below this confidence are flagged for human review, not silently
 # accepted (review queue, not dropped).
@@ -158,6 +160,45 @@ class SpaceOpening:
     # metres); width_m runs along x, height_m along y. None when the position
     # is unknown (drawing takeoff lines carry a count, not a position).
     plan_center_m: Optional[list] = None
+    # Per-sheet observations of this ONE logical opening (issue #663). A
+    # window that spans two levels is seen on two adjacent elevation sheets;
+    # cross-level dedup (#664) collapses them into one SpaceOpening and keeps
+    # both records here. 1 record for a single-sheet opening, at most 2.
+    # ``provenance`` stays the primary record (== source_provenance[0] when
+    # populated) so every existing reader keeps working unchanged.
+    source_provenance: List[Provenance] = field(default_factory=list)
+
+    def add_source_provenance(self, prov: Provenance) -> None:
+        """Record one more source sheet for this opening (max 2, distinct sheets).
+
+        The first record also becomes ``provenance`` when none is set.
+        Raises ValueError on a third record or a repeated (sheet, revision).
+        """
+        if self.provenance is not None and not self.source_provenance:
+            self.source_provenance.append(self.provenance)
+        key = (prov.sheet_id, prov.revision)
+        if any((p.sheet_id, p.revision) == key for p in self.source_provenance):
+            raise ValueError(
+                f"opening {self.id}: sheet {prov.sheet_id} rev {prov.revision} already recorded"
+            )
+        if len(self.source_provenance) >= MAX_OPENING_SOURCES:
+            raise ValueError(
+                f"opening {self.id}: at most {MAX_OPENING_SOURCES} source provenance records"
+            )
+        self.source_provenance.append(prov)
+        if self.provenance is None:
+            self.provenance = prov
+
+    @property
+    def source_sheet_ids(self) -> List[str]:
+        """Sheet ids this opening was observed on (primary first)."""
+        if self.source_provenance:
+            return [p.sheet_id for p in self.source_provenance]
+        return [self.provenance.sheet_id] if self.provenance is not None else []
+
+
+# A logical opening is observed on at most two adjacent elevation sheets.
+MAX_OPENING_SOURCES = 2
 
 
 @dataclass
@@ -938,7 +979,7 @@ class BuildingModel:
 
     @classmethod
     def from_dict(cls, d: dict) -> "BuildingModel":
-        m = d["model"]
+        m = _migrate_model_dict(d.get("model_version", "1.0"), d["model"])
         obj = _revive(cls, m)
         obj._rev_seq = len(obj.revision_log)
         return obj
@@ -946,6 +987,27 @@ class BuildingModel:
     @classmethod
     def from_json(cls, s: str) -> "BuildingModel":
         return cls.from_dict(json.loads(s))
+
+
+def _migrate_model_dict(version: str, m: dict) -> dict:
+    """Upgrade an older serialized model dict to the current MODEL_VERSION shape.
+
+    1.0 -> 1.1: seed ``SpaceOpening.source_provenance`` with the single
+    ``provenance`` record so single-sheet openings look the same whether
+    they were built in memory or loaded from an old file. Pure: returns a
+    new dict, never mutates the caller's payload.
+    """
+    if version == MODEL_VERSION:
+        return m
+    import copy
+
+    m = copy.deepcopy(m)
+    m["model_version"] = MODEL_VERSION
+    for sp in (m.get("spaces") or {}).values():
+        for op in sp.get("openings") or []:
+            if not op.get("source_provenance") and op.get("provenance"):
+                op["source_provenance"] = [op["provenance"]]
+    return m
 
 
 # ---------------------------------------------------------------------------
