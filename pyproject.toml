@@ -46,6 +46,7 @@ matchline = "cli:main"
 [tool.setuptools]
 py-modules = [
     "bem_export",
+    "thermal_zoning",
     "building_model",
     "cli",
     "datasets_adapter",
