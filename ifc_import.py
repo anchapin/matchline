@@ -567,6 +567,19 @@ _ELEMENT_CLASSES = (
 STOREY_ELEVATION_TOL_M = 0.1  # Pascal storey-semantics.ts
 
 
+def _storey_above_ground(storey):
+    """Pset_BuildingStoreyCommon.AboveGround as True/False, or None when the
+    file leaves it absent or UNKNOWN (#634). Never inferred from elevation."""
+    import ifcopenshell.util.element as _El
+
+    v = ((_El.get_psets(storey) or {}).get("Pset_BuildingStoreyCommon") or {}).get("AboveGround")
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.upper() in (".T.", "TRUE", ".F.", "FALSE"):
+        return v.upper() in (".T.", "TRUE")
+    return None
+
+
 def _storey_by_elevation(z, elevations, tol=STOREY_ELEVATION_TOL_M):
     """Index of the one storey whose band holds height ``z`` (#585).
 
@@ -2584,6 +2597,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
         level = Level(id=level_id, name=storey.Name or "", elevation_z_m=elev)
+        above = _storey_above_ground(storey)
+        if above is not None:
+            level.above_ground = above
+            level.above_ground_source = "ifc:Pset_BuildingStoreyCommon.AboveGround"
         model.levels.append(level)
         level_by_storey[storey.GlobalId] = level_id
 

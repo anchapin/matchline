@@ -48,6 +48,7 @@ py-modules = [
     "bem_export",
     "interstory",
     "thermal_zoning",
+    "below_grade",
     "building_model",
     "cli",
     "datasets_adapter",
