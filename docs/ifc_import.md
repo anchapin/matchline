@@ -559,3 +559,9 @@ is `ifc_import:tier0:roof_plane` (0.9) with the host GlobalId; ids are
   (their host's plane first); a skylight over no plane stays None.
 
 The revision summary reports `roof planes: N from M roof element(s)`.
+
+## Site latitude (#615)
+
+`IfcSite.RefLatitude` (degrees, minutes, seconds, millionths) is read into
+`BuildingModel.site_latitude_deg` as decimal degrees. A missing or out-of-range
+value leaves it None; no latitude is ever assumed.
