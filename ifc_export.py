@@ -180,7 +180,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         for sp in spaces:
             loops, _ = space_shell(sp.polygon_m, roofs, wall_height)
             sp.volume_m3 = shell_volume(loops)
-    return BEMModel(
+    bem = BEMModel(
         building_name=model.name,
         spaces=spaces,
         openings=openings,
@@ -201,6 +201,13 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         roof_u_value_w_m2k=roof_u_value(model),
         slab_u_value_w_m2k=slab_u_value(model),
     )
+    if len(model.levels) > 1:
+        # several storeys (#639): per-level wall loops, floors/ceilings/roofs
+        # between levels, ground and outdoor boundary types
+        from bem_levels import add_levels
+
+        add_levels(model, bem, sloped=is_sloped(roofs))
+    return bem
 
 
 def _bem_roofs(model: BuildingModel):
