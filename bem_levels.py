@@ -99,6 +99,11 @@ def _level_rings(model, lv, bem_spaces, build_ring, ensure_ccw):
     rooms = unary_union(polys)
     ids = {sp.sid for sp in bem_spaces}
     walls = [w for w in model.envelope if w.space_id in ids]
+    # an atrium folded from a stack (#640) owns walls on every level it spans:
+    # take this level's own; another level's only for a space with none here
+    own = [w for w in walls if w.id.startswith(lv.id + "-")]
+    here = {w.space_id for w in own}
+    walls = own + [w for w in walls if not w.id.startswith(lv.id + "-") and w.space_id not in here]
     if walls:
         ring = build_ring(walls)
         if len(ring) >= 3:

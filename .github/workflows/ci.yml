@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1691  # +9 atria (#640), +7 multi-storey IFC4 export (#639), +11 multi-storey gbXML export (#639), +12 Appendix G room split with air walls (#638), +15 below-grade storeys (#634), +4 lowest-GlobalId identity tie-break (#636)
+          EXPECTED_TEST_COUNT=1699  # +17 atria (#640), +7 multi-storey IFC4 export (#639), +11 multi-storey gbXML export (#639), +12 Appendix G room split with air walls (#638), +15 below-grade storeys (#634), +4 lowest-GlobalId identity tie-break (#636)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
