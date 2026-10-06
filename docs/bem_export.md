@@ -157,3 +157,9 @@ The gate's first finding (#627): OpenStudio reads only `PlanarGeometry`, so wall
 - `assign_spaces` gives each space its share of area in every block and its majority block (ties go to the block listed first).
 
 Exports are unchanged. Whether the gbXML `Zone` / IFC `IfcZone` output splits rooms on block lines (Appendix G's "divided proportionately") or assigns whole rooms to their majority block is still open.
+
+## Inter-story surfaces and shaft stacks (#632)
+
+`interstory.match_interstory(model)` matches the horizontal surfaces between consecutive levels (ordered by `Level.elevation_z_m`). Each overlap of a lower-level space with an upper-level space is one `interior` surface carrying both space ids, so the lower space's ceiling and the upper space's floor are the same surface. Parts of an upper space over no lower space are `exposed_floor` (over outdoor air), parts of a lower space under no upper space are `roof` at the top of that level, the lowest level's floors are `ground`, and the top level's ceilings are `roof`. Every space's floor pieces and ceiling pieces each sum to its plan area, or the step raises `InterstoryError`; overlapping spaces on one level also raise.
+
+Shafts and elevator cores on consecutive levels with footprint IoU >= 0.8 form one `ShaftStack`. A shaft that only partly lines up with a shaft on the next level, a stack that ends under or over an occupied room on an adjacent level, and a level that starts below the top of the level under it go to the review queue as `interstory` items. Nothing in the model is moved, merged or corrected. The single-storey writers do not use the result yet; it is the input for the multi-storey writer. Atria are out of scope until spaces carry a multi-storey flag.

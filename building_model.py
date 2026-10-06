@@ -558,6 +558,7 @@ class ReviewItem:
         "lining_u",
         "matchline_identity",
         "roof_plane",
+        "interstory",
     ]
     description: str
     confidence: float
@@ -793,6 +794,7 @@ class BuildingModel:
             "lining_u",
             "matchline_identity",
             "roof_plane",
+            "interstory",
         ],
         description: str,
         confidence: float,
