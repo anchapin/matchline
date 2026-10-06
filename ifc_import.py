@@ -2612,6 +2612,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             if lat is not None and -90.0 <= lat <= 90.0:
                 model.site_latitude_deg = round(lat, 9)
                 break
+    model.terrain = _terrain_triangles(f, project, scale)
     slab_voids = {}  # level_id -> plan rectangles of unfilled slab openings (#581)
     floor_voids = []  # (plan rectangle, z min, z max) of the same openings (#640)
     wall_axis_fix = {}  # GlobalId -> (x0, y_mid, note), body centreline (#579)
@@ -3329,6 +3330,37 @@ def _door_semantics(fill):
         else:
             notes.append(f"GlazingAreaFraction {raw!r} out of 0..1 -- ignored")
     return op, leaves, hinge, frac, "; ".join(notes)
+
+
+def _terrain_triangles(f, project, scale):
+    """Ground triangles (canonical frame) from IfcSite bodies and TERRAIN elements (#641)."""
+    import ifcopenshell.geom as _g
+
+    sources = []
+    if project is not None:
+        sources.extend(_aggregated(project, "IfcSite"))
+    for ge in f.by_type("IfcGeographicElement"):
+        if str(getattr(ge, "PredefinedType", "") or "").upper() == "TERRAIN":
+            sources.append(ge)
+    tris = []
+    for el in sources:
+        if not getattr(el, "Representation", None):
+            continue
+        try:
+            shape = _g.create_shape(_g.settings(), el)
+        except RuntimeError:
+            continue
+        v = [float(x) for x in shape.geometry.verts]
+        faces = list(shape.geometry.faces)
+        t = _placement_transform(el, scale)
+        pts = []
+        for i in range(0, len(v), 3):
+            wx, wy, wz = _apply(t, v[i] * scale, v[i + 1] * scale, v[i + 2] * scale)
+            cx, cy = _to_canonical(wx, wy)
+            pts.append([round(cx, 4), round(cy, 4), round(wz, 4)])
+        for i in range(0, len(faces) - 2, 3):
+            tris.append([pts[faces[i]], pts[faces[i + 1]], pts[faces[i + 2]]])
+    return tris
 
 
 def _plan_rect(product, scale):

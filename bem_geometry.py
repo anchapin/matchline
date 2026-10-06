@@ -167,6 +167,9 @@ class BEMModel:
     # ceilings and roofs; empty on single-storey models
     levels: list = field(default_factory=list)
     horizontals: list = field(default_factory=list)
+    # site terrain triangles in the BEM frame (y-north), from
+    # BuildingModel.terrain (#641); empty -> storey-level wall types only
+    terrain: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 

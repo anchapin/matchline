@@ -193,6 +193,10 @@ def add_levels(model, bem, sloped: bool = False) -> None:
         if space.volume_m3 is None and not sloped:
             sp.volume_m3 = (space.area_m2 or 0.0) * float(lv.wall_height_m)
 
+    bem.terrain = [
+        [(float(x), -float(y), float(z)) for x, y, z in tri]
+        for tri in (getattr(model, "terrain", None) or [])
+    ]
     ist = match_interstory(model, flag=False)
     bt = boundary_types(model, ist, flag=False)
     below = set(bt.below_grade_levels)
