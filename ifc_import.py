@@ -1108,7 +1108,28 @@ def _ifc_doors(model):
     return out
 
 
-def _merge_ifc_closets_and_shafts(model):
+IDENTITY_PSET = "Matchline_Identity"  # written by bem_ifc4 on export (#588)
+
+
+def _matchline_identity(*els):
+    """Matchline_Identity props of the first element carrying a MatchlineId, or None."""
+    try:
+        import ifcopenshell.util.element as _El
+    except ImportError:
+        return None
+    for el in els:
+        if el is None:
+            continue
+        try:
+            props = (_El.get_psets(el) or {}).get(IDENTITY_PSET) or {}
+        except (AttributeError, RuntimeError):
+            continue
+        if props.get("MatchlineId"):
+            return props
+    return None
+
+
+def _merge_ifc_closets_and_shafts(model, skip_ids=()):
     """Apply the closet/shaft rule (space_merge) to name-classified IFC spaces.
 
     Runs before envelope classification so walls, openings and daylight land
@@ -1119,7 +1140,7 @@ def _merge_ifc_closets_and_shafts(model):
         return ""
     from space_merge import merge_closets_and_shafts
 
-    res = merge_closets_and_shafts(model, doors=_ifc_doors(model))
+    res = merge_closets_and_shafts(model, doors=_ifc_doors(model), skip_ids=skip_ids)
     kept = sum(1 for it in model.review_queue if it.kind == "space_merge")
     return f"space_merge: {len(res.merged)} merged, {kept} kept for review"
 
@@ -2306,14 +2327,47 @@ def _classify_envelope(model):
 OPENING_DUPLICATE_TOL_M = 0.05  # Pascal cleanup.ts OPENING_DUPLICATE_TOLERANCE
 
 
-def _drop_duplicate_openings(openings):
+def _apply_opening_identity(bo, openings_by_gid, fills, taken, model, prov):
+    """Give an imported opening matchline's own id when the file carries one (#588).
+
+    Reads Matchline_Identity off the IfcOpeningElement, else its fill.
+    Returns True when the opening took the id (it is matchline-authored).
+    An id already taken keeps the GlobalId and adds a review item.
+    """
+    gid = bo.id
+    ident = _matchline_identity(openings_by_gid.get(gid), fills.get(gid))
+    if ident is None:
+        taken.add(gid)
+        return False
+    mid = str(ident["MatchlineId"])
+    if mid in taken:
+        model.flag_for_review(
+            kind="matchline_identity",
+            description=f"Opening {gid}: Matchline_Identity id {mid!r} already taken; kept GlobalId",
+            confidence=0.4,
+            provenance=prov("ifc_import:tier0:matchline_identity", 0.4, "", gid),
+        )
+        taken.add(gid)
+        return False
+    taken.add(mid)
+    bo.id = mid
+    if bo.provenance is not None:
+        bo.provenance.note += (
+            f"; id {mid} from {IDENTITY_PSET} (source "
+            f"{ident.get('SourceMethod') or 'unknown'}, conf {ident.get('Confidence', 'unknown')})"
+        )
+    return True
+
+
+def _drop_duplicate_openings(openings, keep=()):
     """Drop openings doubled on top of each other in one host wall (#578).
 
     Two openings are copies when they share category and tag and their
     width, height, sill and position along the wall all agree within
     OPENING_DUPLICATE_TOL_M. The copy whose GlobalId sorts first is kept, so
     the result does not depend on file order. An opening missing any of those
-    values is never treated as a copy. Idea from Pascal's cleanup.ts (MIT,
+    values is never treated as a copy, nor is an opening whose id is in
+    ``keep`` (matchline-authored, #588). Idea from Pascal's cleanup.ts (MIT,
     Copyright (c) 2026 Pascal Group Inc., commit 67f8041).
     """
     tol = OPENING_DUPLICATE_TOL_M + 1e-9
@@ -2322,11 +2376,12 @@ def _drop_duplicate_openings(openings):
     for o in sorted(openings, key=lambda o: o.id):
         vals = [getattr(o, k) for k in keys]
         twin = None
-        if all(v is not None for v in vals):
+        if o.id not in keep and all(v is not None for v in vals):
             for k in kept:
                 kv = [getattr(k, n) for n in keys]
                 if (
-                    k.category == o.category
+                    k.id not in keep
+                    and k.category == o.category
                     and k.tag == o.tag
                     and all(v is not None for v in kv)
                     and all(abs(a - b) <= tol for a, b in zip(vals, kv))
@@ -2455,6 +2510,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         fills[rel.RelatingOpeningElement.GlobalId] = rel.RelatedBuildingElement
 
     space_by_gid = {}
+    authored_spaces = set()  # space ids from Matchline_Identity (#588)
+    opening_ids = set()  # opening ids already taken (#588)
     level_by_storey = {}  # IfcBuildingStorey GlobalId -> level id
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
     unlabeled = 0
@@ -2491,6 +2548,28 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             else:
                 sid = f"{level_id}-{number}"
             gid = sp.GlobalId
+            ident = _matchline_identity(sp)
+            ident_note = ""
+            if ident is not None:
+                mid = str(ident["MatchlineId"])
+                if mid in model.spaces or mid in space_by_gid.values():
+                    model.flag_for_review(
+                        kind="matchline_identity",
+                        description=(
+                            f"Space {gid}: Matchline_Identity id {mid!r} already taken; "
+                            f"kept derived id {sid}"
+                        ),
+                        confidence=0.4,
+                        provenance=prov("ifc_import:tier0:matchline_identity", 0.4, "", gid),
+                    )
+                    ident = None
+                else:
+                    sid = mid
+                    ident_note = (
+                        f"; id {mid} from {IDENTITY_PSET} (source "
+                        f"{ident.get('SourceMethod') or 'unknown'}, conf "
+                        f"{ident.get('Confidence', 'unknown')})"
+                    )
             space_by_gid[gid] = sid
 
             polygon, area, volume, conf, method, note = _extract_space_geometry(
@@ -2505,12 +2584,21 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 polygon_m=[[round(x, 4), round(y, 4)] for x, y in polygon],
                 area_m2=round(area, 4) if area is not None else None,
                 volume_m3=round(volume, 4) if volume is not None else None,
-                core_provenance=prov(method, conf, f"{note}; name/number via {name_source}", gid),
+                core_provenance=prov(
+                    method, conf, f"{note}; name/number via {name_source}{ident_note}", gid
+                ),
                 label_confidence=(0.95 if name_source == "ifc_longname" else 0.9)
                 if number
                 else 0.6,
             )
-            cls = _ifc_space_class(sp)
+            cls = None if ident is not None else _ifc_space_class(sp)
+            if ident is not None:
+                # authored by matchline: no name heuristics, keep what it wrote
+                authored_spaces.add(sid)
+                pt = ident.get("PolyType")
+                if pt in ("room", "closet", "shaft", "elevator_core", "unassigned"):
+                    space.poly_type = pt
+                space.merged_from = [m for m in str(ident.get("MergedFrom") or "").split(",") if m]
             if cls is not None:
                 space.poly_type, space.poly_type_confidence, word = cls
                 space.core_provenance.note += (
@@ -2641,7 +2729,12 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         )
                     )
 
-                be.openings, dup = _drop_duplicate_openings(be.openings)
+                authored = {
+                    o.id
+                    for o in be.openings
+                    if _apply_opening_identity(o, openings_by_gid, fills, opening_ids, model, prov)
+                }
+                be.openings, dup = _drop_duplicate_openings(be.openings, keep=authored)
                 duplicate_openings.extend(dup)
 
             # skylights: windows hosted in a roof or slab (roadmap item 3).
@@ -2659,9 +2752,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                             slab_voids.setdefault(level_id, []).append(rect)
                     if opening is None or fill is None or not fill.is_a("IfcWindow"):
                         continue
-                    be.openings.append(
-                        _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=gid)
-                    )
+                    bo = _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=gid)
+                    _apply_opening_identity(bo, openings_by_gid, fills, opening_ids, model, prov)
+                    be.openings.append(bo)
 
         if wall_heights:
             level.wall_height_m = round(max(wall_heights), 4)
@@ -2733,7 +2826,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
     _attach_openings_to_spaces(model)
     _apply_skylight_daylight(model)
-    merge_note = _merge_ifc_closets_and_shafts(model)
+    merge_note = _merge_ifc_closets_and_shafts(model, authored_spaces)
     # after opening attachment (it matches envelope segments to wall
     # placements by start point), before facade classification (#575)
     from ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends

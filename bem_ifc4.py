@@ -63,6 +63,27 @@ def _ensure_ifc():
         ) from e
 
 
+IDENTITY_PSET = "Matchline_Identity"  # #588; "Pset_" is reserved for buildingSMART sets
+
+
+def _write_identity(f, products, ident):
+    """Stamp matchline's own id on exported products (#588). No-op without one."""
+    if not ident or not ident.get("id"):
+        return
+    import ifcopenshell.api.pset as _Ps
+
+    props = {"MatchlineId": str(ident["id"]), "SourceMethod": str(ident.get("method") or "")}
+    if ident.get("confidence") is not None:
+        props["Confidence"] = float(ident["confidence"])
+    if "merged_from" in ident:
+        props["MergedFrom"] = ",".join(ident.get("merged_from") or [])
+    if ident.get("poly_type"):
+        props["PolyType"] = str(ident["poly_type"])
+    for product in products:
+        pset = _Ps.add_pset(f, product=product, name=IDENTITY_PSET)
+        _Ps.edit_pset(f, pset=pset, properties=props)
+
+
 def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:
     """Write a minimal but structurally valid IFC4 file.
 
@@ -224,6 +245,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                 RelatedBuildingElement=fill,
             )
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
+            _write_identity(f, [opening, fill], getattr(u, "identity", None))
 
     # --- ground slab -------------------------------------------------------
     # Written only when the model knows its U (Pset_SlabCommon), so files
@@ -348,6 +370,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                 RelatedBuildingElement=fill,
             )
             _Sp.assign_container(f, products=[fill], relating_structure=storey)
+            _write_identity(f, [opening, fill], getattr(u, "identity", None))
 
     # --- shading devices (roadmap item 5, wave 3) -------------------------
     # One IfcShadingDevice per BEMShade, same absolute quad the gbXML Shade
@@ -439,6 +462,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         # spaces decompose the storey spatially (IfcRelAggregates), they are
         # not "contained products" (IfcSpace has no ContainedInStructure)
         _Ag.assign_object(f, products=[space], relating_object=storey)
+        _write_identity(f, [space], getattr(sp, "identity", None))
         # gross floor area as a quantity set (best effort)
         try:
             import ifcopenshell.api.pset as _Ps

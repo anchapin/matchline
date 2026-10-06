@@ -351,7 +351,9 @@ def _merge_shaft(model, sp, result) -> None:
 
 
 def merge_closets_and_shafts(
-    model: BuildingModel, doors: Optional[Iterable[dict]] = None
+    model: BuildingModel,
+    doors: Optional[Iterable[dict]] = None,
+    skip_ids: Iterable[str] = (),
 ) -> MergeResult:
     """Apply the closet/shaft rule to ``model`` in place and report what happened.
 
@@ -359,9 +361,12 @@ def merge_closets_and_shafts(
     it. ``doors`` optionally adds ``{"id", "level_id", "plan_center_m"}``
     records to those found on space openings. Running it twice is a no-op
     for merged spaces; kept spaces are flagged again only on the first run.
+    ``skip_ids`` are never merged away (spaces matchline itself authored and
+    exported, #588); they can still absorb other spaces.
     """
     result = MergeResult()
     door_list = _collect_doors(model, doors)
+    skip = set(skip_ids)
     flagged = {
         it.description.split(" kept as")[0].split(" ", 1)[-1]
         for it in model.review_queue
@@ -370,13 +375,13 @@ def merge_closets_and_shafts(
     for sp in sorted(
         (s for s in model.spaces.values() if s.poly_type == "closet"), key=lambda s: s.id
     ):
-        if sp.id in flagged:
+        if sp.id in flagged or sp.id in skip:
             continue
         _merge_closet(model, sp, door_list, result)
     for sp in sorted(
         (s for s in model.spaces.values() if s.poly_type == "shaft"), key=lambda s: s.id
     ):
-        if sp.id in flagged:
+        if sp.id in flagged or sp.id in skip:
             continue
         _merge_shaft(model, sp, result)
     return result

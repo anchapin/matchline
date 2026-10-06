@@ -552,6 +552,7 @@ class ReviewItem:
         "unclaimed_wall_loop",
         "ceiling",
         "lining_u",
+        "matchline_identity",
     ]
     description: str
     confidence: float
@@ -749,7 +750,7 @@ class BuildingModel:
             "unclaimed_wall_loop",
             "ceiling",
             "lining_u",
-            "lining_u",
+            "matchline_identity",
         ],
         description: str,
         confidence: float,

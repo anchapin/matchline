@@ -35,6 +35,28 @@ from validate import validate_bem_conservation
 # ---------------------------------------------------------------------------
 
 
+def _space_identity(space):
+    """Identity a space carries through IFC export and re-import (#588)."""
+    p = space.core_provenance
+    return {
+        "id": space.id,
+        "method": p.method if p is not None else "",
+        "confidence": p.confidence if p is not None else None,
+        "merged_from": list(space.merged_from),
+        "poly_type": space.poly_type or "room",
+    }
+
+
+def _opening_identity(op):
+    """Identity an opening carries through IFC export and re-import (#588)."""
+    p = op.provenance
+    return {
+        "id": op.id,
+        "method": p.method if p is not None else "",
+        "confidence": p.confidence if p is not None else None,
+    }
+
+
 def _bem_from_model(model: BuildingModel) -> BEMModel:
     """Convert a BuildingModel to a BEMModel for IFC/gbXML export.
 
@@ -74,6 +96,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                 volume_m3=vol or 0.0,
                 lighting_w=(space.lighting or SpaceLighting()).total_w or 0.0,
                 wall_u_value_w_m2k=space.wall_u_value_w_m2k,
+                identity=_space_identity(space),
             )
         )
 
@@ -95,6 +118,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                         width_m=op.width_m,
                         height_m=op.height_m,
                         space_sid=space.id,
+                        identity=_opening_identity(op),
                     )
                 )
                 continue
@@ -123,6 +147,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     height_m=op.height_m,
                     host_facade=op.host_facade or "",
                     space_sid=space.id,
+                    identity=_opening_identity(op),
                 )
             )
     openings = wall_units + sky
