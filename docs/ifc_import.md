@@ -163,7 +163,7 @@ Tier 1 is done when all of the following are true.
 **Host-wall axis resolution (#505).** Projecting the along-wall center needs the host wall's own axis, resolved in this order:
 
 1. `_wall_direction_from_envelope` — the wall is matched to its envelope edge by *position*: an edge qualifies only if one of its endpoints coincides with the wall's placement, which is exactly how envelope edges are built from walls. Length only breaks ties between edges that share an endpoint, and the returned direction is oriented to start at the wall's placement, so its sign is geometric rather than a function of export order.
-2. `_wall_direction_from_entity` — the wall's own `RefDirection`, used when no envelope edge coincides.
+2. `_wall_direction_from_entity` — the wall's own `RefDirection`, used when no envelope edge coincides. Interior walls never match an envelope edge, so this is their normal path. Openings placed this way attach with confidence **0.85** and method `ifc_ref_direction` (just above the 0.80 review threshold) and are counted in `opening_attachment_summary.ref_direction_fallback` (#666).
 3. Neither → the openings are left **unattached** and the wall is raised to the review queue as `opening_attachment`. The opening's world position is unknown in that case, and attaching it to whichever space contains a guessed point would silently mis-attribute it; openings feed the BEM takeoff via `datasets_adapter.rollup_takeoff`, so a wrong attachment becomes a wrong schedule.
 
 Two defects fixed together here, because they mask each other:
@@ -179,12 +179,17 @@ Facade classification: derive the wall's 2-D outward normal from its `RefDirecti
 
 | Building | Purpose | Why |
 |---|---|---|
-| `test_ifc_import.py` fixture (3-room, 6 openings, 4 walls) | Primary Tier 1 validation | Openings A/B are on the two 12m exterior walls; D1/D2 are on the shared interior wall — tests interior vs exterior discrimination |
+| `test_ifc_import.py` fixture (3-room, 6 openings, 4 walls) | Primary Tier 1 validation | All six openings (A, B, D1, D2) sit on the four exterior walls; each must land on exactly one space with no `adjacent_space_id` |
+| `test_ifc_import.py` two-room model (#666) | Interior-wall and level cases | A door on the shared wall lands once, on the lower-id room, with `adjacent_space_id` naming the other; a wall on another level never attaches to these rooms |
 | `bldg_3room` (synth, pipeline fixture) | IFC-import + link + validate round-trip | Confirms that Tier 1 output feeds the full pipeline (simplify → validate → export) without regression |
 
 The IFC fixture is preferred for unit-level assertions (exact opening counts per space, exact `host_facade` values). The `bldg_3room` model is preferred for integration-level checks (validation battery passes end-to-end after Tier 1).
 
-Both buildings have openings on shared/interior walls; this is the minimum realistic configuration. A building with purely rectangular perimeter rooms and only exterior openings would not exercise the ambiguity-resolution logic.
+The interior-wall case lives in the small two-room model because the IFC fixture has no interior wall openings.
+
+#### Side probes and interior openings (#666)
+
+Once the opening's point on the wall centreline is known, Tier 1 probes half the wall thickness plus 5 cm out along the wall normal on **both** sides and looks for a space on the wall's own level at each probe. Exterior openings find one room. Interior openings find two: the opening is stored **once**, on the lower-id space, and `SpaceOpening.adjacent_space_id` names the other (model version 1.2), so a door is never counted twice. When neither probe lands in a room (a wall of unknown thickness drawn away from the room edge) the centre point itself is tried, as before. An opening with no room at all is counted in `opening_attachment_summary.outside_spaces` and raised as an `opening_attachment` review item.
 
 #### validate/ guards
 
@@ -194,7 +199,7 @@ Tier 1 is blocked from shipping if any of these fire at error severity:
 |---|---|
 | `facade_opening_closure` | `SUM(space openings per facade) > gross wall area` — detects double-attachment or misclassified facade |
 | `takeoff_counts_reconcile` | `count × schedule dims ≠ sum of recorded opening areas` — detects geometry-derived area vs schedule mismatches from incorrect attachment |
-| *(new) `space_opening_attachment`* | spaces that should have openings but have `space.openings == []` — detects completely missed attachments on exterior walls |
+| `space_opening_attachment` (#666, **warn** only) | per level, IFC wall openings that no space holds; the message carries the `opening_attachment_summary` breakdown. Warn, not error: an unattached opening is still in the takeoff, it just has no room yet |
 | *(new) `facade_classification_complete`* | any `EnvelopeWall.facade == ""` after `infer_adjacency` — enforces criterion #5 above |
 | *(new) `adjacency_review_acknowledged`* | any `adjacency_ambiguous` review item that is not `acknowledged` — enforces criterion #7 above |
 
@@ -229,7 +234,7 @@ exact, zone membership exact.
 - **Facade classification threshold is heuristic**: Walls within ~45° of diagonal are flagged `facade_unclear`. The 0.7 dot-product threshold is not validated against real buildings with oblique facade orientations.
 - **No IfcOpenShell geometry for Tier 1**: Opening attachment in Tier 1 uses a fallback polygon-containment test; proper 3D clash detection is deferred to future tiers.
 - **Host-wall matching relies on an import-side invariant**: the positional envelope match assumes an envelope edge endpoint coincides with the wall's placement, which holds because `_read_bim_elements` builds envelope edges from walls and openings attach before segments move onto centrelines (#579). After that, a wall's own segment is matched by GlobalId with its placement within the wall thickness of one end. A model whose envelope was populated some other way — with edges offset from wall centrelines, or split into sub-segments — will not match positionally, and those openings fall through to `RefDirection` or are left unattached and flagged. The 0.1 m endpoint tolerance is also a tolerance on that assumption, not a measured survey tolerance.
-- **Refusing to guess loses openings**: when several same-length edges share a wall's origin, or none coincides, the wall direction resolves to `None` and its openings are dropped rather than mis-attributed. This trades completeness for correctness; the count of such walls is not yet reported as a metric, so the loss is only visible through the `opening_attachment` review queue.
+- **Refusing to guess loses openings**: when several same-length edges share a wall's origin, or none coincides, the wall direction resolves to `None` and its openings are dropped rather than mis-attributed. This trades completeness for correctness. The loss is counted per reason in `opening_attachment_summary`, appended to the import's revision note, and reported per level by the `space_opening_attachment` check (#666).
 - **Geometry-less spaces are not handled**: Spaces without geometry are currently skipped; they do not appear in the BIM model output.
 - **No IFC4 multi-level spatial structure**: The importer flattens the spatial hierarchy into a single building model; site, building, and floor levels are not preserved as separate entities.
 

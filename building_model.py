@@ -39,9 +39,12 @@ from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, g
 
 from datasets_adapter import ScheduleEntry
 
-MODEL_VERSION = "1.1"
+MODEL_VERSION = "1.2"
 # 1.0 -> 1.1: SpaceOpening gained ``source_provenance`` (1-2 per-sheet records,
 # issue #663). 1.0 payloads are migrated on load by _migrate_model_dict.
+# 1.1 -> 1.2: SpaceOpening gained ``adjacent_space_id`` (the space on the far
+# side of an interior wall opening, issue #666). Older payloads load with it
+# None, which is what the default already gives.
 
 # Links below this confidence are flagged for human review, not silently
 # accepted (review queue, not dropped).
@@ -167,6 +170,10 @@ class SpaceOpening:
     # ``provenance`` stays the primary record (== source_provenance[0] when
     # populated) so every existing reader keeps working unchanged.
     source_provenance: List[Provenance] = field(default_factory=list)
+    # Interior wall openings only (#666): the space on the far side of the
+    # wall. The opening is stored once, on the lower-id space, so a door is
+    # never counted twice; None for exterior openings and skylights.
+    adjacent_space_id: Optional[str] = None
 
     def add_source_provenance(self, prov: Provenance) -> None:
         """Record one more source sheet for this opening (max 2, distinct sheets).
@@ -362,18 +369,31 @@ class OpeningAttachmentSummary:
     no_envelope_edge: int = 0  # no envelope edge endpoint matched wall placement
     ambiguous_tie: int = 0  # multiple same-length edges tied for wall position
     no_ref_direction: int = 0  # envelope and entity RefDirection both unavailable
+    # wall direction known, but neither side of the opening lies in a space on
+    # the wall's level (#666)
+    outside_spaces: int = 0
+    # NOT unattached: openings attached using the host wall's own RefDirection
+    # because no envelope edge settled its direction (#666, confidence 0.85)
+    ref_direction_fallback: int = 0
 
     @property
     def total(self) -> int:
-        return self.no_envelope_edge + self.ambiguous_tie + self.no_ref_direction
+        return (
+            self.no_envelope_edge + self.ambiguous_tie + self.no_ref_direction + self.outside_spaces
+        )
 
     def is_empty(self) -> bool:
         return self.total == 0
 
     def summary_line(self) -> str:
         """Human-readable one-line summary for import logs."""
+        fb = (
+            f" ({self.ref_direction_fallback} attached via RefDirection)"
+            if self.ref_direction_fallback
+            else ""
+        )
         if self.is_empty():
-            return "0 openings unattached"
+            return f"0 openings unattached{fb}"
         parts = []
         if self.no_envelope_edge:
             parts.append(f"{self.no_envelope_edge} no envelope edge")
@@ -381,7 +401,9 @@ class OpeningAttachmentSummary:
             parts.append(f"{self.ambiguous_tie} ambiguous tie")
         if self.no_ref_direction:
             parts.append(f"{self.no_ref_direction} no RefDirection")
-        return f"{self.total} opening(s) unattached: {', '.join(parts)}"
+        if self.outside_spaces:
+            parts.append(f"{self.outside_spaces} outside every space")
+        return f"{self.total} opening(s) unattached: {', '.join(parts)}{fb}"
 
 
 @dataclass

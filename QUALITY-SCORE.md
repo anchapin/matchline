@@ -26,7 +26,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 **Grade: A** (unchanged)
 
-- 47-check invariant battery documented in `docs/validation.md`; `N_CHECKS = len(BATTERY) + len(CONSERVATION_BATTERY)` is tested
+- 48-check invariant battery documented in `docs/validation.md`; `N_CHECKS = len(BATTERY) + len(CONSERVATION_BATTERY)` is tested
 - Conservation laws block export via `export_gate()`, including violations introduced by the BEM transform (#230, #403, #415)
 - Post-export gbXML/IFC4 schema validation is part of the pipeline (#304, #475)
 - Defect injection tests in `tests/test_validate.py` (`model_factory.py`), parametrized for BEM checks (#344, #467)

@@ -37,7 +37,7 @@ disclosed, not hidden.
 | `synth/README.md` | synth/ module guide: sheets.py, mech.py, GT schemas, conftest fixture relationships |
 | `ci.md` | CI gates, test count regression policy, and merge requirements |
 | `process/branch-hygiene.md` | Branch cleanup policy for a squash-merge repo: 3-criterion deletion gate, the triage script, when not to delete, recovery commands |
-| `validation.md` | The 47-check invariant battery and tolerance rationales |
+| `validation.md` | The 48-check invariant battery and tolerance rationales |
 
 ## Quick Start
 
