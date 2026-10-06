@@ -960,52 +960,187 @@ def load_aec_bench(
 
 
 # ---------------------------------------------------------------------------
-# FloorPlanCAD (Fan et al., ICCV 2021)  [PENDING VALIDATION]
+# FloorPlanCAD (Fan et al., ICCV 2021)
 # ---------------------------------------------------------------------------
-# Documented format: train/val/test splits; original release ships drawings as
-# SVG (per the ArchCAD repo README: dataset/FloorplanCAD/{train,val,test}/
-# svg_gt/*.svg, converted to JSON via parse_FpCAD_svg.py). Panoptic symbol
-# annotations: ~30 "thing" classes (doors, windows, furniture) + "stuff"
-# (wall). Our HF parquet export (train-00000-of-00001.parquet, still
-# downloading at time of writing) is expected to mirror this with columns
-# carrying the SVG/drawing bytes and annotation records.
+# HF parquet export: huggingface.co/datasets/tilak1114/FloorPlanCAD,
+# data/train-00000-of-00001.parquet (5,308 rows; it is the original *test*
+# split re-labelled "train"). Schema confirmed 2026-10-06 against the HF
+# dataset viewer and detector/convert_floorplancad.py:
 #
-# TODO(validate): inspect the parquet schema once the download completes and
-# confirm column names / annotation encoding; then wire the branches below.
+#   image     struct{bytes: binary (PNG), path: string}   1000 x 1000 px
+#   image_id  string
+#   objects   struct of parallel lists:
+#               id       list<string>
+#               bbox     list<list<float32>[4]>  [x0, y0, x1, y1] in a
+#                        0..1000 frame (= image px at 1000 x 1000)
+#               category list<string>  snake_case class names, plus
+#                        "class_31"/"class_32" for unnamed source ids
+#               mask     list<image>   per-object mask (not used here)
+#
+# The original release also ships SVG (svg_gt/*.svg); that path is not
+# implemented yet.
+
+FLOORPLANCAD_COLUMNS = ("image", "image_id", "objects")
+FLOORPLANCAD_OBJECT_FIELDS = ("bbox", "category")
+FLOORPLANCAD_FRAME = 1000.0  # bbox coordinate frame side
+
+# "stuff" classes: wall-like runs with no instance identity, not symbols.
+FLOORPLANCAD_STUFF = frozenset({"wall", "curtain_wall", "railing"})
+
+FLOORPLANCAD_TO_TAKEOFF: dict[str, str] = {
+    "single_door": "door",
+    "double_door": "door",
+    "sliding_door": "door",
+    "folding_door": "door",
+    "revolving_door": "door",
+    "rolling_door": "door",
+    "window": "window",
+    "bay_window": "window",
+    "blind_window": "window",
+    "opening_symbol": "opening",
+    "sink": "fixture",
+    "urinal": "fixture",
+    "toilet": "fixture",
+    "squat_toilet": "fixture",
+    "bath": "fixture",
+    "bath_tub": "fixture",
+    "stair": "floor_area",
+    "elevator": "floor_area",
+    "escalator": "floor_area",
+}
+
+
+class FloorPlanCADFormatError(ValueError):
+    """A FloorPlanCAD parquet does not match the documented schema."""
 
 
 def load_floorplancad(
-    root: str | Path, size: int = 28, scale_m_per_px: float | None = None
+    root: str | Path,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    max_samples: int | None = None,
 ) -> tuple[list[SymbolSample], TakeoffResult]:
     """Load FloorPlanCAD symbols + takeoff regions.
 
-    Tries, in order: (1) HuggingFace parquet export train-*.parquet in root;
-    (2) svg_gt/*.svg + *.json annotation layout. Raises a descriptive error
-    if neither is found.
+    Tries, in order: (1) the HuggingFace parquet export (``*.parquet`` in
+    ``root`` or ``root/data``); (2) an ``svg_gt`` directory (not implemented
+    yet). Raises FileNotFoundError when neither is found.
+
+    Parquet rows: every object whose category is not a "stuff" class (wall,
+    curtain wall, railing) becomes one ``SymbolSample``: the drawing PNG
+    cropped to the object bbox and ``normalize_crop``-ed; label = category
+    as stored (e.g. ``"double_door"``), source = ``floorplancad:<image_id>``,
+    bbox in image px. Categories in ``FLOORPLANCAD_TO_TAKEOFF`` also become a
+    box ``Region``. ``max_samples`` caps the number of drawings (rows) read.
+    The release states no scale, so areas stay px^2 unless
+    ``scale_m_per_px`` is given.
+
+    Raises FloorPlanCADFormatError when a column or object field is missing
+    or a bbox is malformed, so schema drift fails loudly.
     """
     root = Path(root)
-    parquets = sorted(root.glob("train-*.parquet")) + sorted(root.glob("*.parquet"))
+    parquets = sorted({*root.glob("*.parquet"), *root.glob("data/*.parquet")}, key=lambda q: q.name)
     if parquets:
-        return _floorplancad_from_parquet(parquets[0], size, scale_m_per_px)
+        return _floorplancad_from_parquet(parquets, size, scale_m_per_px, max_samples)
     svg_dirs = list(root.glob("**/svg_gt"))
     if svg_dirs:
         return _floorplancad_from_svg(svg_dirs[0].parent, size, scale_m_per_px)
     raise FileNotFoundError(
-        f"No FloorPlanCAD data found under {root}: expected train-*.parquet "
-        f"or a */svg_gt directory (download still in progress?)"
+        f"No FloorPlanCAD data found under {root}: expected *.parquet (or data/*.parquet) "
+        "from https://huggingface.co/datasets/tilak1114/FloorPlanCAD, or a */svg_gt directory"
     )
 
 
-def _floorplancad_from_parquet(path: Path, size: int, scale_m_per_px: float | None):
+def _floorplancad_check_schema(schema, path: Path) -> None:
+    import pyarrow as pa
+
+    names = schema.names
+    missing = [c for c in FLOORPLANCAD_COLUMNS if c not in names]
+    if missing:
+        raise FloorPlanCADFormatError(
+            f"{path.name}: missing column(s) {missing}; columns are {names}. "
+            f"Expected {list(FLOORPLANCAD_COLUMNS)} (see docs/datasets_adapter.md)."
+        )
+    img = schema.field("image").type
+    if not pa.types.is_struct(img) or img.get_field_index("bytes") < 0:
+        raise FloorPlanCADFormatError(f"{path.name}: 'image' must be a struct with 'bytes'")
+    obj = schema.field("objects").type
+    if not pa.types.is_struct(obj):
+        raise FloorPlanCADFormatError(f"{path.name}: 'objects' must be a struct of lists")
+    gone = [f for f in FLOORPLANCAD_OBJECT_FIELDS if obj.get_field_index(f) < 0]
+    if gone:
+        raise FloorPlanCADFormatError(f"{path.name}: 'objects' has no field(s) {gone}")
+
+
+def _floorplancad_from_parquet(
+    paths: list[Path], size: int, scale_m_per_px: float | None, max_samples: int | None = None
+):
+    import io
+
     import pyarrow.parquet as pq
+    from PIL import Image
 
-    table = pq.read_table(str(path))
-    names = table.schema.names
-    raise NotImplementedError(
-        f"FloorPlanCAD parquet at {path}: columns are {names}. "
-        f"Implement _floorplancad_from_parquet to decode this schema. "
-        f"See https://github.com/ for dataset details."
+    samples: list[SymbolSample] = []
+    regions: list[Region] = []
+    rows_left = max_samples
+    for path in paths:
+        if rows_left is not None and rows_left <= 0:
+            break
+        pf = pq.ParquetFile(str(path))
+        _floorplancad_check_schema(pf.schema_arrow, path)
+        for batch in pf.iter_batches(batch_size=64, columns=list(FLOORPLANCAD_COLUMNS)):
+            for row in batch.to_pylist():
+                if rows_left is not None:
+                    if rows_left <= 0:
+                        break
+                    rows_left -= 1
+                iid = str(row["image_id"])
+                where = f"floorplancad:{iid}"
+                objs = row["objects"] or {}
+                cats = objs.get("category") or []
+                boxes = objs.get("bbox") or []
+                if len(cats) != len(boxes):
+                    raise FloorPlanCADFormatError(
+                        f"{where}: {len(cats)} categories but {len(boxes)} bboxes"
+                    )
+                if not cats:
+                    continue
+                img_bytes = (row["image"] or {}).get("bytes")
+                if not img_bytes:
+                    raise FloorPlanCADFormatError(f"{where}: image has no bytes")
+                arr = np.asarray(Image.open(io.BytesIO(img_bytes)).convert("L"), dtype=np.float64)
+                h, w = arr.shape
+                kx, ky = w / FLOORPLANCAD_FRAME, h / FLOORPLANCAD_FRAME
+                for j, (cat, bb) in enumerate(zip(cats, boxes)):
+                    if not isinstance(cat, str):
+                        raise FloorPlanCADFormatError(f"{where}[{j}]: category must be a string")
+                    if bb is None or len(bb) != 4:
+                        raise FloorPlanCADFormatError(f"{where}[{j}]: bbox must be 4 numbers")
+                    if cat in FLOORPLANCAD_STUFF:
+                        continue
+                    x0, x1 = sorted((float(bb[0]) * kx, float(bb[2]) * kx))
+                    y0, y1 = sorted((float(bb[1]) * ky, float(bb[3]) * ky))
+                    cx0, cy0 = max(0, int(x0)), max(0, int(y0))
+                    cx1, cy1 = min(w, int(math.ceil(x1))), min(h, int(math.ceil(y1)))
+                    if cx1 <= cx0 or cy1 <= cy0:
+                        continue
+                    bbox = (x0, y0, x1, y1)
+                    crop = normalize_crop(arr[cy0:cy1, cx0:cx1], size)
+                    samples.append(SymbolSample(crop, cat, where, bbox))
+                    if cat in FLOORPLANCAD_TO_TAKEOFF:
+                        regions.append(
+                            Region(
+                                FLOORPLANCAD_TO_TAKEOFF[cat],
+                                box_to_polygon(*bbox),
+                                where,
+                                "floor_plan",
+                                cat,
+                            )
+                        )
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (FloorPlanCAD states no scale)"
     )
+    return samples, measure_takeoff(regions, "floor_plan", scale)
 
 
 def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | None):

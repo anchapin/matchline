@@ -11,6 +11,7 @@ import pytest
 from datasets_adapter import (
     ArchCADFormatError,
     DrawingScale,
+    FloorPlanCADFormatError,
     Region,
     ScheduleEntry,
     box_to_polygon,
@@ -572,3 +573,81 @@ def test_extract_with_tags_real_backend_reads_rendered_tag():
     )
     assert out[0].tag == "W-1", f"{name} read {out[0].tag!r}"
     assert 0 < out[0].tag_score <= 1
+
+
+# --- FloorPlanCAD parquet loader (#683) -------------------------------------
+
+
+def _fpcad_png(side=100):
+    import io
+
+    from PIL import Image, ImageDraw
+
+    img = Image.new("L", (side, side), 255)
+    ImageDraw.Draw(img).rectangle((10, 10, 30, 30), outline=0, width=2)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _write_fpcad(path, rows, drop=None):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    cols = {
+        "image": [{"bytes": _fpcad_png(), "path": f"{r[0]}.png"} for r in rows],
+        "image_id": [r[0] for r in rows],
+        "objects": [
+            {
+                "id": [str(i) for i in range(len(r[1]))],
+                "bbox": [b for _, b in r[1]],
+                "category": [c for c, _ in r[1]],
+            }
+            for r in rows
+        ],
+    }
+    if drop:
+        cols.pop(drop)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.table(cols), str(path))
+
+
+class TestFloorPlanCADParquet:
+    ROW = (
+        "img0",
+        [
+            ("single_door", [100.0, 100.0, 300.0, 300.0]),
+            ("window", [500.0, 400.0, 700.0, 450.0]),
+            ("wall", [0.0, 0.0, 1000.0, 50.0]),
+            ("class_31", [600.0, 600.0, 800.0, 900.0]),
+        ],
+    )
+
+    def test_loads_symbols_and_regions_from_hf_layout(self, tmp_path):
+        _write_fpcad(tmp_path / "data" / "train-00000-of-00001.parquet", [self.ROW])
+        samples, takeoff = load_floorplancad(tmp_path, size=16)
+        # wall is "stuff": no sample; unnamed class_31 kept as a sample only
+        assert [s.label for s in samples] == ["single_door", "window", "class_31"]
+        assert samples[0].source == "floorplancad:img0"
+        # 0..1000 frame scaled to the 100 px image
+        assert samples[0].bbox == pytest.approx((10.0, 10.0, 30.0, 30.0))
+        assert samples[0].image.shape == (16, 16)
+        assert takeoff.counts == {"door": 1, "window": 1}
+        assert takeoff.area_px2["door"] == pytest.approx(400.0)
+        assert takeoff.area_m2 == {}
+
+    def test_max_samples_caps_rows(self, tmp_path):
+        rows = [("a", self.ROW[1][:1]), ("b", self.ROW[1][:1]), ("c", self.ROW[1][:1])]
+        _write_fpcad(tmp_path / "train-00000-of-00001.parquet", rows)
+        samples, _ = load_floorplancad(tmp_path, max_samples=2)
+        assert [s.source for s in samples] == ["floorplancad:a", "floorplancad:b"]
+
+    def test_missing_column_is_a_format_error(self, tmp_path):
+        _write_fpcad(tmp_path / "x.parquet", [self.ROW], drop="objects")
+        with pytest.raises(FloorPlanCADFormatError, match="objects"):
+            load_floorplancad(tmp_path)
+
+    def test_malformed_bbox_is_a_format_error(self, tmp_path):
+        _write_fpcad(tmp_path / "x.parquet", [("img0", [("window", [1.0, 2.0, 3.0])])])
+        with pytest.raises(FloorPlanCADFormatError, match="bbox"):
+            load_floorplancad(tmp_path)

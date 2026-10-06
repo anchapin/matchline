@@ -99,13 +99,15 @@ symbols, walls, doors, windows, and room labels at high spatial precision.
 
 **Used for in matchline:**
 
+- `datasets_adapter.load_floorplancad(root)` — symbol crops + takeoff regions; schema in `docs/datasets_adapter.md`
 - `detector/convert_floorplancad.py --src ~/workspace/datasets/floorplancad/train-00000-of-00001.parquet --out ~/workspace/datasets/detector_yolo/floorplancad` — converts to YOLO format for detector fine-tuning
 
 **Setup:**
 
 ```bash
 mkdir -p ~/workspace/datasets/floorplancad/
-# Place the parquet file:
+# Download data/train-00000-of-00001.parquet from
+# https://huggingface.co/datasets/tilak1114/FloorPlanCAD and place it at:
 # ~/workspace/datasets/floorplancad/train-00000-of-00001.parquet
 ```
 
