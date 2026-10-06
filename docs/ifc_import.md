@@ -466,3 +466,27 @@ A lining wall kept out of the envelope (#577) still counts toward its host's U:
 
 Documented gap: a ventilated rainscreen cavity between cladding and host that
 is in neither layer set is not modelled (same as foil-faced cavities).
+
+## Test builder and plan handedness (#587)
+
+`tests/ifc_builder.py` writes tiny IFC4 files per test with IfcOpenShell:
+one storey in metres, spaces as extruded footprints, walls centred on a
+start->end axis (optional layer set), doors and windows (opening + fill,
+voids/fills, OperationType), slabs and ceiling coverings. `mirror_x=True`
+builds the mirror image of the same plan. `box_plan` is a one-room plan
+with a door on the south wall and a window on the east wall.
+
+`tests/test_ifc_handedness.py` checks that the canonical frame stays
+`(X, -Y)`: walls and space polygons keep the IFC plan orientation, openings
+keep their distance from the wall start, and a mirrored plan imports
+mirrored, with equal areas, east and west facades swapped and every opening
+on its mirrored facade.
+
+**Bug found and fixed.** `_read_opening` composed the wall-to-opening
+transform backwards, so an opening not placed relative to an unrotated wall
+at the origin landed off its wall: wrong `s_center_m`, "outside wall extent"
+flags, and on a mirrored plan the south door dropped off its space. Files
+whose openings are placed relative to their wall (our exporter) were hit
+on every wall not at 0 degrees. Idea from Pascal's `tests/ifc-builder.ts`
+and `handedness.test.ts` (MIT, Copyright (c) 2026 Pascal Group Inc., commit
+67f8041); no code ported.
