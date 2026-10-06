@@ -160,8 +160,17 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         wall.ObjectPlacement = placement(
             (p0[0], p0[1], 0.0), ref_dir=(dx / L, dy / L, 0.0), parent=storey_pl
         )
+        # centred on the ring edge: the ring is the wall centreline, which is
+        # what import reads back from the wall body (#579), so a re-import
+        # gets the same footprint (#609). offset=0 put the whole body on one
+        # side and shrank the re-imported ring by half a thickness.
         rep = _Gm.add_wall_representation(
-            f, context=body, length=L, height=h, thickness=wall_thickness_m
+            f,
+            context=body,
+            length=L,
+            height=h,
+            thickness=wall_thickness_m,
+            offset=-wall_thickness_m / 2.0,
         )
         _Gm.assign_representation(f, product=wall, representation=rep)
         _Sp.assign_container(f, products=[wall], relating_structure=storey)

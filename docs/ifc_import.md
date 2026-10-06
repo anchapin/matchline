@@ -509,10 +509,15 @@ An id that is already taken in the file keeps the derived id or GlobalId and
 adds a `matchline_identity` review item; it is never renamed or guessed. Files
 without the set import exactly as before.
 
-Known gap (tracked separately): re-exporting a re-imported matchline export can
-fail BEM volume conservation, because the re-import builds the footprint ring
-from wall centrelines while the space keeps its full polygon. Identity itself
-round-trips; the gap is in geometry.
-
 Idea from Pascal's "Pascal round trip" and `isPascalAuthored` (MIT, Copyright
 (c) 2026 Pascal Group Inc., commit 67f8041).
+
+## Export, import, export again (#609)
+
+Walls in matchline's IFC export are centred on the footprint ring edge, so the
+centreline import reads back from each wall body (#579) is the ring that was
+exported. Before #609 the whole wall body sat on one side of the edge, the
+re-imported ring shrank by half a wall thickness (60 to 56.8 m2 on a 10 x 6 m
+box with 0.2 m walls), and the second export failed BEM volume conservation by
+5.6%. The check was not loosened. Files exported before this fix still import,
+with that smaller ring; re-export them to get the full footprint back.

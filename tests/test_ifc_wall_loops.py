@@ -71,7 +71,7 @@ def _ifc_with_shaft(tmp_path, with_void=False):
 
     from bem_export import BEMModel, BEMSpace, write_ifc4
     from tests.test_ifc_closet_merge import _place
-    from tests.test_ifc_import import H, _add_solid, _rect_profile
+    from tests.test_ifc_import import H, _add_solid, _rect_profile, face_reference_walls
 
     bem = BEMModel(
         building_name="T",
@@ -102,6 +102,7 @@ def _ifc_with_shaft(tmp_path, with_void=False):
     path = tmp_path / "base.ifc"
     write_ifc4(bem, path)
     f = ifcopenshell.open(str(path))
+    face_reference_walls(f)  # exterior-face axes on purpose (#609)
     storey = f.by_type("IfcBuildingStorey")[0]
     body = [
         c

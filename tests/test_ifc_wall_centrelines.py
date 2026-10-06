@@ -66,12 +66,35 @@ def test_centred_axis_stays_put(tmp_path):
 
 
 def test_shading_keeps_face_offset(tmp_path):
+    """Walls whose axis is the exterior face: the shade sits on the face, half a
+    wall off the centreline segment, and that gap comes back as offset_m."""
+    pytest.importorskip("ifcopenshell")
+    import ifcopenshell
+
+    from ifc_export import _export_ifc
+    from ifc_import import import_ifc
+    from tests.test_ifc_import import face_reference_walls
+    from tests.test_ifc_shading_import import _shaded
+
+    path = _export_ifc(_shaded(), tmp_path / "rt.ifc")
+    f = ifcopenshell.open(str(path))
+    face_reference_walls(f)  # exterior-face axes on purpose (#609)
+    f.write(str(tmp_path / "face.ifc"))
+    bm = import_ifc(tmp_path / "face.ifc")
+    by_id = {s.id: s for s in bm.shading}
+    assert by_id["SH-OVH-1"].offset_m == pytest.approx(T / 2, abs=1e-4)
+    assert by_id["SH-OVH-1"].depth_m == pytest.approx(0.6, abs=1e-3)
+
+
+def test_shading_on_centred_walls_starts_at_the_centreline(tmp_path):
+    """The exporter centres walls on the ring and writes shades on the ring
+    (the gbXML quad), so a plain round trip measures no face offset (#609)."""
     pytest.importorskip("ifcopenshell")
     from tests.test_ifc_shading_import import _roundtrip
 
     _, bm = _roundtrip(tmp_path)
     by_id = {s.id: s for s in bm.shading}
-    assert by_id["SH-OVH-1"].offset_m == pytest.approx(T / 2, abs=1e-4)
+    assert by_id["SH-OVH-1"].offset_m == pytest.approx(0.0, abs=1e-4)
     assert by_id["SH-OVH-1"].depth_m == pytest.approx(0.6, abs=1e-3)
 
 

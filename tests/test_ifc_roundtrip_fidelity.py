@@ -50,11 +50,10 @@ def test_facades_classified_and_areas_match(roundtrip):
     orig = {w.facade: w for w in m.envelope}
     got = {w.facade: w.area_m2 for w in bm.envelope}
     assert set(got) == {"north", "south", "east", "west"}
-    # the exporter draws walls on the exterior face; import puts segments on
-    # the body centreline (#579), so each wall loses half a wall at each end
-    (t,) = {e.thickness_m for e in bm.bim_elements if e.ifc_class == "IfcWall"}
+    # the exporter centres walls on the ring edge (#609), so the centreline
+    # segments import puts back (#579) are the original edges, full length
     for f, w in orig.items():
-        assert got[f] == pytest.approx(w.area_m2 - t * w.height_m, rel=1e-3)
+        assert got[f] == pytest.approx(w.area_m2, rel=1e-3)
     for w in bm.envelope:
         assert w.provenance.method == "ifc_import:tier1:facade"
 
