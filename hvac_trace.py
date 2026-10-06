@@ -207,6 +207,61 @@ def _room_of(x_m, y_m, rooms):
     return None
 
 
+# Diffuser -> room assignment (#684). Point-in-polygon alone puts a diffuser
+# on or near a wall line in whichever room happens to be listed first, and
+# drops one just outside a simplified room polygon. A diffuser deeper than
+# ROOM_EDGE_MARGIN_M inside exactly one room is assigned outright; the rest
+# go through _assign_diffuser_room.
+ROOM_EDGE_MARGIN_M = 0.15  # closer than this to a room edge = on the boundary
+NEAREST_ROOM_MARGIN_M = 0.5  # outside every room: nearest room within this
+ROOM_TIE_M = 0.10  # depth gap below which two candidate rooms are a tie
+
+
+def _room_depth(x_m, y_m, rect):
+    """Signed distance to a room rect: + inside (to nearest edge), - outside."""
+    x0, y0, x1, y1 = rect
+    if x0 <= x_m <= x1 and y0 <= y_m <= y1:
+        return min(x_m - x0, x1 - x_m, y_m - y0, y1 - y_m)
+    dx = max(x0 - x_m, 0.0, x_m - x1)
+    dy = max(y0 - y_m, 0.0, y_m - y1)
+    return -math.hypot(dx, dy)
+
+
+def _assign_diffuser_room(x_m, y_m, rooms, zone_rooms=()):
+    """Room for one diffuser: ``(room_id or None, method, candidate ids)``.
+
+    1. ``interior``: deeper than ROOM_EDGE_MARGIN_M inside exactly one room.
+    2. Otherwise the candidates are rooms the point is inside or within
+       NEAREST_ROOM_MARGIN_M of. None -> ``outside`` (review). One ->
+       ``boundary`` (inside it, near an edge) or ``nearest`` (just outside).
+    3. Several: duct connectivity first. The diffuser is already on this
+       zone's outlet ducts, so if exactly one candidate is a room the zone
+       serves through an interior diffuser, it wins (``duct``).
+    4. Then depth: the candidate the point sits deepest in (or nearest to)
+       wins when it leads the next by more than ROOM_TIE_M (``nearest``).
+    5. Anything else is ``ambiguous``: no room, sent to review, never a guess.
+    """
+    depth = {r["id"]: _room_depth(x_m, y_m, r["rect_m"]) for r in rooms}
+    deep = [rid for rid, d in depth.items() if d >= ROOM_EDGE_MARGIN_M]
+    if len(deep) == 1:
+        return deep[0], "interior", deep
+    cands = sorted(
+        (rid for rid, d in depth.items() if d > -NEAREST_ROOM_MARGIN_M),
+        key=lambda rid: -depth[rid],
+    )
+    if not cands:
+        return None, "outside", []
+    if len(cands) == 1:
+        return cands[0], ("boundary" if depth[cands[0]] >= 0 else "nearest"), cands
+    fed = [rid for rid in cands if rid in zone_rooms]
+    if len(fed) == 1:
+        return fed[0], "duct", cands
+    pool = fed or cands
+    if depth[pool[0]] - depth[pool[1]] > ROOM_TIE_M:
+        return pool[0], "nearest", cands
+    return None, "ambiguous", cands
+
+
 def extract_zones(skel: np.ndarray, detections: list, rooms: list, px_per_m: float = PX_PER_M):
     """VAV cut-vertex zoning. Returns (zones, debug)."""
     mask = skel.astype(bool).copy()
@@ -260,16 +315,48 @@ def extract_zones(skel: np.ndarray, detections: list, rooms: list, px_per_m: flo
         npix = sum((comp == c).sum() for c in outlet)
         duct_m = npix / px_per_m
         audit.append(f"outlet skeleton: {len(outlet)} components, {npix}px = {duct_m:.2f} m duct")
-        z_rooms, z_dis = [], []
-        for dfi in served:
-            d = difs[dfi]
-            rid = _room_of(d["cx"] / px_per_m - _MARGIN, d["cy"] / px_per_m - _MARGIN, rooms)
-            z_dis.append(d)
-            if rid and rid not in z_rooms:
+        z_dis = [difs[dfi] for dfi in served]
+        z_rooms, z_dif_rooms, z_review = [], [None] * len(z_dis), []
+        # pass 1: interior diffusers fix the rooms this zone's ducts feed;
+        # pass 2: boundary / outside diffusers lean on that (#684)
+        pending = []
+        for k, d in enumerate(z_dis):
+            xm, ym = d["cx"] / px_per_m - _MARGIN, d["cy"] / px_per_m - _MARGIN
+            depth = [_room_depth(xm, ym, r["rect_m"]) for r in rooms]
+            if sum(dd >= ROOM_EDGE_MARGIN_M for dd in depth) == 1:
+                rid, how, _ = _assign_diffuser_room(xm, ym, rooms)
+                z_dif_rooms[k] = rid
+                if rid not in z_rooms:
+                    z_rooms.append(rid)
+                audit.append(
+                    f"diffuser at ({d['cx']:.0f},{d['cy']:.0f})px "
+                    f"-> room {rid} ({how}; skeleton dist <= {ASSOC_PX}px)"
+                )
+            else:
+                pending.append((k, d, xm, ym))
+        fed = tuple(z_rooms)
+        for k, d, xm, ym in pending:
+            rid, how, cands = _assign_diffuser_room(xm, ym, rooms, fed)
+            z_dif_rooms[k] = rid
+            if rid is None:
+                z_review.append(
+                    {
+                        "kind": "diffuser_room_ambiguous",
+                        "diffuser": (round(d["cx"], 1), round(d["cy"], 1)),
+                        "reason": how,
+                        "candidates": cands,
+                    }
+                )
+                audit.append(
+                    f"diffuser at ({d['cx']:.0f},{d['cy']:.0f})px -> no room "
+                    f"({how}; candidates {cands or 'none'}) -> review"
+                )
+                continue
+            if rid not in z_rooms:
                 z_rooms.append(rid)
             audit.append(
                 f"diffuser at ({d['cx']:.0f},{d['cy']:.0f})px "
-                f"-> room {rid} (skeleton dist <= {ASSOC_PX}px)"
+                f"-> room {rid} ({how}; candidates {cands})"
             )
         z_sen = []
         for s in sens:
@@ -286,6 +373,8 @@ def extract_zones(skel: np.ndarray, detections: list, rooms: list, px_per_m: flo
                 "vav_det": b,
                 "rooms_served": sorted(z_rooms),
                 "diffusers": [(round(d["cx"], 1), round(d["cy"], 1)) for d in z_dis],
+                "diffuser_rooms": z_dif_rooms,
+                "review": z_review,
                 "sensors": [(round(s["cx"], 1), round(s["cy"], 1)) for s in z_sen],
                 "duct_length_m": round(float(duct_m), 3),
                 "audit": audit,
@@ -340,7 +429,7 @@ def trace_sheet(
     detections = kept
     skel = duct_skeleton(gray)
     # detections are sheet px; extract_zones converts to meters with the
-    # margin offset before the room point-in-polygon lookup.
+    # margin offset before the diffuser -> room assignment.
     zones, dbg = extract_zones(skel, detections, gt["rooms"], PX_PER_M)
     # report detections in meters for readability
     for z in zones:
@@ -352,6 +441,9 @@ def trace_sheet(
             (round(x / PX_PER_M - _MARGIN, 2), round(y / PX_PER_M - _MARGIN, 2))
             for x, y in z["sensors"]
         ]
+        for item in z["review"]:
+            x, y = item["diffuser"]
+            item["diffuser"] = (round(x / PX_PER_M - _MARGIN, 2), round(y / PX_PER_M - _MARGIN, 2))
     agree = sum(1 for d in detections if d["label"] == d["ncc_cls"])
     det_m = [
         dict(d, cx=d["cx"] / PX_PER_M - _MARGIN, cy=d["cy"] / PX_PER_M - _MARGIN)
@@ -359,6 +451,7 @@ def trace_sheet(
     ]
     return {
         "zones": zones,
+        "review": [dict(item, zone_id=z["zone_id"]) for z in zones for item in z["review"]],
         "detections": det_m,
         "skel_px": dbg["n_skel_px"],
         "ncc_wisard_agreement": f"{agree}/{len(detections)}",

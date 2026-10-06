@@ -4,6 +4,7 @@ import numpy as np
 
 from hvac_trace import (
     PX_PER_M,
+    _assign_diffuser_room,
     duct_skeleton,
     extract_zones,
     ncc_locate,
@@ -238,3 +239,64 @@ class TestTraceSheet:
         templates = {c: render_template(c) for c in MECH_CLASSES}
         result = trace_sheet(gray, gt, clf, templates)
         assert result["n_vav_suppressed"] >= 0
+
+
+class TestDiffuserRoomAssignment:
+    """Boundary / outside diffusers: duct connectivity, then nearest room (#684)."""
+
+    ROOMS = [
+        {"rect_m": (0.0, 0.0, 5.0, 10.0), "id": "R1"},
+        {"rect_m": (5.0, 0.0, 10.0, 10.0), "id": "R2"},
+    ]
+
+    def test_interior_diffuser_assigned_outright(self):
+        assert _assign_diffuser_room(8.0, 4.0, self.ROOMS)[:2] == ("R2", "interior")
+
+    def test_just_outside_goes_to_nearest_room_within_margin(self):
+        assert _assign_diffuser_room(10.3, 4.0, self.ROOMS)[:2] == ("R2", "nearest")
+
+    def test_far_outside_every_room_goes_to_review(self):
+        assert _assign_diffuser_room(12.0, 4.0, self.ROOMS)[:2] == (None, "outside")
+
+    def test_wall_line_resolved_by_duct_connectivity(self):
+        rid, how, cands = _assign_diffuser_room(4.98, 4.0, self.ROOMS, zone_rooms=("R2",))
+        assert (rid, how) == ("R2", "duct") and set(cands) == {"R1", "R2"}
+
+    def test_wall_line_without_duct_evidence_is_ambiguous(self):
+        assert _assign_diffuser_room(4.98, 4.0, self.ROOMS)[:2] == (None, "ambiguous")
+
+    # --- defect injection through extract_zones --------------------------------
+    # rooms in metres; sheet px = (m + 2) * PX_PER_M. Spine at y = 300 px from a
+    # VAV at x = 150 px; R2's diffuser nudged from x = 360 px (5.2 m, inside R2)
+    # onto the R1/R2 wall at x = 349 px (4.98 m, just inside R1).
+
+    def _sheet(self, diffuser_xs):
+        skel = np.zeros((700, 700), dtype=np.uint8)
+        skel[300, 120:580] = 1
+        dets = [{"cx": 150, "cy": 300, "label": "vav", "ncc": 0.9, "ncc_cls": "vav", "margin": 9}]
+        dets += [
+            {
+                "cx": x,
+                "cy": 310,
+                "label": "diffuser",
+                "ncc": 0.9,
+                "ncc_cls": "diffuser",
+                "margin": 5,
+            }
+            for x in diffuser_xs
+        ]
+        return extract_zones(skel, dets, self.ROOMS, px_per_m=PX_PER_M)[0]
+
+    def test_nudged_diffuser_follows_its_zone_not_the_first_room(self):
+        (z,) = self._sheet([500, 349])
+        assert z["diffuser_rooms"] == ["R2", "R2"]
+        assert z["rooms_served"] == ["R2"]
+        assert z["review"] == []
+
+    def test_nudged_diffuser_with_no_evidence_is_queued_not_guessed(self):
+        (z,) = self._sheet([349])
+        assert z["diffuser_rooms"] == [None]
+        assert z["rooms_served"] == []
+        (item,) = z["review"]
+        assert item["kind"] == "diffuser_room_ambiguous" and item["reason"] == "ambiguous"
+        assert set(item["candidates"]) == {"R1", "R2"}
