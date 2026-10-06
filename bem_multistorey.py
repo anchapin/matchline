@@ -95,21 +95,24 @@ def _wall_frame(p0, p1):
     return bl, br, L, az
 
 
-def _grade_pieces(terrain, bl, br, L, z0, h, rects):
+def _grade_pieces(terrain, bl, br, L, z0, h, rects, outline=None):
     """[(surface type, (s, z) polygon)] of one wall cut at grade (#641).
 
     ``s`` runs from ``bl`` along the wall, ``z`` from the wall base; ``rects``
     are its openings ``(s0, s1, sill, top)``. Openings stay on the exterior
     part even below grade (a window well); the underground part is the wall
     under the ground line less the openings. None when the terrain does not
-    cover the wall, so the storey's type applies.
+    cover the wall, so the storey's type applies. ``outline`` is the wall's
+    true (s, z) outline when it is not an L x h rectangle (a wall under a
+    sloped roof, #649).
     """
     if not terrain:
         return None
     prof = terrain.profile(bl, br)
     if prof is None:
         return None
-    W = box(0.0, 0.0, L, h)
+    W = box(0.0, 0.0, L, h) if outline is None else outline
+    h = W.bounds[3]
     rel = [(u, g - z0) for u, g in prof]
     if all(g <= GRADE_TOL_M for _, g in rel):
         return [("ExteriorWall", W)]

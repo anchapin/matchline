@@ -227,11 +227,24 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     tzones, zone_of = _write_zones(root, model)
     air_walls = list(getattr(model, "air_walls", None) or [])
 
-    wall_cons = _write_constructions(root, model, air_walls)
-
-    # --- spaces (children of Building in gbXML) ------------------------------
     roofs = list(getattr(model, "roof_planes", None) or [])
     sloped = is_sloped(roofs)
+    edges = _wall_edges(model.ring_m)
+    opening_assign = _distribute_openings(
+        model.openings,
+        edges,
+        getattr(model, "ring_facades", None),
+        _edge_spaces(edges, model.spaces),
+    )
+    grade = _grade_plan(model, edges, opening_assign, roofs, sloped, h)
+
+    wall_cons = _write_constructions(root, model, air_walls)
+    if any(t == "UndergroundWall" for pieces, _ in grade.values() for t, _ in pieces):
+        # walls cut at grade from the site terrain (#649); no U invented
+        co = _el(root, "Construction", id="const-ugwall")
+        _el(co, "Name", "Underground wall (no U-value stated)")
+
+    # --- spaces (children of Building in gbXML) ------------------------------
     placement_notes = []
     for sp in model.spaces:
         zref = zone_of.get(sp.sid) if tzones else "zone-1"
@@ -281,15 +294,9 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             _cartesian(pl, x0, y0, h)
 
     # --- envelope surfaces ------------------------------------------------
-    edges = _wall_edges(model.ring_m)
-    opening_assign = _distribute_openings(
-        model.openings,
-        edges,
-        getattr(model, "ring_facades", None),
-        _edge_spaces(edges, model.spaces),
-    )
     surf_count = 0
     open_count = 0
+    n_split = 0
     for i, (p0, p1) in enumerate(edges):
         dx, dy = p1[0] - p0[0], p1[1] - p0[1]
         L = math.hypot(dx, dy)
@@ -305,13 +312,37 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         else:
             bl, br = p1, p0
         sp = _assign_wall_to_space(p0, p1, model.spaces)
+        cons = wall_cons.get(sp.sid, ("const-wall", None))[0]
+        stype = "ExteriorWall"
+        pieces, ops = grade.get(i, (None, None))
+        if pieces and len(pieces) > 1:
+            # part-buried wall (#649): one surface per part, cut at grade
+            n_split += 1
+            surf_count, open_count = _write_grade_pieces(
+                campus,
+                i,
+                sp.sid,
+                cons,
+                pieces,
+                ops,
+                bl,
+                br,
+                L,
+                az,
+                surf_count,
+                open_count,
+                placement_notes,
+            )
+            continue
+        if pieces and pieces[0][0] == "UndergroundWall":
+            stype, cons = "UndergroundWall", "const-ugwall"
         surf_count += 1
         su = _el(
             campus,
             "Surface",
             id=f"wall-{i + 1:03d}",
-            surfaceType="ExteriorWall",
-            constructionIdRef=wall_cons.get(sp.sid, ("const-wall", None))[0],
+            surfaceType=stype,
+            constructionIdRef=cons,
         )
         _el(su, "Name", f"Wall {i + 1}")
         _el(su, "AdjacentSpaceId", spaceIdRef=sp.sid)
@@ -369,6 +400,8 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             for sv, zv in ((s0, z0), (s1, z0), (s1, z1), (s0, z1)):
                 _cartesian(opl, bl[0] + sv * ux, bl[1] + sv * uy, zv)
 
+    if n_split:
+        placement_notes.append(f"{n_split} wall(s) split at grade from the site terrain")
     sky_units = [u for u in model.openings if u.category == "skylight"]
     if sloped:
         surf_count, open_count, sky_placed = _write_sloped_roofs(
@@ -506,6 +539,104 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         f"gbXML: {len(model.spaces)} spaces, {surf_count} surfaces, {open_count} openings."
     )
     return path
+
+
+def _grade_plan(model, edges, opening_assign, roofs, sloped, h) -> dict:
+    """{edge index: (grade pieces, openings)} for walls the site terrain covers (#649).
+
+    Single-storey twin of the multi-storey grade split (#641): the same
+    ``_grade_pieces`` cut, with each wall's true outline under a sloped roof.
+    Openings are ``(unit, s0, s1, sill, top)`` in the wall's bottom-left frame.
+    Empty without a terrain, so plain exports are unchanged.
+    """
+    from shapely.geometry import Polygon
+
+    from bem_multistorey import _grade_pieces, _wall_frame
+    from grade import Terrain
+
+    terrain = Terrain(getattr(model, "terrain", None) or [])
+    if not terrain:
+        return {}
+    out = {}
+    for i, (p0, p1) in enumerate(edges):
+        if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 1e-6:
+            continue
+        bl, br, L, _az = _wall_frame(p0, p1)
+        h_open, outline = h, None
+        if sloped:
+            top, _unc = wall_top(p0, p1, roofs, h)
+            h_open = min([h] + [z for _, _, z in top])
+            ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
+
+            def s_of(x, y):
+                return (x - bl[0]) * ux + (y - bl[1]) * uy
+
+            ring = [(s_of(*p0), 0.0), (s_of(*p1), 0.0)]
+            ring += [(s_of(x, y), z) for x, y, z in reversed(top)]
+            outline = Polygon(ring).buffer(0)
+        placements, _ = _place_openings_on_wall(opening_assign[i], L, h_open)
+        ops = []
+        for pl_ in placements:
+            s0, s1 = pl_["s0"], pl_["s1"]
+            if bl != p0:
+                s0, s1 = L - s1, L - s0
+            ops.append((pl_["unit"], s0, s1, pl_["sill"], pl_["sill"] + pl_["height"]))
+        pieces = _grade_pieces(terrain, bl, br, L, 0.0, h, [o[1:] for o in ops], outline=outline)
+        if pieces is not None:
+            out[i] = (pieces, ops)
+    return out
+
+
+def _write_grade_pieces(
+    campus, i, sid, cons, pieces, ops, bl, br, L, az, surf_count, open_count, notes
+):
+    """Write one wall cut at grade (#649); openings go on the exposed part holding them."""
+    from shapely.geometry import box
+
+    from bem_multistorey import _write_piece
+
+    ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
+    left = list(ops)
+    for k, (stype, poly) in enumerate(pieces):
+        surf_count += 1
+        su, ox, oz = _write_piece(
+            campus,
+            f"wall-{i + 1:03d}-{k + 1}",
+            f"Wall {i + 1} part {k + 1} ({stype})",
+            stype,
+            cons if stype == "ExteriorWall" else "const-ugwall",
+            sid,
+            bl,
+            br,
+            L,
+            az,
+            0.0,
+            poly,
+        )
+        if stype != "ExteriorWall":
+            continue
+        area = poly.buffer(1e-6)
+        for o in list(left):
+            u, s0, s1, sill, top = o
+            if not area.contains(box(s0, sill, s1, top)):
+                continue
+            left.remove(o)
+            open_count += 1
+            op = _el(
+                su, "Opening", id=f"op-{open_count:04d}", openingType=_opening_type(u.category)
+            )
+            _el(op, "Name", f"{u.tag} ({u.category})")
+            org = _el(op, "RectangularGeometry")
+            for sv, zv in ((s0, sill), (s1, sill), (s1, top), (s0, top)):
+                _cartesian(org, sv - ox, zv - oz)
+            opl = _el(_el(op, "PlanarGeometry"), "PolyLoop")
+            for sv, zv in ((s0, sill), (s1, sill), (s1, top), (s0, top)):
+                _cartesian(opl, bl[0] + sv * ux, bl[1] + sv * uy, zv)
+    if left:
+        notes.append(
+            f"wall-{i + 1:03d}: {len(left)} opening(s) on no exposed part of the wall not exported"
+        )
+    return surf_count, open_count
 
 
 def _covers(loop3d, pt) -> bool:

@@ -197,7 +197,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     level_notes = []
     if multi:
         wall_groups = [
-            (*storey_of[lv.id], lv.height_m, edges, assign, owner, f"{lv.id}-")
+            (*storey_of[lv.id], lv.height_m, edges, assign, owner, f"{lv.id}-", lv.elevation_m)
             for lv, edges, assign, owner in level_walls(model, levels, space_level, level_notes)
         ]
     else:
@@ -208,8 +208,14 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             getattr(model, "ring_facades", None),
             _edge_spaces(edges, model.spaces),
         )
-        wall_groups = [(storey, storey_pl, h, edges, opening_assign, None, "")]
-    for w_storey, w_pl, w_h, edges, opening_assign, owners, prefix in wall_groups:
+        wall_groups = [(storey, storey_pl, h, edges, opening_assign, None, "", 0.0)]
+    # site terrain (#649): walls stay whole; the part above and below grade
+    # is carried as 2nd-level space boundaries (EXTERNAL vs EXTERNAL_EARTH)
+    from grade import Terrain
+
+    terrain = Terrain(getattr(model, "terrain", None) or [])
+    grade_bounds = []  # (space id, wall, [(surface type, (s, z) polygon)], bl, br, L)
+    for w_storey, w_pl, w_h, edges, opening_assign, owners, prefix, w_z0 in wall_groups:
         for i, (p0, p1) in enumerate(edges):
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
             L = math.hypot(dx, dy)
@@ -252,6 +258,10 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
             # openings hosted in this wall
             placements, _ = _place_openings_on_wall(opening_assign[i], L, w_h)
+            if terrain:
+                gb = _grade_boundary_pieces(terrain, p0, p1, L, w_z0, w_h, placements)
+                if gb is not None:
+                    grade_bounds.append((host.sid, wall, *gb))
             for pl_ in placements:
                 u = pl_["unit"]
                 s_mid = (pl_["s0"] + pl_["s1"]) / 2.0
@@ -564,6 +574,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     # --- spaces -----------------------------------------------------------
     ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
+    space_xy = {}  # sid -> space placement origin in its storey (#649)
     for sp in model.spaces:
         n = len(sp.polygon_m)
         cx = sum(p[0] for p in sp.polygon_m) / n
@@ -571,6 +582,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         space = _R.create_entity(f, ifc_class="IfcSpace", name=sp.name)
         sp_storey, sp_pl = storey_for(sp.sid)
         space.ObjectPlacement = placement((cx, cy, 0.0), parent=sp_pl)
+        space_xy[sp.sid] = (cx, cy)
         try:
             space.PredefinedType = "SPACE"
         except AttributeError:
@@ -693,8 +705,15 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             )
         air_written += 1
 
+    n_grade = _write_grade_boundaries(f, grade_bounds, ifc_space_by_sid, space_xy)
+
     path = _validate_out_path(path)
     f.write(str(path))
+    if n_grade:
+        model.notes.append(
+            f"IFC4: {n_grade} wall(s) carry grade boundaries from the site terrain "
+            "(IfcRelSpaceBoundary2ndLevel, EXTERNAL_EARTH below grade, EXTERNAL above) (#649)."
+        )
     if air_written:
         model.notes.append(f"IFC4: {air_written} air walls as IfcVirtualElement (#638).")
     model.notes.append(
@@ -725,6 +744,95 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         + ("".join(f" Shading: {n}" for n in shade_notes))
     )
     return path
+
+
+def _grade_boundary_pieces(terrain, p0, p1, L, z0, h, placements):
+    """(pieces, bl, br, openings) of a wall the terrain covers, else None (#649).
+
+    The cut is the gbXML one (``bem_multistorey._grade_pieces``); a wall that
+    is all above or all below grade is one piece. Openings ``(s0, s1, sill,
+    top)`` are in the bottom-left frame, so the exposed boundary leaves them out.
+    """
+    from bem_multistorey import _grade_pieces, _wall_frame
+
+    bl, br, _L, _az = _wall_frame(p0, p1)
+    rects = []
+    for pl_ in placements:
+        s0, s1 = pl_["s0"], pl_["s1"]
+        if bl != p0:
+            s0, s1 = L - s1, L - s0
+        rects.append((s0, s1, pl_["sill"], pl_["sill"] + pl_["height"]))
+    pieces = _grade_pieces(terrain, bl, br, L, z0, h, rects)
+    if pieces is None:
+        return None
+    return pieces, bl, br, L, rects
+
+
+def _write_grade_boundaries(f, grade_bounds, space_by_sid, space_xy) -> int:
+    """IfcRelSpaceBoundary2ndLevel per wall part, in the space's own frame (#649).
+
+    Each boundary is an IfcCurveBoundedPlane on the wall's outer face: plane
+    x along the wall from its bottom-left seen from outside, y up, normal
+    pointing out of the space. Openings are inner boundaries of the exposed
+    part. Returns the number of walls given boundaries.
+    """
+    import ifcopenshell.guid
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    def pt(c):
+        return f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in c))
+
+    def loop(coords):
+        pts = [pt(c) for c in list(coords)[:-1]]
+        return f.create_entity("IfcPolyline", Points=pts + [pts[0]])
+
+    n = 0
+    for sid, wall, pieces, bl, br, L, rects in grade_bounds:
+        space = space_by_sid.get(sid)
+        if space is None:
+            continue
+        cx, cy = space_xy[sid]
+        ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
+        holes = unary_union([box(a, c, b, d) for a, b, c, d in rects]) if rects else None
+        for k, (stype, poly) in enumerate(pieces):
+            if stype == "ExteriorWall" and holes is not None:
+                poly = poly.difference(holes)
+            parts = [poly] if poly.geom_type == "Polygon" else list(getattr(poly, "geoms", []))
+            for part in parts:
+                if part.geom_type != "Polygon" or part.is_empty:
+                    continue
+                plane = f.create_entity(
+                    "IfcPlane",
+                    Position=f.create_entity(
+                        "IfcAxis2Placement3D",
+                        Location=pt((bl[0] - cx, bl[1] - cy, 0.0)),
+                        Axis=f.create_entity("IfcDirection", DirectionRatios=(uy, -ux, 0.0)),
+                        RefDirection=f.create_entity("IfcDirection", DirectionRatios=(ux, uy, 0.0)),
+                    ),
+                )
+                surf = f.create_entity(
+                    "IfcCurveBoundedPlane",
+                    BasisSurface=plane,
+                    OuterBoundary=loop(part.exterior.coords),
+                    InnerBoundaries=[loop(r.coords) for r in part.interiors],
+                )
+                below = stype == "UndergroundWall"
+                f.create_entity(
+                    "IfcRelSpaceBoundary2ndLevel",
+                    GlobalId=ifcopenshell.guid.new(),
+                    Name=f"{wall.Name} part {k + 1}",
+                    Description="2ndLevel",
+                    RelatingSpace=space,
+                    RelatedBuildingElement=wall,
+                    ConnectionGeometry=f.create_entity(
+                        "IfcConnectionSurfaceGeometry", SurfaceOnRelatingElement=surf
+                    ),
+                    PhysicalOrVirtualBoundary="PHYSICAL",
+                    InternalOrExternalBoundary="EXTERNAL_EARTH" if below else "EXTERNAL",
+                )
+        n += 1
+    return n
 
 
 # slab per horizontal type on multi-storey exports (#639):
