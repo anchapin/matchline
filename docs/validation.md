@@ -164,8 +164,11 @@ and are run in addition to it, so `N_CHECKS` = 44 + 3 = 47.
   calculations disagree.
 - `volume_closure` — footprint area × characteristic height ≈ Σ of each
   room's reported volume.
-- `envelope_closure` — Σ(`EnvelopeWall.area_m2`) ≈ facade area minus
-  window + door areas, i.e. the facade is fully accounted for.
+- `envelope_closure` — window + door area fits inside the facade
+  (Σ `EnvelopeWall.area_m2`), so the solid wall left over is not negative
+  (1% rounding slack). No cap on the glazing share: a curtain-wall building
+  can be almost all glass with opaque spandrel panels as its only solid wall.
+  An error means openings were double-counted or mis-sized.
 
 ### Takeoff closure (error)
 

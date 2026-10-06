@@ -693,12 +693,19 @@ def volume_closure(model: BuildingModel) -> CheckResult:
         )
 
 
-def envelope_closure(model: BuildingModel) -> CheckResult:
-    """Total facade area ~= sum of solid wall areas (facade minus openings).
+# Rounding slack when openings exactly fill a facade (all-glass walls).
+ENVELOPE_CLOSURE_TOL = 0.01
 
-    Conservation law: the total facade area (sum of EnvelopeWall.area_m2) should
-    equal the sum of solid wall areas (facade area minus window+door areas),
-    within tolerance. This ensures the facade area is fully accounted for.
+
+def envelope_closure(model: BuildingModel) -> CheckResult:
+    """Openings fit inside the facade: solid wall area = facade - openings >= 0.
+
+    Conservation law: window + door area cannot exceed the total facade area
+    (sum of EnvelopeWall.area_m2), or the solid wall left over would be
+    negative. There is no cap on the glazing share itself: a curtain-wall
+    building can be almost all glass, with opaque spandrel panels as the only
+    solid wall. An error here means openings were double-counted or sized
+    wrong, not that the building has a lot of glass.
     """
     try:
         facade_area = sum(w.area_m2 or 0.0 for w in model.envelope)
@@ -709,14 +716,24 @@ def envelope_closure(model: BuildingModel) -> CheckResult:
                     if op.area_m2:
                         opening_area += op.area_m2
         solid_wall_area = facade_area - opening_area
-        rel_err = _rel_err(solid_wall_area, facade_area) if facade_area > 0 else float("inf")
-        if rel_err > 0.05:
+        if facade_area <= 0:
             return CheckResult(
                 "envelope_closure",
                 "Envelope closure",
                 "error",
-                f"solid wall area {solid_wall_area:.2f} m^2 vs facade {facade_area:.2f} m^2 "
-                f"(error {rel_err:.1%}, tol 5%)",
+                f"facade area is {facade_area:.2f} m^2 with {opening_area:.2f} m^2 of openings",
+                expected=facade_area,
+                actual=solid_wall_area,
+            )
+        overrun = -solid_wall_area / facade_area
+        if overrun > ENVELOPE_CLOSURE_TOL:
+            return CheckResult(
+                "envelope_closure",
+                "Envelope closure",
+                "error",
+                f"openings {opening_area:.2f} m^2 exceed facade {facade_area:.2f} m^2 "
+                f"(solid wall {solid_wall_area:.2f} m^2, {overrun:.1%} over, "
+                f"tol {ENVELOPE_CLOSURE_TOL:.0%})",
                 expected=facade_area,
                 actual=solid_wall_area,
             )
@@ -724,8 +741,9 @@ def envelope_closure(model: BuildingModel) -> CheckResult:
             "envelope_closure",
             "Envelope closure",
             "pass",
-            f"solid wall area {solid_wall_area:.2f} m^2 matches facade {facade_area:.2f} m^2 "
-            f"within 5%",
+            f"openings {opening_area:.2f} m^2 fit in facade {facade_area:.2f} m^2 "
+            f"({opening_area / facade_area:.0%} glazed; "
+            f"solid wall {max(solid_wall_area, 0):.2f} m^2)",
             expected=facade_area,
             actual=solid_wall_area,
         )
