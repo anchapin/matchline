@@ -1,5 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Exact tag required by pre-commit; Renovate bumps it with the CI pin (docs/ci.md).
     rev: v0.16.8
     hooks:
       - id: ruff
