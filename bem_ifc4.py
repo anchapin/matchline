@@ -78,6 +78,8 @@ def _write_identity(f, products, ident):
         props["Confidence"] = float(ident["confidence"])
     if "merged_from" in ident:
         props["MergedFrom"] = ",".join(ident.get("merged_from") or [])
+    if ident.get("split_from"):
+        props["SplitFrom"] = str(ident["split_from"])
     if ident.get("poly_type"):
         props["PolyType"] = str(ident["poly_type"])
     for product in products:
@@ -553,8 +555,58 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         if members:
             _Grp.assign_group(f, products=members, group=zone)
 
+    # --- Appendix G thermal zones and air walls (#638) --------------------
+    for zid, sids in getattr(model, "thermal_zones", None) or []:
+        zone = f.create_entity(
+            "IfcZone", Name=zid, ObjectType="ASHRAE 90.1 Appendix G thermal block"
+        )
+        zone.GlobalId = ifcopenshell.guid.new()
+        members = [ifc_space_by_sid[sid] for sid in sids if sid in ifc_space_by_sid]
+        if members:
+            _Grp.assign_group(f, products=members, group=zone)
+    air_written = 0
+    for aw in getattr(model, "air_walls", None) or []:
+        a = ifc_space_by_sid.get(aw.space_ids[0])
+        b = ifc_space_by_sid.get(aw.space_ids[1])
+        if a is None or b is None:
+            continue
+        virt = _R.create_entity(f, ifc_class="IfcVirtualElement", name=aw.id)
+        virt.ObjectPlacement = placement((0.0, 0.0, 0.0), parent=storey_pl)
+        line = f.create_entity(
+            "IfcPolyline",
+            Points=[
+                f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
+                for x, y in (aw.p0, aw.p1)
+            ],
+        )
+        virt.Representation = f.create_entity(
+            "IfcProductDefinitionShape",
+            Representations=[
+                f.create_entity(
+                    "IfcShapeRepresentation",
+                    ContextOfItems=body,
+                    RepresentationIdentifier="Axis",
+                    RepresentationType="Curve2D",
+                    Items=[line],
+                )
+            ],
+        )
+        _Sp.assign_container(f, products=[virt], relating_structure=storey)
+        for sp_ in (a, b):
+            f.create_entity(
+                "IfcRelSpaceBoundary",
+                GlobalId=ifcopenshell.guid.new(),
+                RelatingSpace=sp_,
+                RelatedBuildingElement=virt,
+                PhysicalOrVirtualBoundary="VIRTUAL",
+                InternalOrExternalBoundary="INTERNAL",
+            )
+        air_written += 1
+
     path = _validate_out_path(path)
     f.write(str(path))
+    if air_written:
+        model.notes.append(f"IFC4: {air_written} air walls as IfcVirtualElement (#638).")
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
         f"spaces, {len(model.openings) - len(sky_units)} wall openings hosted, "

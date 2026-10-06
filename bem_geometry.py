@@ -25,6 +25,9 @@ class BEMSpace:
     # matchline identity written to the IFC (#588): {"id", "method",
     # "confidence", "merged_from", "poly_type"}; None writes nothing
     identity: Optional[dict] = None
+    # parent space id when this space is one piece of a room split at an
+    # Appendix G block line (#638); empty for an unsplit room
+    split_from: str = ""
 
 
 @dataclass
@@ -114,6 +117,12 @@ class BEMModel:
     slab_u_value_w_m2k: Optional[float] = None
     # BEMRoof planes (#618); empty -> flat roof at wall_height_m, as before
     roof_planes: list = field(default_factory=list)
+    # Appendix G thermal zones (#638): [(block_id, [space_ids])]; empty ->
+    # the writers' single default zone, as before. Kept apart from ``zones``,
+    # which carries HVAC zones and their diffusers.
+    thermal_zones: list = field(default_factory=list)
+    # air walls between pieces of a split room (#638), thermal_zoning.AirWall
+    air_walls: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 
