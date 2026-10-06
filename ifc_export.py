@@ -207,6 +207,14 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
         from bem_levels import add_levels
 
         add_levels(model, bem, sloped=is_sloped(roofs))
+    elif getattr(model, "terrain", None):
+        # single storey (#649): the writers put the storey base at z = 0, so
+        # the site terrain is shifted by the storey's elevation; y-flipped
+        # into the BEM frame like everything else
+        z_base = float(model.levels[0].elevation_z_m) if model.levels else 0.0
+        bem.terrain = [
+            [(float(x), -float(y), float(z) - z_base) for x, y, z in tri] for tri in model.terrain
+        ]
     return bem
 
 
