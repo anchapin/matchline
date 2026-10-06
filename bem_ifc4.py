@@ -395,6 +395,13 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             shade_notes.append(f"shade {sh.id} skipped: degenerate quad")
             continue
         origin, ax_x, _ax_y, normal, dx_len, dy_len = frame
+        # Walls here are centred on the ring (#609); the quad sits offset_m
+        # off the ring line, so move it out to the exterior face (#611).
+        # Never inward: a quad already past the face stays where it is.
+        push = max(0.0, wall_thickness_m / 2.0 - float(getattr(sh, "offset_m", 0.0) or 0.0))
+        out = getattr(sh, "outward", None)
+        if push > 0.0 and out is not None:
+            origin = (origin[0] + out[0] * push, origin[1] + out[1] * push, origin[2])
         dev = _R.create_entity(
             f, ifc_class="IfcShadingDevice", name=sh.id, predefined_type="USERDEFINED"
         )

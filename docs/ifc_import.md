@@ -521,3 +521,16 @@ re-imported ring shrank by half a wall thickness (60 to 56.8 m2 on a 10 x 6 m
 box with 0.2 m walls), and the second export failed BEM volume conservation by
 5.6%. The check was not loosened. Files exported before this fix still import,
 with that smaller ring; re-export them to get the full footprint back.
+
+## Shading plates on the wall face (#611)
+
+`write_ifc4` centres walls on the ring edge (#609), while the BEM shade quad
+(the gbXML Shade surface) sits `offset_m` off that line. The IFC adapter moves
+each IfcShadingDevice out along its host wall's outward normal by
+`max(0, t/2 - offset_m)`, so the plate's inner edge lands on the wall's
+exterior face. It never moves a plate inward. gbXML is unchanged: its walls are
+zero-thickness surfaces on the ring.
+
+A drawn shade (offset 0) therefore comes back from its first IFC round trip
+with `offset_m = t/2` and its quad half a wall further out, same width, depth
+and height. After that, export and import leave it where it is.

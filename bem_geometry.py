@@ -64,6 +64,12 @@ class BEMShade:
     kind: str  # "overhang" | "fin" | "balcony" | "other"
     host_wall_id: str
     vertices: list  # [(x, y, z), ...] planar quad
+    # gap from the host segment line to the quad's inner edge, already in
+    # ``vertices`` (ShadingSurface.offset_m), and the host's outward plan
+    # normal; the IFC adapter uses them to seat the plate on the face of its
+    # centred wall (#611). gbXML ignores both.
+    offset_m: float = 0.0
+    outward: Optional[tuple] = None
 
 
 @dataclass
