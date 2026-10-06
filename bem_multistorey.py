@@ -101,6 +101,55 @@ def _write_wall(campus, wid, name, stype, cons, sid, p0, p1, z0, h):
     return su, bl, br, L
 
 
+def level_walls(model, levels, space_level, notes):
+    """Exterior walls of each storey, shared by the gbXML and IFC4 writers.
+
+    Returns ``[(level, edges, openings per edge, owning space per edge)]`` for
+    every level with rooms and wall loops. Each wall opening goes to the walls
+    of its own space's level; one with no known space goes to the lowest
+    above-grade level (noted). Courtyard loops are clockwise, so their owner
+    is looked up with the edge reversed (``_assign_wall_to_space`` nudges to
+    the left of travel).
+    """
+    wall_units = [u for u in model.openings if u.category != "skylight"]
+    fallback = next((lv for lv in levels if lv.wall_type == "ExteriorWall"), levels[0])
+    by_level = {lv.id: [] for lv in levels}
+    orphans = 0
+    for u in wall_units:
+        lv = space_level.get(u.space_sid)
+        if lv is None:
+            orphans += 1
+            lv = fallback
+        by_level[lv.id].append(u)
+    if orphans:
+        notes.append(f"{orphans} opening(s) with no space placed on level {fallback.id}")
+    out = []
+    for lv in levels:
+        lsp = [sp for sp in model.spaces if space_level.get(sp.sid) is lv]
+        if not lsp or not lv.rings:
+            continue
+        edges, facades, flipped = [], [], []
+        for ring in lv.rings:
+            cw = _signed_area(ring) < 0
+            for p0, p1 in _wall_edges(ring):
+                edges.append((p0, p1))
+                facades.append(_facade(p0, p1))
+                flipped.append(cw)
+        owner = [
+            _assign_wall_to_space(p1, p0, lsp) if cw else _assign_wall_to_space(p0, p1, lsp)
+            for (p0, p1), cw in zip(edges, flipped)
+        ]
+        assign = _distribute_openings(by_level[lv.id], edges, facades, _edge_spaces(edges, lsp))
+        out.append((lv, edges, assign, owner))
+    return out
+
+
+def space_levels(model, levels) -> dict:
+    """Space id -> its BEMLevel (the lowest level when the space names none)."""
+    level_of = {lv.id: lv for lv in levels}
+    return {sp.sid: level_of.get(sp.level_id) or levels[0] for sp in model.spaces}
+
+
 def write_gbxml_levels(model, path: str | Path) -> Path:
     from bem_export import _gbxml_root, _validate_out_path, _write_constructions, _write_zones
 
@@ -108,7 +157,6 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
     bldg = _el(campus, "Building", id="bldg-1", buildingType="Office")
     _el(bldg, "Name", model.building_name)
     levels = sorted(model.levels, key=lambda lv: (lv.elevation_m, lv.id))
-    level_of = {lv.id: lv for lv in levels}
     for lv in levels:
         st = _el(bldg, "BuildingStorey", id=f"storey-{_nc(lv.id)}")
         _el(st, "Name", lv.name or lv.id)
@@ -124,10 +172,9 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         if stype in used:
             _el(_el(root, "Construction", id=cid), "Name", cname)
 
-    space_level = {}
+    space_level = space_levels(model, levels)
     for sp in model.spaces:
-        lv = level_of.get(sp.level_id) or levels[0]
-        space_level[sp.sid] = lv
+        lv = space_level[sp.sid]
         z0, h = lv.elevation_m, lv.height_m
         attrs = {"id": sp.sid, "buildingStoreyIdRef": f"storey-{_nc(lv.id)}"}
         zref = zone_of.get(sp.sid) if tzones else "zone-1"
@@ -153,42 +200,13 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
             for x, y, z in ((x0, y0, z0), (x1, y1, z0), (x1, y1, z0 + h), (x0, y0, z0 + h)):
                 _cartesian(pl, x, y, z)
 
-    # openings: each wall opening on its own space's level; one with no known
-    # space goes to the lowest above-grade level
     notes = []
     wall_units = [u for u in model.openings if u.category != "skylight"]
     sky_units = [u for u in model.openings if u.category == "skylight"]
-    fallback = next((lv for lv in levels if lv.wall_type == "ExteriorWall"), levels[0])
-    by_level = {lv.id: [] for lv in levels}
-    orphans = 0
-    for u in wall_units:
-        lv = space_level.get(u.space_sid)
-        if lv is None:
-            orphans += 1
-            lv = fallback
-        by_level[lv.id].append(u)
-    if orphans:
-        notes.append(f"{orphans} opening(s) with no space placed on level {fallback.id}")
-
     surf_count = open_count = 0
     n_edges = 0
-    for lv in levels:
-        lsp = [sp for sp in model.spaces if space_level[sp.sid] is lv]
-        if not lsp or not lv.rings:
-            continue
-        edges, facades, flipped = [], [], []
-        for ring in lv.rings:
-            cw = _signed_area(ring) < 0
-            for p0, p1 in _wall_edges(ring):
-                edges.append((p0, p1))
-                facades.append(_facade(p0, p1))
-                flipped.append(cw)
+    for lv, edges, assign, owner in level_walls(model, levels, space_level, notes):
         n_edges += len(edges)
-        owner = [
-            _assign_wall_to_space(p1, p0, lsp) if cw else _assign_wall_to_space(p0, p1, lsp)
-            for (p0, p1), cw in zip(edges, flipped)
-        ]
-        assign = _distribute_openings(by_level[lv.id], edges, facades, _edge_spaces(edges, lsp))
         for i, (p0, p1) in enumerate(edges):
             if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 1e-6:
                 continue
