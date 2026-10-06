@@ -62,6 +62,7 @@ CONSTRUCTION_OF = {
     **{k: v[0] for k, v in EXTRA_CONSTRUCTIONS.items()},
 }
 UP_FROM_LOWER = ("Roof", "UndergroundCeiling")
+SILL_TOL_M = 1e-3  # a sill on a storey line belongs to the storey above it (#650)
 DOWN_FROM_UPPER = ("SlabOnGrade", "UndergroundSlab", "RaisedFloor")
 
 
@@ -195,15 +196,41 @@ def level_walls(model, levels, space_level, notes):
     wall_units = [u for u in model.openings if u.category != "skylight"]
     fallback = next((lv for lv in levels if lv.wall_type == "ExteriorWall"), levels[0])
     by_level = {lv.id: [] for lv in levels}
-    orphans = 0
+    level_of = {lv.id: lv for lv in levels}
+    spans_of = {sp.sid: getattr(sp, "spans", None) or [] for sp in model.spaces}
+    orphans = moved = no_sill = outside = 0
     for u in wall_units:
         lv = space_level.get(u.space_sid)
         if lv is None:
             orphans += 1
             lv = fallback
+        elif spans_of.get(u.space_sid):
+            # atrium (#650): the opening goes on the storey band its sill
+            # sits in, when the source states the sill; else the base band
+            band = _sill_band(
+                u, [lv] + [level_of[i] for i in spans_of[u.space_sid] if i in level_of]
+            )
+            if band is None:
+                if getattr(u, "sill_z_m", None) is None:
+                    no_sill += 1
+                else:
+                    outside += 1
+            elif band is not lv:
+                moved += 1
+                lv = band
         by_level[lv.id].append(u)
     if orphans:
         notes.append(f"{orphans} opening(s) with no space placed on level {fallback.id}")
+    if moved:
+        notes.append(f"{moved} atrium opening(s) placed on the storey their sill sits in")
+    if no_sill:
+        notes.append(
+            f"{no_sill} atrium opening(s) with no stated sill height kept on the base storey"
+        )
+    if outside:
+        notes.append(
+            f"{outside} atrium opening(s) with a sill outside the atrium's height kept on the base storey"
+        )
     out = []
     for lv in levels:
         lsp = [
@@ -227,6 +254,17 @@ def level_walls(model, levels, space_level, notes):
         assign = _distribute_openings(by_level[lv.id], edges, facades, _edge_spaces(edges, lsp))
         out.append((lv, edges, assign, owner))
     return out
+
+
+def _sill_band(u, bands):
+    """The level among ``bands`` whose storey band holds the opening's sill, else None (#650)."""
+    z = getattr(u, "sill_z_m", None)
+    if z is None:
+        return None
+    for lv in sorted(bands, key=lambda b: (b.elevation_m, b.id)):
+        if lv.elevation_m - SILL_TOL_M <= z < lv.elevation_m + lv.height_m - SILL_TOL_M:
+            return lv
+    return None
 
 
 def space_levels(model, levels) -> dict:
