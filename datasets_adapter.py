@@ -323,10 +323,7 @@ def detections_from_regions(regions: list[Region], score: float = 1.0) -> list[D
     walls) are NOT detections -- they are measured directly by
     measure_takeoff. Tags are empty: current annotation sets carry class
     labels but not the type tags printed next to symbols on real sheets.
-
-    TODO(v2): tag extraction -- OCR the text adjacent to each symbol bbox
-    (type tags like "A", "W-1" are callouts, not part of the symbol glyph).
-    Until then, detections can only be counted per class, not per type.
+    Run :func:`extract_with_tags` afterwards to OCR them (#668).
     """
     out = []
     for r in regions:
