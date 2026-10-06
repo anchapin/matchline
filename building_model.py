@@ -732,6 +732,9 @@ class BuildingModel:
     source_roof_planes: List[RoofPlane] = field(default_factory=list)
     # site latitude in decimal degrees, north positive (IfcSite RefLatitude, #615)
     site_latitude_deg: Optional[float] = None
+    # ground surface triangles [[x, y, z] x 3], canonical frame, from the IFC
+    # site terrain (#641); empty when the source has none (never a default grade)
+    terrain: List[list] = field(default_factory=list)
     # overhangs, fins, balconies (roadmap item 5); never part of envelope
     # exterior wall assemblies keyed by Construction.id (roadmap item 6)
     bim_elements: List[BimElement] = field(default_factory=list)
