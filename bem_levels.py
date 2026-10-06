@@ -145,6 +145,7 @@ def add_levels(model, bem, sloped: bool = False) -> None:
                 height_m=float(lv.wall_height_m),
                 rings=rings,
                 wall_type="UndergroundWall" if lv.id in below else "ExteriorWall",
+                above_ground=lv.above_ground,
             )
         )
 

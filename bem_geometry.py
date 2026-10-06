@@ -107,6 +107,7 @@ class BEMLevel:
     height_m: float
     rings: list = field(default_factory=list)
     wall_type: str = "ExteriorWall"  # "UndergroundWall" on a stated below-grade level
+    above_ground: Optional[bool] = None  # as the source states it, else None
 
 
 @dataclass
