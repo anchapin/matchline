@@ -196,6 +196,8 @@ def _check_window_double_link(ctx: _Ctx) -> CheckResult:
     by looking for same-tag windows on the same facade whose s_center_m
     positions are within OPENING_DEDUP_TOL_M (0.15 m) of each other.
     """
+    from opening_identity import opening_s
+
     OPENING_DEDUP_TOL_M = 0.15
     bad = []
     for sid, sp in ctx.model.spaces.items():
@@ -207,10 +209,14 @@ def _check_window_double_link(ctx: _Ctx) -> CheckResult:
         for (tag, facade), ops in by_tag.items():
             if len(ops) < 2:
                 continue
-            ops_sorted = sorted(ops, key=lambda x: x.s_center_m or 0.0)
-            for i in range(len(ops_sorted) - 1):
-                c1 = ops_sorted[i].s_center_m or 0.0
-                c2 = ops_sorted[i + 1].s_center_m or 0.0
+            # Unplaced openings have no centre to compare (cross_level_dedup
+            # reports them); s_center_m falls back to the host interval midpoint.
+            placed = [(opening_s(o), o) for o in ops if opening_s(o) is not None]
+            placed.sort(key=lambda x: x[0])
+            ops_sorted = [o for _, o in placed]
+            for i in range(len(placed) - 1):
+                c1 = placed[i][0]
+                c2 = placed[i + 1][0]
                 if abs(c2 - c1) < OPENING_DEDUP_TOL_M:
                     bad.append((sid, tag, ops_sorted[i].id, ops_sorted[i + 1].id))
     if bad:

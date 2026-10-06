@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 46,
+  "n_checks": 47,
   "errors": 5,
   "warnings": 4,
-  "passes": 22,
+  "passes": 23,
   "skipped": 15
  },
  "results": [
@@ -233,6 +233,13 @@
    "name": "Window double-link detection",
    "severity": "pass",
    "message": "2 tagged window(s): no double-links detected",
+   "entities": []
+  },
+  {
+   "check_id": "cross_level_dedup",
+   "name": "Cross-level opening deduplication",
+   "severity": "pass",
+   "message": "2 wall opening(s) on 1 level(s): no cross-level duplicates",
    "entities": []
   },
   {

@@ -475,3 +475,84 @@ def _check_hvac_zone_coverage(ctx: _Ctx) -> CheckResult:
         f"{len(hvac_spaces)} HVAC space(s) reachable from {len(m.zones)} zone(s); "
         "terminal counts reconcile",
     )
+
+
+def _check_cross_level_dedup(ctx: _Ctx) -> CheckResult:
+    """Opening conservation across levels (#664): one physical opening, one record.
+
+    Read from the canonical model after linking:
+    - error: two wall openings on adjacent levels still match as one physical
+      opening (same facade/tag, centres within 5 cm, continuous vertical
+      extent); dedup missed it and its glazing would be counted twice.
+    - warn: on some level, the share of wall openings that are unplaced (no
+      along-wall position, so dedup could not confirm them) or duplicated
+      across spaces on that level exceeds ``ctx.cross_level_dedup_warn_frac``
+      (default 1%).
+    - skip: no wall openings.
+    """
+    from opening_identity import (
+        group_key,
+        is_wall_opening,
+        level_table,
+        opening_s,
+        same_opening,
+    )
+
+    name = "Cross-level opening deduplication"
+    levels = level_table(ctx.model)
+    entries = [
+        (sp.level_id, sp.id, op)
+        for sp in ctx.model.spaces.values()
+        for op in sp.openings
+        if is_wall_opening(op)
+    ]
+    if not entries:
+        return CheckResult("cross_level_dedup", name, "skip", "no wall openings linked")
+    groups: dict = {}
+    for e in entries:
+        groups.setdefault(group_key(e[2]), []).append(e)
+    cross, same_level_dup = [], set()
+    for grp in groups.values():
+        for i in range(len(grp)):
+            li, si, oi = grp[i]
+            for lj, sj, oj in grp[i + 1 :]:
+                if si == sj or not same_opening(oi, li, oj, lj, levels):
+                    continue
+                if li != lj:
+                    cross.append((oi.id, li, oj.id, lj))
+                else:
+                    same_level_dup.update({id(oi), id(oj)})
+    if cross:
+        a, la, b, lb = cross[0]
+        return CheckResult(
+            "cross_level_dedup",
+            name,
+            "error",
+            f"{len(cross)} opening pair(s) on adjacent levels are one physical opening "
+            f"but kept twice, e.g. '{a}' ({la}) and '{b}' ({lb}); glazing double-counted",
+            entities=[a, b],
+        )
+    worst = None
+    for lid in sorted({e[0] for e in entries}):
+        ops = [e[2] for e in entries if e[0] == lid]
+        bad = [o for o in ops if opening_s(o) is None or id(o) in same_level_dup]
+        frac = len(bad) / len(ops)
+        if worst is None or frac > worst[1]:
+            worst = (lid, frac, bad, len(ops))
+    lid, frac, bad, n = worst
+    if frac > ctx.cross_level_dedup_warn_frac:
+        return CheckResult(
+            "cross_level_dedup",
+            name,
+            "warn",
+            f"level {lid}: {len(bad)}/{n} wall openings ({frac:.0%}) unplaced or duplicated "
+            f"across spaces (threshold {ctx.cross_level_dedup_warn_frac:.0%})",
+            entities=[o.id for o in bad[:10]],
+        )
+    return CheckResult(
+        "cross_level_dedup",
+        name,
+        "pass",
+        f"{len(entries)} wall opening(s) on {len({e[0] for e in entries})} level(s): "
+        "no cross-level duplicates",
+    )

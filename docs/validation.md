@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (46 checks)
+## The battery (47 checks)
 
 ### Conservation laws (error)
 
@@ -157,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 43 + 3 = 46.
+and are run in addition to it, so `N_CHECKS` = 44 + 3 = 47.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -216,6 +216,15 @@ and are run in addition to it, so `N_CHECKS` = 43 + 3 = 46.
   an overlapping centre (within 0.15 m along the host wall). Two elevation
   runs of one facade can duplicate a `SpaceOpening` before
   `_dedupe_space_openings()` runs; this is the safety net for that.
+- `cross_level_dedup` — opening conservation across levels (#664). **error**
+  when two wall openings on adjacent levels still match as one physical
+  opening (same facade, tag and category; along-wall centres within 5 cm;
+  matching width; vertical extents that overlap or touch), so its glazing
+  would be counted twice. **warn** when, on any level, more than
+  `cross_level_dedup_warn_frac` (default 1%) of wall openings are unplaced
+  (no along-wall position, so dedup could not confirm them) or duplicated
+  across spaces on that level. **skip** with no wall openings. Matching
+  rules live in `opening_identity.py`, shared with `_dedupe_space_openings`.
 
 ### Provenance / auditability (error, except where noted)
 

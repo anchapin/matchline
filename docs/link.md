@@ -29,12 +29,18 @@ discipline sheets are registered into this frame before linking.
 - `"elev_nogrid"` → geometric fallback (conf = 0.65)
 - `None` → skip elevation linking
 
-`_dedupe_space_openings(model)` — merges duplicate `SpaceOpening` entries
-when two elevation runs of the same facade are linked separately. Dedup is by
-tag (primary) + geometric proximity (fallback for untagged/conflicting entries):
-entries whose `host_interval_m` overlaps by `>= OPENING_DEDUP_TOL_M (0.15 m)`
-are merged. Merged entries carry a compound `sheet_id` and the higher
-confidence. See Issue #1 in `docs/design-docs/open-issues.md`.
+`_dedupe_space_openings(model)` — merges duplicate `SpaceOpening` sightings
+across spaces and levels (#404, #664). Openings are grouped by
+(facade, tag, category); inside a group two are one physical opening when
+their along-wall centres are within `CROSS_LEVEL_DEDUP_TOL_M` (5 cm), their
+widths agree within 0.15 m, and they sit on the same level (heights agree) or
+on adjacent levels with absolute vertical extents that overlap or touch. That
+keeps a two-storey window seen on two adjacent sheets as one opening while
+punched windows stacked floor over floor stay separate. The best-confidence
+sighting is kept; every source sheet goes in `source_provenance` (max 2,
+schema from #663) and a `window_dedup` record is appended to `history`.
+Openings with no along-wall position are never merged. Matching rules live in
+`opening_identity.py`, shared with the `cross_level_dedup` validation check.
 
 `_link_lighting(bldg, model, spaces, sched, report)` — assigns fixtures to
 spaces by point-in-polygon (canonical metres). Missing schedule entries
@@ -85,9 +91,11 @@ needs_review = ambiguous or conf < REVIEW_CONFIDENCE
 - **Diffuser-position zones only**: `_link_mech` uses point-in-polygon on
   diffuser positions to determine zone membership. If diffusers are missing from
   the mechanical plan, spaces silently get no zone assignment.
-- **Cross-sheet window dedup is approximate**: `_dedupe_space_openings` uses
-  `OPENING_DEDUP_TOL_M = 0.15 m` center-distance tolerance. Overlapping windows
-  on the same facade with different tags may be incorrectly merged.
+- **Cross-sheet window dedup needs positions**: `_dedupe_space_openings`
+  matches on a 5 cm along-wall tolerance, so sightings with no position are
+  kept as-is (the `cross_level_dedup` check warns when they exceed 1% of a
+  level). A merged two-storey window keeps one sighting's geometry and is
+  flagged `needs_review` when that sighting does not span the full height.
 - **No wall opening piercing**: `_link_elevation` creates `SpaceOpening` entries
   but does not model wall penetration geometry (penetration depth, surrounding
   wall insulation). BEM export handles surface-area distribution only.
