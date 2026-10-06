@@ -443,3 +443,132 @@ class TestDrawingScale:
         scale = DrawingScale(m_per_px=None)
         assert scale.m_per_px is None
         assert scale.note == ""
+
+
+# ---------------------------------------------------------------------------
+# OCR tag extraction (#668)
+# ---------------------------------------------------------------------------
+
+
+def _ocr_det(bbox=(100, 100, 140, 140), tag=""):
+    from datasets_adapter import Detection
+
+    return Detection(label="Window", tag=tag, score=0.9, bbox=bbox, source="t")
+
+
+def _fake_reader(reads, calls=None):
+    """reads: list of (text, conf, box in SHEET px); returned relative to the crop."""
+
+    def read(crop):
+        if calls is not None:
+            calls.append(crop.shape)
+        return list(reads)
+
+    return read
+
+
+class TestExtractWithTags:
+    IMG = np.full((400, 400), 255.0)
+
+    def _run(self, dets, reads, **kw):
+        from datasets_adapter import extract_with_tags
+
+        # crop origin for the default bbox (100,100,140,140), pad 1.0 x 40 px = (60, 60)
+        rel = [(t, c, (b[0] - 60, b[1] - 60, b[2] - 60, b[3] - 60)) for t, c, b in reads]
+        return extract_with_tags(dets, self.IMG, reader=_fake_reader(rel), **kw)
+
+    def test_adjacent_tag_fills_tag_and_score(self):
+        out = self._run([_ocr_det()], [("w-1", 0.82, (145, 110, 170, 125))])
+        assert out[0].tag == "W-1" and out[0].tag_score == pytest.approx(0.82)
+
+    def test_nearest_tag_wins(self):
+        reads = [("D2", 0.99, (60, 60, 75, 70)), ("A", 0.7, (142, 115, 150, 125))]
+        assert self._run([_ocr_det()], reads)[0].tag == "A"
+
+    def test_schedule_tag_preferred_over_nearer_read(self):
+        reads = [("X9", 0.95, (142, 115, 150, 125)), ("W-2", 0.6, (60, 60, 80, 70))]
+        out = self._run([_ocr_det()], reads, schedule_tags={"W-2"})
+        assert out[0].tag == "W-2"
+
+    def test_non_tag_text_and_low_conf_ignored(self):
+        reads = [("OFFICE", 0.99, (142, 110, 190, 125)), ("B", 0.1, (142, 110, 150, 125))]
+        out = self._run([_ocr_det()], reads)
+        assert out[0].tag == "" and out[0].tag_score is None
+
+    def test_tagged_detections_untouched_and_not_read(self):
+        from datasets_adapter import extract_with_tags
+
+        calls = []
+        d = _ocr_det(tag="A")
+        out = extract_with_tags([d], self.IMG, reader=_fake_reader([("Z", 1, (0, 0, 1, 1))], calls))
+        assert out == [d] and calls == []
+
+    def test_low_confidence_read_lands_in_tag_review(self):
+        from datasets_adapter import ScheduleEntry, rollup_takeoff
+
+        out = self._run([_ocr_det()], [("A", 0.4, (142, 110, 150, 125))])
+        sched = {"A": ScheduleEntry(tag="A", category="window", width_m=1.0, height_m=1.0)}
+        res = rollup_takeoff(out, sched)
+        assert res.counts == {"window": 1} and res.tag_review == out
+
+    def test_missing_backend_leaves_tags_empty_and_warns(self, monkeypatch, caplog):
+        import sys
+
+        from datasets_adapter import extract_with_tags
+
+        monkeypatch.setitem(sys.modules, "pytesseract", None)
+        monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
+        d = _ocr_det()
+        with caplog.at_level("WARNING", logger="datasets_adapter"):
+            out = extract_with_tags([d], self.IMG, config={"datasets": {"ocr_backend": "auto"}})
+        assert out == [d] and out[0].tag == ""
+        assert "no OCR backend available" in caplog.text
+
+    def test_backend_none_skips_ocr_quietly(self, caplog):
+        from datasets_adapter import extract_with_tags
+
+        with caplog.at_level("WARNING", logger="datasets_adapter"):
+            out = extract_with_tags([_ocr_det()], self.IMG, backend="none")
+        assert out[0].tag == "" and caplog.text == ""
+
+    def test_unknown_backend_raises(self):
+        from datasets_adapter import extract_with_tags
+
+        with pytest.raises(ValueError, match="ocr_backend"):
+            extract_with_tags([_ocr_det()], self.IMG, config={"datasets": {"ocr_backend": "x"}})
+
+
+def test_load_datasets_config_precedence(tmp_path, caplog):
+    from datasets_adapter import load_datasets_config
+
+    pp = tmp_path / "pyproject.toml"
+    pp.write_text('[tool.matchline.datasets]\nocr_backend = "rapidocr"\nocr_pad_frac = 2\n')
+    cfg = load_datasets_config(pyproject=pp)
+    assert cfg == {"ocr_backend": "rapidocr", "ocr_pad_frac": 2.0, "ocr_min_conf": 0.3}
+    with caplog.at_level("WARNING", logger="datasets_adapter"):
+        cfg = load_datasets_config(
+            {"datasets": {"ocr_backend": "pytesseract", "bogus": 1}}, pyproject=pp
+        )
+    assert cfg["ocr_backend"] == "pytesseract" and cfg["ocr_pad_frac"] == 2.0
+    assert "bogus" in caplog.text
+
+
+def test_extract_with_tags_real_backend_reads_rendered_tag():
+    """Synthetic sheet: a window symbol with "W-1" printed beside it."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    from datasets_adapter import extract_with_tags, get_ocr_reader
+
+    name, reader = get_ocr_reader("auto")
+    if reader is None:
+        pytest.skip("no OCR backend installed (pytesseract+tesseract or rapidocr)")
+    img = Image.new("L", (400, 240), 255)
+    dr = ImageDraw.Draw(img)
+    dr.rectangle((60, 90, 160, 130), outline=0, width=3)  # window symbol
+    dr.line((60, 110, 160, 110), fill=0, width=2)
+    dr.text((185, 92), "W-1", fill=0, font=ImageFont.load_default(size=32))
+    out = extract_with_tags(
+        [_ocr_det(bbox=(60, 90, 160, 130))], np.asarray(img, dtype=float), reader=reader
+    )
+    assert out[0].tag == "W-1", f"{name} read {out[0].tag!r}"
+    assert 0 < out[0].tag_score <= 1

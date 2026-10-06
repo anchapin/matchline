@@ -21,6 +21,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from bem_export import (
     BEMModel,
     BEMOpeningUnit,
@@ -35,6 +37,7 @@ from bem_helpers import _edge_facades
 from convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
+    extract_with_tags,
     load_aec_bench,
     parse_schedule_csv,
     rollup_takeoff,
@@ -309,6 +312,11 @@ def _stage_1_generate(args, out_dir: Path):
     if args.image:
         dets = detections_from_yolo_json(args.detections, args.image.stem)
         schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
+        # Stage 1b (#668): read schedule tags beside each symbol; no-op without OCR
+        from PIL import Image
+
+        sheet = np.asarray(Image.open(args.image).convert("L"), dtype=np.float64)
+        dets = extract_with_tags(dets, sheet, config=config, schedule_tags=set(schedule))
         takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
         bldg = {
             "building_id": args.image.stem,

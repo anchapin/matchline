@@ -43,11 +43,15 @@ schedule, which is why it is more robust than pixel measurement.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import tomllib
 
 try:
     import cv2  # opencv-python
@@ -57,6 +61,8 @@ import numpy as np
 
 from detector.classes import CLASS_NAMES
 from safe_xml import safe_xml_parse
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -549,6 +555,193 @@ def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
         )
 
     return schedule
+
+
+# ---------------------------------------------------------------------------
+# OCR tag extraction (#668): read the schedule tag printed next to a symbol
+# ---------------------------------------------------------------------------
+
+OCR_BACKENDS = ("auto", "pytesseract", "rapidocr", "none")
+DATASETS_DEFAULTS = {
+    "ocr_backend": "auto",  # auto = pytesseract, then rapidocr, else no OCR
+    "ocr_pad_frac": 1.0,  # search window grows by this x symbol size on each side
+    "ocr_min_conf": 0.3,  # drop OCR reads below this confidence (0..1)
+}
+# Schedule tags are short codes ("A", "W-1", "D2", "101A"); room names and
+# notes ("OFFICE", "SEE DETAIL") are not.
+TAG_TEXT_RE = re.compile(r"^[A-Z0-9]{1,4}(?:-[A-Z0-9]{1,4})?$")
+
+
+def load_datasets_config(config: dict | None = None, pyproject: Path | None = None) -> dict:
+    """Resolve the dataset/OCR settings.
+
+    Precedence, lowest first: ``DATASETS_DEFAULTS``; the ``[tool.matchline.datasets]``
+    table of ``pyproject`` (default: ``./pyproject.toml`` if present); the
+    ``datasets:`` section of the per-building YAML config (``config``).
+    Unknown keys are ignored with a warning; an unknown backend raises ValueError.
+    """
+    cfg = dict(DATASETS_DEFAULTS)
+    path = Path(pyproject) if pyproject is not None else Path.cwd() / "pyproject.toml"
+    if path.is_file():
+        with path.open("rb") as f:
+            table = tomllib.load(f).get("tool", {}).get("matchline", {}).get("datasets", {})
+        cfg.update(table)
+    if config:
+        cfg.update(config.get("datasets") or {})
+    unknown = sorted(set(cfg) - set(DATASETS_DEFAULTS))
+    if unknown:
+        logger.warning("unknown datasets config keys ignored: %s", unknown)
+        for k in unknown:
+            cfg.pop(k)
+    if cfg["ocr_backend"] not in OCR_BACKENDS:
+        raise ValueError(
+            f"datasets.ocr_backend={cfg['ocr_backend']!r} is not one of {OCR_BACKENDS}"
+        )
+    cfg["ocr_pad_frac"] = float(cfg["ocr_pad_frac"])
+    cfg["ocr_min_conf"] = float(cfg["ocr_min_conf"])
+    return cfg
+
+
+def _gray_u8(image: np.ndarray) -> np.ndarray:
+    img = np.asarray(image)
+    if img.ndim == 3:
+        img = img[..., :3].mean(axis=-1)
+    return np.ascontiguousarray(np.clip(img, 0, 255).astype(np.uint8))
+
+
+def _pytesseract_reader():
+    import pytesseract
+
+    pytesseract.get_tesseract_version()  # raises if the tesseract binary is missing
+
+    def read(crop: np.ndarray) -> list:
+        d = pytesseract.image_to_data(
+            _gray_u8(crop), config="--psm 11", output_type=pytesseract.Output.DICT
+        )
+        out = []
+        for text, conf, x, y, w, h in zip(
+            d["text"], d["conf"], d["left"], d["top"], d["width"], d["height"]
+        ):
+            if text.strip() and float(conf) >= 0:
+                out.append((text, float(conf) / 100.0, (x, y, x + w, y + h)))
+        return out
+
+    return read
+
+
+def _rapidocr_reader():
+    from rapidocr_onnxruntime import RapidOCR
+
+    engine = RapidOCR()
+
+    def read(crop: np.ndarray) -> list:
+        g = _gray_u8(crop)
+        result, _ = engine(np.stack([g] * 3, axis=-1))
+        out = []
+        for quad, text, score in result or []:
+            q = np.asarray(quad, dtype=np.float64)
+            box = (q[:, 0].min(), q[:, 1].min(), q[:, 0].max(), q[:, 1].max())
+            out.append((text, float(score), tuple(float(v) for v in box)))
+        return out
+
+    return read
+
+
+_OCR_FACTORIES = {"pytesseract": _pytesseract_reader, "rapidocr": _rapidocr_reader}
+
+
+def get_ocr_reader(backend: str = "auto"):
+    """Return ``(backend_name, read_fn)`` or ``(None, None)`` when unavailable.
+
+    ``read_fn(crop) -> [(text, confidence 0..1, (x0, y0, x1, y1) in crop px)]``.
+    A missing package or binary never raises: it logs a warning and returns
+    ``(None, None)`` so the pipeline carries on with tags left empty.
+    """
+    if backend not in OCR_BACKENDS:
+        raise ValueError(f"ocr backend {backend!r} is not one of {OCR_BACKENDS}")
+    if backend == "none":
+        return None, None
+    names = ["pytesseract", "rapidocr"] if backend == "auto" else [backend]
+    errors = []
+    for name in names:
+        try:
+            return name, _OCR_FACTORIES[name]()
+        except Exception as e:  # ImportError, TesseractNotFoundError, model load
+            logger.debug("OCR backend %s unavailable", name, exc_info=True)
+            errors.append(f"{name}: {type(e).__name__}: {e}")
+    logger.warning(
+        "no OCR backend available (%s); detections keep empty tags. "
+        "Install the `ocr` extra or tesseract to read schedule tags.",
+        "; ".join(errors),
+    )
+    return None, None
+
+
+def _box_gap(a: tuple, b: tuple) -> float:
+    """Euclidean gap between two (x0, y0, x1, y1) boxes; 0 when they overlap."""
+    dx = max(a[0] - b[2], b[0] - a[2], 0.0)
+    dy = max(a[1] - b[3], b[1] - a[3], 0.0)
+    return math.hypot(dx, dy)
+
+
+def extract_with_tags(
+    detections: list[Detection],
+    image: np.ndarray,
+    config: dict | None = None,
+    backend: str | None = None,
+    schedule_tags=None,
+    reader=None,
+) -> list[Detection]:
+    """Stage 1b: OCR the schedule tag next to each untagged detection.
+
+    For each detection whose tag is empty, OCR runs on a window around its
+    bbox (grown by ``ocr_pad_frac`` x the symbol size on every side). Reads
+    that look like a tag (``TAG_TEXT_RE`` after ``normalize_tag``) and reach
+    ``ocr_min_conf`` are candidates; tags in ``schedule_tags`` win, then the
+    read closest to the symbol, then the most confident. The winner fills
+    ``tag`` and ``tag_score`` (so low-confidence reads land in
+    ``TakeoffResult.tag_review``).
+
+    Detections that already carry a tag are returned untouched. When no
+    backend is available the input comes back unchanged (warning logged);
+    the pipeline never fails on OCR. ``reader`` injects a read function
+    (same contract as ``get_ocr_reader``) for tests or custom engines.
+    Returns new Detection objects; the inputs are not modified.
+    """
+    cfg = load_datasets_config(config)
+    if reader is None:
+        _, reader = get_ocr_reader(backend or cfg["ocr_backend"])
+    if reader is None:
+        return list(detections)
+    known = {normalize_tag(t) for t in schedule_tags} if schedule_tags else set()
+    img = np.asarray(image)
+    h, w = img.shape[:2]
+    out = []
+    for d in detections:
+        if normalize_tag(d.tag):
+            out.append(d)
+            continue
+        x0, y0, x1, y1 = (float(v) for v in d.bbox)
+        pad = cfg["ocr_pad_frac"] * max(x1 - x0, y1 - y0, 1.0)
+        cx0, cy0 = max(0, int(x0 - pad)), max(0, int(y0 - pad))
+        cx1, cy1 = min(w, int(math.ceil(x1 + pad))), min(h, int(math.ceil(y1 + pad)))
+        if cx1 <= cx0 or cy1 <= cy0:
+            out.append(d)
+            continue
+        sym = (x0 - cx0, y0 - cy0, x1 - cx0, y1 - cy0)  # symbol bbox in crop px
+        best = None
+        for text, conf, box in reader(img[cy0:cy1, cx0:cx1]):
+            tag = normalize_tag(text)
+            if not TAG_TEXT_RE.match(tag) or conf < cfg["ocr_min_conf"]:
+                continue
+            rank = (tag not in known, _box_gap(sym, tuple(box)), -conf)
+            if best is None or rank < best[0]:
+                best = (rank, tag, conf)
+        if best is None:
+            out.append(d)
+        else:
+            out.append(dataclasses.replace(d, tag=best[1], tag_score=round(best[2], 4)))
+    return out
 
 
 def rollup_takeoff(

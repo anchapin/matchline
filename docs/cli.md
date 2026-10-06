@@ -60,6 +60,7 @@ matchline run --seed 42 --config pipeline.yaml
   - `simplifyTolerance` (float): overrides `--simplify-tol`
   - `wallHeight` (float, metres): overrides level default
   - `reviewConfidence` (float): minimum confidence for review queue items
+  - `datasets` (mapping): OCR settings for schedule tags (`ocr_backend`, `ocr_pad_frac`, `ocr_min_conf`); see docs/datasets_adapter.md
 
   Example:
 
