@@ -54,6 +54,8 @@ py-modules = [
     "thermal_zoning",
     "below_grade",
     "building_model",
+    "space_use_defaults",
+    "space_use_defaults_data",
     "cli",
     "datasets_adapter",
     "elevation_windows",
