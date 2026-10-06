@@ -112,10 +112,9 @@ def _space_wall_constructions(spaces) -> dict:
     return out
 
 
-def write_gbxml(model: BEMModel, path: str | Path) -> Path:
-    """Write a gbXML 6.01 file for the model. Returns the path written."""
+def _gbxml_root(model: BEMModel):
+    """gbXML root and Campus with its Location (shared by the writers)."""
     ET.register_namespace("", GBXML_NS)
-    h = model.wall_height_m
     root = ET.Element(
         f"{{{GBXML_NS}}}gbXML",
         {
@@ -142,13 +141,11 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     _el(loc, "Latitude", "0")
     _el(loc, "Longitude", "0")
     _el(loc, "Elevation", "0")
+    return root, campus
 
-    bldg = _el(campus, "Building", id="bldg-1", buildingType="Office")
-    _el(bldg, "Name", model.building_name)
-    storey = _el(bldg, "BuildingStorey", id="storey-1")
-    _el(storey, "Name", "Level 1")
-    _el(storey, "Level", "0")
 
+def _write_zones(root, model: BEMModel):
+    """Zone elements; returns (thermal zones, space id -> zone id)."""
     # Appendix G thermal zones (#638) when the model carries them; otherwise
     # the single default zone, as before
     tzones = list(getattr(model, "thermal_zones", None) or [])
@@ -162,8 +159,11 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     else:
         zone = _el(root, "Zone", id="zone-1")
         _el(zone, "Name", "Zone 1")
-    air_walls = list(getattr(model, "air_walls", None) or [])
+    return tzones, zone_of
 
+
+def _write_constructions(root, model: BEMModel, air_walls) -> dict:
+    """Construction elements; returns the per-space wall constructions."""
     # Placeholder constructions (v1): drawings carry no assembly data, so
     # every surface references a generic construction. Real U-values /
     # layered assemblies are a v2 enrichment from the spec or user input.
@@ -205,6 +205,29 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         # line; no mass, no resistance. Written only when air walls exist.
         co = _el(root, "Construction", id="const-air")
         _el(co, "Name", "Air wall (virtual boundary between pieces of one room)")
+    return wall_cons
+
+
+def write_gbxml(model: BEMModel, path: str | Path) -> Path:
+    """Write a gbXML 6.01 file for the model. Returns the path written."""
+    if len(getattr(model, "levels", None) or []) > 1:
+        # several storeys (#639): its own writer; single-storey output is unchanged
+        from bem_multistorey import write_gbxml_levels
+
+        return write_gbxml_levels(model, path)
+    h = model.wall_height_m
+    root, campus = _gbxml_root(model)
+
+    bldg = _el(campus, "Building", id="bldg-1", buildingType="Office")
+    _el(bldg, "Name", model.building_name)
+    storey = _el(bldg, "BuildingStorey", id="storey-1")
+    _el(storey, "Name", "Level 1")
+    _el(storey, "Level", "0")
+
+    tzones, zone_of = _write_zones(root, model)
+    air_walls = list(getattr(model, "air_walls", None) or [])
+
+    wall_cons = _write_constructions(root, model, air_walls)
 
     # --- spaces (children of Building in gbXML) ------------------------------
     roofs = list(getattr(model, "roof_planes", None) or [])

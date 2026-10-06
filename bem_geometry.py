@@ -28,6 +28,8 @@ class BEMSpace:
     # parent space id when this space is one piece of a room split at an
     # Appendix G block line (#638); empty for an unsplit room
     split_from: str = ""
+    # storey this space sits on (#639); empty on single-storey models
+    level_id: str = ""
 
 
 @dataclass
@@ -91,6 +93,39 @@ class BEMRoof:
 
 
 @dataclass
+class BEMLevel:
+    """One storey for the multi-storey writers (#639).
+
+    ``rings`` are the level's exterior wall loops in the BEM frame
+    (x=east, y=north): the outer boundary counter-clockwise and any courtyard
+    loops clockwise, so the right of travel is always outdoors.
+    """
+
+    id: str
+    name: str
+    elevation_m: float
+    height_m: float
+    rings: list = field(default_factory=list)
+    wall_type: str = "ExteriorWall"  # "UndergroundWall" on a stated below-grade level
+
+
+@dataclass
+class BEMHorizontal:
+    """A floor, ceiling or roof surface between or bounding storeys (#639).
+
+    ``loops`` are hole-free polygons (counter-clockwise, x=east, y=north) at
+    height ``z_m``; ``surface_type`` is the gbXML surfaceType.
+    """
+
+    id: str
+    surface_type: str
+    z_m: float
+    lower_space_id: Optional[str]
+    upper_space_id: Optional[str]
+    loops: list = field(default_factory=list)
+
+
+@dataclass
 class BEMModel:
     building_name: str
     spaces: list  # BEMSpace
@@ -123,6 +158,10 @@ class BEMModel:
     thermal_zones: list = field(default_factory=list)
     # air walls between pieces of a split room (#638), thermal_zoning.AirWall
     air_walls: list = field(default_factory=list)
+    # multi-storey (#639): BEMLevel per storey and BEMHorizontal floors,
+    # ceilings and roofs; empty on single-storey models
+    levels: list = field(default_factory=list)
+    horizontals: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
 
