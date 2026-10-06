@@ -3091,7 +3091,10 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
     note = "void/fill relationships only; no opening solid"
     verts = _geom_verts(opening)
     if verts:
-        rel = _compose(_invert(wall_world), _placement_transform(opening, scale))
+        # opening -> world, then world -> wall (#587: was composed backwards,
+        # so any opening not placed relative to an unrotated wall at the
+        # origin landed off its wall)
+        rel = _compose(_placement_transform(opening, scale), _invert(wall_world))
         xs, zs = [], []
         for i in range(0, len(verts), 3):
             wx, wy, wz = _apply(rel, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
