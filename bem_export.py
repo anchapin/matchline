@@ -279,17 +279,20 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         _cartesian(rg, br[0], br[1], h)
         _cartesian(rg, bl[0], bl[1], h)
         h_open = h
+        top = [(p0[0], p0[1], h), (p1[0], p1[1], h)]
         if sloped:
             # wall under a sloped roof (#618): the true outline runs up to
             # the roof, peaked under a gable; openings stay under its lowest
             # point so none pokes through the slope
             top, _unc = wall_top(p0, p1, roofs, h)
-            if len(top) != 2 or any(abs(z - h) > 1e-9 for _, _, z in top):
-                wpg = _el(su, "PlanarGeometry")
-                wpl = _el(wpg, "PolyLoop")
-                for x, y, z in [(p0[0], p0[1], 0.0), (p1[0], p1[1], 0.0)] + list(reversed(top)):
-                    _cartesian(wpl, x, y, z)
-                h_open = min([h] + [z for _, _, z in top])
+            h_open = min([h] + [z for _, _, z in top])
+        # PlanarGeometry on every wall: importers such as OpenStudio read
+        # only the PolyLoop and drop a wall that has RectangularGeometry
+        # alone (#627). Under a sloped roof the loop is the true outline.
+        wpg = _el(su, "PlanarGeometry")
+        wpl = _el(wpg, "PolyLoop")
+        for x, y, z in [(p0[0], p0[1], 0.0), (p1[0], p1[1], 0.0)] + list(reversed(top)):
+            _cartesian(wpl, x, y, z)
         # openings on this wall (local coords from parent bottom-left)
         units = opening_assign[i]
         bl_is_p0 = bl == p0
@@ -313,6 +316,14 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             _cartesian(org, s1, pl_["sill"])
             _cartesian(org, s1, pl_["sill"] + pl_["height"])
             _cartesian(org, s0, pl_["sill"] + pl_["height"])
+            # absolute 3-D outline too, for importers that read only
+            # PlanarGeometry (#627); wound like the host wall (outward)
+            ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
+            z0, z1 = pl_["sill"], pl_["sill"] + pl_["height"]
+            opg = _el(op, "PlanarGeometry")
+            opl = _el(opg, "PolyLoop")
+            for sv, zv in ((s0, z0), (s1, z0), (s1, z1), (s0, z1)):
+                _cartesian(opl, bl[0] + sv * ux, bl[1] + sv * uy, zv)
 
     sky_units = [u for u in model.openings if u.category == "skylight"]
     if sloped:

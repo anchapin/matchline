@@ -117,13 +117,15 @@ def test_gable_end_walls_get_peaked_tops_and_eave_walls_stay_rectangles(tmp_path
     walls = [
         s for s in root.iter(f"{{{NS['g']}}}Surface") if s.get("surfaceType") == "ExteriorWall"
     ]
-    peaked = [w for w in walls if w.find("g:PlanarGeometry", NS) is not None]
+    # every wall carries its PlanarGeometry outline (#627)
+    loops = [_pts(w.find("g:PlanarGeometry/g:PolyLoop", NS)) for w in walls]
+    peaked = [lp for lp in loops if len(lp) == 5]
     assert len(peaked) == 2  # east and west gable ends
-    for w in peaked:
-        pts = _pts(w.find("g:PlanarGeometry/g:PolyLoop", NS))
-        assert len(pts) == 5
+    for pts in peaked:
         assert max(z for _, _, z in pts) == pytest.approx(ZR, abs=1e-4)
-    assert len(walls) - len(peaked) == 2  # eaves walls: level top at H, no outline
+    eaves = [lp for lp in loops if len(lp) == 4]
+    assert len(eaves) == 2  # eave walls: level top at H
+    assert all(max(z for _, _, z in lp) == pytest.approx(H, abs=1e-4) for lp in eaves)
 
 
 def test_skylight_sits_on_the_plane_above_it(tmp_path):

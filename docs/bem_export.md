@@ -140,3 +140,9 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 - **Weather data**: Simulations use a single representative climate file; mixed-mode or adaptive comfort strategies are not modeled.
 - **No occupancy schedule derivation**: Schedules are synthetic defaults; actual operational patterns are not extracted from drawings.
 - **Confidence reflects template fidelity, not ground truth**: A high-confidence envelope does not mean the BEM matches the as-built building—it means the extraction pipeline found sufficient inputs to populate the template.
+
+## OpenStudio round-trip gate (#628)
+
+`tests/test_openstudio_roundtrip.py` writes a flat, gable, hip and shed model, each with a window, a door, a skylight and an overhang. Each file goes through OpenStudio's gbXML reverse translator, and the test fails on any translation error, on a missing surface or sub-surface, on a space that is not an enclosed volume, or on a space volume that differs from ours. The only message allowed through is OpenStudio's note that a 6.01 file skips its 7.03 schema check; we validate against the 6.01 XSD ourselves. CI installs the `openstudio` extra (`pip install -e ".[test,openstudio]"`). Without it, the tests skip.
+
+The gate's first finding (#627): OpenStudio reads only `PlanarGeometry`, so walls written with `RectangularGeometry` alone were dropped together with their windows and doors. Every wall now carries a PolyLoop (its true outline under a sloped roof), and wall openings carry an absolute PolyLoop alongside their local rectangle.
