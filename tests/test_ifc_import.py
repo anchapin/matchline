@@ -130,11 +130,39 @@ def _rect_profile(f, xdim, ydim, ox=0.0, oy=0.0):
     )
 
 
-def make_ifc_fixture(path, bem=None):
-    """Write base IFC via the exporter, then enrich (test code only)."""
+def face_reference_walls(f, t=0.2):
+    """Shift every IfcWall body to lie wholly inside its axis, Revit style.
+
+    The exporter centres walls on the ring edge (#609). Fixtures that exercise
+    face-stopped walls (#575 joins, #579 centrelines, linings, loops, splits)
+    want the axis on the exterior face with the body inward, so they set it up
+    here on purpose instead of relying on the exporter.
+    """
+    for wall in f.by_type("IfcWall"):
+        for rep in wall.Representation.Representations:
+            if rep.RepresentationIdentifier != "Body":
+                continue
+            for it in rep.Items:
+                if not it.is_a("IfcExtrudedAreaSolid") or it.Position is None:
+                    continue
+                x, y, z = it.Position.Location.Coordinates
+                it.Position.Location = f.create_entity(
+                    "IfcCartesianPoint", Coordinates=(float(x), float(y + t / 2.0), float(z))
+                )
+
+
+def make_ifc_fixture(path, bem=None, face_walls=True):
+    """Write base IFC via the exporter, then enrich (test code only).
+
+    ``face_walls`` (default) moves wall bodies onto the inside of their axis
+    (see :func:`face_reference_walls`); pass False for the exporter's own
+    centred walls.
+    """
     bem = bem or _bem_fixture()
     write_ifc4(bem, path)
     f = ifcopenshell.open(str(path))
+    if face_walls:
+        face_reference_walls(f)
     body = [
         c
         for c in f.by_type("IfcGeometricRepresentationSubContext")
