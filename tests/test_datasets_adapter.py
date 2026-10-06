@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import zipfile
+
 import numpy as np
 import pytest
 
 from datasets_adapter import (
+    ArchCADFormatError,
     DrawingScale,
     Region,
     ScheduleEntry,
@@ -280,6 +284,96 @@ class TestDatasetLoaders:
 
     def test_load_archcad_raises_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
+            load_archcad(tmp_path)
+
+
+# --- ArchCAD JSON loader (#660) -----------------------------------------------
+
+# One slice in the dataset card's documented JSON layout: a door (two lines and
+# a swing arc), a toilet given by class id, a chair (countable, no takeoff
+# category), plus a wall and grid line that are not symbols.
+_ARCHCAD_SLICE = [
+    {"type": "LINE", "start": [10, 10], "end": [10, 40], "semantic": "single_door",
+     "instance": "single_door_1"},
+    {"type": "LINE", "start": [10, 10], "end": [40, 10], "semantic": "single_door",
+     "instance": "single_door_1"},
+    {"type": "ARC", "center": [10, 10], "radius": 30, "start_angle": 0, "end_angle": 90,
+     "semantic": "single_door", "instance": "single_door_1"},
+    {"type": "CIRCLE", "center": [100, 100], "radius": 5, "semantic": 9, "instance": "toilet_4"},
+    {"type": "LINE", "start": [200, 0], "end": [220, 20], "semantic": "Chair",
+     "instance": "chair_2"},
+    {"type": "LINE", "start": [0, 0], "end": [300, 0], "semantic": "wall"},
+    {"type": "LINE", "start": [0, 50], "end": [300, 50], "semantic": "axis_grid"},
+]  # fmt: skip
+
+
+def _write_archcad(root, primitives, name="slice_0001.json"):
+    d = root / "json"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(json.dumps(primitives))
+    return root
+
+
+class TestLoadArchCAD:
+    def test_symbols_and_takeoff_from_json(self, tmp_path):
+        samples, takeoff = load_archcad(_write_archcad(tmp_path, _ARCHCAD_SLICE))
+        assert sorted(s.label for s in samples) == ["Chair", "Single Door", "Toilet"]
+        door = next(s for s in samples if s.label == "Single Door")
+        assert door.image.shape == (28, 28)
+        assert door.image.min() < 128 < door.image.max()  # ink on a light ground
+        assert door.source == "archcad:slice_0001"
+        assert door.bbox == pytest.approx((10, 10, 40, 40), abs=0.5)
+        assert takeoff.counts == {"door": 1, "fixture": 1}
+        assert takeoff.area_px2["fixture"] == pytest.approx(100.0, rel=0.05)
+        assert takeoff.scale.m_per_px is None
+
+    def test_reads_unextracted_json_zip(self, tmp_path):
+        with zipfile.ZipFile(tmp_path / "json.zip", "w") as zf:
+            zf.writestr("json/a.json", json.dumps(_ARCHCAD_SLICE))
+            zf.writestr("json/b.json", json.dumps(_ARCHCAD_SLICE[:3]))
+        samples, takeoff = load_archcad(tmp_path)
+        assert len(samples) == 4
+        assert takeoff.counts["door"] == 2
+
+    def test_scale_and_max_samples(self, tmp_path):
+        _write_archcad(tmp_path, _ARCHCAD_SLICE, "a.json")
+        _write_archcad(tmp_path, _ARCHCAD_SLICE, "b.json")
+        samples, takeoff = load_archcad(tmp_path, scale_m_per_px=0.01, max_samples=1)
+        assert len(samples) == 3
+        assert takeoff.area_m2["door"] == pytest.approx(900 * 1e-4, rel=0.05)
+
+    def test_parquet_only_root_explains_the_release_format(self, tmp_path):
+        (tmp_path / "train-00000-of-00001.parquet").write_bytes(b"")
+        with pytest.raises(FileNotFoundError, match="not parquet"):
+            load_archcad(tmp_path)
+
+    def test_missing_root_fails_clearly(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="request access|Request access"):
+            load_archcad(tmp_path / "nope")
+
+    @pytest.mark.parametrize(
+        "bad, match",
+        [
+            ({"type": "LINE", "start": [0, 0], "end": [1, 1], "instance": "x"}, "no 'semantic'"),
+            ({"type": "LINE", "start": "0,0", "end": [1, 1], "semantic": 1, "instance": "d"},
+             "must be \\[x, y\\] numbers"),
+            ({"type": "LINE", "start": [0, 0], "semantic": 1, "instance": "d"}, "no 'end'"),
+            ({"type": "CIRCLE", "center": [0, 0], "radius": "5", "semantic": 9, "instance": "t"},
+             "must be a number"),
+            ({"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": "spaceship",
+              "instance": "s"}, "unknown semantic"),
+            ({"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": 1},
+             "needs an 'instance'"),
+        ],
+    )  # fmt: skip
+    def test_bad_primitive_raises_not_zero_count(self, tmp_path, bad, match):
+        _write_archcad(tmp_path, _ARCHCAD_SLICE + [bad])
+        with pytest.raises(ArchCADFormatError, match=match):
+            load_archcad(tmp_path)
+
+    def test_non_list_json_raises(self, tmp_path):
+        _write_archcad(tmp_path, {"shapes": []})
+        with pytest.raises(ArchCADFormatError, match="list of primitives"):
             load_archcad(tmp_path)
 
 
