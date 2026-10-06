@@ -83,14 +83,15 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ### HVAC Zoning (`hvac_trace.py`)
 
-**Grade: B** (was B-)
+**Grade: B+** (was B)
 
 - Duct tracing → terminal units → zone graphs
 - Many-to-many zone↔space relationships supported
 - Dedicated `hvac_zone_coverage` check: unserved terminal spaces error, unzoned floor area above 5% warns (#658)
 - Provenance on returned objects (#431); `validate()` name collision fixed (#319)
 - Ceiling height and plenum depth available from IFC (#583)
-- Remaining gap: diffuser assignment still depends on point-in-polygon alone
+- Boundary and outside-every-room diffusers resolved by duct connectivity, then nearest room within 0.5 m; ties go to review (#684)
+- Remaining gap: rooms are rectangles (`rect_m`) and detection is validated on synthetic mechanical sheets only
 
 ### Synthetic Data (`synth/`)
 
@@ -144,7 +145,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 | BEM Export | A- | Template limits (rectangular rooms, synthetic schedules) |
 | IFC Import | A- | Tier 1 is 2-D footprint probes; no authored-boundary cross-check (Tier 2) |
 | Geometry | A- | None |
-| HVAC | B | Diffuser assignment relies on point-in-polygon only |
+| HVAC | B+ | Rectangular rooms; synthetic sheets only |
 | Synth | A | None |
 | Tests | A | None |
 | Style | A | None |
@@ -155,6 +156,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 ## Changelog
 
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
+- **2026-10-06 (#684)** — HVAC B → B+: diffusers on or near a wall line, or just outside every room, are assigned by duct connectivity then nearest room, and genuine ties go to review instead of the first room listed.
 - **2026-10-06** — Re-derived against issues closed since 2026-09-22 (#661). Linking B+ → A- (cross-level dedup #664, multi-provenance #663). BEM Export B+ → A- (multi-storey, OpenStudio gate, sloped roofs, Appendix G). IFC Import B → B+ (Tier 0 coverage and guards; Tier 1 still open). Geometry B → A- (simplifier area-growth fixes and tests). HVAC B- → B (`hvac_zone_coverage` #658). Style A- → A (E501 enforced #657, ruff pin #656). Fixed stale notes: `N_CHECKS` is 47, not 26; the `wisard-bem` alias is gone.
 - **2026-09-22** — Initial assessment.
 
