@@ -48,7 +48,7 @@ Measurement paths:
 
 ## FloorPlanCAD loader
 
-`load_floorplancad` reads the HuggingFace parquet export at [`tilak1114/FloorPlanCAD`](https://huggingface.co/datasets/tilak1114/FloorPlanCAD) (`data/train-00000-of-00001.parquet`, 5,308 drawings). Despite the file name it is the original release's *test* split. Put the file in `root` or `root/data/`. Schema, confirmed 2026-10-06 against the dataset viewer:
+`load_floorplancad` reads the HuggingFace parquet export at [`tilak1114/FloorPlanCAD`](https://huggingface.co/datasets/tilak1114/FloorPlanCAD) (`data/train-00000-of-00001.parquet`, 5,308 drawings). Despite the file name it is the original release's *test* split. Put the file in `root` or `root/data/`. Reading it needs `pyarrow` (`pip install -e ".[datasets]"`). Schema, confirmed 2026-10-06 against the dataset viewer:
 
 | Column | Type | Used for |
 |---|---|---|
