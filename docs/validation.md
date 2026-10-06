@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (45 checks)
+## The battery (46 checks)
 
 ### Conservation laws (error)
 
@@ -157,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 42 + 3 = 45.
+and are run in addition to it, so `N_CHECKS` = 43 + 3 = 46.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -198,6 +198,14 @@ and are run in addition to it, so `N_CHECKS` = 42 + 3 = 45.
   linked yet.)
 - `zone_space_referential` — `zone.space_ids` ↔ `space.zone_ids` resolve
   in **both directions**, reciprocally. Catches half-linked zones.
+- `hvac_zone_coverage` — HVAC conservation (#658). A space holding a duct
+  terminal (diffuser or terminal unit) must be served by ≥1 zone that lists
+  it back (**error**: its airflow would vanish from the BEM). Among spaces
+  with any HVAC evidence, the share resolving to no zone must stay ≤
+  `hvac_unzoned_warn_frac` (default 5%, a `run_checks` argument; warn
+  above it). Each zone's diffuser ids must reconcile with the diffusers its
+  served spaces hold (warn). Spaces with no HVAC evidence are not counted.
+  Skipped when the model has no zones.
 - `space_id_hygiene` — ids shaped `{level}-{number}`; duplicate room
   numbers on one level are a warn (numbers are the human key).
 - `elevation_placement_consistency` — openings with exact along-wall

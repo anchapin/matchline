@@ -242,6 +242,19 @@ def break_zone_empty(m: BuildingModel):
     m.zones["L1-Z1"].space_ids.clear()
 
 
+def break_hvac_space_dropped_from_zones(m: BuildingModel):
+    """#658: the space holding D1/VAV-1 is dropped from every zone (both sides)."""
+    m.zones["L1-Z1"].space_ids.remove("L1-101")
+    m.spaces["L1-101"].hvac.zone_ids.clear()
+
+
+def break_hvac_terminal_drift(m: BuildingModel):
+    """#658: the zone claims a diffuser that no served space holds."""
+    m.zones["L1-Z1"].diffusers.append(
+        ComponentRef(id="D9", type="diffuser", x_m=4.0, y_m=4.0, tag="D9", provenance=P())
+    )
+
+
 def break_lpd_absurd(m: BuildingModel):
     for f in m.spaces["L1-101"].lighting.fixtures:
         f.watts = 2000.0

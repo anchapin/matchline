@@ -84,6 +84,7 @@ from .gbxml import (
 from .invariants import (
     _check_facade_opening_closure,
     _check_fixture_schedule_join,
+    _check_hvac_zone_coverage,
     _check_lpd_bounds,
     _check_lpd_unit_consistency,
     _check_no_negative_areas,
@@ -106,6 +107,7 @@ class _Ctx:
     tol_envelope: float = 0.01
     lpd_warn_max: float = 25.0
     opening_eps: float = 0.005
+    hvac_unzoned_warn_frac: float = 0.05
     sres: object = None
     gbxml_path: object = None
     ifc_path: object = None
@@ -169,6 +171,7 @@ BATTERY = [
     _check_assignment_uniqueness,
     _check_zone_nonempty,
     _check_zone_space_referential,
+    _check_hvac_zone_coverage,
     _check_space_id_hygiene,
     _check_elevation_placement_consistency,
     _check_window_tag_coverage,
@@ -208,6 +211,7 @@ def run_checks(
     lpd_warn_max: float = 25.0,
     opening_eps: float = 0.005,
     min_review_confidence: float | None = None,
+    hvac_unzoned_warn_frac: float = 0.05,
 ) -> ValidationReport:
     if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
         raise ValueError(
@@ -220,6 +224,7 @@ def run_checks(
         tol_envelope=tol_envelope,
         lpd_warn_max=lpd_warn_max,
         opening_eps=opening_eps,
+        hvac_unzoned_warn_frac=hvac_unzoned_warn_frac,
         sres=sres,
         gbxml_path=gbxml_path,
         ifc_path=ifc_path,
