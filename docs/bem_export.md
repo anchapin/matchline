@@ -146,3 +146,14 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 `tests/test_openstudio_roundtrip.py` writes a flat, gable, hip and shed model, each with a window, a door, a skylight and an overhang. Each file goes through OpenStudio's gbXML reverse translator, and the test fails on any translation error, on a missing surface or sub-surface, on a space that is not an enclosed volume, or on a space volume that differs from ours. The only message allowed through is OpenStudio's note that a 6.01 file skips its 7.03 schema check; we validate against the 6.01 XSD ourselves. CI installs the `openstudio` extra (`pip install -e ".[test,openstudio]"`). Without it, the tests skip.
 
 The gate's first finding (#627): OpenStudio reads only `PlanarGeometry`, so walls written with `RectangularGeometry` alone were dropped together with their windows and doors. Every wall now carries a PolyLoop (its true outline under a sloped roof), and wall openings carry an absolute PolyLoop alongside their local rectangle.
+
+## Appendix G perimeter/core thermal blocks (#630)
+
+`thermal_zoning.py` splits a floor plate into ASHRAE 90.1 Appendix G (G3.1.1) thermal blocks for drawings that define no HVAC zones: perimeter zones 15 ft (4.572 m) deep, one per compass orientation of the exterior walls (north 315° to <45°, east 45° to <135°, and so on), plus a core.
+
+- Each wall claims the wedge between it and the angle bisectors at its two corners. Where two wedges overlap, the overlap goes to the wall whose line is nearer. This divides corners proportionately, gives triangles and a ridge on a plate too narrow for a core, and splits a reflex corner on its bisector.
+- Walls in the same bucket merge into one block. A plate with no wall facing a direction gets no block for it.
+- The blocks tile the plate exactly; `ZoningError` is raised if they don't.
+- `assign_spaces` gives each space its share of area in every block and its majority block (ties go to the block listed first).
+
+Exports are unchanged. Whether the gbXML `Zone` / IFC `IfcZone` output splits rooms on block lines (Appendix G's "divided proportionately") or assigns whole rooms to their majority block is still open.
