@@ -132,3 +132,103 @@ def test_zone_creation():
     z = Zone(id="z1", level_id="L1", space_ids=["L1-101"])
     assert z.id == "z1"
     assert z.space_ids == ["L1-101"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-sheet SpaceOpening provenance (issue #663)
+# ---------------------------------------------------------------------------
+
+
+def _two_sheet_opening():
+    from building_model import Provenance, SpaceOpening
+
+    op = SpaceOpening(id="W1-L1", tag="W1", category="window", width_m=1.2, height_m=5.0)
+    op.add_source_provenance(Provenance("elev_A201", 1, "elevation_window", 0.95))
+    op.add_source_provenance(Provenance("elev_A202", 1, "elevation_window", 0.90))
+    return op
+
+
+def test_space_opening_two_provenance_records_round_trip():
+    """One logical opening seen on two sheets keeps both records through JSON."""
+    from building_model import BuildingModel, Level, Provenance, Space
+
+    m = BuildingModel(name="xlevel")
+    m.levels.append(Level(id="L1", name="L1"))
+    sp = Space(id="L1-101", level_id="L1", polygon_m=[[0, 0], [5, 0], [5, 4], [0, 4]])
+    sp.openings.append(_two_sheet_opening())
+    m.spaces[sp.id] = sp
+
+    restored = BuildingModel.from_json(m.to_json())
+    op = restored.spaces["L1-101"].openings[0]
+    assert [p.sheet_id for p in op.source_provenance] == ["elev_A201", "elev_A202"]
+    assert all(isinstance(p, Provenance) for p in op.source_provenance)
+    assert op.provenance.sheet_id == "elev_A201"  # primary unchanged
+    assert op.source_sheet_ids == ["elev_A201", "elev_A202"]
+
+
+def test_space_opening_rejects_third_or_duplicate_source():
+    """Defect injection: a third sheet, or the same sheet twice, is refused."""
+    import pytest
+
+    from building_model import Provenance
+
+    op = _two_sheet_opening()
+    with pytest.raises(ValueError, match="at most 2"):
+        op.add_source_provenance(Provenance("elev_A203", 1, "elevation_window", 0.9))
+    from building_model import SpaceOpening
+
+    one = SpaceOpening(id="W2", tag="W2", category="window", width_m=1.0, height_m=1.0)
+    one.add_source_provenance(Provenance("elev_A201", 2, "elevation_window", 0.9))
+    with pytest.raises(ValueError, match="already recorded"):
+        one.add_source_provenance(Provenance("elev_A201", 2, "elevation_window", 0.8))
+
+
+def test_single_provenance_opening_unchanged():
+    """Single-sheet openings built the old way still serialize and read the same."""
+    from building_model import Provenance, SpaceOpening
+
+    op = SpaceOpening(
+        id="W3",
+        tag="W3",
+        category="window",
+        width_m=1.0,
+        height_m=1.0,
+        provenance=Provenance("elev_A201", 1, "elevation_window", 0.9),
+    )
+    assert op.source_provenance == []
+    assert op.source_sheet_ids == ["elev_A201"]
+
+
+def test_model_version_1_0_payload_migrates_source_provenance():
+    """A 1.0 file (no source_provenance) loads with the primary record seeded."""
+    import json
+
+    from building_model import MODEL_VERSION, BuildingModel, Level, Provenance, Space, SpaceOpening
+
+    m = BuildingModel(name="old")
+    m.levels.append(Level(id="L1", name="L1"))
+    sp = Space(id="L1-101", level_id="L1", polygon_m=[[0, 0], [5, 0], [5, 4], [0, 4]])
+    sp.openings.append(
+        SpaceOpening(
+            id="W1",
+            tag="W1",
+            category="window",
+            width_m=1.0,
+            height_m=1.0,
+            provenance=Provenance("elev_A201", 1, "elevation_window", 0.9),
+        )
+    )
+    m.spaces[sp.id] = sp
+    d = m.to_dict()
+    # Rewrite into the 1.0 shape: old version tag, no source_provenance key.
+    d["model_version"] = "1.0"
+    d["model"]["model_version"] = "1.0"
+    for s in d["model"]["spaces"].values():
+        for o in s["openings"]:
+            o.pop("source_provenance")
+    old = json.loads(json.dumps(d))
+    restored = BuildingModel.from_dict(old)
+    assert restored.model_version == MODEL_VERSION == "1.1"
+    op = restored.spaces["L1-101"].openings[0]
+    assert [p.sheet_id for p in op.source_provenance] == ["elev_A201"]
+    assert "source_provenance" not in old["model"]["spaces"]["L1-101"]["openings"][0]
