@@ -22,6 +22,9 @@ class BEMSpace:
     wall_u_value_w_m2k: Optional[float] = None
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
+    # matchline identity written to the IFC (#588): {"id", "method",
+    # "confidence", "merged_from", "poly_type"}; None writes nothing
+    identity: Optional[dict] = None
 
 
 @dataclass
@@ -44,6 +47,9 @@ class BEMOpeningUnit:
     # when known. Writers use it to keep the opening on that facade's walls;
     # empty means distribute by wall length as before.
     host_facade: str = ""
+    # matchline identity written to the IFC (#588): {"id", "method",
+    # "confidence"}; None writes nothing
+    identity: Optional[dict] = None
 
 
 @dataclass

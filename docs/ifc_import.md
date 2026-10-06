@@ -490,3 +490,29 @@ whose openings are placed relative to their wall (our exporter) were hit
 on every wall not at 0 degrees. Idea from Pascal's `tests/ifc-builder.ts`
 and `handedness.test.ts` (MIT, Copyright (c) 2026 Pascal Group Inc., commit
 67f8041); no code ported.
+
+## Matchline identity round trip (#588)
+
+IFC files matchline exports carry a `Matchline_Identity` property set on every
+space, opening and opening fill: `MatchlineId`, `SourceMethod`, `Confidence`,
+and on spaces `MergedFrom` (comma-separated) and `PolyType`. The name avoids the
+`Pset_` prefix, which buildingSMART reserves for its own sets.
+
+On import, an element carrying a `MatchlineId` keeps that id instead of a
+derived one (spaces) or its GlobalId (openings), and its provenance note says
+so. Those elements were authored, not reconstructed, so import skips the
+heuristics for them: no name-based closet/shaft classification (the written
+`PolyType` is kept), no closet/shaft merging away, and no duplicate-opening
+removal. `merged_from` comes back as written.
+
+An id that is already taken in the file keeps the derived id or GlobalId and
+adds a `matchline_identity` review item; it is never renamed or guessed. Files
+without the set import exactly as before.
+
+Known gap (tracked separately): re-exporting a re-imported matchline export can
+fail BEM volume conservation, because the re-import builds the footprint ring
+from wall centrelines while the space keeps its full polygon. Identity itself
+round-trips; the gap is in geometry.
+
+Idea from Pascal's "Pascal round trip" and `isPascalAuthored` (MIT, Copyright
+(c) 2026 Pascal Group Inc., commit 67f8041).
