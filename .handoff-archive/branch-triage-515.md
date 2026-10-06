@@ -1,6 +1,14 @@
 # Published-branch triage manifest (#515)
 
 Generated 2026-09-30 by `scripts/triage_branches.py` against `origin/develop` at `2dfb191`.
+Re-derived 2026-10-06 against `origin/develop` at `a4e63ee`; Tier A still 22
+branches (one addition: `docs/roadmap-atria-walkout` at 473f986). Tier B
+expanded from 61 to 88 as the manifest caught up with later merges.
+
+## Tier A deletion performed 2026-10-06
+
+All 22 Tier A branches deleted from `origin` (none were local). Recovery SHAs
+recorded in `.handoff-archive/branch-deletion-515.md`.
 
 
 ## Scope
@@ -64,73 +72,103 @@ a `git worktree list` check first: a branch checked out in a worktree is the
 | `worker/517-docs-readme-catalog` | `169b97f` | 1 |
 | `worker/519-gitignore-tracked` | `d197b40` | 26 |
 
-## Tier B: needs eyes (61 branches)
+## Tier B: needs eyes (88 branches)
 
-Ordered by coverage. `del_untaken` = lines this branch removed that develop still has; `absent` = touched paths that do not exist in develop at all (a restructure, or genuinely unlanded work).
+Re-derived 2026-10-06 against `a4e63ee`. Ordered by coverage, descending.
+`del_untaken` = lines this branch removed that develop still has; `absent` =
+touched paths that do not exist in develop at all (a restructure, or genuinely
+unlanded work).
 
 | branch | coverage | del_untaken | absent | tip |
 |---|---|---|---|---|
+| `feat/atria` | 99.8% | 0 | 0 | `1c9db26` |
+| `feat/detector-robustness-split-499` | 99.8% | 0 | 0 | `aba6cba` |
+| `review-queue-classifier-proto` | 99.8% | 0 | 0 | `72dc0e0` |
+| `feat/appendix-g-levels` | 99.7% | 0 | 0 | `b6994c7` |
+| `feat/real-doors-from-swings` | 99.7% | 0 | 0 | `68d4108` |
+| `feat/daylight-under-skylights` | 99.6% | 0 | 0 | `2316515` |
+| `feat/ifc-storey-elevation-fallback` | 99.5% | 1 | 0 | `431dc30` |
+| `feat/ifc-door-semantics` | 99.4% | 0 | 0 | `c765237` |
+| `fix/issue-316-review-queue-blocking` | 99.4% | 0 | 0 | `dbd464e` |
+| `style/ruff-format-develop` | 99.3% | 0 | 0 | `be16655` |
+| `feat/openstudio-gate` | 99.1% | 0 | 0 | `ecb90a8` |
+| `feat/walkout-basement` | 99.1% | 16 | 0 | `0c9118e` |
+| `fix/257-convert-aec-coverage` | 99.1% | 0 | 0 | `7d99b74` |
+| `fix/identity-tiebreak` | 99.1% | 0 | 0 | `4cda146` |
+| `fix/issue-76-link-registration-tests` | 99.1% | 0 | 0 | `2577a35` |
+| `feat/ifc-wall-reference-line` | 98.7% | 2 | 0 | `fc19d01` |
+| `fix/issue-325-conservation-integration-tests` | 98.7% | 0 | 0 | `c46a49d` |
+| `issue-340` | 98.5% | 13 | 0 | `384be8a` |
+| `roadmap-part-ii` | 98.5% | 0 | 0 | `13b7e1f` |
+| `feat/appendix-g-zoning` | 98.4% | 0 | 0 | `04d93d5` |
+| `feat/interstory-matching` | 97.9% | 0 | 0 | `d1d05be` |
+| `feat/ifc-wall-linings` | 97.7% | 1 | 0 | `071786f` |
+| `feat/convention-report` | 97.6% | 0 | 0 | `a1d5328` |
+| `feat/ifc-wall-centreline-joins` | 97.6% | 0 | 0 | `a827953` |
+| `fix/conservation-laws` | 97.6% | 0 | 0 | `315b69e` |
+| `fix/issue-17-xxe-pytest` | 97.6% | 0 | 0 | `409713f` |
+| `fix/issue-21-write-gbxml-test` | 97.2% | 0 | 0 | `78dd86b` |
+| `fix/issue-306-xfail-conservation` | 97.0% | 0 | 0 | `60da444` |
+| `feat/plan-door-positions` | 96.9% | 0 | 0 | `5ba0db7` |
+| `e2e-pipeline-tests` | 96.7% | 0 | 0 | `bd13fe7` |
+| `fix-issue-405-review-bug` | 96.6% | 0 | 0 | `781ad7b` |
+| `feat/ifc-unclaimed-wall-loops` | 96.3% | 0 | 0 | `5366f72` |
+| `feat/ifc-space-longname` | 95.8% | 0 | 0 | `af8e60a` |
+| `feat/merge-closets-shafts` | 95.4% | 0 | 0 | `e06bc88` |
+| `wave5-69` | 95.2% | 6 | 0 | `f48c263` |
+| `fix/issue-23-ifc-corruption-test` | 94.5% | 0 | 0 | `6b6fc52` |
+| `pr-248-wave5` | 94.1% | 0 | 0 | `576b2d6` |
+| `feat/synth-closets-shafts-doors` | 93.8% | 0 | 0 | `3b00c95` |
+| `feat/daylight-zone-check` | 93.6% | 0 | 0 | `66976b1` |
+| `wave5-69-clean` | 93.5% | 0 | 0 | `290277e` |
+| `fix-issue-231-low-confidence-review` | 91.7% | 0 | 0 | `8e03449` |
+| `fix/148-test-bem-export` | 91.5% | 0 | 0 | `6522861` |
+| `feat/space-type-accounting` | 91.2% | 0 | 0 | `e99a1d9` |
+| `fix/issue-22-e2e-pytest` | 90.4% | 0 | 0 | `2e5f254` |
+| `fix/234-defect-injection-space-area` | 90.2% | 0 | 0 | `ef18d86` |
+| `fix/202-geometry-simplify-defect-injection` | 90.0% | 0 | 0 | `e033117` |
+| `fix/issue-72-pickle-security` | 89.9% | 3 | 0 | `73bb40c` |
+| `fix/issue-270` | 88.9% | 0 | 0 | `64fab92` |
+| `issue-340-conservation-test` | 88.5% | 0 | 0 | `da777b8` |
+| `feat/ifc-doors-closet-merge` | 87.4% | 0 | 0 | `a15fc32` |
+| `fix/256-link-refactor` | 87.4% | 0 | 1 | `c4c0805` |
+| `pr-83` | 87.4% | 36 | 0 | `1e7e4b4` |
+| `fix/issue-77-ifc-complexity` | 87.0% | 36 | 0 | `99dab0c` |
+| `fix-issue-308-run-checks-exceptions` | 86.5% | 0 | 0 | `fa05c9e` |
+| `quickstart-docs-readme` | 85.7% | 0 | 0 | `90baef7` |
+| `fix/wave1-issues-496-495-494` | 84.0% | 1 | 0 | `eda8192` |
+| `fix-issue-444-type-annotations` | 83.3% | 42 | 30 | `cf5e197` |
+| `fix/issue-348-review-queue-pipeline-test` | 82.8% | 0 | 1 | `7330520` |
+| `fix/issue-75-future-annotations` | 72.7% | 0 | 4 | `e40267b` |
+| `feat/synth-door-swing` | 71.3% | 1 | 0 | `819d5a9` |
+| `fix/211-test-count-gate` | 70.7% | 0 | 0 | `d73c968` |
+| `feat/door-swing-detector` | 68.9% | 0 | 0 | `39c90a2` |
+| `docs/190-191-156-plan-docs` | 67.8% | 0 | 0 | `32a1b58` |
+| `fix/184-xxe-prevention` | 66.7% | 0 | 0 | `f0c51bf` |
+| `fix/add-datasets-md` | 60.1% | 1 | 2 | `8af79f9` |
+| `fix/provenance-none-and-ifc-silent-failures` | 59.3% | 4 | 0 | `81c7f3d` |
+| `fix/146b-pickle-removal` | 57.1% | 2 | 0 | `2d3bb5f` |
+| `fix/146-remove-pickle-deserialization` | 47.1% | 2 | 0 | `f811fc6` |
+| `fix/150-ifc-import-provenance` | 45.8% | 2 | 0 | `60f63ef` |
+| `fix/150b-ifc-import-provenance` | 41.7% | 0 | 0 | `72060ed` |
+| `fix-wave-1-conservation-export` | 38.8% | 0 | 0 | `7555c0f` |
+| `fix-wave16-review-block` | 27.6% | 0 | 0 | `2bff927` |
+| `fix/issue-15-xxe-hardening` | 25.0% | 0 | 0 | `c996d75` |
+| `fix-wave16-roundtrip` | 18.2% | 2 | 0 | `07fbf76` |
+| `fix/478-ifc-export-validation` | 13.8% | 1 | 0 | `4844ede` |
+| `fix/issue-345` | 10.0% | 0 | 0 | `3c8d1b9` |
+| `fix/issue-27-coord-provenance` | 8.3% | 0 | 0 | `7bc60c4` |
+| `fix/185-provenance-level` | 6.7% | 9 | 2 | `aa1e438` |
+| `issue-347-defect-injection` | 2.1% | 0 | 1 | `0cafd32` |
 | `backup/uncommitted-2026-09-29` | 0.0% | 78 | 2 | `b6aa5a1` |
-| `fix-issue-332-convexity-check` | 0.0% | 3 | 0 | `d51c7d9` |
+| `fix-issue-332-convexity-check` | 0.0% | 2 | 0 | `d51c7d9` |
 | `fix/issue-19-pickle-rce` | 0.0% | 0 | 0 | `85af410` |
 | `fix/issue-20-syspath-injection` | 0.0% | 6 | 1 | `781ce49` |
 | `fix/issue-314-validate-type-hints` | 0.0% | 0 | 1 | `7aab2ee` |
-| `fix/issue-345` | 0.0% | 1 | 0 | `3c8d1b9` |
 | `fix/issue-351` | 0.0% | 0 | 0 | `cfc2598` |
 | `fix/issue-80-docs-polygon-classify` | 0.0% | 0 | 0 | `4811073` |
 | `roadmap-data-flywheel` | 0.0% | 0 | 0 | `6ed2aff` |
 | `worker/526-ifcopenshell-pin` | 0.0% | 0 | 0 | `f031b88` |
-| `issue-347-defect-injection` | 2.1% | 0 | 1 | `0cafd32` |
-| `fix/185-provenance-level` | 6.7% | 9 | 2 | `aa1e438` |
-| `fix/issue-27-coord-provenance` | 8.3% | 0 | 0 | `7bc60c4` |
-| `fix/478-ifc-export-validation` | 13.8% | 1 | 0 | `4844ede` |
-| `fix-wave16-roundtrip` | 18.2% | 2 | 0 | `07fbf76` |
-| `fix/issue-15-xxe-hardening` | 25.0% | 0 | 0 | `c996d75` |
-| `fix-wave16-review-block` | 27.6% | 0 | 0 | `2bff927` |
-| `fix-wave-1-conservation-export` | 38.8% | 0 | 0 | `7555c0f` |
-| `fix/150b-ifc-import-provenance` | 41.7% | 0 | 0 | `72060ed` |
-| `fix/150-ifc-import-provenance` | 45.8% | 2 | 0 | `60f63ef` |
-| `fix/146-remove-pickle-deserialization` | 47.1% | 2 | 0 | `f811fc6` |
-| `fix/146b-pickle-removal` | 57.1% | 2 | 0 | `2d3bb5f` |
-| `fix/provenance-none-and-ifc-silent-failures` | 59.3% | 4 | 0 | `81c7f3d` |
-| `fix/add-datasets-md` | 60.1% | 1 | 2 | `8af79f9` |
-| `fix/184-xxe-prevention` | 66.7% | 0 | 0 | `f0c51bf` |
-| `docs/190-191-156-plan-docs` | 67.8% | 0 | 0 | `32a1b58` |
-| `fix/211-test-count-gate` | 70.7% | 0 | 0 | `d73c968` |
-| `fix/issue-75-future-annotations` | 72.7% | 0 | 4 | `e40267b` |
-| `fix/issue-348-review-queue-pipeline-test` | 82.8% | 0 | 1 | `7330520` |
-| `fix-issue-444-type-annotations` | 83.5% | 42 | 30 | `cf5e197` |
-| `fix/wave1-issues-496-495-494` | 84.0% | 0 | 0 | `eda8192` |
-| `quickstart-docs-readme` | 85.7% | 0 | 0 | `90baef7` |
-| `fix-issue-308-run-checks-exceptions` | 86.5% | 0 | 0 | `fa05c9e` |
-| `fix/256-link-refactor` | 87.5% | 0 | 1 | `c4c0805` |
-| `fix/issue-77-ifc-complexity` | 88.2% | 35 | 0 | `99dab0c` |
-| `issue-340-conservation-test` | 88.5% | 0 | 0 | `da777b8` |
-| `pr-83` | 88.6% | 35 | 0 | `1e7e4b4` |
-| `fix/issue-270` | 88.9% | 0 | 0 | `64fab92` |
-| `fix/issue-72-pickle-security` | 89.9% | 3 | 0 | `73bb40c` |
-| `fix/202-geometry-simplify-defect-injection` | 90.0% | 0 | 0 | `e033117` |
-| `fix/234-defect-injection-space-area` | 90.2% | 0 | 0 | `ef18d86` |
-| `fix/issue-22-e2e-pytest` | 90.4% | 0 | 0 | `2e5f254` |
-| `fix/148-test-bem-export` | 91.5% | 0 | 0 | `6522861` |
-| `fix-issue-231-low-confidence-review` | 91.7% | 0 | 0 | `8e03449` |
-| `wave5-69-clean` | 93.5% | 0 | 0 | `290277e` |
-| `pr-248-wave5` | 94.1% | 0 | 0 | `576b2d6` |
-| `fix/issue-23-ifc-corruption-test` | 94.5% | 0 | 0 | `6b6fc52` |
-| `wave5-69` | 95.2% | 6 | 0 | `f48c263` |
-| `fix-issue-405-review-bug` | 96.6% | 0 | 0 | `781ad7b` |
-| `e2e-pipeline-tests` | 96.7% | 0 | 0 | `bd13fe7` |
-| `fix/issue-306-xfail-conservation` | 97.0% | 0 | 0 | `60da444` |
-| `fix/issue-21-write-gbxml-test` | 97.2% | 0 | 0 | `78dd86b` |
-| `fix/issue-17-xxe-pytest` | 97.6% | 0 | 0 | `409713f` |
-| `issue-340` | 98.5% | 13 | 0 | `384be8a` |
-| `roadmap-part-ii` | 98.5% | 0 | 0 | `13b7e1f` |
-| `fix/issue-325-conservation-integration-tests` | 98.7% | 0 | 0 | `c46a49d` |
-| `fix/257-convert-aec-coverage` | 99.1% | 0 | 0 | `7d99b74` |
-| `fix/issue-76-link-registration-tests` | 99.1% | 0 | 0 | `2577a35` |
-| `fix/issue-316-review-queue-blocking` | 99.4% | 0 | 0 | `dbd464e` |
-| `feat/detector-robustness-split-499` | 99.8% | 0 | 0 | `aba6cba` |
-| `review-queue-classifier-proto` | 99.8% | 0 | 0 | `72dc0e0` |
 
 ## Reading Tier B
 
@@ -139,12 +177,18 @@ Three groups, and only the first is interesting:
 - **`backup/uncommitted-2026-09-29` (0%, 78 untaken deletions, 2 paths absent
   from develop)** is the one branch on this list whose name says it is not a
   feature branch. It is the single highest-value thing to look at before
-  anything is deleted.
-- **High-coverage-with-deletions** (`fix/issue-77-ifc-complexity` 88.2%/35,
-  `pr-83` 88.6%/35, `issue-340` 98.5%/13, `fix-issue-444-type-annotations`
-  83.5%/42) are near-landed work where develop kept lines the branch removed.
-  That is usually a later refactor re-adding them, not lost work, but the
-  deletions are what the previous metric could not see.
+  anything is deleted. Hand-check, not delete on metrics.
+- **High-coverage-with-deletions** (`feat/walkout-basement` 99.1%/16,
+  `fix/issue-77-ifc-complexity` 87.0%/36, `pr-83` 87.4%/36, `issue-340` 98.5%/13,
+  `fix-issue-444-type-annotations` 83.3%/42) are near-landed work where
+  develop kept lines the branch removed. That is usually a later refactor
+  re-adding them, not lost work, but the deletions are what the previous metric
+  could not see.
+- **High-coverage-only** (the 13 entries at 99.x% with zero untaken deletions)
+  are the closest to safe. They differ from Tier A by 1–3 lines per branch,
+  almost always reworded doc strings or one-line refactors. They were excluded
+  from the deletion pass because the issue's safety gate is binary: 100% or
+  not. Re-derive after another merge cycle and several will likely join Tier A.
 - **Low coverage, small diffs** (`fix/issue-351`, `fix/issue-80-*`,
   `worker/526-ifcopenshell-pin`, `fix/issue-345`) match the churn verdicts
   already hand-checked on #515. `roadmap-part-ii` (98.5%) and
