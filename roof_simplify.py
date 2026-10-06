@@ -266,3 +266,22 @@ def roof_simplify_report(res: RoofSimplifyResult) -> dict:
             for p in res.planes
         ],
     }
+
+
+def apply_roof_simplification(model, latitude_deg=None, **kw) -> RoofSimplifyResult:
+    """Simplify ``model.roof_planes`` in the model (#617).
+
+    The planes as they were go to ``model.source_roof_planes`` (only the
+    first time, so repeated runs still compare against the true source) and
+    the simplified set replaces ``model.roof_planes``; the
+    ``roof_solar_aperture`` check then compares the two. Latitude from the
+    caller, else ``model.site_latitude_deg``; raises without either.
+    """
+    lat = latitude_deg if latitude_deg is not None else getattr(model, "site_latitude_deg", None)
+    if lat is None:
+        raise ValueError("no latitude: pass latitude_deg or set model.site_latitude_deg")
+    res = simplify_roof(model.roof_planes, lat, **kw)
+    if not model.source_roof_planes:
+        model.source_roof_planes = copy.deepcopy(model.roof_planes)
+    model.roof_planes = res.planes
+    return res

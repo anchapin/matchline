@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 43,
+  "n_checks": 45,
   "errors": 0,
   "warnings": 0,
   "passes": 30,
-  "skipped": 13
+  "skipped": 15
  },
  "results": [
   {
@@ -53,6 +53,20 @@
    "name": "Skylight within roof",
    "severity": "skip",
    "message": "no skylights in model",
+   "entities": []
+  },
+  {
+   "check_id": "roof_plan_coverage",
+   "name": "Roof plan coverage",
+   "severity": "skip",
+   "message": "no roof planes (flat roof at wall height)",
+   "entities": []
+  },
+  {
+   "check_id": "roof_solar_aperture",
+   "name": "Roof solar aperture",
+   "severity": "skip",
+   "message": "roof not simplified (no source roof planes)",
    "entities": []
   },
   {

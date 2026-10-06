@@ -1045,6 +1045,187 @@ def _zone_poly(z):
     return g if g.is_valid else g.buffer(0)
 
 
+ROOF_COVERAGE_TOL = 0.01  # gap or overlap, as a share of the top-level footprint
+ROOF_APERTURE_TOL = 0.02  # same default as roof_simplify.APERTURE_TOL
+
+
+def _roof_plan(rp):
+    from shapely.geometry import Polygon
+
+    return Polygon([(v[0], v[1]) for v in rp.vertices_m]).buffer(0)
+
+
+def _check_roof_plan_coverage(ctx: _Ctx) -> CheckResult:
+    """The top level's roof planes cover its footprint once (#617).
+
+    Roadmap item 2. The plan projection of the roof planes on the top level
+    must cover the union of that level's space polygons, with no part covered
+    twice. Eaves past the footprint are fine; they are not counted.
+
+    error -- uncovered footprint above ROOF_COVERAGE_TOL of its area (a
+             missing facet; spaces under the gap are named), or roof planes
+             overlapping in plan above the same tolerance (a doubled facet;
+             the overlapping plane ids are named). Either changes the heat-
+             loss area BEM sees.
+    pass  -- covered once within tolerance.
+    skip  -- no roof planes (the flat roof at wall height), or no spaces with
+             polygons on the top level.
+    """
+    cid_, name = "roof_plan_coverage", "Roof plan coverage"
+    m = ctx.model
+    planes = list(getattr(m, "roof_planes", []) or [])
+    if not planes:
+        return CheckResult(cid_, name, "skip", "no roof planes (flat roof at wall height)")
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    elev = {lv.id: lv.elevation_z_m for lv in m.levels}
+    levels = {sp.level_id for sp in m.spaces.values() if sp.polygon_m and len(sp.polygon_m) >= 3}
+    if not levels:
+        return CheckResult(cid_, name, "skip", "no spaces with polygons")
+    top = max(levels, key=lambda lid: (elev.get(lid, 0.0), lid))
+    spaces = {
+        sid: Polygon(sp.polygon_m).buffer(0)
+        for sid, sp in sorted(m.spaces.items())
+        if sp.level_id == top and sp.polygon_m and len(sp.polygon_m) >= 3
+    }
+    foot = unary_union(list(spaces.values()))
+    on_top = sorted((rp for rp in planes if rp.level_id == top), key=lambda rp: rp.id)
+    if not on_top:
+        where = sorted({rp.level_id for rp in planes})
+        return CheckResult(
+            cid_,
+            name,
+            "error",
+            f"top level {top} has no roof planes; roof planes sit on {', '.join(where)}",
+            entities=[top],
+            expected=round(foot.area, 6),
+            actual=0.0,
+        )
+    shapes = [(rp.id, _roof_plan(rp)) for rp in on_top]
+    roof = unary_union([g for _, g in shapes])
+    gap = foot.difference(roof)
+    gap_area = gap.area
+    overlaps = {}
+    for i, (a, ga) in enumerate(shapes):
+        for b, gb in shapes[i + 1 :]:
+            ov = ga.intersection(gb).intersection(foot).area
+            if ov > 1e-9:
+                overlaps[(a, b)] = ov
+    ov_area = sum(overlaps.values())
+    tol = ROOF_COVERAGE_TOL * foot.area
+    payload = {
+        "level": top,
+        "footprint_m2": round(foot.area, 6),
+        "uncovered_m2": round(gap_area, 6),
+        "overlap_m2": round(ov_area, 6),
+        "overlaps": {f"{a}+{b}": round(v, 6) for (a, b), v in sorted(overlaps.items())},
+    }
+    problems, ents = [], []
+    if gap_area > tol:
+        under = [sid for sid, g in spaces.items() if g.intersection(gap).area > 1e-9]
+        problems.append(
+            f"{gap_area:.2f} m^2 of footprint has no roof over it (spaces {', '.join(under)})"
+        )
+        ents += under
+    if ov_area > tol:
+        pairs = sorted(overlaps, key=lambda k: -overlaps[k])
+        problems.append(
+            f"{ov_area:.2f} m^2 is roofed twice ("
+            + ", ".join(f"{a} and {b} {overlaps[(a, b)]:.2f} m^2" for a, b in pairs[:5])
+            + ")"
+        )
+        ents += sorted({x for pr in pairs for x in pr})
+    if problems:
+        return CheckResult(
+            cid_,
+            name,
+            "error",
+            f"level {top}: "
+            + "; ".join(problems)
+            + f"; tolerance {ROOF_COVERAGE_TOL:.0%} of {foot.area:.2f} m^2",
+            entities=ents,
+            expected=round(foot.area, 6),
+            actual=payload,
+        )
+    return CheckResult(
+        cid_,
+        name,
+        "pass",
+        f"level {top}: {len(on_top)} roof plane(s) cover {foot.area:.2f} m^2 of footprint "
+        f"(uncovered {gap_area:.3f} m^2, doubled {ov_area:.3f} m^2)",
+        expected=round(foot.area, 6),
+        actual=payload,
+    )
+
+
+def _check_roof_solar_aperture(ctx: _Ctx) -> CheckResult:
+    """Simplified roof keeps the source roof's solar aperture (#617).
+
+    Roadmap item 2. Compares ``solar_aperture`` of ``model.roof_planes``
+    against ``model.source_roof_planes`` (kept by
+    ``roof_simplify.apply_roof_simplification``) at the site latitude, total
+    and per orientation. Warn-only, like the ASHRAE checks, until the export
+    writes sloped roofs (#618/#619).
+
+    warn  -- total aperture moved more than ROOF_APERTURE_TOL; the
+             orientations that moved past it are named.
+    pass  -- within tolerance; message gives area and aperture deltas.
+    skip  -- roof never simplified (no source planes), no roof planes, or no
+             site latitude (never assumed).
+    """
+    cid_, name = "roof_solar_aperture", "Roof solar aperture"
+    m = ctx.model
+    src = list(getattr(m, "source_roof_planes", []) or [])
+    cur = list(getattr(m, "roof_planes", []) or [])
+    if not src or not cur:
+        return CheckResult(cid_, name, "skip", "roof not simplified (no source roof planes)")
+    lat = getattr(m, "site_latitude_deg", None)
+    if lat is None:
+        return CheckResult(
+            cid_, name, "skip", "no site latitude; aperture needs one and none is assumed"
+        )
+    from solar_aperture import solar_aperture
+
+    a0, a1 = solar_aperture(src, lat), solar_aperture(cur, lat)
+    if a0.total <= 0:
+        return CheckResult(cid_, name, "skip", "source roof collects no sun at this latitude")
+    d = (a1.total - a0.total) / a0.total
+    area0 = sum(p.area_m2 for p in src)
+    area1 = sum(p.area_m2 for p in cur)
+    da = (area1 - area0) / area0 if area0 else 0.0
+    moved = [
+        k
+        for k in a0.by_orientation
+        if abs(a1.by_orientation[k] - a0.by_orientation[k]) > ROOF_APERTURE_TOL * a0.total
+    ]
+    payload = {
+        "latitude_deg": lat,
+        "aperture_delta_pct": round(d * 100, 4),
+        "area_delta_pct": round(da * 100, 4),
+        "planes_before": len(src),
+        "planes_after": len(cur),
+        "by_orientation_before": {k: round(v, 6) for k, v in a0.by_orientation.items()},
+        "by_orientation_after": {k: round(v, 6) for k, v in a1.by_orientation.items()},
+    }
+    head = (
+        f"{len(src)} -> {len(cur)} roof plane(s): aperture {d * 100:+.2f}%, "
+        f"area {da * 100:+.2f}% at latitude {lat:g}"
+    )
+    if abs(d) > ROOF_APERTURE_TOL:
+        return CheckResult(
+            cid_,
+            name,
+            "warn",
+            f"{head}; past the {ROOF_APERTURE_TOL:.0%} tolerance"
+            + (f", moved on {', '.join(moved)}" if moved else ""),
+            entities=moved,
+            expected=round(a0.total, 6),
+            actual=payload,
+        )
+    return CheckResult(cid_, name, "pass", head, expected=round(a0.total, 6), actual=payload)
+
+
 def _check_daylight_zones(ctx: _Ctx) -> CheckResult:
     """Daylight zones are inside their space and their areas add up.
 
