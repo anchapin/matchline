@@ -424,6 +424,12 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     return path
 
 
+def _covers(loop3d, pt) -> bool:
+    from shapely.geometry import Point, Polygon
+
+    return Polygon([(x, y) for x, y, _ in loop3d]).buffer(1e-6).contains(Point(pt[0], pt[1]))
+
+
 def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count, notes):
     """One Roof surface per roof plane, clipped to the envelope ring (#618).
 
@@ -435,7 +441,7 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
     """
     from shapely.geometry import Polygon
 
-    from bem_roof import plane_z
+    from bem_roof import place_skylights_on_pieces
 
     pieces, overhang = roof_pieces(model.ring_m, roofs)
     if overhang > 1e-4:
@@ -468,46 +474,33 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
         for x, y, z in lp:
             _cartesian(pl, x, y, z)
         surfaces.append((su, r, plan, sid))
-    # Lay skylights out one roof surface at a time, largest first, so each
-    # sits wholly on one plane and never straddles a ridge or hip; units
-    # that do not fit carry on to the next surface.
+    # Skylights: one plane at a time, true width x height laid on the slope
+    # (bem_roof.place_skylights_on_pieces, shared with the IFC writer).
+    by_piece = {id(lp): (su, sid) for (su, r, plan, sid), (_r, lp) in zip(surfaces, pieces)}
+    placed, sky_notes = place_skylights_on_pieces(sky_units, pieces, regions)
     kept = []
-    left = list(sky_units)
-    for su, r, plan, sid in sorted(surfaces, key=lambda t: (-t[2].area, t[3])):
-        if not left:
-            break
-        sub = {}
-        for k_, poly in regions.items():
-            g = Polygon(poly).intersection(plan)
-            if isinstance(g, Polygon) and g.area > 1e-6:
-                sub[k_] = list(g.exterior.coords)[:-1]
-        mine = [
-            u for u in left if not u.space_sid or u.space_sid in sub or u.space_sid not in regions
-        ]
-        if not mine:
-            continue
-        ring2 = list(plan.exterior.coords)[:-1]
-        placed, sky_notes = _place_skylights_on_roof(mine, ring2, regions=sub)
-        done = {id(pl_["unit"]) for pl_ in placed}
-        left = [u for u in left if id(u) not in done]
-        for pl_ in placed:
-            u = pl_["unit"]
-            open_count += 1
-            op = _el(
-                su,
-                "Opening",
-                id=f"op-{open_count:04d}",
-                openingType=_opening_type(u.category),
-                coordinatesAbsolute="true",
-            )
-            _el(op, "Name", f"{u.tag} ({u.category})")
-            opg = _el(op, "PlanarGeometry")
-            opl = _el(opg, "PolyLoop")
-            for x, y in pl_["rect"]:
-                _cartesian(opl, x, y, plane_z(r, x, y))
-            kept.append(pl_)
-    for u in left:
-        notes.append(f"roof: skylight {u.tag} did not fit on any roof plane; not exported")
+    for pl_ in placed:
+        su, sid = next(
+            by_piece[id(lp)]
+            for (r_, lp) in pieces
+            if r_ is pl_["roof"] and _covers(lp, pl_["centre"])
+        )
+        u = pl_["unit"]
+        open_count += 1
+        op = _el(
+            su,
+            "Opening",
+            id=f"op-{open_count:04d}",
+            openingType=_opening_type(u.category),
+            coordinatesAbsolute="true",
+        )
+        _el(op, "Name", f"{u.tag} ({u.category})")
+        opg = _el(op, "PlanarGeometry")
+        opl = _el(opg, "PolyLoop")
+        for x, y, z in pl_["corners"]:
+            _cartesian(opl, x, y, z)
+        kept.append(pl_)
+    notes.extend(f"roof: {n}" for n in sky_notes)
     return surf_count, open_count, kept
 
 

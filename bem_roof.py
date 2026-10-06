@@ -237,3 +237,88 @@ def open_edges(loops):
             if a != b:
                 edges[(a, b)] = edges.get((a, b), 0) + 1
     return [e for e, c in edges.items() if edges.get((e[1], e[0]), 0) != c]
+
+
+def plane_frame(r):
+    """(n, u, v): roof normal (up), horizontal in-plane axis, upslope axis.
+
+    ``u`` runs along the eave (level), ``v = n x u`` runs up the slope. A
+    flat plane gets u = east, v = north.
+    """
+    (nx, ny, nz), _ = _plane(r)
+    h = math.hypot(nx, ny)
+    if h < 1e-9:
+        return (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+    ux, uy = -ny / h, nx / h
+    v = (ny * 0.0 - nz * uy, nz * ux - nx * 0.0, nx * uy - ny * ux)
+    return (nx, ny, nz), (ux, uy, 0.0), v
+
+
+def place_skylights_on_pieces(units, pieces, regions):
+    """Lay skylights out on sloped roof pieces, one piece at a time (#618, #619).
+
+    Largest piece first; each skylight lands wholly on one plane and never
+    straddles a ridge or hip. Placement runs in plan (the flat-roof layout),
+    then the skylight becomes a true ``width x height`` rectangle in its
+    plane: width along the eave, height up the slope, centred over the plan
+    spot. Both BEM writers use this, so gbXML and IFC agree.
+
+    Returns ``(placed, notes)``; each placed item is a dict with ``unit``,
+    ``roof``, ``centre`` (x, y, z), ``corners`` (4 x (x, y, z), CCW from
+    above) and the plane ``frame`` (n, u, v).
+    """
+    from bem_helpers import _place_skylights_on_roof
+
+    shaped = []
+    for r, lp in pieces:
+        shaped.append((r, lp, Polygon([(x, y) for x, y, _ in lp])))
+    shaped.sort(key=lambda t: -t[2].area)
+    placed, notes = [], []
+    left = list(units)
+    for r, lp, plan in shaped:
+        if not left:
+            break
+        sub = {}
+        for k, poly in regions.items():
+            g = Polygon(poly).intersection(plan)
+            if isinstance(g, Polygon) and g.area > 1e-6:
+                sub[k] = list(g.exterior.coords)[:-1]
+        mine = [
+            u for u in left if not u.space_sid or u.space_sid in sub or u.space_sid not in regions
+        ]
+        if not mine:
+            continue
+        got, _n = _place_skylights_on_roof(mine, list(plan.exterior.coords)[:-1], regions=sub)
+        n, u_, v_ = plane_frame(r)
+        done = set()
+        for pl_ in got:
+            unit = pl_["unit"]
+            rect = pl_["rect"]
+            cx = sum(x for x, _ in rect) / len(rect)
+            cy = sum(y for _, y in rect) / len(rect)
+            c = (cx, cy, plane_z(r, cx, cy))
+            hw, hh = unit.width_m / 2.0, unit.height_m / 2.0
+            corners = [
+                tuple(c[i] + a * hw * u_[i] + b * hh * v_[i] for i in range(3))
+                for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+            ]
+            if not all(plan.buffer(1e-6).contains(Point(x, y)) for x, y, _ in corners):
+                continue  # does not fit once laid on the slope; try the next piece
+            corners = _ccw_3d(corners)
+            placed.append(
+                {"unit": unit, "roof": r, "centre": c, "corners": corners, "frame": (n, u_, v_)}
+            )
+            done.add(id(unit))
+        left = [u for u in left if id(u) not in done]
+    for unit in left:
+        notes.append(f"skylight {unit.tag} did not fit on any roof plane; not exported")
+    return placed, notes
+
+
+def _ccw_3d(pts):
+    s = 0.0
+    for i in range(len(pts)):
+        x0, y0 = pts[i][0], pts[i][1]
+        x1, y1 = pts[(i + 1) % len(pts)][0], pts[(i + 1) % len(pts)][1]
+        s += x0 * y1 - x1 * y0
+    return list(pts) if s > 0 else list(reversed(pts))
