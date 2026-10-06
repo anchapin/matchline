@@ -29,7 +29,8 @@ from bem_export import (
 from bem_geometry import BEMRoof
 from bem_helpers import _edge_facades
 from bem_roof import is_sloped, shell_volume, space_shell
-from building_model import BuildingModel, EnvelopeWall, SpaceLighting
+from building_model import BuildingModel, EnvelopeWall
+from space_use_defaults import lighting_watts
 from validate import validate_bem_conservation
 
 # ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                 polygon_m=poly_ccw,
                 area_m2=space.area_m2 or 0.0,
                 volume_m3=vol or 0.0,
-                lighting_w=(space.lighting or SpaceLighting()).total_w or 0.0,
+                lighting_w=lighting_watts(space),  # fixtures, else LPD x area (#685)
                 wall_u_value_w_m2k=space.wall_u_value_w_m2k,
                 identity=_space_identity(space),
             )

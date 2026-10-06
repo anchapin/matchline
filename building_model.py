@@ -232,6 +232,27 @@ class SpaceLighting:
 
 
 @dataclass
+class SpaceUse:
+    """Occupant, plug-load and schedule inputs for one space (#685).
+
+    Filled from the drawings when they carry a value; otherwise
+    ``space_use_defaults.apply_space_use_defaults`` fills the gaps from the
+    DOE Commercial Prototype Building Models (ASHRAE 90.1-2019) and records
+    that in ``provenance`` (method ``"doe_prototype_default"``).
+    ``space_type`` is the key into ``space_use_defaults_data.SPACE_USE_DEFAULTS``.
+    Schedule fields name a schedule in ``space_use_defaults_data.SCHEDULES``.
+    """
+
+    space_type: str = ""
+    people_per_m2: Optional[float] = None
+    equipment_w_m2: Optional[float] = None
+    lighting_schedule: str = ""
+    occupancy_schedule: str = ""
+    equipment_schedule: str = ""
+    provenance: Provenance | None = None
+
+
+@dataclass
 class SpaceHVAC:
     zone_ids: List[str] = field(default_factory=list)  # many-to-many
     diffusers: List[ComponentRef] = field(default_factory=list)
@@ -305,6 +326,7 @@ class Space:
     openings: List[SpaceOpening] = field(default_factory=list)
     lighting: SpaceLighting = field(default_factory=SpaceLighting)
     hvac: SpaceHVAC = field(default_factory=SpaceHVAC)
+    use: SpaceUse = field(default_factory=SpaceUse)  # #685 loads + schedules
     daylight: "SpaceDaylight" = field(default_factory=lambda: SpaceDaylight())
     core_provenance: Provenance | None = None  # polygon + name/number source
     label_confidence: float = 0.0
