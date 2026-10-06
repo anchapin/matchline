@@ -484,6 +484,10 @@ class Level:
     name: str = ""
     elevation_z_m: float = 0.0
     wall_height_m: float = 3.0
+    # #634: True/False only when a source states it (IFC
+    # Pset_BuildingStoreyCommon.AboveGround); None = not stated, never guessed
+    above_ground: Optional[bool] = None
+    above_ground_source: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -559,6 +563,7 @@ class ReviewItem:
         "matchline_identity",
         "roof_plane",
         "interstory",
+        "below_grade",
     ]
     description: str
     confidence: float
@@ -795,6 +800,7 @@ class BuildingModel:
             "matchline_identity",
             "roof_plane",
             "interstory",
+            "below_grade",
         ],
         description: str,
         confidence: float,
