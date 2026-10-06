@@ -23,6 +23,7 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
 | `building_model.py` | Versioned canonical schema: `BuildingModel`, `Space`, `Zone`, `Level`, `EnvelopeWall`, `SpaceOpening`, `FixtureInstance`, `ComponentRef`, `Provenance`, review queue, revision log, JSON round-trip. |
 | `registration.py` | `Affine2D` plan-sheet registration from title-block origin+scale; facade elevation registration via **grid bubbles** (0.95 conf) or **geometric fallback** from a facade reference corner + scale (0.65 conf, always review-flagged); point-in-polygon; along-wall interval-overlap matching. |
 | `link.py` | The linker. Ingests a building's sheets, builds the model, computes rollups. |
+| `roof_geometry.py` | Tilt, azimuth, sloped and plan area of planar roof facets (`RoofPlane`, roadmap item 2). Newell normal; non-planar facets rejected, never fitted. |
 | `synth/multidiscipline.py` | Coordinated synthetic building generator (arch + lighting + mech + two south elevations, one gridded, one not) with ground truth. |
 | `run_multidiscipline.py` | Validation harness: 3 buildings × 2 elevation paths, scored against GT. |
 
@@ -71,6 +72,24 @@ Confidence behavior: grid window links 0.95 → no review items; geometric
 windows are marked ambiguous; off-facade intervals unlinked-but-reported.
 Revision supersession verified: old facts retained in history, new
 revision logged.
+
+## Roof planes (roadmap item 2, #613)
+
+`BuildingModel.roof_planes` holds sloped roof facets as `RoofPlane`s: 3-D
+corners in the canonical frame (plan x east, plan y down the sheet, z up from
+the level floor), `tilt_deg` from horizontal, `azimuth_deg` as the compass
+bearing of the upward normal (clockwise from north, north being -y), and the
+true sloped `area_m2`. A flat facet has tilt 0 and azimuth None.
+
+The list is empty unless something populated it, and empty means the flat
+roof at wall height every export used before. Nothing reads it yet: IFC import
+(#614), the solar-aperture metric (#615), the roof simplifier (#616),
+validation (#617) and the gbXML/IFC exports (#618, #619) land in later waves.
+
+`roof_geometry.plane_orientation` uses Newell's method, so winding and vertex
+count do not matter. Corners more than 5 mm off one plane raise
+`RoofGeometryError`: a warped facet is a modelling error to report, not a
+plane to fit.
 
 ## Design decisions recorded
 
