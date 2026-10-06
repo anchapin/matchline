@@ -5,6 +5,23 @@ Re-derived 2026-10-06 against `origin/develop` at `a4e63ee`; Tier A still 22
 branches (one addition: `docs/roadmap-atria-walkout` at 473f986). Tier B
 expanded from 61 to 88 as the manifest caught up with later merges.
 
+## Tier B deletion performed 2026-10-06 (follow-up)
+
+All 88 Tier B branches deleted from `origin` (none were local). Recovery SHAs
+recorded in `.handoff-archive/branch-deletion-tierB-515.md`. The bulk
+deletion was authorised by the user on the explicit justification that
+**0 open issues, 0 open PRs** — `gh issue list --state open` and
+`gh pr list --state open` both returned empty before the deletion. The strict
+Tier A gate (100% coverage, 0 untaken deletions) excludes Tier B, so this is
+a bulk deletion by user authorisation rather than the strict gate.
+
+The 42 remaining remote branches (not in the original Tier A or Tier B) are
+**squash-merged leftovers**: branches whose head commit is reachable from
+`develop` (typically via merge commit, not squash). Their work is in develop;
+their refs were not auto-deleted by GitHub because the repo's "Automatically
+delete head branches" setting is off. They are tracked separately and not
+in the audit scope of #515.
+
 ## Tier A deletion performed 2026-10-06
 
 All 22 Tier A branches deleted from `origin` (none were local). Recovery SHAs
@@ -72,7 +89,12 @@ a `git worktree list` check first: a branch checked out in a worktree is the
 | `worker/517-docs-readme-catalog` | `169b97f` | 1 |
 | `worker/519-gitignore-tracked` | `d197b40` | 26 |
 
-## Tier B: needs eyes (88 branches)
+## Tier B: needs eyes (88 branches, deleted 2026-10-06)
+
+Deleted in the Tier B follow-up pass; see the "Tier B deletion performed"
+note above for details. The table below is preserved as the historical record
+of what was triaged and recovered. Recovery: see
+`.handoff-archive/branch-deletion-tierB-515.md`.
 
 Re-derived 2026-10-06 against `a4e63ee`. Ordered by coverage, descending.
 `del_untaken` = lines this branch removed that develop still has; `absent` =
