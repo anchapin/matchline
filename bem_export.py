@@ -149,8 +149,20 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     _el(storey, "Name", "Level 1")
     _el(storey, "Level", "0")
 
-    zone = _el(root, "Zone", id="zone-1")
-    _el(zone, "Name", "Zone 1")
+    # Appendix G thermal zones (#638) when the model carries them; otherwise
+    # the single default zone, as before
+    tzones = list(getattr(model, "thermal_zones", None) or [])
+    zone_of: dict = {}
+    if tzones:
+        for zid, sids in tzones:
+            zone = _el(root, "Zone", id=f"zone-{zid}")
+            _el(zone, "Name", zid)
+            for sid in sids:
+                zone_of.setdefault(sid, f"zone-{zid}")
+    else:
+        zone = _el(root, "Zone", id="zone-1")
+        _el(zone, "Name", "Zone 1")
+    air_walls = list(getattr(model, "air_walls", None) or [])
 
     # Placeholder constructions (v1): drawings carry no assembly data, so
     # every surface references a generic construction. Real U-values /
@@ -188,13 +200,22 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
         # type. Written only when shades exist so plain exports are unchanged.
         co = _el(root, "Construction", id="const-shade")
         _el(co, "Name", "Shading device (no heat transfer modeled)")
+    if air_walls:
+        # air walls (#638) join pieces of a room split at an Appendix G block
+        # line; no mass, no resistance. Written only when air walls exist.
+        co = _el(root, "Construction", id="const-air")
+        _el(co, "Name", "Air wall (virtual boundary between pieces of one room)")
 
     # --- spaces (children of Building in gbXML) ------------------------------
     roofs = list(getattr(model, "roof_planes", None) or [])
     sloped = is_sloped(roofs)
     placement_notes = []
     for sp in model.spaces:
-        se = _el(bldg, "Space", id=sp.sid, buildingStoreyIdRef="storey-1", zoneIdRef="zone-1")
+        zref = zone_of.get(sp.sid) if tzones else "zone-1"
+        attrs = {"id": sp.sid, "buildingStoreyIdRef": "storey-1"}
+        if zref:
+            attrs["zoneIdRef"] = zref
+        se = _el(bldg, "Space", **attrs)
         _el(se, "Name", sp.name)
         if sp.number:
             _el(se, "CADObjectId", sp.number)
@@ -377,6 +398,30 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     for x, y in reversed(model.ring_m):
         _cartesian(pl, x, y, 0.0)
 
+    # air walls (#638): one vertical surface per shared edge between pieces
+    # of a split room, both pieces adjacent; PlanarGeometry only (importers
+    # read the PolyLoop, #627), wound so the normal points from the first
+    # adjacent space into the second, and up to the roof when it slopes
+    for k, aw in enumerate(air_walls):
+        surf_count += 1
+        su = _el(
+            campus,
+            "Surface",
+            id=f"air-{k + 1:03d}",
+            surfaceType="Air",
+            constructionIdRef="const-air",
+        )
+        _el(su, "Name", f"Air wall {aw.id}")
+        _el(su, "AdjacentSpaceId", spaceIdRef=aw.space_ids[0])
+        _el(su, "AdjacentSpaceId", spaceIdRef=aw.space_ids[1])
+        top = [(aw.p0[0], aw.p0[1], h), (aw.p1[0], aw.p1[1], h)]
+        if sloped:
+            top, _unc = wall_top(aw.p0, aw.p1, roofs, h)
+        pg = _el(su, "PlanarGeometry")
+        pl = _el(pg, "PolyLoop")
+        for x, y, z in [(aw.p0[0], aw.p0[1], 0.0), (aw.p1[0], aw.p1[1], 0.0)] + list(reversed(top)):
+            _cartesian(pl, x, y, z)
+
     # shading surfaces (roadmap item 5): detached Shade surfaces, absolute
     # coordinates, no AdjacentSpaceId -- shading is not envelope.
     for k, sh in enumerate(getattr(model, "shades", []) or []):
@@ -413,6 +458,11 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             f"Shading: {len(model.shades)} Shade surface(s) placed off their host "
             f"walls' exterior faces. "
             if getattr(model, "shades", None)
+            else ""
+        )
+        + (
+            f"Air walls: {len(air_walls)} between pieces of rooms split at Appendix G block lines. "
+            if air_walls
             else ""
         )
         + "Interior partitions omitted (v1 gap). "
