@@ -13,6 +13,7 @@ import pytest
 from building_model import (
     REVIEW_CONFIDENCE,
     BuildingModel,
+    Provenance,
     Space,
     SpaceOpening,
     SymbolLinkage,
@@ -117,69 +118,119 @@ class TestDedupeSpaceOpenings:
         assert "WINDOW" in tags
         assert "DOOR" in tags
 
-    def test_cross_level_same_facade_deduplicated(self):
-        """Issue #404: windows on same facade across different levels are deduplicated."""
-        model = BuildingModel(name="cross-level-test")
-        level1 = type("Level", (), {"id": "L1", "name": "Level 1", "elevation_z_m": 0.0})()
-        level2 = type("Level", (), {"id": "L2", "name": "Level 2", "elevation_z_m": 3.0})()
-        model.levels.extend([level1, level2])
+    def test_two_storey_window_on_adjacent_sheets_merges(self):
+        """#664: one tall window seen as halves on two adjacent sheets -> one opening."""
+        from tests.model_factory import _add_l2_space, make_clean_model, two_storey_window_pair
 
-        space1 = Space(
-            id="L1-101",
-            level_id="L1",
-            name="Room 101",
-            number="101",
-            polygon_m=[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
-            area_m2=100.0,
-        )
-        space2 = Space(
-            id="L2-101",
-            level_id="L2",
-            name="Room 101",
-            number="101",
-            polygon_m=[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
-            area_m2=100.0,
-        )
-        model.spaces["L1-101"] = space1
-        model.spaces["L2-101"] = space2
+        m = make_clean_model()
+        lo, hi = two_storey_window_pair(s=2.6)
+        m.spaces["L1-101"].openings.append(lo)
+        _add_l2_space(m).openings.append(hi)
 
-        prov1 = type("Provenance", (), {"confidence": 0.9, "sheet_id": "EL-L1"})()
-        prov2 = type("Provenance", (), {"confidence": 0.95, "sheet_id": "EL-L2"})()
+        _dedupe_space_openings(m)
 
-        op1 = SpaceOpening(
-            id="OP1",
-            tag="WINDOW",
+        cw = [o for sp in m.spaces.values() for o in sp.openings if o.tag == "CW"]
+        assert len(cw) == 1
+        kept = cw[0]
+        assert kept is hi  # higher-confidence sighting is primary
+        assert kept.source_sheet_ids == ["elev_A202", "elev_A201"]
+        assert kept.provenance is kept.source_provenance[0]
+        assert kept.needs_review  # kept half does not span the full window
+        assert kept.history and kept.history[-1].method == "window_dedup"
+
+    def test_stacked_punched_windows_stay_separate(self):
+        """#664: identical windows floor over floor are two windows (spandrel gap)."""
+        from tests.model_factory import _add_l2_space, make_clean_model
+
+        m = make_clean_model()
+        l1 = m.spaces["L1-101"].openings[0]
+        l2 = SpaceOpening(
+            id="south-W1-L2",
+            tag=l1.tag,
             category="window",
-            width_m=1.5,
-            height_m=2.0,
-            sill_m=0.9,
-            host_facade="NORTH",
-            provenance=prov1,
+            width_m=l1.width_m,
+            height_m=l1.height_m,
+            sill_m=l1.sill_m,
+            head_m=l1.head_m,
+            host_facade=l1.host_facade,
+            host_interval_m=list(l1.host_interval_m),
+            s_center_m=l1.s_center_m,
+            area_m2=l1.area_m2,
+            provenance=Provenance("elev_A202", 1, "grid_registration", 0.95),
         )
-        op2 = SpaceOpening(
-            id="OP2",
-            tag="WINDOW",
+        _add_l2_space(m).openings.append(l2)
+        n_before = sum(len(sp.openings) for sp in m.spaces.values())
+
+        _dedupe_space_openings(m)
+
+        assert sum(len(sp.openings) for sp in m.spaces.values()) == n_before
+
+    def test_same_tag_windows_at_different_positions_stay_separate(self):
+        """Regression: same-tag same-size windows along one facade are distinct.
+
+        The old (facade, tag, width, height) key collapsed every W-type window on a
+        facade to one; the synthetic building lost 3 of its 5 windows.
+        """
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        before = [o.id for o in m.spaces["L1-101"].openings]
+        assert len(before) >= 2
+        _dedupe_space_openings(m)
+        assert [o.id for o in m.spaces["L1-101"].openings] == before
+
+    def test_unplaced_same_tag_openings_are_not_merged(self):
+        """Without an along-wall position there is no evidence two sightings are one."""
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        for o in m.spaces["L1-101"].openings:
+            o.s_center_m = None
+            o.host_interval_m = None
+        n = len(m.spaces["L1-101"].openings)
+        _dedupe_space_openings(m)
+        assert len(m.spaces["L1-101"].openings) == n
+
+    def test_same_level_double_link_merges_with_both_sheets(self):
+        """Two runs of one facade link the same window twice on one level."""
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        sp = m.spaces["L1-101"]
+        o = sp.openings[0]
+        dup = SpaceOpening(
+            id="south-W1-dup",
+            tag=o.tag,
             category="window",
-            width_m=1.5,
-            height_m=2.0,
-            sill_m=0.9,
-            host_facade="NORTH",
-            provenance=prov2,
+            width_m=o.width_m,
+            height_m=o.height_m,
+            sill_m=o.sill_m,
+            head_m=o.head_m,
+            host_facade=o.host_facade,
+            host_interval_m=list(o.host_interval_m),
+            s_center_m=o.s_center_m + 0.03,
+            area_m2=o.area_m2,
+            provenance=Provenance("elev_A202", 1, "grid_registration", 0.8),
         )
-        space1.openings.append(op1)
-        space2.openings.append(op2)
+        n = len(sp.openings)
+        sp.openings.append(dup)
+        _dedupe_space_openings(m)
+        assert len(sp.openings) == n
+        assert sp.openings[0].source_sheet_ids == ["elev_A201", "elev_A202"]
 
-        _dedupe_space_openings(model)
+    def test_two_storey_facade_end_to_end_passes_validation(self):
+        """#664 fixture: dedup then validate; the cross-level check passes."""
+        from tests.model_factory import break_cross_level_duplicate, make_clean_model
+        from validate import run_checks
 
-        all_openings = (
-            list(model.spaces.values())[0].openings + list(model.spaces.values())[1].openings
-        )
-        assert len(all_openings) == 1
-        assert all_openings[0].tag == "WINDOW"
-        assert all_openings[0].host_facade == "NORTH"
-        assert "+" in all_openings[0].provenance.sheet_id
-        assert "EL-L1" in all_openings[0].provenance.sheet_id
-        assert "EL-L2" in all_openings[0].provenance.sheet_id
+        m = make_clean_model()
+        break_cross_level_duplicate(m)
+        res = {r.check_id: r for r in run_checks(m).results}
+        assert res["cross_level_dedup"].severity == "error"
+
+        _dedupe_space_openings(m)
+        res = {r.check_id: r for r in run_checks(m).results}
+        assert res["cross_level_dedup"].severity == "pass", res["cross_level_dedup"].message
 
 
 class TestReviewQueueRouting:

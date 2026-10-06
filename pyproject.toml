@@ -57,6 +57,7 @@ py-modules = [
     "geometry_simplify",
     "hvac_trace",
     "ifc_import",
+    "opening_identity",
     "jesse",
     "lighting",
     "link",

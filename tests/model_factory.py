@@ -838,3 +838,76 @@ def break_space_type_invalid(m: BuildingModel):
 
 def break_space_type_unassigned(m: BuildingModel):
     next(iter(m.spaces.values())).poly_type = "unassigned"
+
+
+# -- #664: cross-level opening dedup ----------------------------------------
+
+
+def _add_l2_space(m: BuildingModel, sid: str = "L2-101") -> Space:
+    """An L2 copy of L1-101 directly above it (same facade frame)."""
+    from building_model import Level
+
+    if not any(lv.id == "L2" for lv in m.levels):
+        m.levels.append(Level(id="L2", name="Level 2", elevation_z_m=H, wall_height_m=H))
+    src = m.spaces["L1-101"]
+    sp = Space(
+        id=sid,
+        level_id="L2",
+        name=src.name,
+        number="201",
+        polygon_m=[list(p) for p in src.polygon_m],
+        area_m2=src.area_m2,
+    )
+    m.spaces[sid] = sp
+    return sp
+
+
+def two_storey_window_pair(sheet_lo="elev_A201", sheet_hi="elev_A202", s=6.0):
+    """One logical two-storey window seen as two cropped halves on adjacent sheets.
+
+    L1 half: sill 0.9 m up to the L2 floor line (3.0 m). L2 half: from the floor
+    line (sill 0.0) to 1.8 m. Same facade, tag, width and along-wall centre.
+    """
+    lo = SpaceOpening(
+        id="south-CW1-L1",
+        tag="CW",
+        category="window",
+        width_m=2.0,
+        height_m=H - 0.9,
+        sill_m=0.9,
+        head_m=H,
+        host_facade="south",
+        host_interval_m=[s - 1.0, s + 1.0],
+        s_center_m=s,
+        area_m2=2.0 * (H - 0.9),
+        provenance=P(sheet_lo, "grid_registration", 0.9),
+    )
+    hi = SpaceOpening(
+        id="south-CW1-L2",
+        tag="CW",
+        category="window",
+        width_m=2.0,
+        height_m=1.8,
+        sill_m=0.0,
+        head_m=1.8,
+        host_facade="south",
+        host_interval_m=[s - 1.0, s + 1.0],
+        s_center_m=s + 0.02,
+        area_m2=3.6,
+        provenance=P(sheet_hi, "grid_registration", 0.95),
+    )
+    return lo, hi
+
+
+def break_cross_level_duplicate(m: BuildingModel):
+    """A two-storey window kept twice: once on L1 and once on L2 (dedup skipped)."""
+    lo, hi = two_storey_window_pair(s=2.6)
+    m.spaces["L1-101"].openings.append(lo)
+    _add_l2_space(m).openings.append(hi)
+
+
+def break_opening_unplaced(m: BuildingModel):
+    """A linked window with no along-wall position: dedup cannot confirm it."""
+    op = m.spaces["L1-101"].openings[0]
+    op.s_center_m = None
+    op.host_interval_m = None

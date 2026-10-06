@@ -82,6 +82,7 @@ from .gbxml import (
     _check_ifc_counts,
 )
 from .invariants import (
+    _check_cross_level_dedup,
     _check_facade_opening_closure,
     _check_fixture_schedule_join,
     _check_hvac_zone_coverage,
@@ -108,6 +109,7 @@ class _Ctx:
     lpd_warn_max: float = 25.0
     opening_eps: float = 0.005
     hvac_unzoned_warn_frac: float = 0.05
+    cross_level_dedup_warn_frac: float = 0.01
     sres: object = None
     gbxml_path: object = None
     ifc_path: object = None
@@ -176,6 +178,7 @@ BATTERY = [
     _check_elevation_placement_consistency,
     _check_window_tag_coverage,
     _check_window_double_link,
+    _check_cross_level_dedup,
     _check_provenance_complete,
     _check_review_queue_sound,
     _check_review_queue_acknowledged,
@@ -212,6 +215,7 @@ def run_checks(
     opening_eps: float = 0.005,
     min_review_confidence: float | None = None,
     hvac_unzoned_warn_frac: float = 0.05,
+    cross_level_dedup_warn_frac: float = 0.01,
 ) -> ValidationReport:
     if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
         raise ValueError(
@@ -225,6 +229,7 @@ def run_checks(
         lpd_warn_max=lpd_warn_max,
         opening_eps=opening_eps,
         hvac_unzoned_warn_frac=hvac_unzoned_warn_frac,
+        cross_level_dedup_warn_frac=cross_level_dedup_warn_frac,
         sres=sres,
         gbxml_path=gbxml_path,
         ifc_path=ifc_path,

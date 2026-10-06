@@ -82,6 +82,17 @@ class TestEnvelopeClosure:
         assert not is_ok(result), f"expected fail but got: {result.message}"
         assert result.check_id == "envelope_closure"
 
+    def test_envelope_closure_allows_mostly_glazed_facade(self):
+        """A curtain wall at ~90% glazing passes; only openings > facade fail."""
+        m = make_clean_model()
+        facade = sum(w.area_m2 or 0.0 for w in m.envelope)
+        ops = [o for sp in m.spaces.values() for o in sp.openings]
+        for o in ops:
+            o.area_m2 = 0.9 * facade / len(ops)
+        result = envelope_closure(m)
+        assert is_ok(result), f"expected pass but got: {result.message}"
+        assert "90% glazed" in result.message
+
 
 class TestExportGateBlocksConservation:
     def test_export_gate_blocks_when_area_closure_fails(self):

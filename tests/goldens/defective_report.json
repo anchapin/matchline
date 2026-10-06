@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 46,
+  "n_checks": 47,
   "errors": 5,
   "warnings": 4,
-  "passes": 22,
+  "passes": 23,
   "skipped": 15
  },
  "results": [
@@ -236,6 +236,13 @@
    "entities": []
   },
   {
+   "check_id": "cross_level_dedup",
+   "name": "Cross-level opening deduplication",
+   "severity": "pass",
+   "message": "2 wall opening(s) on 1 level(s): no cross-level duplicates",
+   "entities": []
+  },
+  {
    "check_id": "provenance_complete",
    "name": "Provenance complete",
    "severity": "pass",
@@ -373,7 +380,7 @@
    "check_id": "envelope_closure",
    "name": "Envelope closure",
    "severity": "pass",
-   "message": "solid wall area 92.40 m^2 matches facade 96.00 m^2 within 5%",
+   "message": "openings 3.60 m^2 fit in facade 96.00 m^2 (4% glazed; solid wall 92.40 m^2)",
    "entities": [],
    "expected": 96.0,
    "actual": 92.4

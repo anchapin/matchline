@@ -1,139 +1,133 @@
+"""Space opening deduplication (CFG-01, cross-level per #664)."""
+
 from __future__ import annotations
 
-from building_model import (
-    BuildingModel,
-    Provenance,
-    SpaceOpening,
+from building_model import BuildingModel, Provenance, SpaceOpening
+from opening_identity import (
+    CROSS_LEVEL_DEDUP_TOL_M,
+    OPENING_DIM_TOL_M,
+    group_key,
+    level_table,
+    opening_z,
+    same_opening,
 )
-from link._intervals import _intervals_overlap
 
 FT2_PER_M2 = 10.7639
-OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup
-_UNTAGGED = "@untagged"
+OPENING_DEDUP_TOL_M = 0.15  # same-space double-link tolerance (validate/export.py)
 
-"""Space opening deduplication utilities."""
+__all__ = [
+    "CROSS_LEVEL_DEDUP_TOL_M",
+    "OPENING_DIM_TOL_M",
+    "_dedupe_space_openings",
+]
 
 
-def _untagged_dedupe(entries: list[tuple[str, SpaceOpening]], kept_ids: set[str]) -> None:
-    """Geometric dedup for untagged entries: interval overlap merge.
+def _conf(op: SpaceOpening) -> float:
+    return op.provenance.confidence if op.provenance else 0.0
 
-    Process in along-wall order (by s_center_m); entries whose host_interval_m
-    overlaps by >= OPENING_DEDUP_TOL_M are merged to one.
-    """
-    if not entries:
-        return
-    # Sort by s_center_m
-    sorted_entries = sorted(entries, key=lambda x: x[1].s_center_m or 0.0)
-    used = set()
-    for i, (sp_id_i, op_i) in enumerate(sorted_entries):
-        if i in used:
-            continue
-        group = [(sp_id_i, op_i)]
-        group_indices = {i}
-        for j, (sp_id_j, op_j) in enumerate(sorted_entries[i + 1 :], i + 1):
-            if j in used:
-                continue
-            if not _intervals_overlap(
-                op_i.host_interval_m, op_j.host_interval_m, OPENING_DEDUP_TOL_M
-            ):
-                break
-            group.append((sp_id_j, op_j))
-            group_indices.add(j)
-        best_sp_id, best_op = max(
-            group, key=lambda x: x[1].provenance.confidence if x[1].provenance else 0
+
+def _merge(cluster: list, levels: dict) -> SpaceOpening:
+    """Collapse one cluster of (level_id, opening) to its primary opening."""
+
+    def extent(entry):
+        lid, op = entry
+        z = opening_z(op, levels.get(lid, (0, 0.0))[1])
+        return (z[1] - z[0]) if z else 0.0
+
+    primary_lid, primary = max(cluster, key=lambda e: (_conf(e[1]), extent(e)))
+    records: list[Provenance] = []
+    seen: set = set()
+    for _, op in [(primary_lid, primary)] + sorted(
+        (e for e in cluster if e[1] is not primary), key=lambda e: -_conf(e[1])
+    ):
+        for p in op.source_provenance or ([op.provenance] if op.provenance else []):
+            key = (p.sheet_id, p.revision)
+            if key not in seen:
+                seen.add(key)
+                records.append(p)
+    primary.source_provenance = []
+    overflow = []
+    for p in records:
+        try:
+            primary.add_source_provenance(p)
+        except ValueError:
+            overflow.append(p.sheet_id)
+    primary.needs_review = any(op.needs_review for _, op in cluster) or bool(overflow)
+
+    # Cropped halves of a tall window: the kept record may not span the union.
+    zs = [opening_z(op, levels.get(lid, (0, 0.0))[1]) for lid, op in cluster]
+    zs = [z for z in zs if z]
+    pz = opening_z(primary, levels.get(primary_lid, (0, 0.0))[1])
+    if zs and pz:
+        union = max(z[1] for z in zs) - min(z[0] for z in zs)
+        if union - (pz[1] - pz[0]) > CROSS_LEVEL_DEDUP_TOL_M:
+            primary.needs_review = True
+    if primary.provenance is not None:
+        sheets = primary.source_sheet_ids + overflow
+        primary.history.append(
+            Provenance(
+                sheet_id=primary.provenance.sheet_id,
+                revision=primary.provenance.revision,
+                method="window_dedup",
+                confidence=_conf(primary),
+                note=(
+                    f"merged {len(cluster)} sightings of facade='{primary.host_facade}' "
+                    f"tag='{primary.tag}' from sheets {sheets}"
+                    + (f"; {overflow} not kept (max 2 sources)" if overflow else "")
+                ),
+            )
         )
-        sheets = sorted(
-            {o.provenance.sheet_id for _, o in group if o.provenance and o.provenance.sheet_id}
-        )
-        best_op.provenance = Provenance(
-            sheet_id="+".join(sheets),
-            revision=best_op.provenance.revision if best_op.provenance else 1,
-            method="window_dedup",
-            confidence=max(
-                (o.provenance.confidence for _, o in group if o.provenance), default=0.9
-            ),
-            note=f"geometric dedup {len(group)} untagged entries for facade='{op_i.host_facade}'",
-        )
-        best_op.needs_review = any(o.needs_review for _, o in group)
-        kept_ids.add(best_op.id)
-        used.update(group_indices)
-
-
-OPENING_DIM_TOL_M: float = 0.15
-
-
-def _dim_bucket(dim_m: float) -> int:
-    """Bucket a dimension to the nearest OPENING_DIM_TOL_M for grouping."""
-    return round(dim_m / OPENING_DIM_TOL_M)
-
-
-def _entry_sheets(entries) -> list:
-    """Sorted distinct source sheet ids of (index, opening) dedup entries."""
-    return sorted(
-        {o.provenance.sheet_id for _, o in entries if o.provenance and o.provenance.sheet_id}
-    )
+    return primary
 
 
 def _dedupe_space_openings(model: BuildingModel) -> None:
-    """Merge duplicate SpaceOpening entries across ALL spaces (Issue #404).
+    """Merge duplicate SpaceOpening sightings across spaces and levels (#404, #664).
 
-    When two elevation runs of the same facade are linked separately (even
-    across different building levels), the same physical window produces two
-    SpaceOpening entries (one per run). Deduplication is by
-    (facade, tag, width_bucket, height_bucket) across all spaces (not just
-    per-space). Geometric proximity (host_interval_m overlap >= OPENING_DEDUP_TOL_M)
-    is used as a fallback for untagged entries.
-
-    Merged entries carry a compound sheet_id (sheet1+sheet2) and the
-    higher of the two confidences.
+    Openings are grouped by (facade, tag, category); inside a group two are the
+    same physical opening per ``opening_identity.same_opening``: along-wall
+    centres within 5 cm, matching width, same or adjacent level, and across
+    levels a continuous vertical extent. Each merged opening keeps every source
+    sheet in ``source_provenance`` (max 2) with the best-confidence sighting as
+    primary. Openings with no along-wall position are never merged: without a
+    position there is no evidence two same-tag sightings are one window.
     """
     if not model.spaces:
         return
-
-    # Collect all openings grouped by (facade, tag, width_bucket, height_bucket) across ALL spaces
-    facade_tag_groups: dict[tuple[str, str, int, int], list[tuple[str, SpaceOpening]]] = {}
+    levels = level_table(model)
+    groups: dict[tuple, list[tuple[str, SpaceOpening]]] = {}
     for sp in model.spaces.values():
         for op in sp.openings:
-            key = (
-                op.host_facade,
-                op.tag or _UNTAGGED,
-                _dim_bucket(op.width_m),
-                _dim_bucket(op.height_m),
-            )
-            facade_tag_groups.setdefault(key, []).append((sp.id, op))
+            if op.category == "skylight":
+                continue
+            groups.setdefault(group_key(op), []).append((sp.level_id, op))
 
-    # Determine which opening IDs to keep per facade+tag group
-    kept_op_ids: set[str] = set()
-    for (facade, tag, _wb, _hb), entries in facade_tag_groups.items():
-        if tag == _UNTAGGED:
-            _untagged_dedupe(entries, kept_op_ids)
-        else:
-            best_sp_id, best_op = max(
-                entries, key=lambda x: x[1].provenance.confidence if x[1].provenance else 0
-            )
-            best_op.provenance = Provenance(
-                sheet_id="+".join(
-                    sorted(
-                        {
-                            o.provenance.sheet_id
-                            for _, o in entries
-                            if o.provenance and o.provenance.sheet_id
-                        }
-                    )
-                ),
-                revision=getattr(best_op.provenance, "revision", 1),
-                method="window_dedup",
-                confidence=max(
-                    (o.provenance.confidence for _, o in entries if o.provenance), default=0.9
-                ),
-                note=(
-                    f"deduplicated {len(entries)} entries for facade='{facade}' tag='{tag}'; "
-                    f"sheets: {_entry_sheets(entries)}"
-                ),
-            )
-            best_op.needs_review = any(o.needs_review for _, o in entries)
-            kept_op_ids.add(best_op.id)
+    drop: set[int] = set()
+    for entries in groups.values():
+        n = len(entries)
+        if n < 2:
+            continue
+        parent = list(range(n))
 
-    # Update each space's openings to only kept entries
-    for sp in model.spaces.values():
-        sp.openings = [op for op in sp.openings if op.id in kept_op_ids]
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                (li, oi), (lj, oj) = entries[i], entries[j]
+                if same_opening(oi, li, oj, lj, levels):
+                    parent[find(i)] = find(j)
+        clusters: dict[int, list] = {}
+        for i in range(n):
+            clusters.setdefault(find(i), []).append(entries[i])
+        for cluster in clusters.values():
+            if len(cluster) < 2:
+                continue
+            kept = _merge(cluster, levels)
+            drop.update(id(op) for _, op in cluster if op is not kept)
+
+    if drop:
+        for sp in model.spaces.values():
+            sp.openings = [op for op in sp.openings if id(op) not in drop]
