@@ -75,3 +75,34 @@ Only `LINE` and `CIRCLE` appear on the dataset card; the `ARC` and polyline keys
 - **No HVAC quantities** — fixture counts are tracked but physical dimensions are not.
 - **FloorPlanCAD loader is pending validation**; the ArchCAD loader is built to the dataset card's documented JSON layout and not yet run on the real download (access is gated).
 - **ArchCAD has no drawing scale** — areas stay in drawing units² unless `scale_m_per_px` is given.
+
+## OCR schedule tags (#668)
+
+`extract_with_tags(detections, image, config=None, backend=None, schedule_tags=None)` reads the schedule tag printed beside each untagged detection and fills `Detection.tag` and `Detection.tag_score`. For each symbol it OCRs a window around the bbox (grown by `ocr_pad_frac` x the symbol size on every side), keeps reads that look like a tag (`A`, `W-1`, `D2`, `101A`; words like `OFFICE` are ignored) and reach `ocr_min_conf`, then picks a tag that is in the schedule first, then the read closest to the symbol, then the most confident. Detections that already have a tag are left alone. Low-confidence reads still count in the takeoff and show up in `TakeoffResult.tag_review`.
+
+If no OCR backend is installed, the detections come back unchanged (tags stay empty) and a warning is logged. The pipeline never fails on OCR.
+
+### Configuration
+
+Settings resolve in this order, later wins: built-in defaults, the `[tool.matchline.datasets]` table in `./pyproject.toml`, then the `datasets:` section of the per-building YAML config passed with `matchline run --config`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ocr_backend` | `auto` | `auto` (pytesseract, then rapidocr), `pytesseract`, `rapidocr`, or `none` |
+| `ocr_pad_frac` | `1.0` | search window margin, as a multiple of the symbol's larger side |
+| `ocr_min_conf` | `0.3` | drop OCR reads below this confidence (0 to 1) |
+
+```yaml
+# pipeline.yaml
+datasets:
+  ocr_backend: rapidocr
+  ocr_pad_frac: 1.5
+```
+
+```toml
+# pyproject.toml
+[tool.matchline.datasets]
+ocr_backend = "pytesseract"
+```
+
+Backends: `pip install -e .[ocr]` for rapidocr (local ONNX, no system packages), or `pip install -e .[ocr-tesseract]` plus the `tesseract` binary for pytesseract. An unknown `ocr_backend` value raises `ValueError`.

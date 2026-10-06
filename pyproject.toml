@@ -32,6 +32,8 @@ dependencies = [
 [project.optional-dependencies]
 # OCR for room labels (lazy import; helpful error if missing)
 ocr = ["rapidocr_onnxruntime"]
+# Optional second OCR backend for schedule tags (#668); needs the tesseract binary
+ocr-tesseract = ["pytesseract"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
 test = ["pytest", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines

@@ -51,7 +51,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit(1)
         with config_path.open() as f:
             config = yaml.safe_load(f) or {}
-        known_keys = {"simplify_tolerance", "wall_height", "review_confidence"}
+        known_keys = {"simplify_tolerance", "wall_height", "review_confidence", "datasets"}
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
