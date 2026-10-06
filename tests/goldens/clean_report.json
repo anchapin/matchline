@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 45,
+  "n_checks": 46,
   "errors": 0,
   "warnings": 0,
-  "passes": 30,
+  "passes": 31,
   "skipped": 15
  },
  "results": [
@@ -186,6 +186,13 @@
    "name": "Zone<->space referential integrity",
    "severity": "pass",
    "message": "all zone<->space links resolve both ways",
+   "entities": []
+  },
+  {
+   "check_id": "hvac_zone_coverage",
+   "name": "HVAC zone coverage",
+   "severity": "pass",
+   "message": "1 HVAC space(s) reachable from 1 zone(s); terminal counts reconcile",
    "entities": []
   },
   {

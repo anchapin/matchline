@@ -371,3 +371,107 @@ def _check_sill_head_sanity(ctx: _Ctx) -> CheckResult:
         "pass",
         f"{n} opening(s) with sane vertical placement",
     )
+
+
+def _check_hvac_zone_coverage(ctx: _Ctx) -> CheckResult:
+    """HVAC conservation (#658): spaces with duct terminals are served by a zone.
+
+    Three rules, read only from the canonical model:
+
+    1. A space holding a duct terminal (diffuser or terminal unit) must be
+       reachable from >=1 zone: one of its ``hvac.zone_ids`` resolves to a
+       zone that lists the space back. Failing that is an **error**: the
+       terminal's airflow lands in no zone, so it vanishes from the BEM.
+    2. Among spaces carrying any HVAC evidence (diffusers, sensors or
+       terminal units), the share with no resolved zone must stay at or
+       below ``ctx.hvac_unzoned_warn_frac`` (default 5%); above it is a
+       **warn**. Spaces with no HVAC evidence (storage, shafts) are not
+       counted: an unzoned closet is normal.
+    3. Each zone's diffuser ids must reconcile with the diffusers held by
+       the spaces it serves (and vice versa); a mismatch is a **warn**.
+
+    Skipped when the model has no zones (``zone_nonempty`` already warns
+    that the mech plan is not linked).
+    """
+    cid, name = "hvac_zone_coverage", "HVAC zone coverage"
+    m = ctx.model
+    if not m.zones:
+        return CheckResult(cid, name, "skip", "no zones in model (mech plan not linked)")
+
+    def served_by(sid, sp):
+        return [zid for zid in sp.hvac.zone_ids if zid in m.zones and sid in m.zones[zid].space_ids]
+
+    hvac_spaces = {
+        sid: sp
+        for sid, sp in m.spaces.items()
+        if sp.hvac.diffusers or sp.hvac.terminal_units or sp.hvac.sensors
+    }
+    unreachable = [
+        sid
+        for sid, sp in hvac_spaces.items()
+        if (sp.hvac.diffusers or sp.hvac.terminal_units) and not served_by(sid, sp)
+    ]
+    if unreachable:
+        return CheckResult(
+            cid,
+            name,
+            "error",
+            f"{len(unreachable)} space(s) hold duct terminals but no zone serves them: "
+            f"{unreachable[0]}",
+            entities=unreachable[:10],
+        )
+
+    unzoned = [sid for sid, sp in hvac_spaces.items() if not served_by(sid, sp)]
+    frac = len(unzoned) / len(hvac_spaces) if hvac_spaces else 0.0
+    if frac > ctx.hvac_unzoned_warn_frac:
+        return CheckResult(
+            cid,
+            name,
+            "warn",
+            f"{len(unzoned)}/{len(hvac_spaces)} HVAC space(s) ({frac:.0%}) resolve to no zone "
+            f"(threshold {ctx.hvac_unzoned_warn_frac:.0%})",
+            entities=unzoned[:10],
+        )
+
+    drift = []
+    for zid, z in m.zones.items():
+        zone_d = {d.id for d in z.diffusers}
+        space_d = {
+            d.id
+            for s in z.space_ids
+            if s in m.spaces and zid in m.spaces[s].hvac.zone_ids
+            for d in m.spaces[s].hvac.diffusers
+        }
+        missing_in_spaces = sorted(zone_d - space_d)
+        # A space in several zones holds diffusers from all of them, so only
+        # a space diffuser that belongs to NONE of its zones is drift.
+        orphans = sorted(
+            d.id
+            for s in z.space_ids
+            if s in m.spaces
+            for d in m.spaces[s].hvac.diffusers
+            if not any(
+                d.id in {x.id for x in m.zones[o].diffusers}
+                for o in m.spaces[s].hvac.zone_ids
+                if o in m.zones
+            )
+        )
+        if missing_in_spaces:
+            drift.append(f"zone {zid}: diffuser(s) {missing_in_spaces} not in any served space")
+        if orphans:
+            drift.append(f"zone {zid}: space diffuser(s) {orphans} belong to none of its zones")
+    if drift:
+        return CheckResult(
+            cid,
+            name,
+            "warn",
+            f"{len(drift)} zone terminal count(s) do not reconcile with the duct trace: {drift[0]}",
+            entities=drift[:10],
+        )
+    return CheckResult(
+        cid,
+        name,
+        "pass",
+        f"{len(hvac_spaces)} HVAC space(s) reachable from {len(m.zones)} zone(s); "
+        "terminal counts reconcile",
+    )
