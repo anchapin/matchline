@@ -337,6 +337,10 @@ in more than one review.
 - Versioned construction library with cited U-values; never fabricate missing values
 - Blocking OpenStudio importer round-trip gate
 - Inter-story surface matching and atrium/shaft consistency
+- Split rooms at Appendix G block lines, pieces joined by air walls (#638)
+- Multi-storey gbXML/IFC export (#639)
+- Atria handled automatically, not just flagged for review (#640)
+- Walk-out basements: exterior walls split at grade, not just flagged for review (#641)
 
 ## MEP
 
