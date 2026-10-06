@@ -21,7 +21,7 @@ Known debt with priority, rationale, and proposed resolution.
 
 **Proposed**: Post-processing dedup pass using window tag or geometric proximity (≤5cm overlap on same facade → merge).
 
-**Status**: Open.
+**Status**: Open. Tracked by [#663](https://github.com/anchapin/matchline/issues/663) (multi-sheet provenance schema) and [#664](https://github.com/anchapin/matchline/issues/664) (cross-level grouping + validation), which supersede [#654](https://github.com/anchapin/matchline/issues/654). Design record: [`designs/cfg-01-cross-sheet-window-deduplication.md`](../designs/cfg-01-cross-sheet-window-deduplication.md).
 
 ---
 
@@ -33,7 +33,7 @@ Known debt with priority, rationale, and proposed resolution.
 
 **Proposed**: Point-in-polygon + wall adjacency to assign openings to spaces. Requires `building_model.py` space polygon lookup.
 
-**Status**: Open.
+**Status**: Open. Tracked by [#665](https://github.com/anchapin/matchline/issues/665) (along-wall direction design, HITL) and [#666](https://github.com/anchapin/matchline/issues/666) (attach + observe + guard), which supersede [#655](https://github.com/anchapin/matchline/issues/655).
 
 ---
 
@@ -45,7 +45,7 @@ Known debt with priority, rationale, and proposed resolution.
 
 **Proposed**: Pin to minor version (`0.16`) or use `ruff>=0.16,<0.17` range syntax if pre-commit supports it. Add Renovatebot.
 
-**Status**: Open.
+**Status**: Open. Tracked by [#656](https://github.com/anchapin/matchline/issues/656).
 
 ---
 
@@ -57,4 +57,18 @@ Known debt with priority, rationale, and proposed resolution.
 
 **Proposed**: Set a reasonable `line-length` (100 is current) and only suppress `E501` on multi-line geometry literals that genuinely benefit from it, using `# noqa: E501` inline.
 
-**Status**: Open.
+**Status**: Open. Tracked by [#657](https://github.com/anchapin/matchline/issues/657).
+
+---
+
+## Closed
+
+Resolved debt stays listed here so the tracker reads as a living backlog. The design record for each lives in `docs/plans/designs/`.
+
+### CFG-02 — Thick-stroke skeleton pre-processing
+
+**Status**: Completed (2026-09-23, Phase 6). Design record: [`designs/cfg-02-thick-stroke-skeleton.md`](../designs/cfg-02-thick-stroke-skeleton.md).
+
+### CFG-03 — Complex GD&T invariant rows
+
+**Status**: Completed (2026-09-23, Phase 6). Design record: [`designs/cfg-03-complex-gdt-invariant-rows.md`](../designs/cfg-03-complex-gdt-invariant-rows.md).

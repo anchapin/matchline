@@ -38,3 +38,12 @@ This document describes the automated gates that run on every PR and push.
 - **Pytest:** `python -m pytest tests/ -q`
 
 All gates must be green before merging to `develop`.
+
+## Ruff version updates
+
+`ruff` is pinned to one exact version in two places that must agree: the `rev` in `.pre-commit-config.yaml` and the `ruff==X.Y.Z` install in `.github/workflows/ci.yml` (both jobs). Pre-commit requires `rev` to be an immutable tag, so a minor-version pin (`v0.16`) or a range is not possible there; a range in CI alone would let CI and local hooks drift apart.
+
+Instead, Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three pins together. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
+
+Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.
+
