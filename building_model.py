@@ -717,6 +717,9 @@ class BuildingModel:
     space_adjacencies: List[SpaceAdjacency] = field(default_factory=list)
     # sloped roof facets (roadmap item 2, #613); empty -> flat roof at wall height
     roof_planes: List[RoofPlane] = field(default_factory=list)
+    # roof planes as they were before simplification (#617); empty when the
+    # roof was never simplified
+    source_roof_planes: List[RoofPlane] = field(default_factory=list)
     # site latitude in decimal degrees, north positive (IfcSite RefLatitude, #615)
     site_latitude_deg: Optional[float] = None
     # overhangs, fins, balconies (roadmap item 5); never part of envelope

@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (43 checks)
+## The battery (45 checks)
 
 ### Conservation laws (error)
 
@@ -133,6 +133,23 @@ are consistent with each other but implausible for a real building).
   review. Otherwise pass, reporting each non-room type's floor area and
   share so loads and LPD can be read against rooms only. Skips with no
   spaces.
+- `roof_plan_coverage` — **roadmap item 2, sloped roofs (#617).** The plan
+  projection of the top level's `roof_planes` must cover the union of that
+  level's space polygons exactly once. Error when more than 1% of the
+  footprint has no roof over it (a missing facet; the spaces under the gap
+  are named) or more than 1% is roofed twice (a doubled facet; the
+  overlapping plane ids are named), and when the top level has no roof
+  planes while other levels do. Eaves past the footprint are not counted.
+  Skips with no roof planes (the flat roof at wall height).
+- `roof_solar_aperture` — **roadmap item 2, sloped roofs (#617). Warn-only**
+  until the export writes sloped roofs. Compares the solar aperture
+  (`solar_aperture.py`) of `roof_planes` against `source_roof_planes`, which
+  `roof_simplify.apply_roof_simplification` keeps (the first source, so
+  repeated runs still compare against the true original), at
+  `site_latitude_deg`. Warns when the total moves more than 2% and names the
+  orientations (flat/N/E/S/W) that moved past it; the payload carries area
+  and aperture deltas and both per-orientation breakdowns. Skips when the
+  roof was never simplified or no latitude is known (none is assumed).
 - `facade_opening_closure` — per facade, Σ(opening areas) ≤ gross wall
   area, i.e. opaque = gross − openings ≥ 0. Epsilon 0.5% for rounding.
   An opening bigger than its wall is a schedule-join or placement bug.
@@ -140,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 40 + 3 = 43.
+and are run in addition to it, so `N_CHECKS` = 42 + 3 = 45.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
