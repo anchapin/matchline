@@ -15,7 +15,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 ## Quick Rules
 
 - **Branch:** `develop` is working branch. `main` is releases only. Never push to `main`.
-- **Verify:** `pip install -e ".[test]"`, then `python -m pytest tests/ -q` (984 collected → `981 passed, 2 skipped, 1 xfailed` as of 2026-09-28), `ruff check .`, `ruff format --check .` — all must be green. Record the test count; a drift of ±1 or more in CI signal requires investigation before merging.
+- **Verify:** `pip install -e ".[test]"`, then `python -m pytest tests/ -q` (1730 collected; expected per `.github/workflows/ci.yml`), `ruff check .`, `ruff format --check .` — all must be green. Record the test count; a drift of ±1 or more in CI signal requires investigation before merging.
 - **Never-list:** No datasets, credentials, or machine paths in code. No `sys.path` hacks. Two detector venvs exist (both repo-relative, gitignored): `detector/.venv-det` for CPU / pytest / converters, and `detector/.venv-det-rocm` for ROCm GPU training only — never hardcode absolute venv paths in code, configs, or docs. No PyPI publish without explicit human approval.
 - **Provenance:** Every extracted fact carries sheet, revision, method, confidence. Low-confidence results go to the review queue — nothing is silently accepted.
 - **Conservation laws:** `validate/` errors **block export**.
