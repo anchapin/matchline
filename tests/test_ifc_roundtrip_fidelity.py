@@ -121,6 +121,37 @@ def test_interior_partition_leaves_envelope():
     assert m.envelope[0].facade == "south" and m.envelope[0].space_id == "L1-101"
 
 
+def test_diagonal_wall_keeps_nearest_facade_but_goes_to_review():
+    """A wall facing within 5 degrees of a diagonal is filed and flagged (#681)."""
+    m = BuildingModel(name="t")
+    m.spaces["L1-101"] = Space(
+        id="L1-101", level_id="L1", polygon_m=[[5, 0], [10, 5], [5, 10], [0, 5]], area_m2=50.0
+    )
+    m.envelope = [_wall("L1-EW1", (5, 0), (10, 5))]
+    counts = _classify_envelope(m)
+    assert counts["exterior"] == 1 and counts["facade_unclear"] == 1
+    w = m.envelope[0]
+    assert w.facade in ("north", "south", "east", "west")
+    assert w.provenance.confidence <= 0.5
+    [item] = [r for r in m.review_queue if r.kind == "facade_unclear"]
+    assert "L1-EW1" in item.description and item.needs_review
+
+
+def test_slightly_skewed_wall_is_not_flagged():
+    """A wall 10 degrees off an axis still gets a confident facade."""
+    import math
+
+    m = _bare_model()
+    dx = 6 * math.tan(math.radians(10))
+    m.spaces["L1-101"].polygon_m = [[0, 0], [5, 0], [5 + dx, 6], [0, 6]]
+    m.envelope = [_wall("L1-EW1", (5, 0), (5 + dx, 6))]
+    m.spaces.pop("L1-102")
+    counts = _classify_envelope(m)
+    assert counts.get("facade_unclear", 0) == 0
+    assert m.envelope[0].facade == "east"
+    assert not [r for r in m.review_queue if r.kind == "facade_unclear"]
+
+
 def test_wall_with_no_room_either_side_is_not_guessed():
     m = _bare_model()
     m.envelope = [_wall("L1-EW1", (20, 0), (20, 6))]

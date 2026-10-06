@@ -719,6 +719,74 @@ def test_tier1_ref_direction_fallback_attaches_at_085(monkeypatch):
     assert "1 attached via RefDirection" in s.summary_line()
 
 
+def test_tier1_host_interval_set_along_wall(monkeypatch):
+    """Attached IFC openings carry [s0, s1] along the host wall around s_center_m (#681)."""
+    import ifc_import
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    _attach_openings_to_spaces(m)
+    [(_, op)] = _all_openings(m)
+    assert op.host_interval_m == [pytest.approx(1.55), pytest.approx(2.45)]
+    assert op.host_interval_m[0] <= op.s_center_m <= op.host_interval_m[1]
+    assert not [r for r in m.review_queue if r.kind == "adjacency_ambiguous"]
+    assert m.opening_attachment_summary.adjacency_ambiguous == 0
+
+
+def test_tier1_host_interval_clamped_to_wall(monkeypatch):
+    """An opening near the wall end never gets an interval past the wall."""
+    import ifc_import
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    m.bim_elements[0].openings[0].s_center_m = 0.3
+    _attach_openings_to_spaces(m)
+    [(_, op)] = _all_openings(m)
+    assert op.host_interval_m == [pytest.approx(0.0), pytest.approx(0.75)]
+
+
+def test_tier1_opening_spanning_partition_is_ambiguous(monkeypatch):
+    """A door whose edge reaches a second room on the same side goes to review (#681)."""
+    import ifc_import
+    from building_model import Space
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    # split R-1 at y=2: the door (centre y=1.8, 0.9 wide) now reaches R-3
+    m.spaces["R-1"].polygon_m = [[0, 0], [5, 0], [5, 2], [0, 2]]
+    m.spaces["R-3"] = Space(
+        id="R-3", level_id="L1", name="C", polygon_m=[[0, 2], [5, 2], [5, 4], [0, 4]]
+    )
+    m.bim_elements[0].openings[0].s_center_m = 1.8
+    _attach_openings_to_spaces(m)
+    [(sid, op)] = _all_openings(m)
+    assert (sid, op.adjacent_space_id) == ("R-1", "R-2")
+    assert op.needs_review
+    [item] = [r for r in m.review_queue if r.kind == "adjacency_ambiguous"]
+    assert "R-3" in item.description and item.needs_review
+    s = m.opening_attachment_summary
+    assert s.adjacency_ambiguous == 1 and s.is_empty()
+    assert "1 spanning a room boundary" in s.summary_line()
+
+
+def test_tier1_ambiguous_opening_blocks_export_until_acknowledged(monkeypatch):
+    """adjacency_ambiguous rides the existing review gate, no new check needed."""
+    import ifc_import
+    from building_model import Space
+    from validate import run_checks
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    m.spaces["R-1"].polygon_m = [[0, 0], [5, 0], [5, 2], [0, 2]]
+    m.spaces["R-3"] = Space(
+        id="R-3", level_id="L1", name="C", polygon_m=[[0, 2], [5, 2], [5, 4], [0, 4]]
+    )
+    m.bim_elements[0].openings[0].s_center_m = 1.8
+    _attach_openings_to_spaces(m)
+    rq = {r.check_id: r.severity for r in run_checks(m).results}["review_queue_acknowledged"]
+    assert rq == "error"
+
+
 def test_tier1_other_level_spaces_never_candidates(monkeypatch):
     """A wall on L2 never attaches to L1 rooms at the same plan position."""
     import ifc_import

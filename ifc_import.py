@@ -33,6 +33,7 @@ import re
 from pathlib import Path
 
 from building_model import (
+    REVIEW_CONFIDENCE,
     BimElement,
     BimOpening,
     BuildingModel,
@@ -1064,6 +1065,32 @@ def _opening_sides(ox, oy, wall_dir, thickness_m, level_id, spaces):
     return sorted(sides, key=lambda sp: sp.id)
 
 
+# probes this far inside each opening edge, so a jamb that lands exactly on a
+# partition line does not count as reaching the next room
+_EDGE_INSET_M = 0.05
+
+
+def _span_other_spaces(el, wall_dir, interval, sides, cx, cy, level_id, spaces):
+    """Ids of rooms an opening's edges reach that its centre does not (#681).
+
+    Re-runs the side probes just inside each end of ``interval`` (along the host
+    wall from its origin). A room found there but not at the centre means the
+    opening straddles a room boundary, so which room it opens into is
+    ambiguous. Openings with no width, or narrower than two insets, are not
+    checked.
+    """
+    if not interval or interval[1] - interval[0] <= 2 * _EDGE_INSET_M:
+        return []
+    centre = {sp.id for sp in sides}
+    found = set()
+    for s in (interval[0] + _EDGE_INSET_M, interval[1] - _EDGE_INSET_M):
+        px, py = cx + wall_dir[0] * s, cy + wall_dir[1] * s
+        for sp in _opening_sides(px, py, wall_dir, el.thickness_m, level_id, spaces):
+            if sp.id not in centre:
+                found.add(sp.id)
+    return sorted(found)
+
+
 def _attach_openings_to_spaces(model):
     """Tier 1: attach IFC wall openings to the spaces they open into (#665, #666).
 
@@ -1078,6 +1105,9 @@ def _attach_openings_to_spaces(model):
     Openings left unattached are counted in ``model.opening_attachment_summary``
     by reason (``no_envelope_edge``, ``ambiguous_tie``, ``no_ref_direction``,
     ``outside_spaces``) and each gets an ``opening_attachment`` review item.
+    Each attached opening gets ``host_interval_m`` along its host wall (same
+    frame as ``s_center_m``); one whose edges reach a room its centre does not
+    is attached by its centre and flagged ``adjacency_ambiguous`` (#681).
     The ``space_opening_attachment`` validation check reports them per level.
     """
     _attach_skylights_to_spaces(model)
@@ -1184,16 +1214,46 @@ def _attach_openings_to_spaces(model):
                         "its own RefDirection (no envelope edge matched)"
                     ),
                 )
+            width = float(bo.width_m or 0.0)
+            interval = None
+            if width > 0:
+                s0 = max(0.0, bo.s_center_m - width / 2.0)
+                s1 = min(float(length_m), bo.s_center_m + width / 2.0)
+                interval = [round(s0, 3), round(s1, 3)]
+            others = _span_other_spaces(el, wall_dir, interval, sides, cx, cy, el.level_id, spaces)
+            ambiguous = bool(others)
+            if ambiguous:
+                summary.adjacency_ambiguous += 1
+                model.flag_for_review(
+                    kind="adjacency_ambiguous",
+                    description=(
+                        f"Opening {bo.id} ({bo.category} {bo.tag or 'untagged'}) on wall "
+                        f"{el.global_id} spans a room boundary: its centre opens into "
+                        f"{', '.join(sp.id for sp in sides)} but its edge reaches "
+                        f"{', '.join(others)}. Attached to {sides[0].id}; confirm."
+                    ),
+                    confidence=0.5,
+                    provenance=prov
+                    or Provenance(
+                        sheet_id="ifc",
+                        revision=0,
+                        method="ifc_import:tier1:opening_attachment",
+                        confidence=0.5,
+                        note=f"GlobalId={bo.id}",
+                    ),
+                )
             sides[0].openings.append(
                 SpaceOpening(
                     id=bo.id,
                     tag=bo.tag,
                     category=bo.category,
-                    width_m=bo.width_m or 0.0,
+                    width_m=width,
                     height_m=bo.height_m or 0.0,
                     sill_m=bo.sill_m,
                     s_center_m=bo.s_center_m,
+                    host_interval_m=interval,
                     provenance=prov,
+                    needs_review=ambiguous or prov is None or prov.confidence < REVIEW_CONFIDENCE,
                     adjacent_space_id=sides[1].id if len(sides) > 1 else None,
                 )
             )
@@ -1506,6 +1566,20 @@ def _read_shading_device(dev, walls, elev, scale, prov, taken_ids):
 _ENV_PROBE_M = (0.1, 0.25, 0.5, 1.0)
 # fractions along the wall at which the sides are sampled
 _ENV_SAMPLE_T = (0.1, 0.3, 0.5, 0.7, 0.9)
+
+
+# An outward normal whose larger component is below cos(40 deg) points within
+# 5 deg of a diagonal: the nearest cardinal is kept (exports and the facade
+# area budget need one) but the call goes to review as ``facade_unclear``.
+_FACADE_DIAGONAL_COS = math.cos(math.radians(40.0))
+
+
+def _facade_is_unclear(nx, ny):
+    """True when an outward normal is too close to a diagonal to call a facade."""
+    n = math.hypot(nx, ny)
+    if n < 1e-9:
+        return True
+    return max(abs(nx), abs(ny)) / n < _FACADE_DIAGONAL_COS
 
 
 def _facade_of(nx, ny):
@@ -2509,6 +2583,28 @@ def _classify_envelope(model):
                 prov.method = "ifc_import:tier1:facade"
                 prov.confidence = min(prov.confidence, 0.85)
                 prov.note += f"; exterior, {encl}, outward normal -> {w.facade}"
+            if _facade_is_unclear(ox, oy):
+                counts["facade_unclear"] = counts.get("facade_unclear", 0) + 1
+                if prov is not None:
+                    prov.confidence = min(prov.confidence, 0.5)
+                    prov.note += "; outward normal near a diagonal, facade unclear"
+                model.flag_for_review(
+                    kind="facade_unclear",
+                    description=(
+                        f"Envelope wall {w.id} faces within 5 degrees of a diagonal "
+                        f"(outward normal {ox:+.2f}, {oy:+.2f}); filed as {w.facade}, "
+                        "confirm the facade."
+                    ),
+                    confidence=0.5,
+                    provenance=prov
+                    or Provenance(
+                        sheet_id="ifc",
+                        revision=0,
+                        method="ifc_import:tier1:facade",
+                        confidence=0.5,
+                        note=w.id,
+                    ),
+                )
         else:
             counts["unclassified"] += 1
             if prov is not None:
