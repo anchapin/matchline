@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (47 checks)
+## The battery (48 checks)
 
 ### Conservation laws (error)
 
@@ -157,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 44 + 3 = 47.
+and are run in addition to it, so `N_CHECKS` = 45 + 3 = 48.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -228,6 +228,16 @@ and are run in addition to it, so `N_CHECKS` = 44 + 3 = 47.
   (no along-wall position, so dedup could not confirm them) or duplicated
   across spaces on that level. **skip** with no wall openings. Matching
   rules live in `opening_identity.py`, shared with `_dedupe_space_openings`.
+- `space_opening_attachment` — IFC Tier 1 guard (#666). Per level, counts the
+  window/door openings hosted by IFC walls that no space holds (wall direction
+  unknown, an ambiguous envelope tie, or no room on either side of the wall).
+  **warn**, never error, when a level's unattached share exceeds
+  `opening_attachment_warn_frac` (default 0: any unattached opening): the
+  opening is still in the takeoff, it only lacks a room. The message carries
+  the import's `opening_attachment_summary` breakdown; entities are the
+  unattached opening GlobalIds. **skip** with no IFC wall openings
+  (drawing-derived models). The pass message notes how many openings were
+  placed from the wall's own RefDirection (confidence 0.85).
 
 ### Provenance / auditability (error, except where noted)
 

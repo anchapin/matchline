@@ -556,3 +556,57 @@ def _check_cross_level_dedup(ctx: _Ctx) -> CheckResult:
         f"{len(entries)} wall opening(s) on {len({e[0] for e in entries})} level(s): "
         "no cross-level duplicates",
     )
+
+
+_IFC_WALL_CLASSES = ("IfcWall", "IfcWallStandardCase")
+
+
+def _check_space_opening_attachment(ctx: _Ctx) -> CheckResult:
+    """IFC Tier 1 guard (#666): every IFC wall opening reached a space.
+
+    Per level, counts window/door openings hosted by IFC walls that no space
+    holds (Tier 1 left them unattached: wall direction unknown, an ambiguous
+    envelope tie, or no room on either side). Severity is warn, never error:
+    an unattached opening is still in the takeoff, it just has no room yet.
+    - warn: on some level, the unattached share exceeds
+      ``ctx.opening_attachment_warn_frac`` (default 0: any unattached opening).
+    - skip: no IFC wall openings (a drawing-derived model).
+    """
+    name = "IFC opening space attachment"
+    per_level: dict = {}
+    for el in ctx.model.bim_elements:
+        if el.ifc_class not in _IFC_WALL_CLASSES:
+            continue
+        for bo in el.openings:
+            if bo.category in ("window", "door"):
+                per_level.setdefault(el.level_id or "?", []).append(bo.id)
+    if not per_level:
+        return CheckResult("space_opening_attachment", name, "skip", "no IFC wall openings")
+    attached = {op.id for sp in ctx.model.spaces.values() for op in sp.openings}
+    bad_levels, missing = [], []
+    for lid in sorted(per_level):
+        ids = per_level[lid]
+        miss = [i for i in ids if i not in attached]
+        if miss and len(miss) / len(ids) > ctx.opening_attachment_warn_frac:
+            bad_levels.append(f"{lid}: {len(miss)}/{len(ids)} ({len(miss) / len(ids):.0%})")
+            missing.extend(miss)
+    summary = ctx.model.opening_attachment_summary
+    total = sum(len(v) for v in per_level.values())
+    if bad_levels:
+        return CheckResult(
+            "space_opening_attachment",
+            name,
+            "warn",
+            "IFC wall openings attached to no space, "
+            + "; ".join(bad_levels)
+            + f" ({summary.summary_line()})",
+            entities=missing[:20],
+        )
+    fb = summary.ref_direction_fallback
+    return CheckResult(
+        "space_opening_attachment",
+        name,
+        "pass",
+        f"{total} IFC wall opening(s) on {len(per_level)} level(s) attached to spaces"
+        + (f"; {fb} via wall RefDirection (confidence 0.85)" if fb else ""),
+    )

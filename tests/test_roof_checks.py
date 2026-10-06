@@ -56,7 +56,7 @@ def _hip_with_dormer(lid):
 
 
 def test_battery_counts_both_checks():
-    assert N_CHECKS == 47
+    assert N_CHECKS == 48
     ids = {r.check_id for r in run_checks(make_clean_model()).results}
     assert {"roof_plan_coverage", "roof_solar_aperture"} <= ids
 

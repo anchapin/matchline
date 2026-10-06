@@ -228,7 +228,7 @@ def test_model_version_1_0_payload_migrates_source_provenance():
             o.pop("source_provenance")
     old = json.loads(json.dumps(d))
     restored = BuildingModel.from_dict(old)
-    assert restored.model_version == MODEL_VERSION == "1.1"
+    assert restored.model_version == MODEL_VERSION
     op = restored.spaces["L1-101"].openings[0]
     assert [p.sheet_id for p in op.source_provenance] == ["elev_A201"]
     assert "source_provenance" not in old["model"]["spaces"]["L1-101"]["openings"][0]

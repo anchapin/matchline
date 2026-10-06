@@ -633,3 +633,160 @@ def test_import_ifc_includes_unattached_summary_in_log(model):
     assert "Tier-0 IFC import" in last_log.note
     # When empty, the summary line should not be in the note
     # (empty summary is not appended per the implementation)
+
+
+# --- Tier 1 attach + observe + guard (#666) ---------------------------------
+
+
+def _all_openings(model):
+    return [(sp.id, op) for sp in model.spaces.values() for op in sp.openings]
+
+
+def test_tier1_fixture_openings_attached_once(model):
+    """All six fixture openings (exterior walls) land on exactly one space."""
+    ids = [op.id for _, op in _all_openings(model) if op.category in ("window", "door")]
+    assert len(ids) == len(set(ids)) == 6
+
+
+def test_tier1_interior_door_stored_once_with_adjacent_space(monkeypatch):
+    """An interior door lands once, on the lower-id space, naming the other side."""
+    import ifc_import
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    _attach_openings_to_spaces(m)
+    assert [(sid, op.id, op.adjacent_space_id) for sid, op in _all_openings(m)] == [
+        ("R-1", "d1", "R-2")
+    ]
+
+
+def test_tier1_exterior_openings_have_no_adjacent_space(model):
+    ops = [op for _, op in _all_openings(model) if op.category in ("window", "door")]
+    assert len(ops) == 6
+    assert all(op.adjacent_space_id is None for op in ops)
+
+
+def test_tier1_fixture_passes_space_opening_attachment(model):
+    from validate import run_checks
+
+    res = {r.check_id: r for r in run_checks(model).results}
+    assert res["space_opening_attachment"].severity == "pass", res[
+        "space_opening_attachment"
+    ].message
+
+
+def _two_room_model(level_id="L1", wall_level="L1", thickness=0.2):
+    """Two 5x4 rooms sharing the wall x=5; the wall runs +y from (5, 0)."""
+    from building_model import Space
+
+    rooms = {
+        "R-1": Space(
+            id="R-1", level_id=level_id, name="A", polygon_m=[[0, 0], [5, 0], [5, 4], [0, 4]]
+        ),
+        "R-2": Space(
+            id="R-2", level_id=level_id, name="B", polygon_m=[[5, 0], [10, 0], [10, 4], [5, 4]]
+        ),
+    }
+    wall = BimElement(
+        global_id="shared-wall",
+        ifc_class="IfcWall",
+        level_id=wall_level,
+        length_m=4.0,
+        thickness_m=thickness,
+        placement_m=[5.0, 0.0, 0.0],
+        openings=[
+            BimOpening(
+                id="d1", category="door", tag="D1", width_m=0.9, height_m=2.1, s_center_m=2.0
+            )
+        ],
+    )
+    return BuildingModel(spaces=rooms, bim_elements=[wall])
+
+
+def test_tier1_ref_direction_fallback_attaches_at_085(monkeypatch):
+    """No envelope edge: the wall's RefDirection places the door, at confidence 0.85."""
+    import ifc_import
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    _attach_openings_to_spaces(m)
+    [(sid, op)] = _all_openings(m)
+    assert (sid, op.adjacent_space_id) == ("R-1", "R-2")
+    assert op.provenance.method == "ifc_ref_direction"
+    assert op.provenance.confidence == pytest.approx(0.85)
+    s = m.opening_attachment_summary
+    assert s.ref_direction_fallback == 1 and s.is_empty()
+    assert "1 attached via RefDirection" in s.summary_line()
+
+
+def test_tier1_other_level_spaces_never_candidates(monkeypatch):
+    """A wall on L2 never attaches to L1 rooms at the same plan position."""
+    import ifc_import
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model(level_id="L1", wall_level="L2")
+    _attach_openings_to_spaces(m)
+    assert _all_openings(m) == []
+    assert m.opening_attachment_summary.outside_spaces == 1
+    assert m.review_queue and m.review_queue[-1].kind == "opening_attachment"
+
+
+def test_tier1_outside_spaces_flags_and_warns(monkeypatch):
+    """Direction known but no room on either side: counted, queued, check warns."""
+    import ifc_import
+    from validate import run_checks
+
+    monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
+    m = _two_room_model()
+    m.bim_elements[0].placement_m = [50.0, 50.0, 0.0]
+    _attach_openings_to_spaces(m)
+    s = m.opening_attachment_summary
+    assert s.outside_spaces == 1 and s.total == 1
+    assert "1 outside every space" in s.summary_line()
+    res = {r.check_id: r for r in run_checks(m).results}
+    chk = res["space_opening_attachment"]
+    assert chk.severity == "warn"
+    assert "d1" in chk.entities
+    assert "L1: 1/1" in chk.message
+
+
+def test_space_opening_attachment_skips_without_ifc_walls():
+    from validate import run_checks
+
+    res = {r.check_id: r for r in run_checks(BuildingModel()).results}
+    assert res["space_opening_attachment"].severity == "skip"
+
+
+def test_space_opening_attachment_never_errors_on_full_miss():
+    """Every opening unattached is still a warn: Tier 1 gaps never block export."""
+    from validate import run_checks
+
+    m = _two_room_model()
+    res = {r.check_id: r for r in run_checks(m).results}
+    assert res["space_opening_attachment"].severity == "warn"
+
+
+def test_adjacent_space_id_round_trips():
+    from building_model import Space, SpaceOpening
+
+    m = BuildingModel(
+        spaces={
+            "R-1": Space(
+                id="R-1",
+                level_id="L1",
+                name="A",
+                openings=[
+                    SpaceOpening(
+                        id="d1",
+                        tag="D1",
+                        category="door",
+                        width_m=0.9,
+                        height_m=2.1,
+                        adjacent_space_id="R-2",
+                    )
+                ],
+            )
+        }
+    )
+    back = BuildingModel.from_dict(m.to_dict())
+    assert back.spaces["R-1"].openings[0].adjacent_space_id == "R-2"

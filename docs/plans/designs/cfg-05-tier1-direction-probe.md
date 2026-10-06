@@ -24,7 +24,7 @@ Inputs: the wall `BimElement` (`placement_m`, `length_m`, GlobalId, raw IFC enti
 4. **Refuse to guess.** If the best rank holds more than one distinct direction, return `ambiguous_tie`. If there are no candidates, return `no_envelope_edge`.
 5. **Fallback.** On either failure, use the wall's own `ObjectPlacement.RelativePlacement.RefDirection` (normalised XY). If that is also missing or degenerate, the openings stay unattached with reason `no_ref_direction`.
 
-### Proposed change for #666 (my suggestion, needs sign-off)
+### Change made in #666 (approved by the maintainer)
 
 Today a successful `RefDirection` fallback attaches with the same confidence as an envelope match. I'd record it distinctly: attach, but stamp the opening provenance `method="ifc_ref_direction"` with confidence 0.85 (above `REVIEW_CONFIDENCE` 0.80, so it is not auto-queued) and count it in a new `opening_attachment_summary.ref_direction_fallback` counter. RefDirection is authored by the exporter and is usually right, but it is the one path where we trust the file over our own geometry, so it should be observable. The alternative is to queue every fallback for review; that is safer but would flood the queue for exporters that never write envelope-consistent placements.
 
@@ -55,8 +55,8 @@ Cases 1-5 and 7 are covered by the existing #505/#512 tests in spirit; #666 shou
 
 No separate angular threshold is needed: directions are compared as a set of distinct vectors from distinct edges, and two edges from one point only collide in direction when they are the same edge.
 
-## Open questions for the maintainer
+## Decisions (resolved for #666)
 
-1. Accept the RefDirection fallback as an attach-with-lower-confidence path (proposed), or route every fallback to review?
-2. Should the length tie-break tolerance be wall-thickness-aware (centreline vs. face length on thick walls can differ by more than 0.1 m)? I'd leave it at 0.1 m until a real IFC shows the problem.
-3. Confirm #666 adds the `space_opening_attachment` check at warn severity per level (the issue text) rather than error (the older `docs/ifc_import.md` plan says Tier 1 is blocked on it at error).
+1. RefDirection fallback attaches at confidence 0.85, method `ifc_ref_direction`, counted in `ref_direction_fallback`. Not routed to review.
+2. Length tie-break tolerance stays 0.1 m until a real IFC shows the centreline/face problem.
+3. `space_opening_attachment` is warn severity, per level. Never error.

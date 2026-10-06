@@ -7,6 +7,8 @@ severity.
 """
 
 from building_model import (  # noqa: E402
+    BimElement,
+    BimOpening,
     BuildingModel,
     ComponentRef,
     EnvelopeWall,
@@ -904,6 +906,32 @@ def break_cross_level_duplicate(m: BuildingModel):
     lo, hi = two_storey_window_pair(s=2.6)
     m.spaces["L1-101"].openings.append(lo)
     _add_l2_space(m).openings.append(hi)
+
+
+def break_opening_unattached(m: BuildingModel):
+    """An IFC wall window that Tier 1 attached to no space (#666)."""
+    m.bim_elements.append(
+        BimElement(
+            global_id="WALL-X",
+            ifc_class="IfcWall",
+            level_id="L1",
+            length_m=5.0,
+            placement_m=[0.0, 0.0, 0.0],
+            provenance=P(sheet="ifc", method="ifc_import:tier0"),
+            openings=[
+                BimOpening(
+                    id="OPEN-X",
+                    category="window",
+                    tag="A",
+                    width_m=1.0,
+                    height_m=1.0,
+                    s_center_m=2.5,
+                    provenance=P(sheet="ifc", method="ifc_import:tier0"),
+                )
+            ],
+        )
+    )
+    m.opening_attachment_summary.no_envelope_edge += 1
 
 
 def break_opening_unplaced(m: BuildingModel):

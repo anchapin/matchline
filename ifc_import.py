@@ -1022,18 +1022,67 @@ def _apply_skylight_daylight(model):
             compute_skylight_daylight(sp, heights.get(sp.level_id))
 
 
+# Tier 1 (#666): an opening placed by the host wall's own RefDirection, when no
+# envelope edge settled the wall's direction, attaches just above the review
+# threshold (REVIEW_CONFIDENCE 0.80) so it is used but still visibly weaker
+# than an envelope-matched attachment.
+_REF_DIRECTION_CONFIDENCE = 0.85
+_REF_DIRECTION_METHOD = "ifc_ref_direction"
+# How far past the wall face each side probe reaches into the room (m).
+_SIDE_PROBE_M = 0.05
+
+
+def _space_at(pt, level_id, spaces):
+    """First space (by id) on ``level_id`` whose polygon contains ``pt``, or None."""
+    for sp in spaces:
+        if level_id and sp.level_id and sp.level_id != level_id:
+            continue
+        if sp.polygon_m and len(sp.polygon_m) >= 3 and _point_in_polygon(pt, sp.polygon_m):
+            return sp
+    return None
+
+
+def _opening_sides(ox, oy, wall_dir, thickness_m, level_id, spaces):
+    """Spaces on either side of a wall opening at (ox, oy), lowest id first.
+
+    Probes just past each wall face along the wall normal, so an opening in an
+    interior wall finds both rooms and one in an exterior wall finds one. When
+    neither probe lands in a room (a wall of unknown thickness drawn away from
+    the room edge), the opening centre itself is tried, as before #666.
+    """
+    off = float(thickness_m or 0.0) / 2.0 + _SIDE_PROBE_M
+    nx, ny = -wall_dir[1], wall_dir[0]
+    sides = []
+    for sgn in (1.0, -1.0):
+        sp = _space_at((ox + sgn * nx * off, oy + sgn * ny * off), level_id, spaces)
+        if sp is not None and sp not in sides:
+            sides.append(sp)
+    if not sides:
+        sp = _space_at((ox, oy), level_id, spaces)
+        if sp is not None:
+            sides.append(sp)
+    return sorted(sides, key=lambda sp: sp.id)
+
+
 def _attach_openings_to_spaces(model):
-    """Tier-1 fallback: attach BEM openings to the spaces whose polygons contain them.
+    """Tier 1: attach IFC wall openings to the spaces they open into (#665, #666).
 
-    Uses the opening's along-wall position (s_center_m) to determine which space
-    the opening belongs to, correctly handling exterior walls that span multiple
-    spaces.
+    The host wall's along-wall direction comes from its matching envelope edge,
+    falling back to the wall's own RefDirection (attached at confidence 0.85,
+    method ``ifc_ref_direction``, counted in ``ref_direction_fallback``). The
+    opening's point is then probed on both wall faces: an interior opening is
+    stored ONCE, on the lower-id space, with ``adjacent_space_id`` naming the
+    other, so doors are never double-counted. Spaces on other levels are never
+    candidates.
 
-    Tracks unattached openings in ``model.opening_attachment_summary`` with
-    per-reason breakdown: ``no_envelope_edge``, ``ambiguous_tie``,
-    ``no_ref_direction``.
+    Openings left unattached are counted in ``model.opening_attachment_summary``
+    by reason (``no_envelope_edge``, ``ambiguous_tie``, ``no_ref_direction``,
+    ``outside_spaces``) and each gets an ``opening_attachment`` review item.
+    The ``space_opening_attachment`` validation check reports them per level.
     """
     _attach_skylights_to_spaces(model)
+    summary = model.opening_attachment_summary
+    spaces = sorted(model.spaces.values(), key=lambda sp: sp.id)
     for el in model.bim_elements:
         if not el.openings or not el.placement_m:
             continue
@@ -1046,6 +1095,7 @@ def _attach_openings_to_spaces(model):
 
         env_dir, env_reason = _wall_direction_from_envelope(el, model)
         wall_dir = env_dir
+        via_ref_direction = False
         failure_reason = None  # one of the _WALL_DIR_* constants, or None
 
         if wall_dir is None:
@@ -1055,18 +1105,20 @@ def _attach_openings_to_spaces(model):
                 # cannot be reconstructed. Leave them unattached rather than
                 # attaching them to a space the geometry does not support.
                 failure_reason = env_reason or _WALL_DIR_NO_REF
+            else:
+                via_ref_direction = True
 
         if wall_dir is None:
             # Record the failure reason for import-summary reporting.
             num_openings = len(el.openings)
             if failure_reason == _WALL_DIR_NO_EDGE:
-                model.opening_attachment_summary.no_envelope_edge += num_openings
+                summary.no_envelope_edge += num_openings
                 reason_desc = "no envelope edge matched wall placement"
             elif failure_reason == _WALL_DIR_AMBIGUOUS_TIE:
-                model.opening_attachment_summary.ambiguous_tie += num_openings
+                summary.ambiguous_tie += num_openings
                 reason_desc = "ambiguous tie (multiple same-length edges)"
             else:
-                model.opening_attachment_summary.no_ref_direction += num_openings
+                summary.no_ref_direction += num_openings
                 reason_desc = "no RefDirection fallback available"
             model.flag_for_review(
                 kind="opening_attachment",
@@ -1093,26 +1145,58 @@ def _attach_openings_to_spaces(model):
                 continue
             # s_center_m is measured from the wall's own origin along its local X
             # axis -- _read_opening validates it against 0 <= s <= length_m -- and
-            # el.placement_m is that same origin. Subtracting half the length here
-            # displaced every opening by length/2 along its wall, which dropped
-            # openings outright and could land them in the wrong space (#505).
+            # el.placement_m is that same origin (#505).
             ox = cx + wall_dir[0] * bo.s_center_m
             oy = cy + wall_dir[1] * bo.s_center_m
-            for sp in model.spaces.values():
-                if sp.polygon_m and _point_in_polygon((ox, oy), sp.polygon_m):
-                    sp.openings.append(
-                        SpaceOpening(
-                            id=bo.id,
-                            tag=bo.tag,
-                            category=bo.category,
-                            width_m=bo.width_m or 0.0,
-                            height_m=bo.height_m or 0.0,
-                            sill_m=bo.sill_m,
-                            s_center_m=bo.s_center_m,
-                            provenance=bo.provenance,
-                        )
-                    )
-                    break
+            sides = _opening_sides(ox, oy, wall_dir, el.thickness_m, el.level_id, spaces)
+            if not sides:
+                summary.outside_spaces += 1
+                model.flag_for_review(
+                    kind="opening_attachment",
+                    description=(
+                        f"Opening {bo.id} ({bo.category} {bo.tag or 'untagged'}) on wall "
+                        f"{el.global_id} lies in no space on "
+                        f"{el.level_id or 'its level'} on either side of the wall; "
+                        "left unattached."
+                    ),
+                    confidence=0.3,
+                    provenance=bo.provenance
+                    or el.provenance
+                    or Provenance(
+                        sheet_id="ifc",
+                        revision=0,
+                        method="ifc_import:tier1:opening_attachment",
+                        confidence=0.3,
+                        note=f"GlobalId={bo.id}",
+                    ),
+                )
+                continue
+            prov = bo.provenance
+            if via_ref_direction:
+                summary.ref_direction_fallback += 1
+                prov = Provenance(
+                    sheet_id=prov.sheet_id if prov else "ifc",
+                    revision=prov.revision if prov else 0,
+                    method=_REF_DIRECTION_METHOD,
+                    confidence=_REF_DIRECTION_CONFIDENCE,
+                    note=(
+                        f"GlobalId={bo.id}; host wall {el.global_id} direction from "
+                        "its own RefDirection (no envelope edge matched)"
+                    ),
+                )
+            sides[0].openings.append(
+                SpaceOpening(
+                    id=bo.id,
+                    tag=bo.tag,
+                    category=bo.category,
+                    width_m=bo.width_m or 0.0,
+                    height_m=bo.height_m or 0.0,
+                    sill_m=bo.sill_m,
+                    s_center_m=bo.s_center_m,
+                    provenance=prov,
+                    adjacent_space_id=sides[1].id if len(sides) > 1 else None,
+                )
+            )
 
 
 def _ifc_doors(model):

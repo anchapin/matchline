@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": true,
  "summary": {
-  "n_checks": 47,
+  "n_checks": 48,
   "errors": 0,
   "warnings": 0,
   "passes": 32,
-  "skipped": 15
+  "skipped": 16
  },
  "results": [
   {
@@ -228,6 +228,13 @@
    "name": "Cross-level opening deduplication",
    "severity": "pass",
    "message": "2 wall opening(s) on 1 level(s): no cross-level duplicates",
+   "entities": []
+  },
+  {
+   "check_id": "space_opening_attachment",
+   "name": "IFC opening space attachment",
+   "severity": "skip",
+   "message": "no IFC wall openings",
    "entities": []
   },
   {
