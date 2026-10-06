@@ -447,6 +447,7 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
             for x, y in pl_["rect"]:
                 _cartesian(opl, x, y, z)
 
+    space_by_id = {sp.sid: sp for sp in model.spaces}
     for k, aw in enumerate(air_walls):
         lv = space_level.get(aw.space_ids[0], levels[0])
         surf_count += 1
@@ -460,7 +461,10 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         _el(su, "Name", f"Air wall {aw.id}")
         _el(su, "AdjacentSpaceId", spaceIdRef=aw.space_ids[0])
         _el(su, "AdjacentSpaceId", spaceIdRef=aw.space_ids[1])
-        z0, z1 = lv.elevation_m, lv.elevation_m + lv.height_m
+        hs = [getattr(space_by_id.get(sid), "height_m", None) for sid in aw.space_ids]
+        # pieces of one atrium (#648) share its full height; otherwise the band
+        h = min(hs) if all(hs) else lv.height_m
+        z0, z1 = lv.elevation_m, lv.elevation_m + h
         pl = _el(_el(su, "PlanarGeometry"), "PolyLoop")
         for x, y, z in (
             (aw.p0[0], aw.p0[1], z0),
