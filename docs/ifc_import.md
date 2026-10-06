@@ -534,3 +534,28 @@ zero-thickness surfaces on the ring.
 A drawn shade (offset 0) therefore comes back from its first IFC round trip
 with `offset_m = t/2` and its quad half a wall further out, same width, depth
 and height. After that, export and import leave it where it is.
+
+## Roof planes from roof geometry (#614)
+
+Every `IfcSlab` with `PredefinedType` ROOF, every slab an `IfcRoof` aggregates,
+and every `IfcRoof` with its own body is meshed in world coordinates
+(`ifc_roof_planes.py`). Upward-facing triangles that are coplanar and
+edge-connected become one `RoofPlane`: its outer boundary on the plane, in the
+canonical frame (x east, y down, z above the host's level elevation), with
+tilt, azimuth and true sloped area from `roof_geometry.roof_plane`. Provenance
+is `ifc_import:tier0:roof_plane` (0.9) with the host GlobalId; ids are
+`RF-<GlobalId>-<n>`.
+
+- A flat roof slab gives one tilt-0 plane with no azimuth.
+- A thick pitched slab's upslope cut edge also faces up; a face perpendicular
+  to a larger face and no wider than 0.6 m is treated as that edge and dropped.
+- Openings cut through the slab do not shrink the plane: it keeps its gross
+  outline, the way BEM hosts a skylight in its roof surface.
+- An `IfcRoof` that aggregates slabs is not meshed itself, so nothing is
+  counted twice.
+- A roof element the kernel cannot mesh, or with no upward face, gives no
+  plane and a `roof_plane` review item (conf 0.4). Nothing is fitted.
+- Skylights take the tilt and azimuth of the plane under their plan centre
+  (their host's plane first); a skylight over no plane stays None.
+
+The revision summary reports `roof planes: N from M roof element(s)`.
