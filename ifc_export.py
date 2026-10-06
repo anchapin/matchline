@@ -105,6 +105,14 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     # --- openings: flatten SpaceOpenings, one unit each ------------------
     wall_units: List[BEMOpeningUnit] = []
     seen_keys: set = set()
+    # host wall base height per opening (#650): the stated sill is measured
+    # from its host wall's base, the wall placement's z
+    host_z = {
+        bo.id: float(el.placement_m[2])
+        for el in getattr(model, "bim_elements", None) or []
+        if el.placement_m and len(el.placement_m) > 2
+        for bo in el.openings
+    }
     sky: List[BEMOpeningUnit] = []
     for space in model.spaces.values():
         for op in space.openings:
@@ -150,6 +158,11 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                     host_facade=op.host_facade or "",
                     space_sid=space.id,
                     identity=_opening_identity(op),
+                    sill_z_m=(
+                        host_z[op.id] + float(op.sill_m)
+                        if op.sill_m is not None and op.id in host_z
+                        else None
+                    ),
                 )
             )
     openings = wall_units + sky

@@ -56,6 +56,10 @@ class BEMOpeningUnit:
     # when known. Writers use it to keep the opening on that facade's walls;
     # empty means distribute by wall length as before.
     host_facade: str = ""
+    # Wall openings: absolute height of the sill (host wall base + stated
+    # sill), when the source states both. Used to put an atrium's opening on
+    # the storey band its sill sits in (#650); None keeps today's placement.
+    sill_z_m: Optional[float] = None
     # matchline identity written to the IFC (#588): {"id", "method",
     # "confidence"}; None writes nothing
     identity: Optional[dict] = None
