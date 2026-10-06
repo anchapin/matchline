@@ -61,11 +61,30 @@ def test_overhang_and_fin_sizes_survive(tmp_path):
     assert fin.height_m == pytest.approx(m.envelope[0].height_m, abs=1e-3)
 
 
-def test_reexport_puts_shades_on_the_same_quads(tmp_path):
+def test_first_reexport_seats_shades_on_the_wall_face(tmp_path):
+    """A drawn shade sits on the ring line (offset 0). The IFC walls are
+    centred on that line (#609) and the plate goes on their face (#611), so
+    the imported shade comes back half a wall further out, same size."""
     m, bm = _roundtrip(tmp_path)
-    before = {s.id: _quad_key(s.vertices) for s in _bem_from_model(m).shades}
-    after = {s.id: _quad_key(s.vertices) for s in _bem_from_model(bm).shades}
-    assert after == before
+    before = {s.id: s for s in _bem_from_model(m).shades}
+    after = {s.id: s for s in _bem_from_model(bm).shades}
+    assert set(after) == set(before)
+    for sid, b in before.items():
+        ox, oy = b.outward
+        moved = [(x + ox * 0.1, y + oy * 0.1, z) for x, y, z in b.vertices]
+        assert _quad_key(after[sid].vertices) == _quad_key(moved)
+
+
+def test_second_cycle_keeps_shades_put(tmp_path):
+    """Once the shade is on the face, export -> import changes nothing."""
+    _, bm = _roundtrip(tmp_path)
+    (tmp_path / "2").mkdir()
+    _, bm2 = _roundtrip(tmp_path / "2", bm)
+    one = {s.id: _quad_key(s.vertices) for s in _bem_from_model(bm).shades}
+    two = {s.id: _quad_key(s.vertices) for s in _bem_from_model(bm2).shades}
+    assert two == one
+    for s in bm2.shading:
+        assert s.offset_m == pytest.approx(0.1, abs=1e-4)
 
 
 def test_imported_shading_passes_the_host_check(tmp_path):

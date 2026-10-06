@@ -52,15 +52,33 @@ def test_shades_written_as_shading_devices_and_validate(tmp_path):
     assert any("2 shading device(s)" in n for n in bem.notes)
 
 
-def test_device_sits_on_the_same_quad_as_the_gbxml_shade(tmp_path):
+def test_device_sits_on_the_wall_face_off_the_gbxml_quad(tmp_path):
+    """gbXML keeps the quad on the ring; IFC walls are centred on the ring
+    (#609), so the plate moves out half a wall to sit on the face (#611)."""
     _, bem = _shaded_bem()
     by_id = {s.id: s for s in bem.shades}
     path = write_ifc4(bem, tmp_path / "shade.ifc")
     _, devs = _devices(path)
     for sid, dev in devs.items():
+        sh = by_id[sid]
+        assert sh.outward is not None and sh.offset_m == 0.0
+        push = 0.2 / 2.0  # write_ifc4 default wall thickness
+        v0 = sh.vertices[0]
+        want = (v0[0] + sh.outward[0] * push, v0[1] + sh.outward[1] * push, v0[2])
         loc = dev.ObjectPlacement.RelativePlacement.Location.Coordinates
-        v0 = by_id[sid].vertices[0]
-        assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(loc, v0))
+        assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(loc, want))
+
+
+def test_quad_already_past_the_face_is_not_moved(tmp_path):
+    _, bem = _shaded_bem()
+    for sh in bem.shades:
+        sh.offset_m = 0.3  # inner edge beyond half of a 0.2 m wall
+    by_id = {s.id: s for s in bem.shades}
+    path = write_ifc4(bem, tmp_path / "shade.ifc")
+    _, devs = _devices(path)
+    for sid, dev in devs.items():
+        loc = dev.ObjectPlacement.RelativePlacement.Location.Coordinates
+        assert all(math.isclose(a, b, abs_tol=1e-9) for a, b in zip(loc, by_id[sid].vertices[0]))
 
 
 def test_overhang_is_a_horizontal_plate_with_drawn_extents(tmp_path):

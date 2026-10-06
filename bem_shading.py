@@ -119,5 +119,14 @@ def shades_from_model(
             )
             if area2 < 0:
                 verts.reverse()
-        shades.append(BEMShade(id=sh.id, kind=sh.kind, host_wall_id=w.id, vertices=verts))
+        shades.append(
+            BEMShade(
+                id=sh.id,
+                kind=sh.kind,
+                host_wall_id=w.id,
+                vertices=verts,
+                offset_m=off,
+                outward=(float(n[0]), float(n[1])),
+            )
+        )
     return shades, notes
