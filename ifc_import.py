@@ -2475,6 +2475,14 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             for bldg in _aggregated(site, "IfcBuilding"):
                 bname = bldg.Name or ""
     model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
+    if project is not None:
+        from solar_aperture import compound_angle_deg
+
+        for site in _aggregated(project, "IfcSite"):
+            lat = compound_angle_deg(getattr(site, "RefLatitude", None))
+            if lat is not None and -90.0 <= lat <= 90.0:
+                model.site_latitude_deg = round(lat, 9)
+                break
     slab_voids = {}  # level_id -> plan rectangles of unfilled slab openings (#581)
     wall_axis_fix = {}  # GlobalId -> (x0, y_mid, note), body centreline (#579)
 

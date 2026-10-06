@@ -149,3 +149,22 @@ plane to fit.
 - **Polygon classification is heuristic**: `polygon_classify.py` excludes shafts, elevator cores, and closets by area/aspect/label heuristics; unusual room shapes or mislabeled spaces may be misclassified.
 - **Confidence is not calibrated**: The 0.80 threshold and nominal confidence values have not been validated against a corpus of real drawings.
 - **No zone boundary reconciliation**: Adjacent spaces assigned to different zones are not checked for thermal boundary consistency.
+
+## Solar-weighted roof aperture (roadmap item 2, #615)
+
+`solar_aperture.py` gives the one number the roof simplifier (#616) and the
+roof checks (#617) use to judge a roof by what BEM will see, not by area
+alone: the sum over sun positions of area × max(0, cos incidence).
+
+- Sun positions are fixed so the result is deterministic: every hour on the
+  hour (solar time) on 21 Mar, 21 Jun, 21 Sep and 21 Dec, sun above the
+  horizon only. Declinations are fixed at 0, +23.44, 0, -23.44 deg; there is
+  no equation of time and no refraction. The unit is m² × sun position, for
+  comparing roofs at one latitude, not an energy figure.
+- No default latitude. Pass one, or use `BuildingModel.site_latitude_deg`,
+  which IFC import fills from `IfcSite.RefLatitude` (decimal degrees, north
+  positive). `model_aperture` raises when neither gives one.
+- `by_orientation` splits the total into flat, N, E, S and W (90° quarters
+  centred on the compass points), so a check can say which side changed.
+- `facet_aperture` works from a facet's corners via the Newell normal, so it
+  does not depend on how the facet is triangulated or wound.
