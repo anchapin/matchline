@@ -5,7 +5,14 @@ import random
 
 import pytest
 
-from datasets_adapter import Detection, ScheduleEntry, polygon_area_px2, rollup_takeoff
+from datasets_adapter import (
+    Detection,
+    ScheduleEntry,
+    normalize_tag,
+    parse_schedule_csv,
+    polygon_area_px2,
+    rollup_takeoff,
+)
 from geometry_simplify import simplify_ring
 from registration import (
     Affine2D,
@@ -131,6 +138,75 @@ def test_rollup_unmatched_reported_not_dropped():
     dets = [Detection(label="Window", tag="ZZZ", score=1.0, bbox=(0, 0, 10, 10), source="t")]
     res = rollup_takeoff(dets, sched)
     assert len(res.unmatched) == 1 and not res.lines
+
+
+def _det(label="Window", tag="A", tag_score=None):
+    return Detection(
+        label=label, tag=tag, score=1.0, bbox=(0, 0, 10, 10), source="t", tag_score=tag_score
+    )
+
+
+def test_normalize_tag_strips_whitespace_and_uppercases():
+    assert normalize_tag(" w - 1 ") == "W-1"
+    assert normalize_tag("W\t1") == "W1"
+    assert normalize_tag(None) == ""
+    assert normalize_tag("   ") == ""
+
+
+def test_rollup_joins_lowercase_and_spaced_tags_to_schedule():
+    sched = {"W-1": ScheduleEntry(tag="W-1", category="window", width_m=1.0, height_m=2.0)}
+    res = rollup_takeoff([_det(tag="w-1"), _det(tag="W -1"), _det(tag="W-1")], sched)
+    assert res.unmatched == []
+    assert [(ln.tag, ln.count) for ln in res.lines] == [("W-1", 3)]
+    assert res.area_m2["window"] == pytest.approx(6.0)
+
+
+def test_rollup_normalizes_schedule_keys_too():
+    sched = {"d 2": ScheduleEntry(tag="d 2", category="door", width_m=0.9, height_m=2.1)}
+    res = rollup_takeoff([_det(label="Door", tag="D2")], sched)
+    assert res.counts == {"door": 1} and res.unmatched == []
+
+
+def test_parse_schedule_csv_uses_normalize_tag():
+    import io
+
+    sched = parse_schedule_csv(io.StringIO("tag,category,width_m,height_m\n w-1 ,window,1,2\n"))
+    assert list(sched) == ["W-1"]
+
+
+def test_rollup_untagged_counted_per_label_not_unmatched():
+    sched = {"A": ScheduleEntry(tag="A", category="window", width_m=1.5, height_m=1.2)}
+    dets = [_det(tag=""), _det(tag="  "), _det(label="Door", tag=""), _det(tag="A")]
+    res = rollup_takeoff(dets, sched)
+    assert res.unmatched == []
+    assert len(res.untagged) == 3
+    assert res.untagged_counts == {"Window": 2, "Door": 1}
+    assert res.counts == {"window": 1}
+
+
+def test_rollup_unmatched_holds_only_tagged_detections():
+    res = rollup_takeoff([_det(tag="ZZZ"), _det(tag="")], {})
+    assert [d.tag for d in res.unmatched] == ["ZZZ"]
+    assert res.untagged_counts == {"Window": 1}
+
+
+def test_detection_tag_score_defaults_to_none():
+    assert _det().tag_score is None
+
+
+def test_rollup_low_confidence_tags_counted_and_flagged():
+    sched = {"A": ScheduleEntry(tag="A", category="window", width_m=1.0, height_m=1.0)}
+    low = _det(tag="a", tag_score=0.3)
+    dets = [low, _det(tag="A", tag_score=0.9), _det(tag="A")]
+    res = rollup_takeoff(dets, sched)
+    assert res.lines[0].count == 3
+    assert res.tag_review == [low]
+    assert rollup_takeoff(dets, sched, tag_review_below=0.95).tag_review == dets[:2]
+
+
+def test_rollup_low_confidence_unmatched_tag_not_double_reported():
+    res = rollup_takeoff([_det(tag="Q9", tag_score=0.1)], {})
+    assert len(res.unmatched) == 1 and res.tag_review == []
 
 
 # --- LPD computation via the real linker ----------------------------------

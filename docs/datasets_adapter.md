@@ -25,10 +25,10 @@ Supported datasets:
 | Type | Role |
 |---|---|
 | `SymbolSample` | Cropped symbol image for classifier training (H×W grayscale, 0..255) |
-| `Detection` | One spotted symbol: label, schedule tag, bbox, score, source |
+| `Detection` | One spotted symbol: label, schedule tag, bbox, score, source, optional `tag_score` (tag-read confidence; None = trusted tag) |
 | `ScheduleEntry` | One schedule row: tag → category + dimensions (m) |
 | `TakeoffLine` | Joined row: count × dims = area for one tag |
-| `TakeoffResult` | Per-tag lines + per-category m² totals + unmatched detections |
+| `TakeoffResult` | Per-tag lines + per-category m² totals + `unmatched` (tagged, no schedule row) + `untagged` / `untagged_counts` (no tag read yet, counts per label) + `tag_review` (counted, low tag confidence) |
 | `Region` | Polygon with a takeoff category (floor_area, wall, window, door…) |
 | `DrawingScale` | m/px for polygon→area conversion |
 
@@ -39,7 +39,8 @@ Measurement paths:
 ## Key functions
 
 - `parse_schedule_csv(path_or_rows)` — parse window/door schedule CSV.
-- `rollup_takeoff(detections, schedule, drawing_type)` — join detections to schedule, roll up m² per category.
+- `rollup_takeoff(detections, schedule, drawing_type, tag_review_below=TAG_REVIEW_THRESHOLD)` — join detections to schedule, roll up m² per category. Tags on both sides go through `normalize_tag` first. Detections with no tag go to `untagged` (per-label counts in `untagged_counts`), never into `unmatched`. Tags with `tag_score` below the threshold (default 0.5) are counted and also listed in `tag_review`.
+- `normalize_tag(tag)` — canonical tag form: all whitespace removed, uppercased (`" w - 1 "` → `"W-1"`). Also used by `parse_schedule_csv`.
 - `measure_takeoff(regions, drawing_type, scale)` — sum polygon areas in m².
 - `normalize_crop(crop, size=28)` — prepare crops for WiSARD classifier input.
 - `load_archcad(root, size=28, scale_m_per_px=None, max_samples=None)` — ArchCAD symbols + takeoff regions.

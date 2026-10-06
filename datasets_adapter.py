@@ -110,7 +110,10 @@ class TakeoffResult:
     counts: dict = field(default_factory=dict)  # category -> region count
     # --- three-stage pipeline (detections -> schedule -> rollup) ---
     lines: list = field(default_factory=list)  # TakeoffLine per tag
-    unmatched: list = field(default_factory=list)  # Detections w/o schedule entry
+    unmatched: list = field(default_factory=list)  # tagged Detections w/o schedule entry
+    untagged: list = field(default_factory=list)  # Detections with no tag read yet
+    untagged_counts: dict = field(default_factory=dict)  # label -> untagged count
+    tag_review: list = field(default_factory=list)  # counted, but tag_score < threshold
 
 
 @dataclass
@@ -123,6 +126,25 @@ class Detection:
     bbox: tuple  # (xtl, ytl, xbr, ybr) in source pixel coords
     source: str  # e.g. "aec-bench:sheet_01"
     drawing_type: str = "floor_plan"
+    # Confidence of the tag read (e.g. OCR), 0..1. None = the tag came from a
+    # trusted source (ground truth, manual entry) and needs no review.
+    tag_score: float | None = None
+
+
+# Tags read below this confidence are still counted by rollup_takeoff but
+# also listed in TakeoffResult.tag_review.
+TAG_REVIEW_THRESHOLD = 0.5
+
+
+def normalize_tag(tag) -> str:
+    """Canonical schedule-tag form: all whitespace removed, uppercased.
+
+    Applied to both sides of the rollup join so an OCR read of ``w-1`` or
+    ``W 1`` matches schedule tag ``W-1``. ``None`` and blank tags become "".
+    """
+    if tag is None:
+        return ""
+    return "".join(str(tag).split()).upper()
 
 
 @dataclass
@@ -334,7 +356,7 @@ def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
     sched: dict[str, ScheduleEntry] = {}
     try:
         for row in csv.DictReader(f):
-            tag = row["tag"].strip().upper().replace(" ", "")
+            tag = normalize_tag(row["tag"])
             sched[tag] = ScheduleEntry(
                 tag=tag,
                 category=row.get("category", "").strip().lower() or "window",
@@ -533,26 +555,42 @@ def rollup_takeoff(
     detections: list[Detection],
     schedule: dict[str, ScheduleEntry],
     drawing_type: str = "floor_plan",
+    tag_review_below: float = TAG_REVIEW_THRESHOLD,
 ) -> TakeoffResult:
     """Stage 3: join detections to the schedule; count x dims per tag.
 
     Areas need NO drawing scale: dimensions come from the schedule table.
-    Detections whose tag has no schedule entry land in
-    ``result.unmatched`` -- reported, never silently dropped.
-    """
-    by_tag: dict[str, list[Detection]] = {}
-    for d in detections:
-        by_tag.setdefault(d.tag, []).append(d)
+    Tags are compared after ``normalize_tag`` on both sides. Nothing is
+    silently dropped:
 
+    * tagged detections with no schedule entry land in ``result.unmatched``;
+    * detections with no tag yet land in ``result.untagged``, with per-label
+      counts in ``result.untagged_counts``;
+    * detections whose ``tag_score`` is below ``tag_review_below`` are counted
+      under their tag and also listed in ``result.tag_review``.
+    """
+    sched = {normalize_tag(k): v for k, v in schedule.items()}
+    by_tag: dict[str, list[Detection]] = {}
     res = TakeoffResult(
         drawing_type=drawing_type, scale=DrawingScale(None, "not needed: count x schedule dims")
     )
+    for d in detections:
+        tag = normalize_tag(d.tag)
+        if not tag:
+            res.untagged.append(d)
+            res.untagged_counts[d.label] = res.untagged_counts.get(d.label, 0) + 1
+            continue
+        by_tag.setdefault(tag, []).append(d)
+
     for tag in sorted(by_tag):
         ds = by_tag[tag]
-        entry = schedule.get(tag)
+        entry = sched.get(tag)
         if entry is None:
             res.unmatched.extend(ds)
             continue
+        res.tag_review.extend(
+            d for d in ds if d.tag_score is not None and d.tag_score < tag_review_below
+        )
         n = len(ds)
         area = n * entry.width_m * entry.height_m if entry.width_m and entry.height_m else None
         res.lines.append(
