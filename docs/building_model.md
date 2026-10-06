@@ -168,3 +168,28 @@ alone: the sum over sun positions of area × max(0, cos incidence).
   centred on the compass points), so a check can say which side changed.
 - `facet_aperture` works from a facet's corners via the Newell normal, so it
   does not depend on how the facet is triangulated or wound.
+
+## Roof simplification (roadmap item 2, #616)
+
+`roof_simplify.simplify_roof(planes, latitude_deg)` is the roof mode of
+geometry simplification. It merges adjacent facets greedily, the merge that
+moves solar aperture least first, under two hard budgets measured against the
+original roof: true sloped area (`area_tol`, default 2%) and solar aperture
+(`aperture_tol`, default 2%, from `solar_aperture.py`).
+
+- Candidates: same level, a shared plan edge of at least 0.1 m on which both
+  planes agree in height within 0.05 m (stepped roofs stay apart), and either
+  normals within `angle_tol_deg` (default 5°) or the smaller facet at most
+  `small_facet_frac` (default 5%) of the roof area, so dormers and small
+  hip ends can be absorbed by their host.
+- The merged plane covers the plan union, with the area-weighted mean normal,
+  through the area-weighted centroid. A union that is not one polygon, or
+  that would leave a hole, is refused.
+- A merge past either budget is refused and listed in `skipped` with both
+  deltas. Hip ends stay separate by default: folding an east end into the
+  south side costs about 2.7% area and 1.3% aperture at 40° N.
+- Near-coplanar merges keep the outline, so aperture moves far less than area.
+- The input list is never changed. The result holds new planes (merged ones
+  carry `roof_simplify:merge` provenance naming their sources) and
+  `roof_simplify_report()` gives both deltas, every merge and every refusal.
+  Output and report are the same for any input order.
