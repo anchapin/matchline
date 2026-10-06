@@ -56,14 +56,17 @@ def main():
         )
 
     print(
-        f"\nassociation accuracy (right polygon): {correct_poly}/{total} = {100 * correct_poly / total:.1f}%"
+        f"\nassociation accuracy (right polygon): {correct_poly}/{total} = "
+        f"{100 * correct_poly / total:.1f}%"
     )
     print(
-        f"exact (name, number) match:           {correct_full}/{total} = {100 * correct_full / total:.1f}%"
+        f"exact (name, number) match:           {correct_full}/{total} = "
+        f"{100 * correct_full / total:.1f}%"
     )
     print(f"labeled spaces: {labeled.n_labeled}/{labeled.n_total}")
     print(
-        f"unlabeled spaces: {[i for i, s in enumerate(labeled.spaces) if not s.name and not s.number]}"
+        "unlabeled spaces: "
+        f"{[i for i, s in enumerate(labeled.spaces) if not s.name and not s.number]}"
     )
     print(f"unmatched labels: {[l.raw_text for l in labeled.unmatched_labels]}")
     print(f"runtime: {dt:.1f}s for {img.shape[1]}x{img.shape[0]} sheet")

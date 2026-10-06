@@ -90,7 +90,11 @@ def _non_room_area(model) -> dict:
         "by_level_m2": levels,
         "spaces": rows,
         "spaces_without_area": missing_area,
-        "treatment": "closets merge into the room their door opens onto; shafts into the room with the largest share of their wall area; spaces the rule cannot settle are kept and flagged for review",
+        "treatment": (
+            "closets merge into the room their door opens onto; shafts into the room "
+            "with the largest share of their wall area; spaces the rule cannot settle "
+            "are kept and flagged for review"
+        ),
     }
 
 

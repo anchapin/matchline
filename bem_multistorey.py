@@ -229,7 +229,8 @@ def level_walls(model, levels, space_level, notes):
         )
     if outside:
         notes.append(
-            f"{outside} atrium opening(s) with a sill outside the atrium's height kept on the base storey"
+            f"{outside} atrium opening(s) with a sill outside the atrium's height "
+            "kept on the base storey"
         )
     out = []
     for lv in levels:

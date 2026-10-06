@@ -101,7 +101,8 @@ class TestBEMVolumeConservation:
             (
                 1999.0,
                 "error",
-            ),  # extreme positive - ~100000 m³ first space (same magnitude as original non-parametrized test)
+            ),  # extreme positive: ~100000 m³ first space
+            # (same magnitude as the original non-parametrized test)
         ],
     )
     def test_bem_volume_conservation_parametrized_defect_injection(

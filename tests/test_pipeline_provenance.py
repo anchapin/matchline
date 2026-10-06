@@ -198,7 +198,8 @@ class TestProvenanceCompleteValidationCheck:
         assert result.needs_review[opening.id] is True
 
     def test_high_confidence_insufficient_provenance_no_review(self):
-        """A fact with provenance but missing method/revision and confidence >= 0.7 does not need review."""
+        """A fact with provenance but missing method/revision and confidence >= 0.7
+        does not need review."""
         from building_model import Provenance
 
         bldg = generate_building(101, open_office_span=False)

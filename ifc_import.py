@@ -1507,7 +1507,8 @@ def _layered_u(el, scale, use_lookup, rsi, rse, air_direction):
 
     U = 1 / (Rsi + sum(t_i / k_i) + Rse), ISO 6946 surface resistances for
     the heat flow direction (walls horizontal, roofs upward; air layers use
-    the matching Table 2 column). Computed only when the element has exactly one layer set and EVERY layer has
+    the matching Table 2 column). Computed only when the element has exactly
+    one layer set and EVERY layer has
     a positive thickness and a known conductivity and is not ventilated. A
     layer's conductivity comes from its Pset_MaterialThermal; with
     ``use_lookup`` a layer without one falls back to ``materials``: an air
@@ -2472,7 +2473,9 @@ def _apply_opening_identity(bo, openings_by_gid, fills, taken, model, prov, winn
     if mid in taken or (winners is not None and winners.get(mid, gid) != gid):
         model.flag_for_review(
             kind="matchline_identity",
-            description=f"Opening {gid}: Matchline_Identity id {mid!r} already taken; kept GlobalId",
+            description=(
+                f"Opening {gid}: Matchline_Identity id {mid!r} already taken; kept GlobalId"
+            ),
             confidence=0.4,
             provenance=prov("ifc_import:tier0:matchline_identity", 0.4, "", gid),
         )

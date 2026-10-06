@@ -199,7 +199,8 @@ def test_simplify_ring_concave_protected():
     )
     skipped_concave = [r for r in res.skipped if "concave" in r["reason"]]
     assert len(skipped_concave) >= 1, (
-        f"expected at least 1 concave-skip (the notch); got {len(skipped_concave)}: {skipped_concave}"
+        "expected at least 1 concave-skip (the notch); "
+        f"got {len(skipped_concave)}: {skipped_concave}"
     )
 
 

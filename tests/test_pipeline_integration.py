@@ -180,7 +180,8 @@ class TestPipelineIntegration:
         """
         # Mock validate_bem_conservation to simulate a conservation failure.
         # The return value shape must match what model_from_linked_model expects:
-        #   list[CheckResult] where failed = [r for r in conservation_results if r.severity != "pass"]
+        #   list[CheckResult] where
+        #   failed = [r for r in conservation_results if r.severity != "pass"]
         from unittest.mock import patch
 
         from validate import CheckResult

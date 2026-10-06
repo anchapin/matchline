@@ -47,7 +47,7 @@ TABLE: Tuple[MaterialEntry, ...] = (
     MaterialEntry("timber", ("timber",), 0.15, "G04 13mm wood"),
     MaterialEntry("brick", ("brick",), 0.89, "M01 100mm brick"),
     MaterialEntry("concrete", ("concrete",), 1.95, "M14 150mm heavyweight concrete"),
-    MaterialEntry("lw_concrete", ("lightweight", "concrete"), 0.53, "M12 150mm lightweight concrete"),
+    MaterialEntry("lw_concrete", ("lightweight", "concrete"), 0.53, "M12 150mm lightweight concrete"),  # noqa: E501
     MaterialEntry("concrete_block", ("concrete", "block"), 1.11, "M05 200mm concrete block"),
     MaterialEntry("cmu", ("cmu",), 1.11, "M05 200mm concrete block"),
     MaterialEntry("lw_concrete_block", ("lightweight", "concrete", "block"), 0.50,
@@ -66,9 +66,9 @@ TABLE: Tuple[MaterialEntry, ...] = (
     MaterialEntry("eps", ("eps",), 0.036,
                   "Insulation: Expanded polystyrene - molded beads - 20kg/m3 density"),
     MaterialEntry("xps", ("xps",), 0.029,
-                  "Insulation: Expanded polystyrene - extruded (smooth skin surface) (HCFC-142b exp.)"),
+                  "Insulation: Expanded polystyrene - extruded (smooth skin surface) (HCFC-142b exp.)"),  # noqa: E501
     MaterialEntry("extruded_polystyrene", ("extruded polystyrene",), 0.029,
-                  "Insulation: Expanded polystyrene - extruded (smooth skin surface) (HCFC-142b exp.)"),
+                  "Insulation: Expanded polystyrene - extruded (smooth skin surface) (HCFC-142b exp.)"),  # noqa: E501
     MaterialEntry("polyiso", ("polyiso",), 0.0245,
                   "Insulation: Cellular polyurethane/polyisocyanuratei (CFC11 exp.) (unfaced)"),
     MaterialEntry("polyisocyanurate", ("polyisocyanurate",), 0.0245,

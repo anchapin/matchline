@@ -530,7 +530,8 @@ def main(args, config: dict | None = None) -> None:
                 "Stage 3: simplify_ring",
                 3,
                 str(e),
-                hint="Check simplify_tolerance setting. Try increasing --simplify-tol (default 0.02). "
+                hint="Check simplify_tolerance setting. "
+                "Try increasing --simplify-tol (default 0.02). "
                 "Ensure wall_height is valid (> 0).",
             ) from e
 

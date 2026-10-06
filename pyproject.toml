@@ -79,7 +79,7 @@ packages = ["synth"]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 100
+line-length = 100  # enforced (E501); geometry/XML literals opt out inline with `# noqa: E501`
 target-version = "py310"
 # detector/ is a separate track with its own venv (see detector/README.md)
 exclude = ["detector"]
@@ -87,12 +87,15 @@ exclude = ["detector"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "FA"]
 ignore = [
-    "E501", # long lines: geometry literals read better unbroken
     "E701", # pre-existing style: `if x: return y` one-liners used throughout
     "E702", # pre-existing style: semicolon one-liners used throughout
     "E741", # pre-existing style: `l` as a loop variable in comprehensions
     "F821", # forward-reference-only Provenance annotation: no runtime import needed
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# XXE fixtures embed a verbatim one-line gbXML root element inside a string.
+"tests/test_validate_gbxml_xxe.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["synth"]

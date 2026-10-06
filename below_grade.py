@@ -164,7 +164,8 @@ def boundary_types(model, interstory=None, flag: bool = True) -> BoundaryResult:
                 low = _edge_grade_min(terrain, s.geom)
                 if low is None:
                     note(
-                        f"{s.id}: slab edge not covered by the site terrain; {stype} from the storey"
+                        f"{s.id}: slab edge not covered by the site terrain; "
+                        f"{stype} from the storey"
                     )
                 else:
                     stype = "SlabOnGrade" if low <= s.z_m + GRADE_TOL_M else "UndergroundSlab"

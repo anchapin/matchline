@@ -249,7 +249,10 @@ class TestValidateBlocksExport:
                 check_id="review_queue_acknowledged",
                 name="Review queue acknowledged",
                 severity="error",
-                message="1 unacknowledged review item(s) with needs_review=True: must acknowledge before export",
+                message=(
+                    "1 unacknowledged review item(s) with needs_review=True: "
+                    "must acknowledge before export"
+                ),
                 entities=["review_item_001"],
             )
         )

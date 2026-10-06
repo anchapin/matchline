@@ -269,7 +269,10 @@ def model_from_takeoff(
                     "tag": line.tag,
                     "category": line.category,
                     "count": line.count,
-                    "reason": f"category '{line.category}' not window/door/skylight; not placed as opening",
+                    "reason": (
+                        f"category '{line.category}' not window/door/skylight; "
+                        "not placed as opening"
+                    ),
                 }
             )
             continue
