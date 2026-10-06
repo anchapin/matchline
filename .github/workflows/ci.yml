@@ -144,7 +144,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: pip install --no-cache-dir -e ".[test]" "ruff==0.16.8" && ruff --version
+        run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.16.8" && ruff --version
 
       - name: Run ruff check
         run: ruff check .
@@ -157,7 +157,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1581  # +7 IFC sloped-roof export and round trip (#619)
+          EXPECTED_TEST_COUNT=1597  # +16 OpenStudio round-trip gate (#628)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

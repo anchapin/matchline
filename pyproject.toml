@@ -37,6 +37,8 @@ test = ["pytest", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyam
 # Detector track: heavy. detector/ keeps its own venv on dev machines
 # (see detector/README.md); this extra is for real hardware / CI images.
 detector = ["torch", "ultralytics"]
+# OpenStudio round-trip gate (#628): CI installs it; tests skip without it
+openstudio = ["openstudio"]
 
 [project.scripts]
 matchline = "cli:main"
