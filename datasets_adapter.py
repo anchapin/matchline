@@ -789,41 +789,300 @@ def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | N
 
 
 # ---------------------------------------------------------------------------
-# ArchCAD-400K (Luo et al., arXiv 2503.22346)  [PENDING VALIDATION]
+# ArchCAD-400K (Luo et al., arXiv 2503.22346)
 # ---------------------------------------------------------------------------
-# First public release: curated 40K-sample subset on HuggingFace
-# (jackluoluo/ArchCAD). Paper: 413,062 chunks from 5,538 highly standardized
-# drawings with "line-grained" annotations (vector primitives grouped into
-# symbols). The repo's DPSS model consumes SVG-line inputs (see svgnets/).
+# Public release: a 40K-sample subset on HuggingFace (jackluoluo/ArchCAD),
+# gated (manual approval) and CC BY-NC 4.0. It is NOT a parquet export: the
+# repo ships five zips under data/ (json, svg, png, point, caption), one
+# drawing slice per file. This loader reads the JSON modality, documented on
+# the dataset card as a list of primitives per slice:
 #
-# TODO(validate): download/inspect the HF export, confirm the per-sample
-# record layout (expected: drawing chunk + symbol list with class + geometry),
-# then implement decoding below.
+#   {"type": "LINE", "start": [x1, y1], "end": [x2, y2], "linetype": ...,
+#    "rgb": [0, 0, 0], "semantic": "single_door", "instance": "single_door_23"}
+#   {"type": "CIRCLE", "center": [x, y], "radius": r, "semantic": ..., ...}
+#
+# `semantic` is the class (table below); `instance` groups the primitives of
+# one countable object. Only LINE and CIRCLE are shown on the card; ARC and
+# polyline keys below are our best reading and are checked on first real data.
+
+
+class ArchCADFormatError(ValueError):
+    """An ArchCAD JSON file does not match the documented primitive layout."""
+
+
+# class id -> (name, countable), from the ArchCAD dataset card.
+ARCHCAD_CLASSES: dict[int, tuple[str, bool]] = {
+    0: ("Axis & Grid", False),
+    1: ("Single Door", True),
+    2: ("Double Door", True),
+    3: ("Parent-Child Door", True),
+    4: ("Other Door", True),
+    5: ("Elevator", True),
+    6: ("Staircase", True),
+    7: ("Sink", True),
+    8: ("Urinal", True),
+    9: ("Toilet", True),
+    10: ("Bathtub", True),
+    11: ("Squat Toilet", True),
+    12: ("Other Fixtures", False),
+    13: ("Drain", False),
+    14: ("Table", True),
+    15: ("Chair", True),
+    16: ("Bed", True),
+    17: ("Sofa", True),
+    18: ("Hole", True),
+    19: ("Glass", False),
+    20: ("Wall", False),
+    21: ("Concrete Column", True),
+    22: ("Steel Column", True),
+    23: ("Concrete Beam", False),
+    24: ("Steel Beam", False),
+    25: ("Parking Space", True),
+    26: ("Foundation", False),
+    27: ("Pile", True),
+    28: ("Rebar", False),
+    29: ("Fire Hydrant", True),
+    100: ("Others", False),
+}
+
+# Countable classes that feed a takeoff category. Other countable classes
+# (furniture, columns, parking, piles, hydrants) still become SymbolSamples.
+ARCHCAD_TO_TAKEOFF: dict[str, str] = {
+    "Single Door": "door",
+    "Double Door": "door",
+    "Parent-Child Door": "door",
+    "Other Door": "door",
+    "Elevator": "floor_area",
+    "Staircase": "floor_area",
+    "Sink": "fixture",
+    "Urinal": "fixture",
+    "Toilet": "fixture",
+    "Bathtub": "fixture",
+    "Squat Toilet": "fixture",
+    "Hole": "opening",
+}
+
+
+def _archcad_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+# "single_door", "Single Door", "single-door" and 1 all resolve to "Single Door".
+_ARCHCAD_BY_KEY = {_archcad_key(n): (n, c) for n, c in ARCHCAD_CLASSES.values()}
+_ARCHCAD_BY_KEY["axis_and_grid"] = ARCHCAD_CLASSES[0]
+
+
+def _archcad_class(semantic, where: str) -> tuple[str, bool]:
+    if isinstance(semantic, bool):
+        raise ArchCADFormatError(f"{where}: semantic must be a class id or name, got {semantic!r}")
+    if isinstance(semantic, int):
+        if semantic not in ARCHCAD_CLASSES:
+            raise ArchCADFormatError(f"{where}: unknown semantic class id {semantic}")
+        return ARCHCAD_CLASSES[semantic]
+    if isinstance(semantic, str):
+        if semantic.strip().isdigit():
+            return _archcad_class(int(semantic), where)
+        hit = _ARCHCAD_BY_KEY.get(_archcad_key(semantic))
+        if hit is None:
+            raise ArchCADFormatError(f"{where}: unknown semantic class {semantic!r}")
+        return hit
+    raise ArchCADFormatError(
+        f"{where}: semantic must be a class id or name, got {type(semantic).__name__}"
+    )
+
+
+def _archcad_point(prim: dict, key: str, where: str) -> tuple[float, float]:
+    if key not in prim:
+        raise ArchCADFormatError(f"{where}: {prim.get('type')} primitive has no {key!r}")
+    v = prim[key]
+    if (
+        not isinstance(v, (list, tuple))
+        or len(v) < 2
+        or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in v[:2])
+    ):
+        raise ArchCADFormatError(f"{where}: {key!r} must be [x, y] numbers, got {v!r}")
+    return float(v[0]), float(v[1])
+
+
+def _archcad_number(prim: dict, key: str, where: str) -> float:
+    if key not in prim:
+        raise ArchCADFormatError(f"{where}: {prim.get('type')} primitive has no {key!r}")
+    v = prim[key]
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        raise ArchCADFormatError(f"{where}: {key!r} must be a number, got {v!r}")
+    return float(v)
+
+
+def _archcad_polylines(prim: dict, where: str) -> list[list[tuple[float, float]]] | None:
+    """Primitive -> list of polylines in source coords; None if type unknown."""
+    kind = str(prim.get("type", "")).upper()
+    if kind == "LINE":
+        return [[_archcad_point(prim, "start", where), _archcad_point(prim, "end", where)]]
+    if kind in ("CIRCLE", "ARC"):
+        cx, cy = _archcad_point(prim, "center", where)
+        r = _archcad_number(prim, "radius", where)
+        if kind == "CIRCLE":
+            a0, a1 = 0.0, 360.0
+        else:
+            a0 = _archcad_number(prim, "start_angle", where)
+            a1 = _archcad_number(prim, "end_angle", where)
+            if a1 <= a0:
+                a1 += 360.0
+        n = max(8, int((a1 - a0) / 10.0))
+        ts = np.radians(np.linspace(a0, a1, n + 1))
+        return [[(cx + r * math.cos(t), cy + r * math.sin(t)) for t in ts]]
+    for key in ("points", "vertices"):
+        if key in prim:
+            pts = prim[key]
+            if not isinstance(pts, list):
+                raise ArchCADFormatError(f"{where}: {key!r} must be a list of [x, y]")
+            return [[_archcad_point({key: q}, key, where) for q in pts]]
+    return None
+
+
+def _archcad_files(root: Path) -> list[tuple[str, callable]]:
+    """Find the JSON slices: a json/ tree, loose *.json, or json.zip (unextracted)."""
+    jsons = sorted(q for q in root.rglob("*.json") if q.is_file())
+    if jsons:
+        return [(q.stem, q.read_text) for q in jsons]
+    zips = sorted(root.rglob("json.zip"))
+    if zips:
+        import zipfile
+
+        zf = zipfile.ZipFile(zips[0])
+        names = sorted(n for n in zf.namelist() if n.endswith(".json") and not n.endswith("/"))
+        return [(Path(n).stem, (lambda n=n: zf.read(n).decode("utf-8"))) for n in names]
+    return []
+
+
+def _render_instance(polylines, size: int) -> np.ndarray:
+    """Rasterize one instance's vector primitives into a normalized crop."""
+    from PIL import Image, ImageDraw
+
+    pts = np.asarray([p for line in polylines for p in line], dtype=np.float64)
+    x0, y0 = pts.min(axis=0)
+    span = float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), 1e-9))
+    px = 64  # render side before normalize_crop downsamples
+    k = (px - 1) / span
+    w = int(np.ptp(pts[:, 0]) * k) + 1
+    h = int(np.ptp(pts[:, 1]) * k) + 1
+    img = Image.new("L", (w, h), 255)
+    draw = ImageDraw.Draw(img)
+    for line in polylines:
+        xy = [((x - x0) * k, (y - y0) * k) for x, y in line]
+        if len(xy) == 1:
+            draw.point(xy, fill=0)
+        else:
+            draw.line(xy, fill=0, width=2)
+    return normalize_crop(np.asarray(img, dtype=np.float64), size)
 
 
 def load_archcad(
-    root: str | Path, size: int = 28, scale_m_per_px: float | None = None
+    root: str | Path,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    max_samples: int | None = None,
 ) -> tuple[list[SymbolSample], TakeoffResult]:
-    """Load ArchCAD-400K samples.
+    """Load ArchCAD symbols + takeoff regions from the JSON modality.
 
-    Auto-detects the local export layout (parquet / image dir + metadata).
+    ``root`` holds the extracted ``json.zip`` (any ``*.json`` under it) or
+    the zip itself, unextracted. Each JSON file is one drawing slice: a list
+    of primitives (or a dict whose ``entities``/``primitives`` key is that
+    list).
+
+    Column mapping, per primitive:
+
+    * ``type`` -> geometry: LINE ``start``/``end``; CIRCLE ``center``/
+      ``radius``; ARC ``center``/``radius``/``start_angle``/``end_angle``
+      (degrees); polylines ``points`` or ``vertices``. Other types (text,
+      hatch) carry no symbol geometry and are skipped.
+    * ``semantic`` -> class, as an id (0..29, 100) or name ("single_door",
+      "Single Door"); see ``ARCHCAD_CLASSES``.
+    * ``instance`` -> object grouping. Primitives sharing a countable class
+      and instance id form one symbol.
+
+    Each countable instance becomes one ``SymbolSample`` (its primitives
+    rasterized, then ``normalize_crop``-ed; label = class name, source =
+    ``archcad:<slice>``, bbox = geometry extent in source coords). Instances
+    whose class is in ``ARCHCAD_TO_TAKEOFF`` also become a box ``Region``
+    (doors, fixtures, holes; elevators and stairs as floor area).
+    Non-countable classes (walls, glass, grid, beams) carry no instance and
+    are not symbols, so they are left out. Coordinates are in drawing units
+    with no stated scale: areas stay px^2 unless ``scale_m_per_px`` is given.
+
+    Raises FileNotFoundError when no JSON is found, and ArchCADFormatError
+    when a primitive is missing a key or has the wrong type, so schema drift
+    fails loudly instead of yielding zero counts.
     """
     root = Path(root)
-    contents = list(root.iterdir())
-    if not contents:
+    if not root.exists():
         raise FileNotFoundError(
-            f"ArchCAD-400K dataset at {root} is empty: "
-            f"download from https://huggingface.co/jackluoluo/ArchCAD "
-            f"and extract to that directory."
+            f"ArchCAD dataset root not found: {root}. Request access at "
+            "https://huggingface.co/datasets/jackluoluo/ArchCAD and download data/json.zip."
         )
-    # TODO(validate): inspect the HF export layout and implement _archcad_from_parquet
-    # or _archcad_from_dir once the format is confirmed.
-    raise NotImplementedError(
-        "ArchCAD-400K loader not yet implemented. "
-        "Dataset root ("
-        + str(root)
-        + ") contains: "
-        + ", ".join(sorted(p.name for p in contents)[:10])
-        + ". "
-        "Implement the loader after inspecting the export format."
+    files = _archcad_files(root)
+    if not files:
+        found = sorted(q.name for q in root.iterdir())[:10]
+        hint = ""
+        if any(q.endswith(".parquet") for q in found):
+            hint = " The HuggingFace release ships zips (json/svg/png/point/caption), not parquet."
+        raise FileNotFoundError(
+            f"No ArchCAD JSON found under {root} (contains: {', '.join(found) or 'nothing'})."
+            f"{hint} Download data/json.zip from "
+            "https://huggingface.co/datasets/jackluoluo/ArchCAD (gated; request access) "
+            "and extract it there, or place json.zip itself there."
+        )
+    if max_samples is not None:
+        files = files[:max_samples]
+
+    samples: list[SymbolSample] = []
+    regions: list[Region] = []
+    for stem, read in files:
+        where_file = f"archcad:{stem}"
+        try:
+            data = json.loads(read())
+        except json.JSONDecodeError as exc:
+            raise ArchCADFormatError(f"{where_file}: not valid JSON: {exc}") from exc
+        if isinstance(data, dict):
+            data = data.get("entities", data.get("primitives"))
+        if not isinstance(data, list):
+            raise ArchCADFormatError(f"{where_file}: expected a list of primitives")
+        instances: dict[tuple[str, str], list] = {}
+        for i, prim in enumerate(data):
+            where = f"{where_file}[{i}]"
+            if not isinstance(prim, dict):
+                raise ArchCADFormatError(f"{where}: primitive must be an object")
+            if "semantic" not in prim:
+                raise ArchCADFormatError(f"{where}: primitive has no 'semantic'")
+            name, countable = _archcad_class(prim["semantic"], where)
+            if not countable:
+                continue
+            inst = prim.get("instance")
+            if inst is None or isinstance(inst, (bool, list, dict)):
+                raise ArchCADFormatError(
+                    f"{where}: countable class {name!r} needs an 'instance' id, got {inst!r}"
+                )
+            lines = _archcad_polylines(prim, where)
+            if lines is None:
+                continue
+            instances.setdefault((name, str(inst)), []).extend(lines)
+        for (name, _inst), lines in instances.items():
+            pts = np.asarray([p for line in lines for p in line], dtype=np.float64)
+            (xtl, ytl), (xbr, ybr) = pts.min(axis=0), pts.max(axis=0)
+            bbox = (float(xtl), float(ytl), float(xbr), float(ybr))
+            samples.append(SymbolSample(_render_instance(lines, size), name, where_file, bbox))
+            if name in ARCHCAD_TO_TAKEOFF:
+                regions.append(
+                    Region(
+                        ARCHCAD_TO_TAKEOFF[name],
+                        box_to_polygon(*bbox),
+                        where_file,
+                        "floor_plan",
+                        name,
+                    )
+                )
+
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (ArchCAD states no scale)"
     )
+    return samples, measure_takeoff(regions, "floor_plan", scale)

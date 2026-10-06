@@ -18,7 +18,7 @@ The module has two distinct halves:
 Supported datasets:
 - **AEC-geometric-bench** — 15 real construction sheets with CVAT 1.1 XML annotations (validated).
 - **FloorPlanCAD** — HuggingFace parquet export (pending validation).
-- **ArchCAD-400K** — 40K-sample subset on HuggingFace (pending validation).
+- **ArchCAD** — 40K-sample subset on HuggingFace (`jackluoluo/ArchCAD`, gated, CC BY-NC 4.0). `load_archcad` reads its JSON modality; see below.
 
 ## Output contract
 
@@ -42,6 +42,29 @@ Measurement paths:
 - `rollup_takeoff(detections, schedule, drawing_type)` — join detections to schedule, roll up m² per category.
 - `measure_takeoff(regions, drawing_type, scale)` — sum polygon areas in m².
 - `normalize_crop(crop, size=28)` — prepare crops for WiSARD classifier input.
+- `load_archcad(root, size=28, scale_m_per_px=None, max_samples=None)` — ArchCAD symbols + takeoff regions.
+
+## ArchCAD loader
+
+The HuggingFace release is not a parquet export. It ships five zips under `data/` (`json`, `svg`, `png`, `point`, `caption`), one drawing slice per file, behind a manual access request. `load_archcad` reads the JSON modality from an extracted `json.zip` (any `*.json` under `root`) or from `json.zip` itself.
+
+Each JSON file is a list of primitives (a dict with an `entities` or `primitives` list is also accepted). Column mapping:
+
+| Key | Meaning | Used as |
+|---|---|---|
+| `type` | `LINE`, `CIRCLE`, `ARC`, or a polyline type | picks the geometry keys below; other types (text, hatch) are skipped |
+| `start`, `end` | LINE endpoints `[x, y]` | geometry |
+| `center`, `radius` | CIRCLE / ARC | geometry |
+| `start_angle`, `end_angle` | ARC sweep in degrees | geometry |
+| `points` / `vertices` | polyline `[[x, y], ...]` | geometry |
+| `semantic` | class id (0–29, 100) or name (`single_door`, `Single Door`) | `SymbolSample.label`, takeoff category |
+| `instance` | object id shared by one countable object's primitives | groups primitives into one symbol |
+
+Each countable instance becomes one `SymbolSample`: its primitives are rasterized and passed through `normalize_crop`, with `source = "archcad:<slice>"` and `bbox` the geometry extent. Doors (single, double, parent-child, other) become `door` regions, sinks, urinals, toilets, bathtubs and squat toilets `fixture`, holes `opening`, and elevators and staircases `floor_area`. Furniture, columns, parking spaces, piles and hydrants are symbols with no takeoff category. Non-countable classes (walls, glass, grid, beams, rebar) have no instance and are skipped.
+
+A missing key or wrong type on a primitive, an unknown class, or a countable primitive with no `instance` raises `ArchCADFormatError`, so schema drift fails loudly instead of returning zero counts. A root with no JSON raises `FileNotFoundError` with download instructions (and says so when it only finds parquet).
+
+Only `LINE` and `CIRCLE` appear on the dataset card; the `ARC` and polyline keys, and whether coordinates run y-down, are unconfirmed until the loader is run on the real download.
 
 ## Limitations
 
@@ -49,4 +72,5 @@ Measurement paths:
 - **Tag text extraction is a v2 gap** — current annotation sets carry glyph labels but not schedule tag text.
 - **Drawing scale must be parsed separately** — the module does not read title blocks or calibration marks.
 - **No HVAC quantities** — fixture counts are tracked but physical dimensions are not.
-- **FloorPlanCAD and ArchCAD loaders are pending validation** — not yet wired for production use.
+- **FloorPlanCAD loader is pending validation**; the ArchCAD loader is built to the dataset card's documented JSON layout and not yet run on the real download (access is gated).
+- **ArchCAD has no drawing scale** — areas stay in drawing units² unless `scale_m_per_px` is given.
