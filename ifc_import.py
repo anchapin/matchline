@@ -2868,6 +2868,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
         apply_wall_u_rollup(model)
     roof_note = _read_roof_construction(model, f, prov, scale)
+    from ifc_roof_planes import orient_skylights, read_roof_planes
+
+    n_roof_planes, n_roof_els, n_roof_flagged = read_roof_planes(model, f, level_by_storey, prov)
+    n_sky_oriented = orient_skylights(model)
     finish_gids, thin_left = _classify_finish_slabs(model, f, scale)
     slab_note = _read_slab_construction(model, f, prov, skip=finish_gids)
     ceil_with, ceil_without, ceil_covs = _read_ceilings(
@@ -2918,6 +2922,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         )
     if n_junction_splits:
         summary_parts.append(f"wall splits: {n_junction_splits} at X/T junctions")
+    if n_roof_els:
+        part = f"roof planes: {n_roof_planes} from {n_roof_els} roof element(s)"
+        if n_roof_flagged:
+            part += f", {n_roof_flagged} flagged for review"
+        if n_sky_oriented:
+            part += f"; {n_sky_oriented} skylight(s) oriented"
+        summary_parts.append(part)
     if elevation_gids or storey_unassigned:
         part = f"storey fallback: {len(elevation_gids)} by elevation"
         if storey_unassigned:

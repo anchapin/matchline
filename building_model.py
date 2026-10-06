@@ -431,6 +431,10 @@ class BimOpening:
     # Skylights only (roof-hosted): plan centre [x, y] in the canonical
     # y-down frame, used to attach the skylight to the space under it.
     plan_center_m: Optional[list] = None
+    # Skylights only (#614): tilt/azimuth of the roof plane above the plan
+    # centre, same convention as SpaceOpening; None when no plane is known.
+    tilt_deg: Optional[float] = None
+    azimuth_deg: Optional[float] = None
     # Doors only (#573): IfcDoor.OperationType as written (IFC4 occurrence or
     # its type; IFC2X3 IfcDoorStyle), and what it says without guessing.
     operation_type: Optional[str] = None
@@ -553,6 +557,7 @@ class ReviewItem:
         "ceiling",
         "lining_u",
         "matchline_identity",
+        "roof_plane",
     ]
     description: str
     confidence: float
@@ -780,6 +785,7 @@ class BuildingModel:
             "ceiling",
             "lining_u",
             "matchline_identity",
+            "roof_plane",
         ],
         description: str,
         confidence: float,

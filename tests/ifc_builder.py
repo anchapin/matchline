@@ -210,6 +210,68 @@ class IfcBuilder:
         self._contain(c)
         return c
 
+    def roof_slab(self, name, corners, thickness=0.2, predefined="ROOF", container=True):
+        """A planar roof slab whose top face has ``corners`` (x, y, z above the
+        storey, builder frame), extruded ``thickness`` down along its normal,
+        the way authoring tools model a pitched roof. Not mirrored."""
+        import math
+
+        c = [tuple(float(v) for v in p) for p in corners]
+        n = [0.0, 0.0, 0.0]
+        for i, a in enumerate(c):
+            b = c[(i + 1) % len(c)]
+            n[0] += (a[1] - b[1]) * (a[2] + b[2])
+            n[1] += (a[2] - b[2]) * (a[0] + b[0])
+            n[2] += (a[0] - b[0]) * (a[1] + b[1])
+        if n[2] < 0:
+            c, n = c[::-1], [-x for x in n]
+        ln = math.sqrt(sum(x * x for x in n))
+        n = [x / ln for x in n]
+        e = [c[1][k] - c[0][k] for k in range(3)]
+        el = math.sqrt(sum(x * x for x in e))
+        xd = [x / el for x in e]
+        yd = [n[1] * xd[2] - n[2] * xd[1], n[2] * xd[0] - n[0] * xd[2], n[0] * xd[1] - n[1] * xd[0]]
+        loc = [[sum((p[k] - c[0][k]) * d[k] for k in range(3)) for d in (xd, yd)] for p in c]
+        s = _Root.create_entity(self.f, ifc_class="IfcSlab", name=name)
+        s.PredefinedType = predefined
+        s.ObjectPlacement = self._placement((0, 0, 0), self.storey.ObjectPlacement, mirror=False)
+        poly = self.f.create_entity("IfcPolyline", Points=[self._pt(p) for p in loc + [loc[0]]])
+        prof = self.f.create_entity(
+            "IfcArbitraryClosedProfileDef", ProfileType="AREA", OuterCurve=poly
+        )
+        pos = self.f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=self._pt(c[0]),
+            Axis=self._dir(n),
+            RefDirection=self._dir(xd),
+        )
+        solid = self.f.create_entity(
+            "IfcExtrudedAreaSolid",
+            SweptArea=prof,
+            Position=pos,
+            ExtrudedDirection=self._dir((0, 0, -1)),
+            Depth=float(thickness),
+        )
+        rep = self.f.create_entity(
+            "IfcShapeRepresentation",
+            ContextOfItems=self.body,
+            RepresentationIdentifier="Body",
+            RepresentationType="SweptSolid",
+            Items=(solid,),
+        )
+        _Gm.assign_representation(self.f, product=s, representation=rep)
+        if container:
+            self._contain(s)
+        return s
+
+    def roof(self, name, slabs):
+        """An IfcRoof aggregating ``slabs`` (contained in the storey itself)."""
+        r = _Root.create_entity(self.f, ifc_class="IfcRoof", name=name)
+        r.ObjectPlacement = self._placement((0, 0, 0), self.storey.ObjectPlacement, mirror=False)
+        _Ag.assign_object(self.f, products=list(slabs), relating_object=r)
+        self._contain(r)
+        return r
+
     def write(self, path):
         self.f.write(str(path))
         return path
