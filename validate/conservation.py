@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from validate import _Ctx
 
 from bem_export import BEMModel
+from bem_roof import is_sloped, shell_volume, space_shell
 
 
 def _rel_err(actual: float, expected: float) -> float:
@@ -415,12 +416,19 @@ def _check_bem_volume_conservation(bem: BEMModel, tol_volume: float) -> CheckRes
     expected_vol = (
         effective_area * bem.wall_height_m if effective_area > 0 and bem.wall_height_m else 0.0
     )
+    roofs = list(getattr(bem, "roof_planes", None) or [])
+    if area_source == "ring" and is_sloped(roofs):
+        # sloped roof (#618): the envelope is the ring's closed shell under
+        # the roof planes, so that shell's volume is the expectation
+        loops, _ = space_shell(bem.ring_m, roofs, bem.wall_height_m)
+        expected_vol = shell_volume(loops)
+        area_source = "ring under the roof planes"
     if expected_vol > 0:
         vol_delta_pct = abs(total_space_vol - expected_vol) / expected_vol * 100
         if vol_delta_pct > tol_volume * 100:
             mismatches.append(
                 f"total vol={total_space_vol:.1f} vs "
-                f"{area_source}×height={expected_vol:.1f} "
+                f"{area_source}{'' if 'roof' in area_source else '×height'}={expected_vol:.1f} "
                 f"({vol_delta_pct:.2f}% delta)"
             )
     if mismatches:

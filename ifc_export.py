@@ -26,7 +26,9 @@ from bem_export import (
     validate_ifc4,
     write_ifc4,
 )
+from bem_geometry import BEMRoof
 from bem_helpers import _edge_facades
+from bem_roof import is_sloped, shell_volume, space_shell
 from building_model import BuildingModel, EnvelopeWall, SpaceLighting
 from validate import validate_bem_conservation
 
@@ -171,6 +173,13 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     shades, shade_notes = shades_from_model(
         model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in spaces]
     )
+    roofs, roof_notes = _bem_roofs(model)
+    if is_sloped(roofs):
+        # sloped roof (#618): each space's volume is its closed shell under
+        # the roof planes, not footprint x wall height
+        for sp in spaces:
+            loops, _ = space_shell(sp.polygon_m, roofs, wall_height)
+            sp.volume_m3 = shell_volume(loops)
     return BEMModel(
         building_name=model.name,
         spaces=spaces,
@@ -187,10 +196,43 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
             if z.diffusers
         },
         shades=shades,
-        notes=shade_notes,
+        notes=shade_notes + roof_notes,
+        roof_planes=roofs,
         roof_u_value_w_m2k=roof_u_value(model),
         slab_u_value_w_m2k=slab_u_value(model),
     )
+
+
+def _bem_roofs(model: BuildingModel):
+    """Roof planes in the BEM frame (y-north), for the single-storey writers.
+
+    The BEM writers export one storey, so only planes on the ground level
+    (or with no level) are carried; planes on other levels are noted and
+    left out rather than stacked onto the wrong storey.
+    """
+    planes = list(getattr(model, "roof_planes", None) or [])
+    if not planes:
+        return [], []
+    base = model.levels[0].id if model.levels else ""
+    keep, skipped = [], 0
+    for rp in planes:
+        if len(model.levels) > 1 and rp.level_id not in ("", base):
+            skipped += 1
+            continue
+        keep.append(
+            BEMRoof(
+                id=rp.id,
+                vertices=[(x, -y, z) for x, y, z in rp.vertices_m],
+                tilt_deg=rp.tilt_deg,
+                azimuth_deg=rp.azimuth_deg,
+            )
+        )
+    notes = (
+        [f"{skipped} roof plane(s) on upper levels not exported to the single-storey BEM"]
+        if skipped
+        else []
+    )
+    return keep, notes
 
 
 def _build_ring(walls: List[EnvelopeWall]) -> List[tuple]:
