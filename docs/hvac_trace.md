@@ -93,4 +93,24 @@ Results (seed 0, 257 rooms on two floors):
 | 0.30 m | 437 | 0 | 0 |
 | 0.50 m | 435 | 0 | 2 (`ambiguous`) |
 
-Limits: this checks room assignment on real room shapes only. Symbol detection is still validated on synthetic sheets, because no mechanical sheet has been rendered from this model yet. At exact positions every terminal is more than 0.15 m inside its room, so the #684 boundary and tie rules only come into play once jitter is added.
+Limits: this checks room assignment on real room shapes only. The detection half below renders sheets from the same model. At exact positions every terminal is more than 0.15 m inside its room, so the #684 boundary and tie rules only come into play once jitter is added.
+
+## Real-model detection check (#707)
+
+`scripts/validate_clinic_hvac_detection.py` draws one mechanical sheet per storey from the same Clinic model and runs `detect_components` on it. `scripts/clinic_sheet_data.py` first extracts a JSON cache from the IFC: room footprints and names, all 440 air terminals (Supply Air becomes `diffuser`, Return and Exhaust Air become `grille`), and the plan footprint of every duct segment (pipes excluded). Neither the IFC nor the cache is committed.
+
+The layout is real: room shapes and labels, terminal positions and types, and the duct runs, including diagonal flex ducts. The symbols are not. Terminals are drawn with matchline's own glyphs, so this tests detection in a real layout's density and clutter, not another firm's symbology. Terminals are matched within 0.5 m (25 px), the same tolerance the synthetic validation uses.
+
+Results (two storeys, 440 terminals: 234 diffusers and 206 grilles. End to end covers the 437 the designer placed in a space):
+
+| Storey | Diffuser P / R | Grille P / R | End to end (room correct / missed) |
+|--------|----------------|--------------|------------------------------------|
+| First Floor | 0.49 / 0.17 | 0.73 / 0.07 | 32 / 231 |
+| Second Floor | 0.64 / 0.15 | 0.67 / 0.02 | 16 / 158 |
+
+Every terminal that was detected landed in the right room (0 wrong, 0 review). Detection is the bottleneck, and the script's stage check shows where terminals are lost:
+
+- **NCC proposals are fine.** 437 of the 440 terminals have a proposal of their own class within 0.5 m.
+- **WiSARD rejects most real terminals as background.** At the true position of each terminal, the classifier answers `background` for 358 of 440. It also calls 33 grilles diffusers.
+
+The classifier was trained on crops from synthetic sheets, where every terminal hangs off a vertical drop with clear space around it. On the Clinic sheets, ducts reach terminals from any side, flex ducts come in on diagonals, and room labels sit close by. Those crops fall outside what WiSARD learned. The likely fix is training-side (crops with drops from all four sides and diagonal flex, text nearby, more background drawn from real-layout clutter). That changes the detector's synthetic results, so it's tracked separately for review.

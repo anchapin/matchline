@@ -159,7 +159,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1864  # +2 real-model HVAC room assignment check (#707)
+          EXPECTED_TEST_COUNT=1868  # +4 Clinic detection harness unit tests (#707)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
