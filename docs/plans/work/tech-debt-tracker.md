@@ -39,7 +39,7 @@ Known debt with priority, rationale, and proposed resolution.
 
 ## P2 — Pre-commit pin drift
 
-**Description**: `.pre-commit-config.yaml` pins `ruff` to `v0.16.8`. Ruff releases frequently; pinned versions can fall behind security patches.
+**Description**: `.pre-commit-config.yaml` pins `ruff` to `v0.16.10` (Renovate keeps it current, #680). Ruff releases frequently; pinned versions can fall behind security patches.
 
 **Location**: `.pre-commit-config.yaml`
 

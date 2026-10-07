@@ -121,7 +121,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install --no-cache-dir "ruff==0.16.8" && ruff --version
+        run: pip install --no-cache-dir "ruff==0.16.10" && ruff --version
 
       - name: Run ruff check on detector/
         run: ruff check detector/
@@ -144,7 +144,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.16.8" && ruff --version
+        run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.16.10" && ruff --version
 
       - name: Run ruff check
         run: ruff check .
