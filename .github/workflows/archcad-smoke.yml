@@ -1,0 +1,48 @@
+name: ArchCAD smoke
+
+# Runs load_archcad on the real (gated, CC BY-NC 4.0) ArchCAD release.
+# The data is downloaded with the HF_TOKEN secret into the runner's temp
+# dir and never committed or uploaded; only counts go to the job summary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_samples:
+        description: "JSON slices to load"
+        default: "500"
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - datasets_adapter.py
+      - scripts/archcad_smoke.py
+      - .github/workflows/archcad-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # secrets are not available to fork PRs
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install --no-cache-dir -e . huggingface_hub
+      - name: Download data/json.zip
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import hf_hub_download
+          p = hf_hub_download("jackluoluo/ArchCAD", "data/json.zip", repo_type="dataset",
+                              token=os.environ["HF_TOKEN"], local_dir=os.environ["RUNNER_TEMP"] + "/archcad")
+          print(p, os.path.getsize(p))
+          PY
+      - name: Run loader
+        run: python scripts/archcad_smoke.py --root "$RUNNER_TEMP/archcad" --max-samples "${{ inputs.max_samples || '500' }}"
