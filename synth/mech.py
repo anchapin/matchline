@@ -265,6 +265,80 @@ class _Net:
 # ---------------------------------------------------------------------------
 
 
+# Return-grille placement (#725). Real mechanical plans draw a return grille
+# at the end of its own branch duct, or alone for a plenum return: no other
+# duct runs through it (BSI Medical-Dental Clinic: 179 of 184 return terminals
+# sit on the end of a duct segment; TOSV first-level mechanical plan, Z-Group
+# Architects 2006: R1 grilles stand clear of every double-line duct). Placing
+# every grille at the same spot in each room stacked them on top of the return
+# main, the supply trunk, and the drops of the rooms above, where the outline
+# glyph vanished into the filled duct bar.
+GRI_CLEAR_M = 0.10
+
+
+def _comp_box(c):
+    return (
+        c["x_m"] - c["w_m"] / 2,
+        c["y_m"] - c["h_m"] / 2,
+        c["x_m"] + c["w_m"] / 2,
+        c["y_m"] + c["h_m"] / 2,
+    )
+
+
+def _piece_box(pc):
+    (x1, y1), (x2, y2) = pc["p1"], pc["p2"]
+    h = pc["w"] / 2
+    return (min(x1, x2) - h, min(y1, y2) - h, max(x1, x2) + h, max(y1, y2) + h)
+
+
+def _overlap(a, b, pad=0.0):
+    return a[0] - pad < b[2] and b[0] - pad < a[2] and a[1] - pad < b[3] and b[1] - pad < a[3]
+
+
+def _place_grille(net, boxes, rect, slot, y_ret):
+    """Deterministic grille spot in rect: its glyph clear of every duct and
+    symbol already placed, and its drop to the return main clear of every
+    vertical duct and symbol (crossing a horizontal duct is a normal,
+    gapped crossing). Rooms sharing a strip get staggered x slots so one
+    room's drop never runs through another room's grille. No RNG, so the
+    rest of the layout stream is unchanged."""
+    x0, y0, x1, y1 = rect
+    w, h = x1 - x0, y1 - y0
+    half = GRI_S / 2
+    xs = [x0 + 0.15 * w]
+    step = GRI_S + W_RDROP / 2 + GRI_CLEAR_M
+    for k in range(1, 12):
+        for sgn in (1, -1):
+            xs.append(x0 + 0.15 * w + sgn * k * step / 2)
+    xs = [x for x in xs if x0 + half + 0.2 <= x <= x1 - half - 0.2]
+    # the strip's k-th room starts from its own x slot
+    xs = xs[slot % len(xs) :] + xs[: slot % len(xs)] if slot else xs
+    y_pref = y0 + 0.75 * h
+    ys = sorted(
+        (y0 + half + 0.25 + i * 0.1 for i in range(int((h - 2 * half - 0.5) / 0.1) + 1)),
+        key=lambda y: abs(y - y_pref),
+    )
+    for gx in xs:
+        for gy in ys:
+            g = (gx - half, gy - half, gx + half, gy + half)
+            if any(_overlap(g, _piece_box(pc), GRI_CLEAR_M) for pc in net.pieces):
+                continue
+            if any(_overlap(g, b, GRI_CLEAR_M) for b in boxes):
+                continue
+            hd = W_RDROP / 2
+            drop = (gx - hd, min(gy, y_ret), gx + hd, max(gy, y_ret))
+            if any(
+                _overlap(drop, _piece_box(pc), GRI_CLEAR_M)
+                for pc in net.pieces
+                if pc["p1"][0] == pc["p2"][0] and pc["duct"] != "R-MAIN"
+            ):
+                continue
+            if any(_overlap(drop, b, GRI_CLEAR_M) for b in boxes):
+                continue
+            return gx, gy
+    return x0 + 0.15 * w, y0 + 0.75 * h  # no clear spot: legacy position
+
+
 def _layout_mech(rng):
     """Full plan description in meters. All randomness flows from rng."""
     W = float(rng.uniform(18, 26))
@@ -399,13 +473,15 @@ def _layout_mech(rng):
     net.add_piece(1.0, y_ret, W - 1.0, y_ret, W_RMAIN, "R-MAIN")
     net.add_piece(1.0, y_ret, 1.0, y_trunk, W_RDROP, "R-CONN")
     net.add_piece(1.0, y_trunk, 0.6, y_trunk, W_RDROP, "R-CONN")
+    placed_boxes = [_comp_box(c) for c in [ahu] + vavs + diffusers]
+    strip_slot: dict[float, int] = {}
     for r in room_info:
         gri_i += 1
         x0, y0, x1, y1 = r["rect_m"]
-        # near the left wall: clear of diffuser drops (which sit at
-        # cx +/- 0.22w or cx) so return and supply bars never merge
-        gx = x0 + 0.15 * (x1 - x0)
-        gy = r["cy"] + 0.25 * (y1 - y0)
+        k = strip_slot.get(x0, 0)
+        strip_slot[x0] = k + 1
+        gx, gy = _place_grille(net, placed_boxes, r["rect_m"], k, y_ret)
+        placed_boxes.append((gx - GRI_S / 2, gy - GRI_S / 2, gx + GRI_S / 2, gy + GRI_S / 2))
         grilles.append(
             {
                 "id": f"G{gri_i}",
