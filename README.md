@@ -82,6 +82,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
 | `sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
 | `pdf_schedules.py` | Schedule tables from vector PDF sheets: ruled cells, merged headers, door/window sizes, fixture watts, VAV/AHU airflow, unreadable tables flagged |
+| `construction_library.py` | Cited envelope U-values: wall-type and roof notes resolved to ASHRAE 90.1-2019 Table 5.5 by climate zone (`--climate-zone`), stated values never overwritten ([docs](docs/construction_library.md)) |
 | `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |

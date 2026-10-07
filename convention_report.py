@@ -114,21 +114,25 @@ def _area_budget(sres) -> dict:
     }
 
 
-def build_convention_report(model, report=None, sres=None) -> dict:
+def build_convention_report(model, report=None, sres=None, constructions=None) -> dict:
     """Collect the export's measured biases into one JSON-ready dict.
 
     ``report`` is the ValidationReport from ``run_checks``; when omitted the
     battery is run here (with ``sres``) so the volume bias still comes from
-    the same check.
+    the same check. ``constructions`` is the construction library summary
+    (#747); when given, resolved and unmatched constructions are reported.
     """
     if report is None:
         from validate import run_checks
 
         report = run_checks(model, sres=sres)
-    return {
+    out = {
         "schema": SCHEMA,
         "building": model.name,
         "volume_bias": _volume_bias(report),
         "non_room_area": _non_room_area(model),
         "area_budget": _area_budget(sres),
     }
+    if constructions is not None:
+        out["constructions"] = constructions.to_dict()
+    return out

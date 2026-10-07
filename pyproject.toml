@@ -71,6 +71,8 @@ py-modules = [
     "sheet_index",
     "plan_walls",
     "pdf_schedules",
+    "construction_library",
+    "construction_library_data",
     "limits",
     "jesse",
     "lighting",
