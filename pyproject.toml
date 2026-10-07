@@ -35,7 +35,7 @@ ocr = ["rapidocr_onnxruntime"]
 # Optional second OCR backend for schedule tags (#668); needs the tesseract binary
 ocr-tesseract = ["pytesseract"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow"]
+test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow"]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
