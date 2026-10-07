@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import math
 import os
 import sys
 import traceback
@@ -25,6 +26,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from datasets_adapter import ARCHCAD_TO_TAKEOFF, ArchCADFormatError, load_archcad  # noqa: E402
 
 
+def _ellipse_endpoint_fit(p: dict) -> str:
+    """Check the loader's ELLIPSE convention against the file's own endpoints."""
+    from datasets_adapter import _archcad_ellipse
+
+    tag = "ccw" if p.get("is_ccw") is not False else "cw"
+    try:
+        pts = _archcad_ellipse(p, "probe")
+        tol = 0.01 * math.hypot(*p["major_axis"][:2])
+        ok = all(
+            math.dist(pts[i], p[k][:2]) <= tol
+            for i, k in ((0, "start_point"), (-1, "end_point"))
+            if k in p
+        )
+    except Exception as e:  # noqa: BLE001 - report, never fail the probe
+        return f"{tag}:error:{type(e).__name__}"
+    return f"{tag}:{'match' if ok else 'mismatch'}"
+
+
 def probe_schema(zip_path: Path, n_files: int) -> list[str]:
     """Describe the raw JSON layout so drift from the dataset card is visible."""
     out = []
@@ -34,6 +53,7 @@ def probe_schema(zip_path: Path, n_files: int) -> list[str]:
     out.append(f"- first names: {', '.join(names[:3])}")
     top, pkeys, ptypes, sems, insts = (collections.Counter() for _ in range(5))
     loose, other_keys = collections.Counter(), collections.Counter()
+    ell_sem, ell_fit = collections.Counter(), collections.Counter()
     for n in names[:n_files]:
         data = json.loads(zf.read(n))
         if isinstance(data, dict):
@@ -53,6 +73,9 @@ def probe_schema(zip_path: Path, n_files: int) -> list[str]:
             insts[type(p.get("instance")).__name__] += 1
             if p.get("instance") is None:
                 loose[repr(p.get("semantic"))] += 1
+            if p.get("type") == "ELLIPSE":
+                ell_sem[repr(p.get("semantic"))] += 1
+                ell_fit[_ellipse_endpoint_fit(p)] += 1
             if p.get("type") not in ("LINE", "ARC", "CIRCLE"):
                 other_keys[f"{p.get('type')}: " + ",".join(sorted(p.keys()))] += 1
     out.append(f"- top-level shapes (first {n_files} files): {dict(top.most_common(5))}")
@@ -62,6 +85,11 @@ def probe_schema(zip_path: Path, n_files: int) -> list[str]:
     out.append(f"- instance value types: {dict(insts)}")
     out.append(f"- semantic ids with no instance: {dict(loose.most_common(40))}")
     out.append(f"- other primitive key sets: {dict(other_keys.most_common(5))}")
+    out.append(f"- ELLIPSE by semantic id: {dict(ell_sem.most_common(20))}")
+    out.append(
+        "- ELLIPSE endpoints vs start_point/end_point (loader polyline, "
+        f"within 1% of the major radius): {dict(ell_fit)}"
+    )
     return out
 
 
