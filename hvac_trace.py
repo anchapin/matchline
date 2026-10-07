@@ -58,6 +58,12 @@ NCC_THRESH = {"vav": 0.50, "ahu": 0.50, "diffuser": 0.50, "grille": 0.50, "senso
 #   WiSARD stage. AHU additionally requires WiSARD non-background.
 NCC_PROPOSE = {"vav": 0.55, "ahu": 0.55, "diffuser": 0.45, "grille": 0.45, "sensor": 0.55}
 NCC_ACCEPT = {"ahu": 0.55, "sensor": 0.60}
+# A proposal that came from the grille template at or above this NCC keeps the
+# grille label when WiSARD calls it a diffuser (#730): the two glyphs differ
+# only in the diagonals, and a near-exact grille template match is stronger
+# evidence than the context crop, which mislabels plenum-return grilles that
+# sit off the end of a duct.
+GRILLE_KEEP_NCC = 0.80
 WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
@@ -155,6 +161,13 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
             if is_bg:
                 continue
             label = MECH_CLASSES[int(wi_i)]
+            if (
+                cls == "grille"
+                and label == "diffuser"
+                and GRILLE_KEEP_NCC is not None
+                and s >= GRILLE_KEEP_NCC
+            ):
+                label = "grille"
         elif cls == "ahu":
             if s < NCC_ACCEPT["ahu"] or is_bg:
                 continue
