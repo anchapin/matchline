@@ -197,6 +197,27 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
         print(f"wrote {args.out}")
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Read a PDF drawing set into per-page sheet records (#737)."""
+    from pathlib import Path
+
+    from pdf_ingest import ingest_pdf
+
+    res = ingest_pdf(Path(args.path), out_dir=args.out, dpi=args.dpi, rasterize=not args.no_raster)
+    kinds: dict = {}
+    for s in res.sheets:
+        kinds[s.kind] = kinds.get(s.kind, 0) + 1
+    print(f"pages: {res.n_pages}  " + "  ".join(f"{k}: {v}" for k, v in sorted(kinds.items())))
+    for s in res.sheets:
+        print(
+            f"  page {s.page_number:3d}  {s.kind:11s}  {s.width_pt:.0f}x{s.height_pt:.0f} pt"
+            f"  rot {s.rotation:3d}  paths {len(s.primitives):6d}  text {len(s.text):5d}"
+        )
+    for w in res.warnings:
+        print(f"WARNING {w}")
+    print(f"wrote {args.out}/ingest.json")
+
+
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
     from ifc_export import export_ifc
@@ -343,6 +364,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="input .ifc file")
     p.add_argument("--out", default=None, help="write canonical model JSON here")
     p.set_defaults(func=cmd_ifc_import)
+
+    p = sub.add_parser(
+        "ingest",
+        help="read a PDF drawing set into per-page sheet records (raster + vectors + text)",
+    )
+    p.add_argument("path", help="input .pdf drawing set")
+    p.add_argument("--out", required=True, help="output folder for sheet_NNN.{png,json}")
+    p.add_argument("--dpi", type=float, default=150.0, help="raster resolution (default 150)")
+    p.add_argument("--no-raster", action="store_true", help="skip rendering page images")
+    p.set_defaults(func=cmd_ingest)
 
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")

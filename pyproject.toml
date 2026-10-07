@@ -27,6 +27,8 @@ dependencies = [
     "lxml>=4.9.0",
     "ifcopenshell>=0.9",
     "jsonschema",
+    # PDF drawing-set ingestion (#737); Apache-2.0/BSD-3 (PyMuPDF avoided: AGPL)
+    "pypdfium2>=4.30",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +66,8 @@ py-modules = [
     "hvac_trace",
     "ifc_import",
     "opening_identity",
+    "pdf_ingest",
+    "limits",
     "jesse",
     "lighting",
     "link",
