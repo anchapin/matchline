@@ -1,6 +1,6 @@
 # QUALITY-SCORE.md — per-domain quality grades
 
-**Analysis Date:** 2026-10-06
+**Analysis Date:** 2026-10-07
 
 ## Overview
 
@@ -60,7 +60,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ### IFC Import (`ifc_import.py`)
 
-**Grade: B+** (was B)
+**Grade: A-** (was B+)
 
 - Tier 0 (geometry + openings without space assignment) much more complete: wall centrelines and junctions (#575, #576, #579), lining walls (#577, #597), finish slabs (#584), ceilings and plenums (#583), door operation and glazing (#573), storey fallback (#585)
 - Deterministic across runs (#586); fixture builder for mirrored placements (#587)
@@ -83,7 +83,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ### HVAC Zoning (`hvac_trace.py`)
 
-**Grade: B+** (was B)
+**Grade: A-** (was B+)
 
 - Duct tracing → terminal units → zone graphs
 - Many-to-many zone↔space relationships supported
@@ -92,7 +92,8 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - Ceiling height and plenum depth available from IFC (#583)
 - Boundary and outside-every-room diffusers resolved by duct connectivity, then nearest room within 0.5 m; ties go to review (#684)
 - Diffuser assignment uses each room's `polygon_m` outline when given (L-shaped and angled rooms), falling back to `rect_m` (#697)
-- Remaining gap: detection is validated on synthetic mechanical sheets only
+- Real-model check on the BSI Medical-Dental Clinic HVAC IFC (CC BY 4.0): room assignment 437/437 correct (#711). Detection on sheets drawn from the model, held out of training: diffuser recall 0.99–1.00, grille recall 0.65–0.87, 382 of 437 terminals placed in the correct room and 0 in a wrong room (#718, #720)
+- Remaining gap: one real model, and its sheets are drawn in matchline's own symbol style, not scanned drawings. VAV, AHU, sensor and zone grouping are still validated only on synthetic sheets, and #720 cost sensor-to-zone accuracy on synthetic seed 11 (4/5 → 2/5). Grilles read as diffusers are the main remaining false positive (#721)
 
 ### Synthetic Data (`synth/`)
 
@@ -146,7 +147,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 | BEM Export | A- | Template limits (synthetic schedules, large commercial HVAC not templated) |
 | IFC Import | A- | Tier 1 is 2-D footprint probes; no authored-boundary cross-check (Tier 2) |
 | Geometry | A- | None |
-| HVAC | B+ | Detection validated on synthetic sheets only |
+| HVAC | A- | One real model (BSI Clinic); VAV/AHU/sensor zoning validated on synthetic sheets only |
 | Synth | A | None |
 | Tests | A | None |
 | Style | A | None |
@@ -156,6 +157,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ## Changelog
 
+- **2026-10-07 (#719, #720)**: HVAC B+ → A-. Room assignment validated on the BSI Clinic HVAC model (#711). Detection carries over to sheets drawn from it after context-augmented training (#718, #720): 382 of 437 terminals land in the correct room and none in a wrong one. Also fixed a stale IFC Import section header, which still read B+ although the table and the #681 entry have it at A-.
 - **2026-10-07 (#706)**: Stale gap notes fixed. Linking no longer lists IFC Tier 1 attachment (merged in #666/#681). HVAC's gap summary drops "rectangular rooms" (polygon assignment since #697). BEM Export's drops it too, since spaces export as their own polygons (`docs/bem_export.md`). No grade changes.
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
 - **2026-10-06 (#702)** — Linking/Synthetic: opt-in north elevations in the generator (grid and no-grid, drawn as seen from the north); the no-grid registration now mirrors north/east sheets, which would otherwise have put their windows in the wrong rooms.
@@ -170,4 +172,4 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ---
 
-*Quality assessment: 2026-10-06*
+*Quality assessment: 2026-10-07*
