@@ -64,6 +64,14 @@ NCC_ACCEPT = {"ahu": 0.55, "sensor": 0.60}
 # evidence than the context crop, which mislabels plenum-return grilles that
 # sit off the end of a duct.
 GRILLE_KEEP_NCC = 0.80
+# Second grille pass with a stub-less, margin-free template (#730). Grilles
+# drawn over a filled duct band score low against the stubbed template because
+# the duct ink fills its white margin; the tight template matches the glyph
+# box alone. A tight match at or above this NCC with no detection within
+# ASSOC_PX is added as a grille, and a diffuser detection sitting on it
+# (within GRILLE_TIGHT_SNAP_PX) is relabeled grille. None disables the pass.
+GRILLE_TIGHT_NCC = 0.95
+GRILLE_TIGHT_SNAP_PX = 3
 WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
@@ -188,6 +196,32 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
                 "margin": round(float(m), 2),
             }
         )
+    if GRILLE_TIGHT_NCC is not None:
+        from synth.mech import render_template
+
+        tt = render_template("grille", margin_px=0, stubs=False)
+        th, tw = tt.shape
+        for y, x, s in ncc_locate(gray, tt, thresh=GRILLE_TIGHT_NCC):
+            cx, cy = x + tw / 2, y + th / 2
+            near = [d for d in out if math.hypot(d["cx"] - cx, d["cy"] - cy) <= ASSOC_PX]
+            if not near:
+                out.append(
+                    {
+                        "label": "grille",
+                        "cx": cx,
+                        "cy": cy,
+                        "w": tw,
+                        "h": th,
+                        "ncc_cls": "grille",
+                        "ncc": round(s, 3),
+                        "margin": 0.0,
+                    }
+                )
+                continue
+            for d in near:
+                snap = math.hypot(d["cx"] - cx, d["cy"] - cy) <= GRILLE_TIGHT_SNAP_PX
+                if d["label"] == "diffuser" and snap:
+                    d["label"] = "grille"
     # One AHU per sheet in the generator (and typically one per real plan):
     # keep the top-NCC AHU proposal so a lowered accept threshold can't
     # spawn false AHUs on VAV boxes.
