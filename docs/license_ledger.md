@@ -38,7 +38,7 @@ only when the build carries `NOTICE.md`.
 
 ```
 python scripts/check_release_licenses.py                 # ledger + committed files
-pip wheel --no-deps --no-build-isolation -w dist .
+pip wheel --no-deps -w dist .
 python scripts/check_release_licenses.py dist/*.whl      # ... and the build
 ```
 

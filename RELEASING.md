@@ -9,7 +9,7 @@ only ever receive release PRs.
 2. Update `CHANGELOG.md`: move items from `[Unreleased]` into a new
    `[X.Y.Z] - YYYY-MM-DD` section.
 3. Bump `version` in `pyproject.toml`.
-4. Check licenses: `pip wheel --no-deps --no-build-isolation -w dist .` then
+4. Check licenses: `pip wheel --no-deps -w dist .` then
    `python scripts/check_release_licenses.py dist/*.whl`. It must pass: nothing
    trained on non-commercial or copyleft data ships, and share-alike data ships
    with `NOTICE.md` (see `license_ledger.json`, docs/license_ledger.md).

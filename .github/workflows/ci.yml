@@ -155,7 +155,7 @@ jobs:
       - name: Check licenses (ledger, committed artifacts, built wheel)
         # #751: nothing trained on non-commercial or copyleft data may ship
         run: |
-          pip wheel --no-cache-dir --no-deps --no-build-isolation -w "$RUNNER_TEMP/dist" .
+          pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
           python scripts/check_release_licenses.py "$RUNNER_TEMP"/dist/*.whl
 
       - name: Run pytest
