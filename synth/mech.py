@@ -553,7 +553,41 @@ def _m2px(x_m, y_m):
     return ((x_m + MARGIN_M) * PX_PER_M, (y_m + MARGIN_M) * PX_PER_M)
 
 
-def render_mech_sheet(net, gt, room_info):
+_TAG_TEXT = {"diffuser": ("SD-1", "SD-2", "CD-1"), "grille": ("RG-1", "RG-2", "EG-1")}
+
+
+def _realistic_overlay_plan(gt, rng):
+    """Per-terminal render tweaks for ``realistic=True`` (#721).
+
+    Real plans feed returns from the side, bring flex into supply diffusers
+    on a diagonal and print an air-device tag (type + airflow) beside each
+    terminal. Positions and topology are unchanged; only pixels differ.
+    Returns {terminal_id: {"entry": "side"|"flex"|None, "tag": str|None,
+    "tag_dx": float, "tag_dy": float}}.
+    """
+    plan = {}
+    for c in gt["components"]:
+        if c["type"] not in ("diffuser", "grille"):
+            continue
+        entry = None
+        if c["type"] == "grille" and rng.random() < 0.6:
+            entry = "side"
+        elif c["type"] == "diffuser" and rng.random() < 0.5:
+            entry = "flex"
+        tag = None
+        if rng.random() < 0.7:
+            tag = f"{_TAG_TEXT[c['type']][rng.integers(3)]} {int(rng.integers(6, 30)) * 10}"
+        plan[c["id"]] = {
+            "entry": entry,
+            "tag": tag,
+            "flex_side": float(rng.choice([-1.0, 1.0])),
+            "tag_dx": float(rng.uniform(0.35, 0.6)) * float(rng.choice([-1.0, 1.0])),
+            "tag_dy": float(rng.uniform(-0.5, 0.2)),
+        }
+    return plan
+
+
+def render_mech_sheet(net, gt, room_info, realistic_rng=None):
     W, D = gt["W_m"], gt["D_m"]
     img = Image.new(
         "L", (int((W + 2 * MARGIN_M) * PX_PER_M), int((D + 2 * MARGIN_M) * PX_PER_M)), 255
@@ -569,7 +603,42 @@ def render_mech_sheet(net, gt, room_info):
     # ducts: solid filled bars. Pad ONLY perpendicular to the duct axis:
     # padding along the axis would fill the crossing gaps that keep the
     # duct graph topologically honest.
+    plan = _realistic_overlay_plan(gt, realistic_rng) if realistic_rng is not None else {}
+    # terminal at a vertical drop's end -> (component, which end)
+    ends = {}
+    if plan:
+        for c in gt["components"]:
+            if plan.get(c["id"], {}).get("entry"):
+                ends[(round(c["x_m"], 4), round(c["y_m"], 4))] = c
+    segs = []
     for x1, y1, x2, y2, w in net.iter_draw():
+        c = ends.get((round(x2, 4), round(y2, 4))) if abs(x1 - x2) < 1e-6 else None
+        flip = False
+        if c is None and abs(x1 - x2) < 1e-6:
+            c = ends.get((round(x1, 4), round(y1, 4)))
+            flip = c is not None
+        if c is not None and abs(y2 - y1) > 1.0:
+            if flip:  # orient so (x2, y2) is the terminal end
+                x1, y1, x2, y2 = x2, y2, x1, y1
+            sgn = 1.0 if y2 > y1 else -1.0
+            jog = 0.7
+            ys = y2 - sgn * jog
+            segs.append((x1, y1, x2, ys, w))  # straight run stops short
+            info = plan[c["id"]]
+            half = c["w_m"] / 2
+            if info["entry"] == "side":
+                # duct jogs beside the grille and enters its side face
+                xo = x2 - (half + w / 2 + 0.15)
+                segs.append((x2, ys, xo, ys, w))
+                segs.append((xo, ys, xo, y2, w))
+                segs.append((xo, y2, x2 - half, y2, w))
+            else:  # flex: diagonal into a side face of the diffuser
+                fx = x2 + info["flex_side"] * half
+                (a, b), (e, f2) = _m2px(x2, ys), _m2px(fx, y2)
+                d.line([a, b, e, f2], fill=0, width=max(3, int(w * PX_PER_M * 0.7)))
+            continue
+        segs.append((x1, y1, x2, y2, w))
+    for x1, y1, x2, y2, w in segs:
         (px1, py1), (px2, py2) = _m2px(x1, y1), _m2px(x2, y2)
         hw = w * PX_PER_M / 2
         if abs(px1 - px2) >= abs(py1 - py2):  # horizontal
@@ -586,14 +655,28 @@ def render_mech_sheet(net, gt, room_info):
         _GLYPH_FN[c["type"]](d, cx, cy)
         if c["type"] in ("vav", "ahu"):
             _draw_tag(d, cx, cy, c["w_m"], c["h_m"], c["tag"])
+        info = plan.get(c["id"])
+        if info and info["tag"]:
+            tx = cx + info["tag_dx"] * PX_PER_M - (60 if info["tag_dx"] < 0 else 0)
+            ty = cy + info["tag_dy"] * PX_PER_M
+            d.text((tx, ty), info["tag"], fill=0, font=_font(14))
     return img
 
 
-def generate_mech_sheet(seed: int):
+def generate_mech_sheet(seed: int, realistic: bool = False):
+    """Synthetic mechanical sheet + ground truth.
+
+    realistic=True (#721) draws the same layout and ground truth with
+    real-plan habits: returns fed from the side, flex diagonals into
+    diffusers, air-device tags beside terminals. The tweaks use their own
+    RNG stream, so the layout for a seed never changes.
+    """
     rng = np.random.default_rng(seed)
     net, gt, room_info = _layout_mech(rng)
     gt["seed"] = seed
-    return render_mech_sheet(net, gt, room_info), gt
+    gt["realistic"] = realistic
+    rr = np.random.default_rng([seed, 721]) if realistic else None
+    return render_mech_sheet(net, gt, room_info, realistic_rng=rr), gt
 
 
 def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
@@ -788,6 +871,7 @@ def training_crops_from_sheets(
     bg_per_sheet: int = 50,
     context_per_class: int = 0,
     context_bg: int | None = None,
+    realistic: bool = False,
 ):
     """WiSARD training set cut from synthetic sheets at GT positions.
 
@@ -805,7 +889,7 @@ def training_crops_from_sheets(
     counts = {c: 0 for c in MECH_CLASSES}
     s = 0
     while min(counts.values()) < n_per_class:
-        img, gt = generate_mech_sheet(1000 + s)
+        img, gt = generate_mech_sheet(1000 + s, realistic=realistic)
         s += 1
         W, H = img.size
         gray = np.asarray(img).astype(np.float64)

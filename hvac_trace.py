@@ -526,12 +526,12 @@ def _match_detections(pred, gt_comps, cls, tol_px=25):
     return tp, len(pp) - tp, len(gg) - tp
 
 
-def validate_hvac_solution(seeds, clf, templates):
+def validate_hvac_solution(seeds, clf, templates, realistic: bool = False):
     from synth.mech import generate_mech_sheet
 
     rows = []
     for seed in seeds:
-        img, gt = generate_mech_sheet(seed)
+        img, gt = generate_mech_sheet(seed, realistic=realistic)
         gray = np.asarray(img).astype(np.float64)
         res = trace_sheet(gray, gt, clf, templates)
         # detection P/R

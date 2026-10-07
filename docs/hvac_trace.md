@@ -160,3 +160,47 @@ Synthetic, seeds 11/22/33/44, with the #720 classifier:
 Other classes are unchanged. The Clinic detection check scores `detect_components` output, which comes before this rule, so its numbers are unchanged.
 
 Room Rand only counts room pairs where both rooms got a zone, so it stayed at 1.0 while half of seed 11 was unzoned. Read it together with sensor-to-zone accuracy or zone coverage.
+
+## Realistic synthetic sheets (#721, part 2)
+
+`generate_mech_sheet(seed, realistic=True)` draws the same layout and ground
+truth as the default sheet, with three habits seen on the BSI Clinic plans:
+
+- about 60% of return grilles are fed from the side: the drop jogs beside the
+  grille and enters its side face;
+- about 50% of supply diffusers take a diagonal flex connection into a side
+  face for the last 0.7 m;
+- about 70% of terminals get an air-device tag (for example `SD-1 150`) beside
+  them.
+
+The tweaks use their own random stream (`[seed, 721]`), so component ids,
+positions and zones are identical to the default sheet for the same seed. The
+default sheets, and every existing benchmark number, are unchanged.
+`validate_hvac_solution(..., realistic=True)` and
+`training_crops_from_sheets(..., realistic=True)` pass the flag through.
+
+Benchmark with the current detector (seeds 11/22/33/44, tp/fp/fn summed):
+
+| | default sheets | realistic sheets |
+|---|---|---|
+| diffuser | 40/6/8 | 40/6/8 |
+| grille | 16/0/8 | 13/0/11 |
+| sensor-to-zone | 4/5, 4/4, 4/6, 2/2 | 2/5, 3/4, 4/6, 2/2 |
+| room Rand | 1.0 all | 1.0 all |
+
+Findings:
+
+- **Diagonal flex breaks zoning.** Turning off only the flex tweak restores
+  sensor-to-zone to 4/5, 4/4, 4/6, 2/2; turning off the side feeds or the tags
+  changes nothing. The tracer's 13 px square opening (`OPEN_PX`) cannot fit
+  inside a diagonal bar narrower than about 18 px, so a flex run is erased and
+  its diffuser drops out of the zone. Drawing the flex at full drop width
+  (15 px) does not help.
+- **Training on realistic sheets does not close the gap.** Training crops from
+  realistic sheets (with the #720 context crops) moved realistic grille recall
+  from 13 to 14 of 24 and cost 10 correct terminals on the Clinic (382 to 372
+  of 437). Without context crops, grille recall collapsed to 1 of 24.
+
+Next step: make the duct opening keep diagonal runs (for example a union of
+openings with axis and diagonal structuring elements), then re-check the
+default, realistic and Clinic numbers.
