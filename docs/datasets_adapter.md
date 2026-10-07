@@ -93,7 +93,7 @@ Only `LINE` and `CIRCLE` appear on the dataset card; the `ARC` and polyline keys
 - **Tag text comes from OCR, not annotations** — the annotation sets carry glyph labels only; `extract_with_tags` (#668) reads the printed tags.
 - **Drawing scale must be parsed separately** — the module does not read title blocks or calibration marks.
 - **No HVAC quantities** — fixture counts are tracked but physical dimensions are not.
-- **FloorPlanCAD SVG path is not implemented**; only the parquet export loads. The ArchCAD loader is built to the dataset card's documented JSON layout and not yet run on the real download (access is gated).
+- **FloorPlanCAD SVG path is not implemented**; only the parquet export loads. The ArchCAD loader has run on the real download (#726, `archcad-smoke` workflow, 500 of 41,097 slices): 4,492 symbols, most often concrete columns (1,183), piles (811), holes (575) and single doors (432). Countable primitives with no `instance` id (some piles, columns and doors in the real files) are skipped, not counted. ELLIPSE primitives (about 1% of primitives) are not rasterized yet.
 - **ArchCAD has no drawing scale** — areas stay in drawing units² unless `scale_m_per_px` is given.
 
 ## OCR schedule tags (#668)
