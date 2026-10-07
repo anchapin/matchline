@@ -235,6 +235,26 @@ def cmd_scale(args: argparse.Namespace) -> None:
     print(f"wrote {args.sheets}/scale.json")
 
 
+def cmd_index(args: argparse.Namespace) -> None:
+    """Index an ingested drawing set by discipline, type and level (#738)."""
+    from sheet_index import index_sheets
+
+    idx = index_sheets(args.sheets)
+    for e in idx.sheets:
+        num = e.value("number") or "?"
+        kind = e.value("type") or "?"
+        lvl = e.value("level") or "-"
+        use = "takeoff" if e.use_for_takeoff else ""
+        flag = "  REVIEW" if e.needs_review else ""
+        print(f"  {e.file}  {num:<8} {kind:<14} {lvl:<5} {use:<7} {e.value('title') or ''}{flag}")
+    for lvl, by in idx.levels.items():
+        pairs = "  ".join(f"{d}: {', '.join(n)}" for d, n in by.items())
+        print(f"  {lvl}: {pairs}")
+    for w in idx.warnings:
+        print(f"  WARNING {w}")
+    print(f"wrote {args.sheets}/sheet_index.json")
+
+
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
     from ifc_export import export_ifc
@@ -395,6 +415,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("scale", help="read each ingested sheet's drawing scale")
     p.add_argument("sheets", help="folder written by `matchline ingest`")
     p.set_defaults(func=cmd_scale)
+
+    p = sub.add_parser("index", help="index sheets by discipline, type and level")
+    p.add_argument("sheets", help="folder written by `matchline ingest`")
+    p.set_defaults(func=cmd_index)
 
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")
