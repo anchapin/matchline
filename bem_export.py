@@ -59,6 +59,7 @@ from bem_helpers import (
     _wall_edges,
 )
 from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
+from bem_loads import write_schedules, write_space_loads
 from bem_roof import is_sloped, roof_pieces, shell_volume, space_shell, wall_top
 from safe_xml import safe_xml_parse, safe_xml_parser
 
@@ -225,6 +226,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     _el(storey, "Level", "0")
 
     tzones, zone_of = _write_zones(root, model)
+    schedule_ids = write_schedules(root, model.spaces)  # #691
     air_walls = list(getattr(model, "air_walls", None) or [])
 
     roofs = list(getattr(model, "roof_planes", None) or [])
@@ -253,6 +255,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             attrs["zoneIdRef"] = zref
         se = _el(bldg, "Space", **attrs)
         _el(se, "Name", sp.name)
+        write_space_loads(se, sp, schedule_ids)  # #691
         if sp.number:
             _el(se, "CADObjectId", sp.number)
         _el(se, "Area", _fmt(sp.area_m2))
@@ -794,7 +797,16 @@ def _gbxml_semantic_checks(doc) -> list:
                 errs.append(f"duplicate id '{i}'")
             ids[i] = el.tag
     for el in doc.getroot().iter():
-        for attr in ("spaceIdRef", "buildingStoreyIdRef", "zoneIdRef"):
+        for attr in (
+            "spaceIdRef",
+            "buildingStoreyIdRef",
+            "zoneIdRef",
+            "lightScheduleIdRef",
+            "peopleScheduleIdRef",
+            "equipmentScheduleIdRef",
+            "dayScheduleIdRef",
+            "weekScheduleIdRef",
+        ):
             ref = el.get(attr)
             if ref and ref not in ids:
                 errs.append(f"{el.tag} references unknown id '{ref}' ({attr})")

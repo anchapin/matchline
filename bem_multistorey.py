@@ -44,6 +44,7 @@ from bem_helpers import (
     _wall_edges,
 )
 from bem_levels import hole_free
+from bem_loads import write_schedules, write_space_loads
 from grade import GRADE_TOL_M, Terrain
 
 MIN_PIECE_M2 = 1e-4
@@ -287,6 +288,7 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         _el(st, "Level", _fmt(lv.elevation_m))
 
     tzones, zone_of = _write_zones(root, model)
+    schedule_ids = write_schedules(root, model.spaces)  # #691
     air_walls = list(getattr(model, "air_walls", None) or [])
     wall_cons = _write_constructions(root, model, air_walls)
     space_level = space_levels(model, levels)
@@ -337,6 +339,7 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
             attrs["zoneIdRef"] = zref
         se = _el(bldg, "Space", **attrs)
         _el(se, "Name", sp.name)
+        write_space_loads(se, sp, schedule_ids)  # #691
         if sp.number:
             _el(se, "CADObjectId", sp.number)
         _el(se, "Area", _fmt(sp.area_m2))
