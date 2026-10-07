@@ -210,10 +210,21 @@ def stage_check(gray, frame, storey, clf, templates):
 
 def build_detector():
     from hvac_trace import MECH_CLASSES, WisardClassifier
-    from synth.mech import render_template, training_crops_from_sheets
+    from synth.mech import (
+        CONTEXT_BG,
+        CONTEXT_PER_CLASS,
+        render_template,
+        training_crops_from_sheets,
+    )
 
     # same recipe as hvac_trace.main()
-    X, y, names = training_crops_from_sheets(n_per_class=200, seed=0, bg_per_sheet=8)
+    X, y, names = training_crops_from_sheets(
+        n_per_class=200,
+        seed=0,
+        bg_per_sheet=8,
+        context_per_class=CONTEXT_PER_CLASS,
+        context_bg=CONTEXT_BG,
+    )
     clf = WisardClassifier(len(names), seed=42)
     clf.fit(X, y)
     return clf, {c: render_template(c) for c in MECH_CLASSES}
