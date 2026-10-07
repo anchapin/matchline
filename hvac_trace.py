@@ -40,6 +40,8 @@ from scipy.signal import fftconvolve
 from building_model import Provenance
 from jesse import WisardClassifier, zhang_suen
 from synth.mech import (
+    CONTEXT_BG,
+    CONTEXT_PER_CLASS,
     MECH_CLASSES,
     PX_PER_M,
     render_template,
@@ -611,7 +613,13 @@ def validate_hvac_solution(seeds, clf, templates):
 
 def main():
     print("training WiSARD on sheet-cut synthetic mech crops ...", flush=True)
-    X, y, names = training_crops_from_sheets(n_per_class=200, seed=0, bg_per_sheet=8)
+    X, y, names = training_crops_from_sheets(
+        n_per_class=200,
+        seed=0,
+        bg_per_sheet=8,
+        context_per_class=CONTEXT_PER_CLASS,
+        context_bg=CONTEXT_BG,
+    )
     clf = WisardClassifier(len(names), seed=42)
     clf.fit(X, y)
     tr = clf.predict_logodds(X)

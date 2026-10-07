@@ -681,7 +681,114 @@ def detection_crop(gray: np.ndarray, cx_px: float, cy_px: float, cls: str) -> np
     return normalize_crop(crop.astype(np.float64))
 
 
-def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_sheet: int = 50):
+# Context augmentation (#719): real plans connect terminals from any side,
+# run flex ducts in on diagonals and print room labels next to symbols. The
+# synthetic sheets only ever show a vertical drop with clear space around the
+# glyph, so WiSARD learned "clean context" as part of the class.
+CONTEXT_CLASSES = ("diffuser", "grille")
+# Detector recipe (#719): 600 context crops per terminal class plus 600
+# cluttered background. 300 helped diffusers only; 600 with the default 1200
+# background collapsed VAV/AHU recall through class imbalance.
+CONTEXT_PER_CLASS = 600
+CONTEXT_BG = 600
+_CTX_LABELS = ("OFFICE", "EXAM", "CORRIDOR", "STORAGE", "TOILET", "LOUNGE", "WORK ROOM", "CLEAN U.")
+
+
+def _context_clutter(d: ImageDraw.ImageDraw, rng, side: int, keep_clear=None):
+    """Walls, duct bars (axis and diagonal) and a room label on a patch.
+
+    keep_clear: (x0, y0, x1, y1) box nothing is drawn through (the symbol).
+    """
+    c = side / 2
+    for _ in range(int(rng.integers(0, 3))):  # walls
+        if rng.random() < 0.5:
+            y = rng.uniform(0, side)
+            d.line([0, y, side, y], fill=0, width=3)
+        else:
+            x = rng.uniform(0, side)
+            d.line([x, 0, x, side], fill=0, width=3)
+    for _ in range(int(rng.integers(0, 3))):  # passing duct runs
+        w = rng.uniform(W_DROP, W_TRUNK) * PX_PER_M
+        if rng.random() < 0.7:
+            if rng.random() < 0.5:
+                y = rng.uniform(0, side)
+                d.rectangle([0, y - w / 2, side, y + w / 2], fill=0)
+            else:
+                x = rng.uniform(0, side)
+                d.rectangle([x - w / 2, 0, x + w / 2, side], fill=0)
+        else:
+            a = rng.uniform(0, math.pi)
+            ox, oy = rng.uniform(0, side, 2)
+            dx, dy = math.cos(a) * side, math.sin(a) * side
+            d.line([ox - dx, oy - dy, ox + dx, oy + dy], fill=0, width=int(w * 0.6))
+    if rng.random() < 0.6:  # room label
+        t = f"{rng.integers(1, 3)}{chr(65 + rng.integers(0, 5))}{rng.integers(1, 40)} "
+        t += _CTX_LABELS[rng.integers(len(_CTX_LABELS))]
+        d.text((rng.uniform(0, side * 0.6), rng.uniform(0, side * 0.8)), t, fill=0, font=_font(18))
+    if keep_clear is not None:
+        d.rectangle(keep_clear, fill=255)
+    return c
+
+
+def context_crops(n_per_class: int, seed: int = 0, bg_per_class: int | None = None):
+    """Glyph-in-context crops for CONTEXT_CLASSES plus cluttered background.
+
+    Each symbol patch gets 0-4 drops entering from random sides (straight or
+    a diagonal flex run), optional walls, passing ducts and a room label, then
+    the glyph over a white box, as on a real plan. Background patches get the
+    same clutter with no symbol. Returns (X, y) with background labelled
+    len(MECH_CLASSES), the same convention as training_crops_from_sheets.
+    """
+    rng = np.random.default_rng([seed, 719])
+    side = 240
+    X, y = [], []
+    bg_n = n_per_class * len(CONTEXT_CLASSES) if bg_per_class is None else bg_per_class
+    for cls in CONTEXT_CLASSES:
+        w_m, h_m = _GLYPH_EXT[cls]
+        sw, sh = w_m * PX_PER_M, h_m * PX_PER_M
+        for _ in range(n_per_class):
+            img = Image.new("L", (side, side), 255)
+            d = ImageDraw.Draw(img)
+            c = _context_clutter(d, rng, side)
+            sides = rng.permutation(4)[: int(rng.integers(0, 5))]
+            for k in sides:
+                wd = rng.uniform(0.2, W_DROP + 0.1) * PX_PER_M
+                ex, ey = [(0, c), (side, c), (c, 0), (c, side)][k]
+                if rng.random() < 0.3:  # flex: comes in on a diagonal
+                    ex += rng.uniform(-60, 60) if k >= 2 else 0
+                    ey += rng.uniform(-60, 60) if k < 2 else 0
+                d.line([ex, ey, c, c], fill=0, width=int(wd))
+            d.rectangle([c - sw / 2, c - sh / 2, c + sw / 2, c + sh / 2], fill=255)
+            _GLYPH_FN[cls](d, c, c)
+            jx, jy = rng.uniform(-6, 6, 2)
+            g = np.asarray(img).astype(np.float64)
+            X.append(detection_crop(g, c + jx, c + jy, cls))
+            y.append(MECH_CLASSES.index(cls))
+    for _ in range(bg_n):
+        img = Image.new("L", (side, side), 255)
+        d = ImageDraw.Draw(img)
+        c = _context_clutter(d, rng, side)
+        # a duct junction at the centre: the commonest confuser
+        if rng.random() < 0.5:
+            for k in rng.permutation(4)[: int(rng.integers(2, 5))]:
+                ex, ey = [(0, c), (side, c), (c, 0), (c, side)][k]
+                d.line([ex, ey, c, c], fill=0, width=int(rng.uniform(0.2, 0.5) * PX_PER_M))
+        g = np.asarray(img).astype(np.float64)
+        # only at terminal crop sizes: VAV boxes sit inline on ducts, so
+        # VAV-size cluttered crops taught "duct through a box" = background
+        size_cls = CONTEXT_CLASSES[rng.integers(len(CONTEXT_CLASSES))]
+        X.append(detection_crop(g, c + rng.uniform(-20, 20), c + rng.uniform(-20, 20), size_cls))
+        y.append(len(MECH_CLASSES))
+    return np.stack(X), np.asarray(y, dtype=np.int64)
+
+
+def training_crops_from_sheets(
+    n_per_class: int = 200,
+    seed: int = 0,
+    bg_per_sheet: int = 50,
+    context_per_class: int = 0,
+    context_bg: int | None = None,
+):
     """WiSARD training set cut from synthetic sheets at GT positions.
 
     ±6 px jitter on the crop center mirrors NCC proposal error so the
@@ -689,7 +796,9 @@ def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_she
     inference. A 6th "background" class is cut at random sheet positions
     (>= 60 px from any symbol) with randomly chosen symbol crop sizes;
     without it the forced 5-way choice confidently mislabels duct
-    junctions and wall corners as symbols. Returns (X, y, classes).
+    junctions and wall corners as symbols. context_per_class > 0 appends
+    ``context_crops`` (#719); 0 keeps the original training set exactly.
+    Returns (X, y, classes).
     """
     rng = np.random.default_rng(seed)
     X, y = [], []
@@ -733,6 +842,9 @@ def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_she
                 made += 1
     X = np.stack(X)
     y = np.asarray(y, dtype=np.int64)
+    if context_per_class:
+        cx_, cy_ = context_crops(context_per_class, seed=seed, bg_per_class=context_bg)
+        X, y = np.concatenate([X, cx_]), np.concatenate([y, cy_])
     perm = rng.permutation(len(y))
     classes = MECH_CLASSES + ["background"]
     return X[perm], y[perm], classes

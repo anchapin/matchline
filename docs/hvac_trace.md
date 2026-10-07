@@ -114,3 +114,32 @@ Every terminal that was detected landed in the right room (0 wrong, 0 review). D
 - **WiSARD rejects most real terminals as background.** At the true position of each terminal, the classifier answers `background` for 358 of 440. It also calls 33 grilles diffusers.
 
 The classifier was trained on crops from synthetic sheets, where every terminal hangs off a vertical drop with clear space around it. On the Clinic sheets, ducts reach terminals from any side, flex ducts come in on diagonals, and room labels sit close by. Those crops fall outside what WiSARD learned. The likely fix is training-side (crops with drops from all four sides and diagonal flex, text nearby, more background drawn from real-layout clutter). That changes the detector's synthetic results, so it's tracked separately for review.
+
+## Context-augmented classifier training (#719)
+
+The #718 check showed the NCC proposals finding almost every Clinic terminal, then WiSARD rejecting most of them as `background`. On the synthetic sheets, every terminal hangs off a vertical drop with clear space around it, so the classifier had learned "clean context" as part of the class. `synth/mech.py::context_crops` adds diffuser and grille crops with the glyph drawn in context: 0–4 drops entering from random sides, some on a flex diagonal, plus walls, passing ducts and room labels. It also adds background crops with the same clutter and no symbol, half of them centred on a duct junction. Background crops are cut only at terminal sizes, because VAV-size cluttered crops taught the classifier that a duct through a box is background, and VAV recall fell. The detector recipe in `hvac_trace.main` and the Clinic harness now appends `CONTEXT_PER_CLASS = 600` symbol crops per class and `CONTEXT_BG = 600` background crops. With `context_per_class=0` the training set is unchanged. The Clinic sheets are a held-out test set and are never used in training.
+
+Clinic (BSI Medical-Dental, 440 terminals), precision / recall:
+
+| Storey | Class | Before | After |
+|---|---|---|---|
+| First Floor | diffuser | 0.49 / 0.17 | 0.71 / 0.99 |
+| First Floor | grille | 0.73 / 0.07 | 0.86 / 0.65 |
+| Second Floor | diffuser | 0.64 / 0.15 | 0.83 / 1.00 |
+| Second Floor | grille | 0.67 / 0.02 | 0.97 / 0.87 |
+
+End to end, terminals placed in the correct room went from 48 to 382 of the 437 that sit inside a room (First Floor 32 → 219, Second Floor 16 → 163). Zero went to a wrong room, before or after. Grilles called diffusers went from 33 to 50, and these are now most of the remaining false positives.
+
+Synthetic validation (seeds 11/22/33/44, tp/fp/fn summed):
+
+| Class | Before | After |
+|---|---|---|
+| vav | 8/13/2 | 8/3/2 |
+| ahu | 4/0/0 | 4/0/0 |
+| diffuser | 38/0/10 | 40/6/8 |
+| grille | 14/0/10 | 16/0/8 |
+| sensor | 17/0/7 | 17/0/7 |
+
+Room Rand index stays at 1.0 on all four seeds. Sensor-to-zone accuracy on seed 11 drops from 4/5 to 2/5, and the other seeds are unchanged. That drop shows up in every variant tried, so the VAV changes are the likely cause. Synthetic diffusers pick up 6 false positives.
+
+Variants tried: 300 per class with the default background count tripled Clinic diffuser recall but left grilles near 0.1. 600 per class with the default 1200 background collapsed synthetic VAV/AHU recall (VAV R 0.20, AHU 0) and room Rand to 0.0 on three seeds. Drawing the drops as wide as the terminal hurt both classes.
