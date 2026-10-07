@@ -363,7 +363,7 @@ class TestLoadArchCAD:
              "must be a number"),
             ({"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": "spaceship",
               "instance": "s"}, "unknown semantic"),
-            ({"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": 1},
+            ({"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": 1, "instance": [1]},
              "needs an 'instance'"),
         ],
     )  # fmt: skip
@@ -371,6 +371,15 @@ class TestLoadArchCAD:
         _write_archcad(tmp_path, _ARCHCAD_SLICE + [bad])
         with pytest.raises(ArchCADFormatError, match=match):
             load_archcad(tmp_path)
+
+    def test_countable_primitive_without_instance_is_skipped(self, tmp_path):
+        # Real ArchCAD files leave some countable primitives (piles) with
+        # no instance id; they are not symbols and must not raise.
+        _write_archcad(tmp_path / "a", _ARCHCAD_SLICE)
+        n_base = len(load_archcad(tmp_path / "a")[0])
+        loose = {"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": 1, "instance": None}
+        _write_archcad(tmp_path / "b", _ARCHCAD_SLICE + [loose])
+        assert len(load_archcad(tmp_path / "b")[0]) == n_base
 
     def test_non_list_json_raises(self, tmp_path):
         _write_archcad(tmp_path, {"shapes": []})

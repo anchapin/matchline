@@ -33,6 +33,7 @@ def probe_schema(zip_path: Path, n_files: int) -> list[str]:
     out.append(f"- json.zip: {zip_path.stat().st_size / 1e6:.1f} MB, {len(names)} JSON files")
     out.append(f"- first names: {', '.join(names[:3])}")
     top, pkeys, ptypes, sems, insts = (collections.Counter() for _ in range(5))
+    loose, other_keys = collections.Counter(), collections.Counter()
     for n in names[:n_files]:
         data = json.loads(zf.read(n))
         if isinstance(data, dict):
@@ -50,11 +51,17 @@ def probe_schema(zip_path: Path, n_files: int) -> list[str]:
             ptypes[str(p.get("type"))] += 1
             sems[repr(p.get("semantic"))] += 1
             insts[type(p.get("instance")).__name__] += 1
+            if p.get("instance") is None:
+                loose[repr(p.get("semantic"))] += 1
+            if p.get("type") not in ("LINE", "ARC", "CIRCLE"):
+                other_keys[f"{p.get('type')}: " + ",".join(sorted(p.keys()))] += 1
     out.append(f"- top-level shapes (first {n_files} files): {dict(top.most_common(5))}")
     out.append(f"- primitive key sets: {dict(pkeys.most_common(6))}")
     out.append(f"- primitive types: {dict(ptypes.most_common(12))}")
     out.append(f"- semantic values: {dict(sems.most_common(40))}")
     out.append(f"- instance value types: {dict(insts)}")
+    out.append(f"- semantic ids with no instance: {dict(loose.most_common(40))}")
+    out.append(f"- other primitive key sets: {dict(other_keys.most_common(5))}")
     return out
 
 

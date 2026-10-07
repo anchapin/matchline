@@ -1421,7 +1421,12 @@ def load_archcad(
             if not countable:
                 continue
             inst = prim.get("instance")
-            if inst is None or isinstance(inst, (bool, list, dict)):
+            if inst is None:
+                # The real release leaves some primitives of countable
+                # classes (e.g. piles) without an instance id. They cannot be
+                # grouped into a symbol, so they are skipped, not counted.
+                continue
+            if isinstance(inst, (bool, list, dict)):
                 raise ArchCADFormatError(
                     f"{where}: countable class {name!r} needs an 'instance' id, got {inst!r}"
                 )
