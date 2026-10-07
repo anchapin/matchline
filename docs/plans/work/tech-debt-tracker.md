@@ -17,7 +17,7 @@ Known debt with priority, rationale, and proposed resolution.
 
 **Description**: Two elevations of the same facade produce duplicate `SpaceOpening` entries (one per elevation run). No deduplication across runs.
 
-**Location**: `link.py` (`build_model`)
+**Location**: `link/_api.py` (`build_model`)
 
 **Proposed**: Post-processing dedup pass using window tag or geometric proximity (≤5cm overlap on same facade → merge).
 

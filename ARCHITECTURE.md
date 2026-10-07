@@ -55,7 +55,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 | Module | Role |
 |---|---|
 | `building_model.py` | Core types + `BuildingModel` dataclass + `Provenance` |
-| `link.py` | Orchestrates cross-sheet registration + linking into BuildingModel |
+| `link/` | Orchestrates cross-sheet registration + linking into BuildingModel |
 | `registration.py` | Affine2D transforms, cross-sheet coordinate registration |
 | `datasets_adapter.py` | Detector → schedule join → count×width×height takeoffs |
 | `validate/` | 48-check invariant battery; errors **block export** |

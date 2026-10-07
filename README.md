@@ -69,7 +69,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `hvac_trace.py` | Duct tracing → terminal units → HVAC zone graphs |
 | `building_model.py` | Canonical `Space`-centric model, provenance, review queue |
 | `registration.py` | Grid + gridless (geometric) cross-sheet registration |
-| `link.py` | Cross-discipline linking: fixtures/sensors/diffusers/windows → rooms |
+| `link/` | Cross-discipline linking: fixtures/sensors/diffusers/windows → rooms |
 | `elevation_windows.py` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
