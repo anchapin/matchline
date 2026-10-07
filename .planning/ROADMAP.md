@@ -1,13 +1,15 @@
 # ROADMAP.md — Matchline
 
+> **Frozen snapshot (2026-09-22 roadmap pass).** All six phases below were completed that day. Later work is tracked on GitHub project board 12 (https://github.com/users/anchapin/projects/12) and in issues; current grades are in `QUALITY-SCORE.md`, open questions in `docs/design-docs/open-issues.md`. Fixed for consistency in #712.
+
 ## Phases
 
-- [ ] **Phase 1: Pipeline Orchestration** — Chain all existing components into one `matchline run` entry point
-- [ ] **Phase 2: Detector Integration** — Wire YOLO detector into pipeline; implement schedule table parsing
-- [ ] **Phase 3: IFC Round-Trip** — `BuildingModel → IFC4` export; complete IFC Tier 1
-- [ ] **Phase 4: Review Queue UX** — CLI tool + classifier integration for review workflow
-- [ ] **Phase 5: Real-Data Validation + CI** — Full pipeline on real datasets; GitHub Actions
-- [ ] **Phase 6: Production Hardening** — Per-building config; resolve known open issues
+- [x] **Phase 1: Pipeline Orchestration** — Chain all existing components into one `matchline run` entry point
+- [x] **Phase 2: Detector Integration** — Wire YOLO detector into pipeline; implement schedule table parsing
+- [x] **Phase 3: IFC Round-Trip** — `BuildingModel → IFC4` export; complete IFC Tier 1
+- [x] **Phase 4: Review Queue UX** — CLI tool + classifier integration for review workflow
+- [x] **Phase 5: Real-Data Validation + CI** — Full pipeline on real datasets; GitHub Actions
+- [x] **Phase 6: Production Hardening** — Per-building config; resolve known open issues
 
 ---
 
@@ -31,7 +33,7 @@
 **Plans**: 1 plan
 
 **Plan list:**
-- [ ] 01-orchestration-01-PLAN.md — `run_pipeline.py` + `matchline run` CLI
+- [x] 01-orchestration-01-PLAN.md — `run_pipeline.py` + `matchline run` CLI
 
 ---
 
@@ -53,8 +55,8 @@
 **Plans**: 2 plans in 2 waves
 
 **Plan list:**
-- [ ] 02-detector-01-PLAN.md — YOLO pipeline integration + WindowDetectorBackend (DET-01, DET-04)
-- [ ] 02-detector-02-PLAN.md — parse_schedule_table + sliding-window WiSARD (DET-02, DET-03)
+- [x] 02-detector-01-PLAN.md — YOLO pipeline integration + WindowDetectorBackend (DET-01, DET-04)
+- [x] 02-detector-02-PLAN.md — parse_schedule_table + sliding-window WiSARD (DET-02, DET-03)
 
 ---
 
@@ -76,8 +78,8 @@
 **Plans**: 2 plans in 2 waves
 
 **Plan list:**
-- [ ] 03-ifc-01-PLAN.md — `ifc_export.py` + `matchline ifc-export` CLI + BuildingModel→BEMModel adapter (IFC-01, IFC-02 basic)
-- [ ] 03-ifc-02-PLAN.md — Zone + SpaceLighting IFC4 export + cross-sheet window dedup + round-trip test (IFC-02 extended, IFC-03, IFC-04)
+- [x] 03-ifc-01-PLAN.md — `ifc_export.py` + `matchline ifc-export` CLI + BuildingModel→BEMModel adapter (IFC-01, IFC-02 basic)
+- [x] 03-ifc-02-PLAN.md — Zone + SpaceLighting IFC4 export + cross-sheet window dedup + round-trip test (IFC-02 extended, IFC-03, IFC-04)
 
 ---
 
@@ -145,7 +147,7 @@
 3. On real architectural drawings with thick strokes, `jesse.py` produces skeleton invariants that match Table 9.4 signatures after thinning pre-processing (documented in `docs/jesse.md` with the preprocessing parameters used)
 4. Complex GD&T invariant rows (True Position E=4, J_T=4, etc.) are flagged in the review queue with a `gd_complex_row` kind rather than silently accepted or rejected
 
-**Plans**: TBD
+**Plans**: CFG-01 to CFG-04 (done in one pass, no separate plan files)
 
 ---
 
