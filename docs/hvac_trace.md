@@ -201,6 +201,22 @@ Findings:
   from 13 to 14 of 24 and cost 10 correct terminals on the Clinic (382 to 372
   of 437). Without context crops, grille recall collapsed to 1 of 24.
 
-Next step: make the duct opening keep diagonal runs (for example a union of
-openings with axis and diagonal structuring elements), then re-check the
-default, realistic and Clinic numbers.
+### Fix: keep diagonal flex in the duct skeleton
+
+`duct_skeleton` now ORs the 13 px square opening with a 9 px disk opening
+(`FLEX_OPEN_PX`). A disk is the same width at every angle, so a flex run at any
+slope survives, and everything the square kept is still kept. Walls, symbol
+outlines and tag text (about 3 px strokes) are still removed.
+
+Sensor-to-zone over 12 seeds (11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 222,
+333):
+
+| | square only | square + disk |
+|---|---|---|
+| default sheets | 4/5 4/4 4/6 2/2 3/4 3/4 4/4 4/5 4/5 0/3 6/6 3/4 | identical |
+| realistic sheets | 2/5 3/4 4/6 2/2 3/4 3/4 4/4 2/5 4/5 0/3 6/6 3/4 | 4/5 4/4 4/6 2/2 3/4 3/4 4/4 3/5 4/5 1/3 6/6 3/4 |
+
+Realistic seed 111 room Rand also goes from 0.0 to 1.0; every other seed stays
+1.0 on both sheet types. Detection does not use the skeleton, so detection
+counts and the Clinic results are unchanged. A 9 px disk alone gave the same
+sensor numbers; the union was kept because it can only add duct pixels.

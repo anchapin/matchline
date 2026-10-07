@@ -62,6 +62,7 @@ WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
 OPEN_PX = 13  # duct opening kernel (px) = 0.26 m
+FLEX_OPEN_PX = 9  # disk opening (px) that also keeps diagonal flex runs (#721)
 
 
 # ---------------------------------------------------------------------------
@@ -190,10 +191,24 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
 
 
 def duct_skeleton(gray: np.ndarray) -> np.ndarray:
-    """Filled duct bars -> 1-px centerline skeleton (0/1 uint8)."""
+    """Filled duct bars -> 1-px centerline skeleton (0/1 uint8).
+
+    The square opening keeps axis-aligned bars at least OPEN_PX wide but
+    erases a diagonal bar narrower than about OPEN_PX * sqrt(2), so a flex
+    run into a diffuser vanished and the diffuser fell out of its zone
+    (#721). A disk is the same width at every angle; its opening is OR-ed
+    in, so everything the square kept is still kept.
+    """
     ink = gray < 128
     duct = binary_opening(ink, structure=np.ones((OPEN_PX, OPEN_PX)))
+    duct |= binary_opening(ink, structure=_disk(FLEX_OPEN_PX))
     return zhang_suen(duct).astype(np.uint8)
+
+
+def _disk(d: int) -> np.ndarray:
+    r = (d - 1) / 2
+    yy, xx = np.mgrid[:d, :d]
+    return (xx - r) ** 2 + (yy - r) ** 2 <= r * r + 0.5
 
 
 # ---------------------------------------------------------------------------
