@@ -62,7 +62,7 @@ multi-storey) and the IFC4 writer:
   schedule, so its rooms get no heat gain. A drawing value is never
   overwritten.
 
-IDF output does not carry loads yet.
+There is no IDF writer; gbXML is the path into OpenStudio and EnergyPlus.
 
 ## Table
 
