@@ -153,3 +153,38 @@ def test_openstudio_reads_the_set_export(tmp_path):
     assert m.is_initialized()
     m = m.get()
     assert len(m.getBuildingStorys()) == 2 and len(m.getSpaces()) == 4
+
+
+def test_set_schedules_reach_the_model(tmp_path):
+    """A schedule sheet in the set (#746): rows land in model.schedules, mechanical
+    rows in the report's equipment list, and the sheet's stage says what it read."""
+    from test_pdf_schedules import door_schedule, vav_schedule
+
+    pages = [_arch(n, t, lv) if d == "A" else _mech(n, t) for n, t, lv, d in TWO_FLOORS]
+    pages.append(_tb("A-601", "DOOR SCHEDULE") + door_schedule(100, 1000))
+    pages.append(_tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000))
+    model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    assert sorted(model.schedules) == ["D1", "D2", "D3"]
+    assert model.schedules["D2"]["width_m"] == pytest.approx(72 * 0.0254)
+    rep = report.to_dict()
+    assert [e["tag"] for e in rep["schedules"]["equipment"]] == ["VAV-1", "VAV-2", "VAV-3"]
+    assert rep["schedules"]["equipment"][0]["sheet"] == "M-601"
+    by = {s["file"]: s for s in rep["sheets"]}
+    st = by["sheet_005.json"]["stages"]["schedules"]
+    assert (st["status"], st["n"], st["kinds"]) == ("ok", 1, ["door"])
+    assert by["sheet_001.json"]["stages"]["schedules"]["status"] == "skipped"
+    assert (tmp_path / "run" / "sheets" / "schedules_005.json").exists()
+
+
+def test_set_unreadable_schedule_goes_to_review(tmp_path):
+    from test_pdf_schedules import door_schedule
+
+    dup = [("D1", "3'-0\"", "7'-0\"", "HM"), ("D1", "3'-0\"", "8'-0\"", "HM")]
+    pages = [_arch(n, t, lv) if d == "A" else _mech(n, t) for n, t, lv, d in TWO_FLOORS]
+    pages.append(_tb("A-601", "DOOR SCHEDULE") + door_schedule(100, 1000, rows=dup))
+    model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    assert model.schedules == {}
+    rq = [r for r in model.review_queue if r.kind == "fixture_schedule"]
+    assert len(rq) == 1 and "D1 appears more than once" in rq[0].description
+    rep = report.to_dict()
+    assert "sheet_005.json" in rep["failed_sheets"]

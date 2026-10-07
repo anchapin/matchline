@@ -41,6 +41,7 @@ matchline ingest set.pdf --out sheets/  # PDF drawing set → per-page raster, v
 matchline scale sheets/        # drawing scale per sheet: notes, scale bars, dimensions
 matchline index sheets/        # sheet index: discipline, type, level; plans paired by level
 matchline walls sheets/        # walls (centreline + thickness) and rooms from vector floor plans
+matchline schedules sheets/    # door, window, lighting and mechanical schedule tables
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 matchline ifc-export model.json out.ifc  # IFC4 export
 matchline review model.json     # review queue: list/confirm/reject
@@ -80,6 +81,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
 | `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
 | `sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
+| `pdf_schedules.py` | Schedule tables from vector PDF sheets: ruled cells, merged headers, door/window sizes, fixture watts, VAV/AHU airflow, unreadable tables flagged |
 | `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |

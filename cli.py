@@ -255,6 +255,19 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"wrote {args.sheets}/sheet_index.json")
 
 
+def cmd_schedules(args: argparse.Namespace) -> None:
+    """Schedule tables (door, window, lighting, mechanical) from ingested sheets."""
+    from pdf_schedules import schedules_for_sheets
+
+    res = schedules_for_sheets(args.sheets)
+    for name, r in res.items():
+        for s in r["schedules"]:
+            n = len(s["rows"])
+            why = f"  NOT READ: {s['reason']}" if s["status"] != "ok" else ""
+            print(f"  {name}  {s['kind']:<10} {s['title']}  rows {n}{why}")
+    print(f"wrote schedules_NNN.json in {args.sheets}")
+
+
 def cmd_walls(args: argparse.Namespace) -> None:
     """Walls and rooms from each takeoff floor plan in an ingest folder (#740)."""
     from plan_walls import walls_for_sheets
@@ -442,6 +455,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("walls", help="walls and rooms from vector floor plans")
     p.add_argument("sheets", help="folder written by `matchline ingest`, with scale.json")
     p.set_defaults(func=cmd_walls)
+    p = sub.add_parser(
+        "schedules", help="door, window, lighting and mechanical schedules from ingested sheets"
+    )
+    p.add_argument("sheets", help="folder written by `matchline ingest`, with scale.json")
+    p.set_defaults(func=cmd_schedules)
 
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")
