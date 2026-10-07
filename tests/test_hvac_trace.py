@@ -1,10 +1,13 @@
 """Tests for hvac_trace.py — HVAC zoning tracer and diffuser trace."""
 
 import numpy as np
+import pytest
 
 from hvac_trace import (
     PX_PER_M,
     _assign_diffuser_room,
+    _room_depth,
+    _room_of,
     duct_skeleton,
     extract_zones,
     ncc_locate,
@@ -300,3 +303,43 @@ class TestDiffuserRoomAssignment:
         (item,) = z["review"]
         assert item["kind"] == "diffuser_room_ambiguous" and item["reason"] == "ambiguous"
         assert set(item["candidates"]) == {"R1", "R2"}
+
+
+class TestPolygonRooms:
+    """Diffuser assignment uses room polygons when given, not bounding boxes (#697)."""
+
+    # L-shaped R1 (10 x 10 with the top-right 5 x 5 cut out); R2 fills the notch
+    L = [(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (5.0, 5.0), (5.0, 10.0), (0.0, 10.0)]
+    ROOMS = [
+        {"id": "R1", "rect_m": (0.0, 0.0, 10.0, 10.0), "polygon_m": L},
+        {"id": "R2", "rect_m": (5.0, 5.0, 10.0, 10.0)},
+    ]
+
+    def test_rect_depths_unchanged(self):
+        rect = (0.0, 0.0, 5.0, 10.0)
+        assert _room_depth(1.0, 4.0, rect) == pytest.approx(1.0)
+        assert _room_depth(5.0, 4.0, rect) == pytest.approx(0.0)
+        assert _room_depth(8.0, 13.0, rect) == pytest.approx(-(18**0.5))  # 3 m right, 3 m above
+        assert _room_depth(1.0, 4.0, {"rect_m": rect}) == pytest.approx(1.0)
+
+    def test_notch_diffuser_goes_to_the_room_that_fills_it(self):
+        assert _assign_diffuser_room(7.5, 7.5, self.ROOMS)[:2] == ("R2", "interior")
+        assert _room_depth(7.5, 7.5, self.ROOMS[0]) == pytest.approx(-2.5)
+
+    def test_room_of_follows_the_polygon(self):
+        assert _room_of(7.5, 7.5, self.ROOMS[:1]) is None
+        assert _room_of(2.0, 8.0, self.ROOMS[:1]) == "R1"
+
+    def test_angled_shared_wall_uses_polygon_edges(self):
+        rooms = [
+            {"id": "A", "rect_m": (0.0, 0.0, 10.0, 10.0), "polygon_m": [(0, 0), (10, 0), (0, 10)]},
+            {
+                "id": "B",
+                "rect_m": (0.0, 0.0, 10.0, 10.0),
+                "polygon_m": [(10, 0), (10, 10), (0, 10)],
+            },
+        ]
+        # 3 cm off the diagonal wall: a tie unless the ducts settle it
+        assert _assign_diffuser_room(4.98, 4.98, rooms)[:2] == (None, "ambiguous")
+        assert _assign_diffuser_room(4.98, 4.98, rooms, zone_rooms=("A",))[:2] == ("A", "duct")
+        assert _assign_diffuser_room(2.0, 2.0, rooms)[:2] == ("A", "interior")

@@ -67,7 +67,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - Fragment-merge and duplicate-opening parity check (#578); unattached openings counted and reported (#512)
 - Untrusted-input guards: pre-open validation and size limits (#270, #271); a broken IfcOpenShell install fails with a clear message (#407); ifcopenshell 0.9 (#528)
 - `review_queue` integration for low-confidence items and unclaimed wall loops (#581)
-- Remaining gap: Tier 1 space attachment is still open (#665 design note merged, #666 blocked on its review)
+- Tier 1 space attachment landed (#666, #681)
 
 ### Geometry Simplification (`geometry_simplify.py`)
 
@@ -91,7 +91,8 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - Provenance on returned objects (#431); `validate()` name collision fixed (#319)
 - Ceiling height and plenum depth available from IFC (#583)
 - Boundary and outside-every-room diffusers resolved by duct connectivity, then nearest room within 0.5 m; ties go to review (#684)
-- Remaining gap: rooms are rectangles (`rect_m`) and detection is validated on synthetic mechanical sheets only
+- Diffuser assignment uses each room's `polygon_m` outline when given (L-shaped and angled rooms), falling back to `rect_m` (#697)
+- Remaining gap: detection is validated on synthetic mechanical sheets only
 
 ### Synthetic Data (`synth/`)
 
@@ -156,6 +157,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 ## Changelog
 
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
+- **2026-10-07 (#697)** — HVAC: diffuser-to-room assignment and the #684 boundary/nearest/tie rules measure against room polygons, so a diffuser in the notch of an L-shaped room goes to the room that fills it. Grade unchanged (synthetic-only validation remains).
 - **2026-10-07 (#693)** — BEM Export: people heat gain now written (gbXML `PeopleHeatGain` W/person Total; IFC `Pset_SpaceThermalLoad.People`) from each DOE prototype row's constant occupancy activity schedule; rows with none (data center) get none.
 - **2026-10-07 (#691)** — BEM Export: gbXML (single- and multi-storey) writes per-space people, lighting and equipment densities with their hourly schedules and a source note; IFC4 writes occupancy and thermal-load psets. People heat gain still not written.
 - **2026-10-06 (#685)** — BEM Export: missing per-room LPD, occupant and plug-load density and schedules now default from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019, openstudio-standards v0.8.6) with `doe_prototype_default` provenance; drawing values are never overwritten. Grade unchanged until gbXML/IDF carry them.
