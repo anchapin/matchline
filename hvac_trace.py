@@ -72,6 +72,10 @@ GRILLE_KEEP_NCC = 0.80
 # (within GRILLE_TIGHT_SNAP_PX) is relabeled grille. None disables the pass.
 GRILLE_TIGHT_NCC = 0.95
 GRILLE_TIGHT_SNAP_PX = 3
+# Same pass for diffusers (#730): the tight diffuser template scores 1.00 on
+# every Clinic diffuser and at most 0.47 on any grille, so a grille detection
+# sitting on a tight diffuser match is relabeled diffuser. None disables it.
+DIFFUSER_TIGHT_NCC = 0.95
 WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
@@ -196,23 +200,28 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
                 "margin": round(float(m), 2),
             }
         )
-    if GRILLE_TIGHT_NCC is not None:
+    for cls, other, thresh in (
+        ("grille", "diffuser", GRILLE_TIGHT_NCC),
+        ("diffuser", "grille", DIFFUSER_TIGHT_NCC),
+    ):
+        if thresh is None:
+            continue
         from synth.mech import render_template
 
-        tt = render_template("grille", margin_px=0, stubs=False)
+        tt = render_template(cls, margin_px=0, stubs=False)
         th, tw = tt.shape
-        for y, x, s in ncc_locate(gray, tt, thresh=GRILLE_TIGHT_NCC):
+        for y, x, s in ncc_locate(gray, tt, thresh=thresh):
             cx, cy = x + tw / 2, y + th / 2
             near = [d for d in out if math.hypot(d["cx"] - cx, d["cy"] - cy) <= ASSOC_PX]
             if not near:
                 out.append(
                     {
-                        "label": "grille",
+                        "label": cls,
                         "cx": cx,
                         "cy": cy,
                         "w": tw,
                         "h": th,
-                        "ncc_cls": "grille",
+                        "ncc_cls": cls,
                         "ncc": round(s, 3),
                         "margin": 0.0,
                     }
@@ -220,8 +229,8 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
                 continue
             for d in near:
                 snap = math.hypot(d["cx"] - cx, d["cy"] - cy) <= GRILLE_TIGHT_SNAP_PX
-                if d["label"] == "diffuser" and snap:
-                    d["label"] = "grille"
+                if d["label"] == other and snap:
+                    d["label"] = cls
     # One AHU per sheet in the generator (and typically one per real plan):
     # keep the top-NCC AHU proposal so a lowered accept threshold can't
     # spawn false AHUs on VAV boxes.
