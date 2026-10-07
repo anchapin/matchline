@@ -43,7 +43,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 - Facade interval matching with ambiguity detection; length-only wall matching fixed (#505)
 - Cross-level window dedup closed: merges only openings at the same along-wall position (≤5 cm) whose vertical extents meet, keeps both sheets' provenance, and a validation check catches survivors (#404, #422, #664)
 - `link.py` split into a package (#256)
-- Remaining gap: IFC Tier 1 space attachment (#666, waiting on the #665 design review)
+- Remaining gap: cross-level and per-facade links are verified on synthetic buildings only (IFC Tier 1 space attachment landed in #666/#681)
 
 ### BEM Export (`bem_export.py`)
 
@@ -143,10 +143,10 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 | Core Model | A | None |
 | Validation | A | None |
 | Linking | A- | Cross-level links verified on synthetic buildings only |
-| BEM Export | A- | Template limits (rectangular rooms, synthetic schedules) |
+| BEM Export | A- | Template limits (synthetic schedules, large commercial HVAC not templated) |
 | IFC Import | A- | Tier 1 is 2-D footprint probes; no authored-boundary cross-check (Tier 2) |
 | Geometry | A- | None |
-| HVAC | B+ | Rectangular rooms; synthetic sheets only |
+| HVAC | B+ | Detection validated on synthetic sheets only |
 | Synth | A | None |
 | Tests | A | None |
 | Style | A | None |
@@ -156,6 +156,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 ## Changelog
 
+- **2026-10-07 (#706)**: Stale gap notes fixed. Linking no longer lists IFC Tier 1 attachment (merged in #666/#681). HVAC's gap summary drops "rectangular rooms" (polygon assignment since #697). BEM Export's drops it too, since spaces export as their own polygons (`docs/bem_export.md`). No grade changes.
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
 - **2026-10-06 (#702)** — Linking/Synthetic: opt-in north elevations in the generator (grid and no-grid, drawn as seen from the north); the no-grid registration now mirrors north/east sheets, which would otherwise have put their windows in the wrong rooms.
 - **2026-10-06 (#699)** — Linking: elevation windows now link on north/east/west facades, not only south; fixed north/west facade coordinates; wall segments use room polygons when given.
