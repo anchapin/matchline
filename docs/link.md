@@ -1,6 +1,6 @@
 # Cross-Sheet Linker
 
-`link.py` builds the canonical `BuildingModel` from discipline sheets (arch plan,
+The `link/` package builds the canonical `BuildingModel` from discipline sheets (arch plan,
 lighting plan, mechanical plan, elevation drawings).
 
 ## Pipeline

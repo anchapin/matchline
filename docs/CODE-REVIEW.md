@@ -30,7 +30,7 @@ Do not weaken existing tolerances or remove existing checks without an explicit 
 ### Coordinate frames
 Changes to `building_model.py` or `bem_export.py` coordinate handling must note whether they affect the y-down → north-up flip at export. Test with a building that has non-zero y-coordinates.
 
-### Cross-sheet linking (`link.py`)
+### Cross-sheet linking (`link/`)
 New discipline sheets added to `build_model` must follow the same registration → assignment → flagging pattern: register into arch coordinates, assign by position, flag unassigned items for review.
 
 ### IFC import (`ifc_import.py`)

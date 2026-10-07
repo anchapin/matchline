@@ -22,12 +22,12 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
 |---|---|
 | `building_model.py` | Versioned canonical schema: `BuildingModel`, `Space`, `Zone`, `Level`, `EnvelopeWall`, `SpaceOpening`, `FixtureInstance`, `ComponentRef`, `Provenance`, review queue, revision log, JSON round-trip. |
 | `registration.py` | `Affine2D` plan-sheet registration from title-block origin+scale; facade elevation registration via **grid bubbles** (0.95 conf) or **geometric fallback** from a facade reference corner + scale (0.65 conf, always review-flagged); point-in-polygon; along-wall interval-overlap matching. |
-| `link.py` | The linker. Ingests a building's sheets, builds the model, computes rollups. |
+| `link/` | The linker. Ingests a building's sheets, builds the model, computes rollups. |
 | `roof_geometry.py` | Tilt, azimuth, sloped and plan area of planar roof facets (`RoofPlane`, roadmap item 2). Newell normal; non-planar facets rejected, never fitted. |
 | `synth/multidiscipline.py` | Coordinated synthetic building generator (arch + lighting + mech + two south elevations, one gridded, one not; opt-in `north_elevation=True` adds two north elevations) with ground truth. |
 | `run_multidiscipline.py` | Validation harness: 3 buildings × 2 elevation paths, scored against GT. |
 
-## Linking pipeline (link.py)
+## Linking pipeline (link/)
 
 1. **Arch plan** → `Space` per room (polygon in meters, name, number, area,
    volume), 4 envelope wall runs from the footprint. Revision logged.
@@ -146,7 +146,7 @@ plane to fit.
 
 ## Limitations
 
-- **Cross-sheet linkage is probabilistic**: `link.py` uses room label matching and polygon adjacency, but does not parse actual door swing or connectivity annotations. Spaces separated by an unlabeled partition may not be linked.
+- **Cross-sheet linkage is probabilistic**: `link/` uses room label matching and polygon adjacency, but does not parse actual door swing or connectivity annotations. Spaces separated by an unlabeled partition may not be linked.
 - **No multi-storey vertical reasoning**: The linker treats each floor as an independent graph; stairwell and riser connections are not yet modeled.
 - **Polygon classification is heuristic**: `polygon_classify.py` excludes shafts, elevator cores, and closets by area/aspect/label heuristics; unusual room shapes or mislabeled spaces may be misclassified.
 - **Confidence is not calibrated**: The 0.80 threshold and nominal confidence values have not been validated against a corpus of real drawings.

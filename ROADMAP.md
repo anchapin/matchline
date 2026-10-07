@@ -91,7 +91,7 @@ Candidate approaches:
   - the validation battery gets a conservation check: absorbed areas must sum
     exactly to the unassigned-polygon areas — no square foot vanishes.
 - Shaft splitting needs an adjacency graph (shared wall segments between
-  polygons) — a natural extension of the wall-segment work in `link.py`.
+  polygons) — a natural extension of the wall-segment work in `link/`.
 - Open question: should shafts be split by *adjacent wall length* weighting,
   or is there a better rule? Worth asking a mechanical engineer, not guessing.
 
@@ -117,7 +117,7 @@ U-value is per space, area-weighted over its wall segments.
 Candidate approaches:
 - Schema: every exterior wall segment carries a `construction_id`; each
   space's envelope references its segments (segments already exist in
-  `link.py` — this extends them).
+  `link/` — this extends them).
 - Per-space area-weighted U-value: Σ(Uᵢ × Aᵢ) / ΣAᵢ, computed in the takeoff
   layer and exported per space.
 - Detection: wall-type legends on elevations are usually **hatch patterns** —
@@ -136,7 +136,7 @@ Candidate approaches:
   "convention report" emitted with every export: volume bias %, absorbed-area
   table, area-budget drift — all in one place, all auditable.
 - Items 2, 5, 6 all need the wall/roof *segment* as a first-class entity with
-  attributes (construction, tilt, host). The segment work in `link.py` is the
+  attributes (construction, tilt, host). The segment work in `link/` is the
   foundation; it should be promoted from an internal detail to a schema-level
   concept.
 - Item 4's classifier is the only one here that needs real labeled data before
