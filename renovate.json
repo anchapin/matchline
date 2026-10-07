@@ -44,6 +44,17 @@
         "!astral-sh/ruff-pre-commit"
       ],
       "enabled": false
+    },
+    {
+      "description": "GitHub Actions used in CI workflows (#708): one grouped PR on the same Monday schedule",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "enabled": true,
+      "groupName": "github-actions",
+      "labels": [
+        "automation"
+      ]
     }
   ]
 }
