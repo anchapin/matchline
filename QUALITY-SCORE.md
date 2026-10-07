@@ -157,6 +157,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 ## Changelog
 
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
+- **2026-10-06 (#702)** — Linking/Synthetic: opt-in north elevations in the generator (grid and no-grid, drawn as seen from the north); the no-grid registration now mirrors north/east sheets, which would otherwise have put their windows in the wrong rooms.
 - **2026-10-06 (#699)** — Linking: elevation windows now link on north/east/west facades, not only south; fixed north/west facade coordinates; wall segments use room polygons when given.
 - **2026-10-07 (#697)** — HVAC: diffuser-to-room assignment and the #684 boundary/nearest/tie rules measure against room polygons, so a diffuser in the notch of an L-shaped room goes to the room that fills it. Grade unchanged (synthetic-only validation remains).
 - **2026-10-07 (#693)** — BEM Export: people heat gain now written (gbXML `PeopleHeatGain` W/person Total; IFC `Pset_SpaceThermalLoad.People`) from each DOE prototype row's constant occupancy activity schedule; rows with none (data center) get none.

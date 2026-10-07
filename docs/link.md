@@ -27,6 +27,7 @@ discipline sheets are registered into this frame before linking.
 `elevation_key` controls the elevation registration path:
 - `"elev_grid"` → grid path (conf = 0.95)
 - `"elev_nogrid"` → geometric fallback (conf = 0.65)
+- `"elev_north"` / `"elev_north_nogrid"` → the same two paths on the north facade, present only when the building was generated with `north_elevation=True` (#702)
 - `None` → skip elevation linking
 
 `_dedupe_space_openings(model)` — merges duplicate `SpaceOpening` sightings

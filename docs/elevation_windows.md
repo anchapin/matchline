@@ -168,8 +168,10 @@ without; multiple windows per room; near-corner windows):
 1. **All four facades** (#699): `facade_from_meta` gives each sheet its facade
    (south y=D, north y=0, east x=W, west x=0; sheet meta overrides), and
    `wall_segments(bldg, facade)` matches windows against room edges on that
-   facade, using `polygon_m` outlines when rooms carry them. The synthetic
-   generator still draws only south elevations.
+   facade, using `polygon_m` outlines when rooms carry them. North and east
+   elevations are drawn as seen from outside, so `s` runs right to left: the
+   grid fit absorbs that, and the no-grid fallback mirrors by default for
+   north/east (sheet meta `elevation_mirrored` overrides, #702).
 2. **No door detection on elevations** (hint only); curtain walls /
    ribbon windows (one wide glazed band) will detect as a single
    instance — acceptable for area + daylighting, wrong for counts.
