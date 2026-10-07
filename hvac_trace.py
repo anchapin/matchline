@@ -431,6 +431,33 @@ _VAV_BOX_H = int(0.6 * PX_PER_M)  # VAV_H
 _VAV_CUT_DILATE = 10
 
 
+def suppress_vav_near_terminals(detections):
+    """Drop VAV detections that are really a nearby diffuser or grille.
+
+    The VAV template fires on grilles (box+diagonal on the return main) and
+    diffusers (drop+spine behind the square). Distinct equipment never
+    overlaps, so a VAV proposal whose nearest confirmed diffuser/grille is
+    25-60 px away is that small symbol, not a VAV. (Cross-class NMS at 30 px
+    already merged the closest duplicates; a terminal INSIDE the VAV box,
+    under 25 px, does not suppress.)
+
+    Sensors are not counted (#721): a thermostat 25-60 px from its VAV box
+    is ordinary, and counting it removed true VAVs on synthetic seeds 11 and
+    33 and left their rooms unzoned. Returns (kept, n_suppressed).
+    """
+    smalls = [d for d in detections if d["label"] in ("diffuser", "grille")]
+    kept = []
+    n_suppressed = 0
+    for d in detections:
+        if d["label"] == "vav" and smalls:
+            min_dist = min(math.hypot(d["cx"] - s["cx"], d["cy"] - s["cy"]) for s in smalls)
+            if 25 < min_dist < 60:
+                n_suppressed += 1
+                continue
+        kept.append(d)
+    return kept, n_suppressed
+
+
 def trace_sheet(
     gray: np.ndarray,
     gt: dict,
@@ -439,27 +466,7 @@ def trace_sheet(
     provenance: Provenance | None = None,
 ):
     detections = detect_components(gray, templates, clf)
-    # VAV-vs-small-symbol suppression: the VAV template fires on grilles
-    # (box+diagonal on the return main) and diffusers (drop+spine behind
-    # the square). Distinct equipment never overlaps, so a VAV proposal
-    # 25-60px from a confirmed diffuser/grille/sensor is the small
-    # symbol, not a VAV. (Cross-class NMS at 30px already merged the
-    # closest duplicates; a small INSIDE the VAV box (<25px) is a true
-    # VAV coincident with a sensor, not a false positive.)
-    smalls = [d for d in detections if d["label"] in ("diffuser", "grille", "sensor")]
-    kept = []
-    n_suppressed = 0
-    for d in detections:
-        if d["label"] == "vav" and smalls:
-            min_dist = min(math.hypot(d["cx"] - s["cx"], d["cy"] - s["cy"]) for s in smalls)
-            # Suppress only if the NEAREST small is 25-60px away. If the
-            # nearest is inside the VAV box (<25px), it's a true VAV
-            # coincident with a sensor, not a false positive.
-            if 25 < min_dist < 60:
-                n_suppressed += 1
-                continue
-        kept.append(d)
-    detections = kept
+    detections, n_suppressed = suppress_vav_near_terminals(detections)
     skel = duct_skeleton(gray)
     # detections are sheet px; extract_zones converts to meters with the
     # margin offset before the diffuser -> room assignment.

@@ -140,6 +140,23 @@ Synthetic validation (seeds 11/22/33/44, tp/fp/fn summed):
 | grille | 14/0/10 | 16/0/8 |
 | sensor | 17/0/7 | 17/0/7 |
 
-Room Rand index stays at 1.0 on all four seeds. Sensor-to-zone accuracy on seed 11 drops from 4/5 to 2/5, and the other seeds are unchanged. That drop shows up in every variant tried, so the VAV changes are the likely cause. Synthetic diffusers pick up 6 false positives.
+Room Rand index stays at 1.0 on all four seeds. Sensor-to-zone accuracy on seed 11 dropped from 4/5 to 2/5. Synthetic diffusers pick up 6 false positives. #721 traced the seed-11 drop: the true VAV there had always been deleted by the VAV suppression rule, and before this change a false VAV happened to cover the same rooms (see below).
 
 Variants tried: 300 per class with the default background count tripled Clinic diffuser recall but left grilles near 0.1. 600 per class with the default 1200 background collapsed synthetic VAV/AHU recall (VAV R 0.20, AHU 0) and room Rand to 0.0 on three seeds. Drawing the drops as wide as the terminal hurt both classes.
+
+## VAV suppression no longer counts sensors (#721)
+
+`trace_sheet` drops a VAV detection whose nearest confirmed small symbol is 25–60 px away, because the VAV template fires on diffusers and grilles. Sensors used to count as small symbols too. But a thermostat 25–60 px from its VAV box is ordinary, and on synthetic seeds 11 (42 px) and 33 (55 px) that rule deleted a VAV that `detect_components` had found at 0–1 px. Its rooms were left unzoned. Before #720, seed 11 scored 4/5 only because a false VAV at (7.0, 7.4) m happened to serve the same rooms. The rule (`suppress_vav_near_terminals`) now counts diffusers and grilles only.
+
+Synthetic, seeds 11/22/33/44, with the #720 classifier:
+
+| Metric | Before | After |
+|---|---|---|
+| VAV tp/fp/fn | 8/3/2 | 10/3/0 |
+| Sensor-to-zone, seed 11 | 2/5 | 4/5 |
+| Sensor-to-zone, seed 33 | 2/6 | 4/6 |
+| Room Rand (all seeds) | 1.0 | 1.0 |
+
+Other classes are unchanged. The Clinic detection check scores `detect_components` output, which comes before this rule, so its numbers are unchanged.
+
+Room Rand only counts room pairs where both rooms got a zone, so it stayed at 1.0 while half of seed 11 was unzoned. Read it together with sensor-to-zone accuracy or zone coverage.
