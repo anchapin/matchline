@@ -262,6 +262,16 @@ def test_revision_word_is_not_a_revision(tmp_path):
     assert idx.sheets[0].revision is None
 
 
+def test_callout_rows_on_a_plan_are_not_a_drawing_index(tmp_path):
+    rows = [("A-501", "SIM."), ("A-502", "TYP."), ("A-503", "SIM.")]
+    content = _tb("A-101", "FIRST FLOOR PLAN") + "".join(
+        text(300, 700 - i * 14, n, 10) + text(380, 700 - i * 14, t, 10)
+        for i, (n, t) in enumerate(rows)
+    )
+    idx, _ = _build(tmp_path, [content])
+    assert idx.drawing_index == {} and idx.warnings == []
+
+
 def test_index_sheets_and_cli(tmp_path, capsys):
     _, out = _build(tmp_path, _set())
     from cli import main

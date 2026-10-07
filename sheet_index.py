@@ -430,6 +430,12 @@ def read_title_block(sheet, file: Optional[str] = None) -> Tuple[SheetEntry, Dic
         e.date = _prov(date[0], "title_block", date[1])
 
     idx = find_drawing_index(spans, exclude=num_span)
+    # rows of sheet numbers on a plan are usually callouts or key-plan notes; only a
+    # cover/general sheet, or any sheet with an index heading, carries the drawing index
+    heading = any(INDEX_HEADING_RE.search(s.text) for s in spans)
+    kind_now = e.type["value"] if e.type else None
+    if idx and not heading and kind_now not in (None, "cover", "general"):
+        idx = {}
     for row in idx.values():
         row["page"] = e.page
     if idx and e.type is None:
