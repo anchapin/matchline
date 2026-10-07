@@ -47,10 +47,9 @@ import link
 from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
 from detector.classes import CLASS_NAMES
 from detector.sahi_infer import infer_sheet
-from link._elevation import south_wall_segments
+from link._elevation import facade_from_meta, wall_segments
 from link._schedules import _schedules
 from registration import (
-    Facade,
     FacadeRegistration,
     interval_overlap,
     match_interval_to_segments,
@@ -627,16 +626,7 @@ class ElevationLinkReport:
     review_items: int = 0
 
 
-def _facade_from_meta(meta: dict, D: float, W: float) -> Facade:
-    name = meta.get("facade", "south")
-    ref = tuple(meta.get("facade_ref_corner_m", [0.0, D]))
-    return Facade(
-        name=name,
-        ref_corner_m=ref,
-        length_m=meta.get("facade_length_m", W),
-        fixed_coord_m=D if name in ("south", "north") else W,
-        axis="x" if name in ("south", "north") else "y",
-    )
+_facade_from_meta = facade_from_meta  # backwards-compat alias
 
 
 def attach_merged_windows(
@@ -647,7 +637,7 @@ def attach_merged_windows(
     Returns (attached, unlinked). Unlinked windows are flagged for
     review, never dropped.
     """
-    segments = south_wall_segments(bldg)  # v1: south facade
+    segments = wall_segments(bldg, facade_from_meta({"facade": facade}, bldg["D_m"], bldg["W_m"]))
     space_of_num = {s.number: s for s in spaces}
     attached, unlinked = [], []
     for m in merged:
