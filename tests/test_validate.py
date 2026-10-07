@@ -129,7 +129,7 @@ _PACKAGE_DOCS = (
 
 # Backticked tokens that appear in a catalog bullet but are not check ids.
 # A new one has to be reviewed and added here, not silently tolerated.
-_NON_CHECK_TOKENS = frozenset({"area_m2", "volume_m3", "lpd_w_ft2", "lpd_w_m2"})
+_NON_CHECK_TOKENS = frozenset({"area_m2", "volume_m3", "lpd_w_ft2", "lpd_w_m2", "roof_u_factor"})
 
 
 def _emitted_check_ids() -> set[str]:
