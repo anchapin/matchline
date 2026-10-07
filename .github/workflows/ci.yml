@@ -153,7 +153,9 @@ jobs:
         run: ruff format --check .
 
       - name: Run pytest
-        run: python -m pytest tests/ -q
+        # pytest-xdist spreads the suite across the runner's cores; pytest was
+        # ~88% of this merge-gating job when it ran on one core.
+        run: python -m pytest tests/ -q -n auto
 
       - name: Check test count
         run: |
