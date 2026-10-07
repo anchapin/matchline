@@ -38,6 +38,28 @@ from validate import validate_bem_conservation
 # ---------------------------------------------------------------------------
 
 
+def _use_fields(space) -> dict:
+    """BEMSpace load fields from Space.use (#691); empty when nothing known."""
+    use = getattr(space, "use", None)
+    if use is None:
+        return {}
+    prov = use.provenance or getattr(space.lighting, "provenance", None)
+    if prov is None:
+        source = ""
+    elif prov.method == "doe_prototype_default":
+        source = prov.note
+    else:
+        source = f"drawing ({prov.method}, {prov.sheet_id})"
+    return {
+        "people_per_m2": use.people_per_m2,
+        "equipment_w_m2": use.equipment_w_m2,
+        "lighting_schedule": use.lighting_schedule,
+        "occupancy_schedule": use.occupancy_schedule,
+        "equipment_schedule": use.equipment_schedule,
+        "loads_source": source,
+    }
+
+
 def _space_identity(space):
     """Identity a space carries through IFC export and re-import (#588)."""
     p = space.core_provenance
@@ -98,6 +120,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
                 area_m2=space.area_m2 or 0.0,
                 volume_m3=vol or 0.0,
                 lighting_w=lighting_watts(space),  # fixtures, else LPD x area (#685)
+                **_use_fields(space),  # loads + schedules (#691)
                 wall_u_value_w_m2k=space.wall_u_value_w_m2k,
                 identity=_space_identity(space),
             )

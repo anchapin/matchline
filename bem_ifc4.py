@@ -17,6 +17,7 @@ from bem_helpers import (
     _validate_out_path,
     _wall_edges,
 )
+from bem_loads import ifc_load_psets
 from bem_roof import is_sloped, place_skylights_on_pieces, plane_frame, roof_pieces
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
@@ -630,6 +631,15 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
                 pset = _Ps.add_pset(f, product=space, name="Pset_SpaceLighting")
                 _Ps.edit_pset(f, pset=pset, properties={"LightingPower": sp.lighting_w})
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass
+        # occupancy and thermal loads (#691), best effort like lighting
+        for pset_name, props in ifc_load_psets(sp).items():
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=space, name=pset_name)
+                _Ps.edit_pset(f, pset=pset, properties=props)
             except (AttributeError, TypeError, ValueError, RuntimeError):
                 pass
         ifc_space_by_sid[sp.sid] = space

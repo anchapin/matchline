@@ -35,9 +35,27 @@ Sunday/holiday.
 3. Records a Provenance on each filled block: method
    `doe_prototype_default`, note naming the edition and source row.
 
-The IFC export now writes `LightingPower` as counted fixture watts, else
-LPD × area, so a defaulted LPD reaches the IFC. gbXML/IDF do not yet carry
-occupancy, equipment or schedules (tracked separately).
+## In the exports (#691)
+
+`bem_loads.py` writes the loads in both gbXML writers (single- and
+multi-storey) and the IFC4 writer:
+
+- gbXML `Space`: `Description` naming the source (the DOE prototype row, or
+  `drawing (method, sheet)`), `PeopleNumber` (`NumberOfPeople`, density ×
+  area), `LightPowerPerArea` (counted fixture watts ÷ area, else the LPD) and
+  `EquipPowerPerArea`, both W/m².
+- gbXML schedules: each referenced schedule once, as `Schedule` →
+  `YearSchedule` → `WeekSchedule` (`Weekday`, `Sat`, `Sun`, `Holiday`) →
+  `DaySchedule` with 24 hourly fractions; spaces point at them with
+  `lightScheduleIdRef`, `peopleScheduleIdRef` and `equipmentScheduleIdRef`.
+  A schedule name with no profile in the table (one taken from a drawing) is
+  left unreferenced rather than guessed.
+- IFC4: `Pset_SpaceLighting.LightingPower`, `Pset_SpaceOccupancyRequirements`
+  (`OccupancyNumber`, `AreaPerOccupant`) and `Pset_SpaceThermalLoad`
+  (`Lighting`, `EquipmentSensible` in W).
+
+People heat gain is not written: the table carries no activity level, and
+none is invented. IDF output does not carry loads yet.
 
 ## Table
 

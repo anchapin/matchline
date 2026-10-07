@@ -138,7 +138,7 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 - **No load balancing or thermal zone network solving**: EnergyPlus is called in direct-simulation mode only; no iterative zone-balance passes are made.
 - **Geometry assumptions**: All spaces are treated as rectangular with uniform internal gains. Non-rectangular rooms, indentations, and re-entrant corners are approximated, which affects envelope area and aspect-ratio-dependent infiltration estimates.
 - **Weather data**: Simulations use a single representative climate file; mixed-mode or adaptive comfort strategies are not modeled.
-- **No occupancy schedule derivation**: Schedules are not extracted from drawings. Missing per-room loads and schedules come from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019); see [space_use_defaults.md](space_use_defaults.md). Only IFC `LightingPower` carries them so far.
+- **No occupancy schedule derivation**: Schedules are not extracted from drawings. Missing per-room loads and schedules come from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019); see [space_use_defaults.md](space_use_defaults.md). gbXML and IFC4 carry them per space with their schedules (#691); people heat gain is not written.
 - **Confidence reflects template fidelity, not ground truth**: A high-confidence envelope does not mean the BEM matches the as-built building—it means the extraction pipeline found sufficient inputs to populate the template.
 
 ## OpenStudio round-trip gate (#628)

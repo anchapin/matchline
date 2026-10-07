@@ -34,6 +34,15 @@ class BEMSpace:
     # full height; empty / None for a space within one storey
     spans: List[str] = field(default_factory=list)
     height_m: Optional[float] = None
+    # space-use loads (#691), from Space.use / Space.lighting: people and
+    # equipment densities, schedule names (space_use_defaults.SCHEDULES),
+    # and where they came from ("drawing" or the DOE prototype source row)
+    people_per_m2: Optional[float] = None
+    equipment_w_m2: Optional[float] = None
+    lighting_schedule: str = ""
+    occupancy_schedule: str = ""
+    equipment_schedule: str = ""
+    loads_source: str = ""
 
 
 @dataclass
