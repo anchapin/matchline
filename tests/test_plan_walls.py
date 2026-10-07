@@ -135,6 +135,10 @@ def test_exterior_door_is_an_opening_not_an_open_room(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(SHELL + PARTITION, [door])))
     assert _areas(res) == [24.0, 36.0]
     assert [o["width_m"] for o in res.openings] == [pytest.approx(1.0, abs=0.02)]
+    # the south wall is one run through the partition's T, broken only by the door
+    south = [w for w in res.walls if w["thickness_m"] == pytest.approx(T_EXT, abs=0.01)]
+    assert len(south) == 5
+    assert res.stats["wall_length_m"] == pytest.approx(10 + 10 + 6 + 6 - 1.0 + 6, abs=0.05)
 
 
 def test_window_glazing_line_stays_one_wall(tmp_path):
@@ -237,3 +241,77 @@ def test_cli_walls(tmp_path, capsys):
     main(["walls", str(out)])
     printed = capsys.readouterr().out
     assert "sheet_001.json  walls" in printed and "rooms 2" in printed
+
+
+# ---- review fixes
+
+
+def test_near_horizontal_faces_either_side_of_the_wrap(tmp_path):
+    # CAD float noise: one face of the south wall tilts a hair below 0 deg, the
+    # other a hair above, so their directions sit either side of 0/pi
+    mass = _mass(SHELL)
+    out = ""
+    for poly in getattr(mass, "geoms", [mass]):
+        for ring in [poly.exterior, *poly.interiors]:
+            c = list(ring.coords)
+            for a, b in zip(c, c[1:]):
+                (x0, y0), (x1, y1) = _pt(*a), _pt(*b)
+                if abs(y0 - y1) < 1e-6 and abs(y0 - _pt(0, T_EXT / 2)[1]) < 1e-3:
+                    y1 += 0.004 if x1 > x0 else -0.004
+                out += line(x0, y0, x1, y1, 0.5)
+    res, _ = _read(tmp_path, out)
+    assert _areas(res) == [60.0]
+    assert len(res.walls) == 4
+
+
+def test_stair_treads_are_not_walls(tmp_path):
+    treads = ""
+    for k in range(12):  # 0.28 m going, 1.2 m wide, inside the big room
+        x0, y = _pt(5.5, 1.0 + 0.28 * k)
+        x1, _ = _pt(6.7, 0)
+        treads += line(x0, y, x1, y, 0.3)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + PARTITION, [DOOR])) + treads)
+    assert _areas(res) == [24.0, 36.0]
+    assert len(res.walls) == 6  # shell 4 + partition either side of the door
+
+
+def test_chase_between_two_walls_stays_two_walls(tmp_path):
+    # two 0.15 m walls with a 0.3 m chase between: the chase is not a 0.6 m wall
+    walls = SHELL + [((4, 0), (4, 6), T_INT), ((4.45, 0), (4.45, 6), T_INT)]
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    vert = [w for w in res.walls if abs(w["a_m"][0] - w["b_m"][0]) < 1e-3]
+    assert sorted(w["thickness_m"] for w in vert) == pytest.approx([0.15, 0.15, 0.3, 0.3], abs=0.01)
+    assert _areas(res) == [2.7, 24.0, 33.3]
+    sliver = min(res.rooms, key=lambda r: r.area_m2)
+    assert sliver.area_m2 > 1  # the chase face is a real face; classifying it is #740 follow-up
+
+
+def test_room_number_inside_a_name_span_counts(tmp_path):
+    a, b = _pt(2, 3), _pt(7, 3)
+    labels = text(*a, "OFFICE 101", 8) + text(*b, "STORAGE 102", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + labels)
+    (room,) = res.rooms
+    assert room.needs_review and "101, 102" in room.reasons[0]
+
+
+def test_column_inside_a_room_is_a_hole(tmp_path):
+    col = [((6.8, 3), (7.2, 3), 0.4)]  # 0.4 m square column, free-standing
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _poche(col))
+    big = max(res.rooms, key=lambda r: r.area_m2)
+    assert big.area_m2 == pytest.approx(60.0, abs=0.1)
+    assert len(res.rooms) == 1
+
+
+def test_grid_of_rooms_scales(tmp_path):
+    import time
+
+    n = 12  # 144 rooms, 26 wall lines of 36 m
+    size = 3.0
+    span = n * size
+    walls = [((i * size, 0), (i * size, span), T_INT) for i in range(n + 1)]
+    walls += [((0, j * size), (span, j * size), T_INT) for j in range(n + 1)]
+    t0 = time.perf_counter()
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert len(res.rooms) == n * n
+    assert {round(r.area_m2, 2) for r in res.rooms} == {9.0}
+    assert time.perf_counter() - t0 < 30

@@ -138,7 +138,7 @@ class Band:
     u1: float
     t: float  # thickness
     source: str
-    faces: Tuple[float, float] = (0.0, 0.0)  # face offsets along the normal
+    segs: Tuple[int, ...] = ()  # face segment indices (line pairs)
 
 
 def _frame(theta: float):
@@ -156,6 +156,27 @@ def _angle_close(a: float, b: float, tol: float) -> bool:
     return min(d, math.pi - d) <= tol
 
 
+def _in_frame(b: Band, theta: float) -> Tuple[float, float, float]:
+    """(rho, u0, u1) of band ``b`` in the frame of direction ``theta``.
+
+    Directions near 0 and near pi are the same line but flip the normal, so
+    bands are always compared in one reference frame.
+    """
+    a, c = _endpoints(b.theta, b.rho, b.u0, b.u1)
+    d, n = _frame(theta)
+    ua, uc = _dot(a, d), _dot(c, d)
+    return (_dot(a, n) + _dot(c, n)) / 2, min(ua, uc), max(ua, uc)
+
+
+def _overlap(a: Band, b: Band) -> float:
+    _, b0, b1 = _in_frame(b, a.theta)
+    return min(a.u1, b1) - max(a.u0, b0)
+
+
+LADDER_MULTIPLES = (-3, -2, -1, 2, 3, 4)  # spacings checked around a candidate pair
+LADDER_MIN = 3  # this many equally spaced neighbours: stair treads or hatch, not a wall
+
+
 def _pair_bands(segs: List[Seg], t_min: float, t_max: float, min_len: float) -> List[Band]:
     tol = math.radians(ANGLE_TOL_DEG)
     eps = max(t_min * 0.2, 1e-3)
@@ -169,7 +190,7 @@ def _pair_bands(segs: List[Seg], t_min: float, t_max: float, min_len: float) -> 
         d, n = _frame(s.theta)
         ps, ua, ub = _dot(s.a, n), _dot(s.a, d), _dot(s.b, d)
         s0, s1 = min(ua, ub), max(ua, ub)
-        near = tree.query(geoms[i].buffer(t_max))
+        near = tree.query(geoms[i].buffer(4 * t_max))
         parallel = []
         for j in near:
             j = int(j)
@@ -193,6 +214,16 @@ def _pair_bands(segs: List[Seg], t_min: float, t_max: float, min_len: float) -> 
             )
             if between:
                 continue
+            ladder = sum(
+                any(
+                    abs(off2 - m * off) <= 0.1 * abs(off) + eps
+                    and min(k1, u1) - max(k0, u0) > 0.5 * (u1 - u0)
+                    for _k, off2, k0, k1 in parallel
+                )
+                for m in LADDER_MULTIPLES
+            )
+            if ladder >= LADDER_MIN:
+                continue
             seen.add((min(i, j), max(i, j)))
             f0, f1 = ps, ps + off
             bands.append(
@@ -203,36 +234,74 @@ def _pair_bands(segs: List[Seg], t_min: float, t_max: float, min_len: float) -> 
                     u1,
                     abs(off),
                     "line_pair",
-                    (min(f0, f1), max(f0, f1)),
+                    (i, j),
                 )
             )
-    return _merge_glazing(bands, t_max)
+    return _merge_glazing(_drop_gaps(bands), t_max)
+
+
+def _drop_gaps(bands: List[Band]) -> List[Band]:
+    """Drop a band whose two faces each bound a thinner wall on the far side.
+
+    Two walls with a narrow chase between them pair up three ways; the middle
+    pair is the chase, not a wall.
+    """
+    by_seg: Dict[int, List[int]] = {}
+    for bi, b in enumerate(bands):
+        for sgi in b.segs:
+            by_seg.setdefault(sgi, []).append(bi)
+
+    def walled(bi: int, face: int, other: int) -> bool:
+        b = bands[bi]
+        return any(
+            ci != bi
+            and other not in bands[ci].segs
+            and bands[ci].t < b.t
+            and _overlap(b, bands[ci]) > 0.5 * (b.u1 - b.u0)
+            for ci in by_seg.get(face, [])
+        )
+
+    return [
+        b
+        for bi, b in enumerate(bands)
+        if not (
+            len(b.segs) == 2
+            and walled(bi, b.segs[0], b.segs[1])
+            and walled(bi, b.segs[1], b.segs[0])
+        )
+    ]
 
 
 def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
     """Adjacent bands sharing a face line (a window's glazing) become one wall."""
-    tol = math.radians(ANGLE_TOL_DEG)
     changed = True
     while changed:
         changed = False
-        for i, a in enumerate(bands):
-            for j, b in enumerate(bands):
-                if i >= j or not _angle_close(a.theta, b.theta, tol):
-                    continue
-                if abs(a.u0 - b.u0) > 0.1 * a.t or abs(a.u1 - b.u1) > 0.1 * a.t:
-                    continue
-                share = abs(a.faces[1] - b.faces[0]) < 1e-3 or abs(b.faces[1] - a.faces[0]) < 1e-3
-                lo, hi = min(a.faces[0], b.faces[0]), max(a.faces[1], b.faces[1])
-                if share and hi - lo <= t_max:
-                    bands[i] = Band(
-                        a.theta, (lo + hi) / 2, min(a.u0, b.u0), max(a.u1, b.u1), hi - lo,
-                        "line_pair", (lo, hi),
-                    )  # fmt: skip
-                    del bands[j]
-                    changed = True
-                    break
-            if changed:
-                break
+        by_seg: Dict[int, List[int]] = {}
+        for bi, b in enumerate(bands):
+            for sgi in b.segs:
+                by_seg.setdefault(sgi, []).append(bi)
+        for idx in by_seg.values():
+            if len(idx) != 2:
+                continue
+            a, b = bands[idx[0]], bands[idx[1]]
+            rb, b0, b1 = _in_frame(b, a.theta)
+            tol = 0.1 * min(a.t, b.t)
+            if abs(a.u0 - b0) > tol or abs(a.u1 - b1) > tol:
+                continue
+            if abs(abs(a.rho - rb) - (a.t + b.t) / 2) > tol:  # same side: not a shared face
+                continue
+            lo = min(a.rho - a.t / 2, rb - b.t / 2)
+            hi = max(a.rho + a.t / 2, rb + b.t / 2)
+            if hi - lo > t_max:
+                continue
+            merged = Band(
+                a.theta, (lo + hi) / 2, min(a.u0, b0), max(a.u1, b1), hi - lo, "line_pair",
+                tuple(sorted(set(a.segs) | set(b.segs))),
+            )  # fmt: skip
+            bands = [x for k, x in enumerate(bands) if k not in idx] + [merged]
+            changed = True
+            break
     return bands
 
 
@@ -241,7 +310,7 @@ def _band_from_rect(a: Pt, b: Pt, t: float) -> Band:
     d, n = _frame(theta)
     rho = (_dot(a, n) + _dot(b, n)) / 2
     ua, ub = _dot(a, d), _dot(b, d)
-    return Band(theta, rho, min(ua, ub), max(ua, ub), t, "filled", (rho - t / 2, rho + t / 2))
+    return Band(theta, rho, min(ua, ub), max(ua, ub), t, "filled")
 
 
 # ---------------------------------------------------------------- wall runs
@@ -281,7 +350,7 @@ def _runs(bands: List[Band], max_gap: float, tol: float):
             r = g[0]
             if (
                 _angle_close(r.theta, b.theta, atol)
-                and abs(r.rho - b.rho) <= max(tol, 0.15 * r.t)
+                and abs(r.rho - _in_frame(b, r.theta)[0]) <= max(tol, 0.15 * r.t)
                 and abs(r.t - b.t) <= 0.25 * max(r.t, b.t)
             ):
                 g.append(b)
@@ -292,10 +361,11 @@ def _runs(bands: List[Band], max_gap: float, tol: float):
     gaps: List[Tuple[Pt, Pt, float, str, str]] = []
     for g in groups:
         theta = g[0].theta
-        rho = sum(b.rho * (b.u1 - b.u0) for b in g) / sum(b.u1 - b.u0 for b in g)
+        fr = [_in_frame(b, theta) for b in g]
+        rho = sum(r * (u1 - u0) for r, u0, u1 in fr) / sum(u1 - u0 for _r, u0, u1 in fr)
         t = max(b.t for b in g)
         src = "filled" if all(b.source == "filled" for b in g) else "line_pair"
-        ivs = sorted((b.u0, b.u1) for b in g)
+        ivs = sorted((u0, u1) for _r, u0, u1 in fr)
         merged = [list(ivs[0])]
         for u0, u1 in ivs[1:]:
             if u0 <= merged[-1][1] + tol:
@@ -329,20 +399,26 @@ def _line_x(p: Pt, q: Pt, r: Pt, s: Pt) -> Optional[Tuple[Pt, float, float]]:
 
 def _snap(walls: List[Wall], tol: float) -> None:
     """Move each wall end to the centreline of a crossing wall within reach."""
+    if not walls:
+        return
+    lines = [LineString([w.a, w.b]) for w in walls]
+    tree = STRtree(lines)
+    t_big = max(w.t for w in walls)
     moves = []
-    for w in walls:
+    for wi, w in enumerate(walls):
         L = math.dist(w.a, w.b)
         if L == 0:
             continue
+        ang = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0])
         for end in ("a", "b"):
+            p = getattr(w, end)
             best = None
-            for o in walls:
+            for oi in tree.query(Point(p).buffer(0.75 * max(w.t, t_big) + tol)):
+                o = walls[int(oi)]
                 if o is w:
                     continue
                 if _angle_close(
-                    math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]),
-                    math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]),
-                    math.radians(10),
+                    ang, math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]), math.radians(10)
                 ):
                     continue
                 hit = _line_x(w.a, w.b, o.a, o.b)
@@ -354,10 +430,8 @@ def _snap(walls: List[Wall], tol: float) -> None:
                 if not (-reach / Lo <= t2 <= 1 + reach / Lo):
                     continue
                 dist = abs(t1) * L if end == "a" else abs(1 - t1) * L
-                inward = (t1 > 0) if end == "a" else (t1 < 1)
-                if dist <= reach or (inward and dist <= reach):
-                    if best is None or dist < best[0]:
-                        best = (dist, x)
+                if dist <= reach and (best is None or dist < best[0]):
+                    best = (dist, x)
             if best:
                 moves.append((w, end, best[1]))
     for w, end, x in moves:
@@ -372,19 +446,32 @@ def _node_lines(pairs: List[Tuple[Pt, Pt]], tol: float) -> List[LineString]:
     to one point, and an end lying on another line becomes a vertex of it.
     """
     nodes: List[Pt] = []
+    grid: Dict[Tuple[int, int], List[int]] = {}
 
     def node(p: Pt) -> Pt:
-        for q in nodes:
-            if math.dist(p, q) <= tol:
-                return q
+        gx, gy = int(math.floor(p[0] / tol)), int(math.floor(p[1] / tol))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for qi in grid.get((gx + dx, gy + dy), []):
+                    if math.dist(p, nodes[qi]) <= tol:
+                        return nodes[qi]
+        grid.setdefault((gx, gy), []).append(len(nodes))
         nodes.append(p)
         return p
 
     pairs = [(node(a), node(b)) for a, b in pairs]
+    if not nodes:
+        return []
+    pts = [Point(q) for q in nodes]
+    tree = STRtree(pts)
     out = []
     for a, b in pairs:
         ln = LineString([a, b])
-        inner = [q for q in nodes if q != a and q != b and ln.distance(Point(q)) <= tol]
+        inner = [
+            nodes[int(qi)]
+            for qi in tree.query(ln.buffer(tol))
+            if nodes[int(qi)] not in (a, b) and ln.distance(pts[int(qi)]) <= tol
+        ]
         inner.sort(key=lambda q: ln.project(Point(q)))
         out.append(LineString([a, *inner, b]))
     return out
@@ -397,6 +484,7 @@ def _node_lines(pairs: List[Tuple[Pt, Pt]], tol: float) -> List[LineString]:
 class Room:
     id: str
     polygon_m: List[Pt]  # centreline (gross) polygon, metres, y up
+    holes_m: List[List[Pt]]  # islands inside the room (a column, a shaft); not in the area
     net_polygon_m: List[Pt]
     area_m2: float
     net_area_m2: float
@@ -426,6 +514,9 @@ class PlanWalls:
         }
 
 
+_ROOM_NO = re.compile(r"\b[A-Z]?\d{2,4}[A-Z]?\b")
+
+
 def _label_for(face: Polygon, spans) -> Tuple[Optional[dict], List[str]]:
     from room_labels import looks_like_dimension, parse_room_label
 
@@ -437,7 +528,7 @@ def _label_for(face: Polygon, spans) -> Tuple[Optional[dict], List[str]]:
     if not inside:
         return None, []
     inside.sort(key=lambda s: (round(s[1][1]), s[1][0]))
-    numbers = {t for t, _ in inside if re.fullmatch(r"[A-Z]?\d{2,4}[A-Z]?", t.strip().upper())}
+    numbers = {n for t, _ in inside for n in _ROOM_NO.findall(t.upper())}
     reasons = []
     if len(numbers) > 1:
         reasons.append(
@@ -476,26 +567,37 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     bridges: List[Bridge] = []
     openings: List[dict] = []
     ends = [Point(p) for w in walls for p in (w.a, w.b)]
-    for ga, gb, t, wa, wb in gaps:
+    alias: Dict[str, str] = {}
+
+    def resolve(wid: str) -> Wall:
+        while wid in alias:
+            wid = alias[wid]
+        return by_id[wid]
+
+    for _ga, _gb, t, wa, wb in gaps:
         # gap ends follow the snapped wall ends
-        a, b = by_id[wa].b, by_id[wb].a
-        if math.dist(a, b) <= tol:
-            continue
+        left, right = resolve(wa), by_id[wb]
+        a, b = left.b, right.a
         gap = LineString([a, b])
-        junction = any(
+        junction = math.dist(a, b) <= tol or any(
             gap.distance(e) <= 0.6 * t and e.distance(Point(a)) > tol and e.distance(Point(b)) > tol
             for e in ends
         )
-        bridges.append(Bridge(a, b, t, (wa, wb)))
-        if not junction:
-            openings.append(
-                {
-                    "walls": [wa, wb],
-                    "a_m": to_m(a),
-                    "b_m": to_m(b),
-                    "width_m": round(math.dist(a, b) * m_per_pt, 3),
-                }
-            )
+        if junction:
+            # a wall ending against this one: the run continues through it
+            left.b = right.b
+            alias[wb] = left.id
+            continue
+        bridges.append(Bridge(a, b, t, (left.id, wb)))
+        openings.append(
+            {
+                "walls": [left.id, wb],
+                "a_m": to_m(a),
+                "b_m": to_m(b),
+                "width_m": round(math.dist(a, b) * m_per_pt, 3),
+            }
+        )
+    walls = [w for w in walls if w.id not in alias]
 
     lines = _node_lines(
         [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [(br.a, br.b) for br in bridges],
@@ -531,6 +633,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         r = Room(
             id=f"R{len(rooms) + 1}",
             polygon_m=[to_m(p) for p in face.exterior.coords],
+            holes_m=[[to_m(p) for p in ring.coords] for ring in face.interiors],
             net_polygon_m=[to_m(p) for p in net.exterior.coords] if not net.is_empty else [],
             area_m2=round(area, 3),
             net_area_m2=round(net.area * m_per_pt**2, 3) if not net.is_empty else 0.0,
