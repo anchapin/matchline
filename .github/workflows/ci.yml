@@ -159,7 +159,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=1900  # +5 tight confirm gate tests (#735) - If the count changes, update this AND docs/ci.md
+          EXPECTED_TEST_COUNT=1921  # +21 PDF ingestion tests (#737) - If the count changes, update this AND docs/ci.md
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
