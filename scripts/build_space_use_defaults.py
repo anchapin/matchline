@@ -110,6 +110,19 @@ def _schedule(rows, name):
     return out
 
 
+def _activity(rows, name):
+    """Constant W/person from a prototype activity schedule (None if unnamed)."""
+    if not name:
+        return None
+    mine = [r for r in rows if r["name"] == name]
+    if not mine:
+        raise SystemExit(f"activity schedule {name!r} not found in {SCH_URL}")
+    vals = {float(v) for r in mine for v in r["values"]}
+    if len(vals) != 1:
+        raise SystemExit(f"activity schedule {name!r} is not constant: {sorted(vals)}")
+    return _r(vals.pop(), 3)
+
+
 def build(spc, sch):
     rows = {
         (r["building_type"], r["space_type"]): r
@@ -142,6 +155,10 @@ def build(spc, sch):
             "lighting_schedule": scheds["lighting"],
             "occupancy_schedule": scheds["occupancy"],
             "equipment_schedule": scheds["equipment"],
+            "activity_schedule": r.get("occupancy_activity_schedule"),
+            "activity_w_per_person": _activity(
+                sch["schedules"], r.get("occupancy_activity_schedule")
+            ),
         }
     schedules = {n: _schedule(sch["schedules"], n) for n in sorted(needed)}
     return table, schedules
@@ -163,6 +180,8 @@ def render(table, schedules):
         "(source_building_type, source_space_type). The IP values are copied",
         "verbatim; SI values are converted with 1 m2 = 10.7639 ft2. Schedules",
         "are hourly fractions (24 values, hour 0 = midnight to 1 am).",
+        "activity_w_per_person is the constant value of the row's prototype",
+        "occupancy activity schedule (total heat per person, W).",
         '"""',
         "",
         "# ruff: noqa: E501  (generated table rows)",

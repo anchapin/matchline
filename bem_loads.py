@@ -12,8 +12,10 @@ gbXML, per Space: ``Description`` (where the loads came from),
 ``Schedule`` -> ``YearSchedule`` -> ``WeekSchedule`` -> ``DaySchedule``
 elements (24 hourly fractions; weekday, Saturday, Sunday and holiday).
 
-People heat gain is not written: the source table has no activity level
-value, and none is invented.
+``PeopleHeatGain`` (WattPerPerson, heatGainType Total) is written when the
+space has an activity level: the DOE prototype row's constant occupancy
+activity schedule (#693). IFC carries it as ``Pset_SpaceThermalLoad.People``
+(W = people x W/person). Rows without one get no heat gain; none is invented.
 """
 
 from __future__ import annotations
@@ -95,6 +97,9 @@ def write_space_loads(se, sp, schedule_ids: dict) -> None:
     area = sp.area_m2 or 0.0
     if sp.people_per_m2 is not None and area > 0:
         _el(se, "PeopleNumber", _fmt(sp.people_per_m2 * area), unit="NumberOfPeople")
+        act = getattr(sp, "activity_w_per_person", None)
+        if act is not None:
+            _el(se, "PeopleHeatGain", _fmt(act), unit="WattPerPerson", heatGainType="Total")
     lpd = lpd_w_m2(sp)
     if lpd is not None:
         _el(se, "LightPowerPerArea", _fmt(lpd), unit="WattPerSquareMeter")
@@ -118,6 +123,9 @@ def ifc_load_psets(sp) -> dict:
     thermal = {}
     if (sp.lighting_w or 0.0) > 0:
         thermal["Lighting"] = round(sp.lighting_w, 3)
+    act = getattr(sp, "activity_w_per_person", None)
+    if sp.people_per_m2 and act is not None and area > 0:
+        thermal["People"] = round(sp.people_per_m2 * area * act, 3)
     if sp.equipment_w_m2 is not None and area > 0:
         thermal["EquipmentSensible"] = round(sp.equipment_w_m2 * area, 3)
     if thermal:

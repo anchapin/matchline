@@ -12,6 +12,8 @@ Each SPACE_USE_DEFAULTS row names its source row as
 (source_building_type, source_space_type). The IP values are copied
 verbatim; SI values are converted with 1 m2 = 10.7639 ft2. Schedules
 are hourly fractions (24 values, hour 0 = midnight to 1 am).
+activity_w_per_person is the constant value of the row's prototype
+occupancy activity schedule (total heat per person, W).
 """
 
 # ruff: noqa: E501  (generated table rows)
@@ -35,6 +37,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'closed_office': {
         'source_building_type': 'Office',
@@ -48,6 +52,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'conference': {
         'source_building_type': 'Office',
@@ -61,6 +67,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'break_room': {
         'source_building_type': 'Office',
@@ -74,6 +82,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'classroom': {
         'source_building_type': 'Office',
@@ -87,6 +97,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'dining': {
         'source_building_type': 'Office',
@@ -100,6 +112,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'corridor': {
         'source_building_type': 'Office',
@@ -113,6 +127,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'lobby': {
         'source_building_type': 'Office',
@@ -126,6 +142,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'elevator_lobby': {
         'source_building_type': 'Office',
@@ -139,6 +157,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'restroom': {
         'source_building_type': 'Office',
@@ -152,6 +172,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'storage': {
         'source_building_type': 'Office',
@@ -165,6 +187,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'stair': {
         'source_building_type': 'Office',
@@ -178,6 +202,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'mechanical_electrical': {
         'source_building_type': 'Office',
@@ -191,6 +217,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'it_room': {
         'source_building_type': 'Office',
@@ -204,6 +232,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'print_room': {
         'source_building_type': 'Office',
@@ -217,6 +247,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'vending': {
         'source_building_type': 'Office',
@@ -230,6 +262,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeMedium ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'data_center': {
         'source_building_type': 'Office',
@@ -243,6 +277,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': None,
         'equipment_schedule': 'DataCenter_EQUIP_SCH',
+        'activity_schedule': None,
+        'activity_w_per_person': None,
     },
     'retail': {
         'source_building_type': 'Retail',
@@ -256,6 +292,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'RetailStandalone BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'RetailStandalone BLDG_OCC_SCH_2010',
         'equipment_schedule': 'RetailStandalone BLDG_EQUIP_SCH_2013',
+        'activity_schedule': 'RetailStandalone ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'kitchen': {
         'source_building_type': 'SecondarySchool',
@@ -269,6 +307,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'SchoolSecondary BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'SchoolSecondary BLDG_OCC_SCH',
         'equipment_schedule': 'SchoolSecondary KITCHEN_ELEC_EQUIP_SCH',
+        'activity_schedule': 'SchoolSecondary ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'gym': {
         'source_building_type': 'SecondarySchool',
@@ -282,6 +322,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'SchoolSecondary BLDG_LIGHT_GYM_SCH_2013',
         'occupancy_schedule': 'SchoolSecondary BLDG_OCC_SCH_Gym',
         'equipment_schedule': 'SchoolSecondary BLDG_EQUIP_SCH_2013',
+        'activity_schedule': 'SchoolSecondary ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'auditorium': {
         'source_building_type': 'SecondarySchool',
@@ -295,6 +337,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'SchoolSecondary BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'SchoolSecondary BLDG_OCC_SCH_Auditorium',
         'equipment_schedule': 'SchoolSecondary BLDG_EQUIP_SCH_2013',
+        'activity_schedule': 'SchoolSecondary ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'library': {
         'source_building_type': 'SecondarySchool',
@@ -308,6 +352,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'SchoolSecondary BLDG_LIGHT_LIBRARY_SCH_2013',
         'occupancy_schedule': 'SchoolSecondary BLDG_OCC_SCH',
         'equipment_schedule': 'SchoolSecondary BLDG_EQUIP_SCH_2013',
+        'activity_schedule': 'SchoolSecondary ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
     'warehouse': {
         'source_building_type': 'Warehouse',
@@ -321,6 +367,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'Warehouse BLDG_LIGHT_STORAGE_SCH',
         'occupancy_schedule': 'Warehouse BLDG_OCC_SCH',
         'equipment_schedule': 'Warehouse Bldg Equip',
+        'activity_schedule': 'Warehouse Office Activity Schedule',
+        'activity_w_per_person': 131.85,
     },
     'office_whole_building': {
         'source_building_type': 'Office',
@@ -334,6 +382,8 @@ SPACE_USE_DEFAULTS = {
         'lighting_schedule': 'OfficeLarge BLDG_LIGHT_SCH_2013',
         'occupancy_schedule': 'OfficeLarge BLDG_OCC_SCH',
         'equipment_schedule': 'OfficeLarge BLDG_EQUIP_SCH',
+        'activity_schedule': 'OfficeLarge ACTIVITY_SCH',
+        'activity_w_per_person': 120.0,
     },
 }
 

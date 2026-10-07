@@ -249,6 +249,9 @@ class SpaceUse:
     lighting_schedule: str = ""
     occupancy_schedule: str = ""
     equipment_schedule: str = ""
+    # total heat per occupant (W/person) from the prototype activity
+    # schedule (#693); None when neither drawings nor prototype give one
+    activity_w_per_person: Optional[float] = None
     provenance: Provenance | None = None
 
 

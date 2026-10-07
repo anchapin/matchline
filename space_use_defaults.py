@@ -156,7 +156,11 @@ def apply_space_use_defaults(model) -> SpaceUseSummary:
             sp.lighting.provenance = _prov(st, "lighting_per_area", conf)
             _count(summary.filled, "lpd_w_m2")
 
-        for attr, key in (("people_per_m2", "people_per_m2"), ("equipment_w_m2", "equipment_w_m2")):
+        for attr, key in (
+            ("people_per_m2", "people_per_m2"),
+            ("equipment_w_m2", "equipment_w_m2"),
+            ("activity_w_per_person", "activity_w_per_person"),
+        ):
             if getattr(use, attr) is not None:
                 _count(summary.kept, attr)
             elif row[key] is not None:
