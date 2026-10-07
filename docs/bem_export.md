@@ -134,11 +134,11 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 
 ## Limitations
 
-- **Incomplete schema coverage**: The IDF template covers residential and small commercial U-values, window SHGC, and lighting power density only. Large commercial HVAC systems (VAV, RTU, chiller) are not yet templated.
-- **No load balancing or thermal zone network solving**: EnergyPlus is called in direct-simulation mode only; no iterative zone-balance passes are made.
-- **Geometry assumptions**: All spaces are treated as rectangular with uniform internal gains. Non-rectangular rooms, indentations, and re-entrant corners are approximated, which affects envelope area and aspect-ratio-dependent infiltration estimates.
-- **Weather data**: Simulations use a single representative climate file; mixed-mode or adaptive comfort strategies are not modeled.
-- **No occupancy schedule derivation**: Schedules are not extracted from drawings. Missing per-room loads and schedules come from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019); see [space_use_defaults.md](space_use_defaults.md). gbXML and IFC4 carry them per space with their schedules (#691); people heat gain is not written.
+- **Outputs are gbXML and IFC4 only**: there is no IDF or OSM writer. OpenStudio and EnergyPlus get the model by translating the gbXML, which the OpenStudio round-trip gate (#628) checks in CI.
+- **No HVAC systems**: zones and per-space loads are exported, but no air loops, plant or terminal equipment (VAV, RTU, chiller).
+- **No simulation, weather or infiltration**: matchline does not run EnergyPlus, pick a weather file, or export infiltration rates; those are set in the simulation tool.
+- **Geometry**: spaces export as their own polygons (not forced to rectangles), after the envelope simplification in `docs/geometry_simplify.md`; internal gains are uniform within a space.
+- **No occupancy schedule derivation**: schedules are not extracted from drawings. Missing per-room loads and schedules come from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019); see [space_use_defaults.md](space_use_defaults.md). gbXML and IFC4 carry them per space with their schedules (#691), including people heat gain from the prototype activity level (#693).
 - **Confidence reflects template fidelity, not ground truth**: A high-confidence envelope does not mean the BEM matches the as-built building—it means the extraction pipeline found sufficient inputs to populate the template.
 
 ## OpenStudio round-trip gate (#628)
