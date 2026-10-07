@@ -45,3 +45,7 @@ bem_out/
 
 # OS
 .DS_Store
+
+# wheel builds (scripts/check_release_licenses.py)
+build/
+dist/

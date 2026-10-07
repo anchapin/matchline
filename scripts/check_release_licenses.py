@@ -151,9 +151,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     for a in ledger["artifacts"]:
         c = artifact_class(ledger, a)
         counts[c] = counts.get(c, 0) + 1
-    print(
-        f"license ledger OK: {len(ledger['datasets'])} datasets, {counts}; checked {len(argv)} build(s)"
-    )
+    n = len(ledger["datasets"])
+    print(f"license ledger OK: {n} datasets, {counts}; checked {len(argv)} build(s)")
     return 0
 
 
