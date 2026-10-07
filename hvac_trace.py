@@ -199,10 +199,40 @@ def duct_skeleton(gray: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
+def _room_poly(room):
+    """Room outline in metres: ``polygon_m`` when given, else the ``rect_m`` box (#697)."""
+    poly = room.get("polygon_m")
+    if poly and len(poly) >= 3:
+        return [(float(x), float(y)) for x, y in poly]
+    x0, y0, x1, y1 = room["rect_m"]
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def _seg_dist(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _poly_depth(x_m, y_m, poly):
+    """Signed distance to a polygon boundary: + inside (or on it), - outside."""
+    n = len(poly)
+    dist = min(_seg_dist(x_m, y_m, *poly[i], *poly[(i + 1) % n]) for i in range(n))
+    if dist == 0.0:
+        return 0.0
+    inside = False
+    for i in range(n):
+        (ax, ay), (bx, by) = poly[i], poly[(i + 1) % n]
+        if (ay > y_m) != (by > y_m):
+            if x_m < ax + (y_m - ay) * (bx - ax) / (by - ay):
+                inside = not inside
+    return dist if inside else -dist
+
+
 def _room_of(x_m, y_m, rooms):
     for r in rooms:
-        x0, y0, x1, y1 = r["rect_m"]
-        if x0 <= x_m <= x1 and y0 <= y_m <= y1:
+        if _poly_depth(x_m, y_m, _room_poly(r)) >= 0:
             return r["id"]
     return None
 
@@ -217,14 +247,15 @@ NEAREST_ROOM_MARGIN_M = 0.5  # outside every room: nearest room within this
 ROOM_TIE_M = 0.10  # depth gap below which two candidate rooms are a tie
 
 
-def _room_depth(x_m, y_m, rect):
-    """Signed distance to a room rect: + inside (to nearest edge), - outside."""
-    x0, y0, x1, y1 = rect
-    if x0 <= x_m <= x1 and y0 <= y_m <= y1:
-        return min(x_m - x0, x1 - x_m, y_m - y0, y1 - y_m)
-    dx = max(x0 - x_m, 0.0, x_m - x1)
-    dy = max(y0 - y_m, 0.0, y_m - y1)
-    return -math.hypot(dx, dy)
+def _room_depth(x_m, y_m, room):
+    """Signed distance to a room outline: + inside (to nearest edge), - outside.
+
+    ``room`` is a room dict (its ``polygon_m``, else ``rect_m``, #697) or a
+    bare ``(x0, y0, x1, y1)`` rect.
+    """
+    if isinstance(room, dict):
+        return _poly_depth(x_m, y_m, _room_poly(room))
+    return _poly_depth(x_m, y_m, _room_poly({"rect_m": room}))
 
 
 def _assign_diffuser_room(x_m, y_m, rooms, zone_rooms=()):
@@ -241,7 +272,7 @@ def _assign_diffuser_room(x_m, y_m, rooms, zone_rooms=()):
        wins when it leads the next by more than ROOM_TIE_M (``nearest``).
     5. Anything else is ``ambiguous``: no room, sent to review, never a guess.
     """
-    depth = {r["id"]: _room_depth(x_m, y_m, r["rect_m"]) for r in rooms}
+    depth = {r["id"]: _room_depth(x_m, y_m, r) for r in rooms}
     deep = [rid for rid, d in depth.items() if d >= ROOM_EDGE_MARGIN_M]
     if len(deep) == 1:
         return deep[0], "interior", deep
@@ -322,7 +353,7 @@ def extract_zones(skel: np.ndarray, detections: list, rooms: list, px_per_m: flo
         pending = []
         for k, d in enumerate(z_dis):
             xm, ym = d["cx"] / px_per_m - _MARGIN, d["cy"] / px_per_m - _MARGIN
-            depth = [_room_depth(xm, ym, r["rect_m"]) for r in rooms]
+            depth = [_room_depth(xm, ym, r) for r in rooms]
             if sum(dd >= ROOM_EDGE_MARGIN_M for dd in depth) == 1:
                 rid, how, _ = _assign_diffuser_room(xm, ym, rooms)
                 z_dif_rooms[k] = rid
