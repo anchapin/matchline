@@ -260,6 +260,12 @@ def parse_args():
         type=Path,
         help="AEC-Bench dataset root path (mutually exclusive with --seed and --image)",
     )
+    g.add_argument(
+        "--set",
+        type=Path,
+        dest="set_pdf",
+        help="real PDF drawing set (#741): ingest, index, scale, walls/rooms, then the model",
+    )
     ap.add_argument(
         "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
     )
@@ -289,6 +295,12 @@ def parse_args():
         help="which elevation variant to link (default: elev_grid)",
     )
     ap.add_argument(
+        "--storey-height",
+        type=float,
+        default=None,
+        help="storey height in metres for --set when the set states none (default 3.0, flagged)",
+    )
+    ap.add_argument(
         "--simplify-tol",
         type=float,
         default=0.02,
@@ -309,6 +321,38 @@ def _stage_1_generate(args, out_dir: Path):
         tuple: (model, link_report, bldg) for synthetic seed path,
                or (model, None, None) for aec_bench path.
     """
+    if getattr(args, "set_pdf", None):
+        from real_set import SetError, build_set_model
+
+        try:
+            model, set_report = build_set_model(
+                args.set_pdf, out_dir, storey_height_m=getattr(args, "storey_height", None)
+            )
+        except SetError as e:
+            raise StageError(
+                "Stage 1: drawing set",
+                1,
+                str(e),
+                hint="Each sheet's reason is in stage_00_set_report.json.",
+            ) from e
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.set_pdf),
+                "n_sheets": len(set_report.sheets),
+                "levels": set_report.levels,
+                "n_spaces": len(model.spaces),
+                "failed_sheets": set_report.to_dict()["failed_sheets"],
+            },
+        )
+        failed = set_report.to_dict()["failed_sheets"]
+        if failed:
+            print(
+                f"WARNING: {len(failed)} sheet(s) could not be fully read: {', '.join(failed)} "
+                f"(reasons in {out_dir / 'stage_00_set_report.json'})",
+                file=sys.stderr,
+            )
+        return model, None, None
     if args.image:
         dets = detections_from_yolo_json(args.detections, args.image.stem)
         schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
@@ -357,12 +401,18 @@ def _stage_1_generate(args, out_dir: Path):
         return None, None, bldg
 
 
-def _stage_2_build_model(bldg, args, out_dir: Path):
+def _stage_2_build_model(bldg, args, out_dir: Path, model=None):
     """Stage 2: Build linked model from building data.
 
     Returns:
         tuple: (model, link_report)
     """
+    if model is not None:
+        # real set / AEC-Bench: stage 1 already built the model
+        write_json(
+            out_dir / "stage_02_model.json", {"model": _model_to_dict(model), "link_report": None}
+        )
+        return model, None
     if args.aec_bench:
         link_report = None
         return None, link_report
@@ -459,6 +509,11 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
         wall_height_m=wall_height,
         simplify_tolerance=simplify_tol * 100.0,
     )
+    if len(model.levels) > 1:
+        # several storeys (#639): levels, floors, ceilings and roofs
+        from bem_levels import add_levels
+
+        add_levels(model, bem_model)
     _stage_6_conservation_gate(bem_model)
     bem_dir = out_dir / "stage_06_bem"
     bem_dir.mkdir(parents=True, exist_ok=True)
@@ -516,7 +571,7 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 2: build model --------------------------------------------
         try:
-            model, link_report = _stage_2_build_model(bldg, args, out_dir)
+            model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
         except StageError:
             raise
         except Exception as e:

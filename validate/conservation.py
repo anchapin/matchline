@@ -572,6 +572,19 @@ def _unclaimed_note(model) -> str:
     return f"; plus {n} unclaimed wall loop(s), {total:.2f} m^2 at centrelines, not in any space"
 
 
+def _level_footprints(model) -> dict:
+    """Footprint area of each level's spaces (one entry for a single-level model)."""
+    by_level: dict = {}
+    for sp in model.spaces.values():
+        if sp.polygon_m:
+            by_level.setdefault(sp.level_id, []).append(sp.polygon_m)
+    out = {}
+    for lid, polys in by_level.items():
+        ring = footprint_from_regions(polys)
+        out[lid] = abs(_shoelace(ring if isinstance(ring, list) else []))
+    return out
+
+
 def area_closure(model: BuildingModel) -> CheckResult:
     """Total floor area ~= sum of individual room areas.
 
@@ -596,9 +609,8 @@ def area_closure(model: BuildingModel) -> CheckResult:
                 "skip",
                 "no space polygons available",
             )
-        union = footprint_from_regions(all_polys)
-        ring = union if isinstance(union, list) else []
-        footprint_area = abs(_shoelace(ring))
+        # stacked storeys share a plan footprint: close each level on its own
+        footprint_area = sum(_level_footprints(model).values())
         room_area_sum = sum(sp.area_m2 or 0.0 for sp in model.spaces.values())
         rel_err = _rel_err(room_area_sum, footprint_area)
         if rel_err > 0.03:
@@ -651,9 +663,6 @@ def volume_closure(model: BuildingModel) -> CheckResult:
                 "skip",
                 "no space polygons available",
             )
-        union = footprint_from_regions(all_polys)
-        ring = union if isinstance(union, list) else []
-        footprint_area = abs(_shoelace(ring))
         room_vol_sum = sum(sp.volume_m3 or 0.0 for sp in model.spaces.values())
         if not model.levels:
             return CheckResult(
@@ -663,7 +672,10 @@ def volume_closure(model: BuildingModel) -> CheckResult:
                 "no levels available",
             )
         avg_height = sum(l.wall_height_m or 3.0 for l in model.levels) / len(model.levels)
-        expected_vol = footprint_area * avg_height
+        height = {l.id: l.wall_height_m or 3.0 for l in model.levels}
+        expected_vol = sum(
+            a * height.get(lid, avg_height) for lid, a in _level_footprints(model).items()
+        )
         rel_err = _rel_err(room_vol_sum, expected_vol)
         if rel_err > 0.05:
             return CheckResult(
