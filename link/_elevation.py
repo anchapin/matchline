@@ -25,18 +25,82 @@ OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup
 """Elevation-based zone association."""
 
 
-def south_wall_segments(bldg) -> list:
-    """Wall segments along the south facade, one per room touching it."""
-    D = bldg["D_m"]
+_FACE_TOL_M = 1e-3
+
+
+def facade_from_meta(meta: dict, D: float, W: float) -> Facade:
+    """Facade for an elevation sheet; meta keys override per-facade defaults.
+
+    Defaults match ``elevation_windows._facade_frame`` (y-down meters):
+    south y=D ref (0, D); north y=0 ref (0, 0); east x=W ref (W, 0);
+    west x=0 ref (0, 0). Length is W for south/north, D for east/west.
+    """
+    name = meta.get("facade", "south")
+    defaults = {
+        "south": ((0.0, D), D, W, "x"),
+        "north": ((0.0, 0.0), 0.0, W, "x"),
+        "east": ((W, 0.0), W, D, "y"),
+        "west": ((0.0, 0.0), 0.0, D, "y"),
+    }
+    if name not in defaults:
+        raise ValueError(f"unknown facade {name!r}")
+    ref, fixed, length, axis = defaults[name]
+    return Facade(
+        name=name,
+        ref_corner_m=tuple(meta.get("facade_ref_corner_m", ref)),
+        length_m=meta.get("facade_length_m", length),
+        fixed_coord_m=fixed,
+        axis=axis,
+    )
+
+
+def _room_outline(r: dict) -> list:
+    """Room outline vertices: ``polygon_m`` when given, else the ``rect_m`` box."""
+    if r.get("polygon_m"):
+        return [tuple(v) for v in r["polygon_m"]]
+    x0, y0, x1, y1 = r["rect_m"]
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def wall_segments(bldg, facade: Facade) -> list:
+    """Wall segments on one facade: every room edge lying on the facade line.
+
+    Intervals are facade meters from the facade's reference corner, so they
+    compare directly with elevation-registered window intervals.
+    """
+    fixed_i, along_i = (1, 0) if facade.axis == "x" else (0, 1)
+    ref_along = facade.ref_corner_m[along_i]
     segs = []
     for r in bldg["rooms"]:
-        x0, y0, x1, y1 = r["rect_m"]
-        if abs(y1 - D) < 1e-6:
+        pts = _room_outline(r)
+        hits = []
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            if (
+                abs(a[fixed_i] - facade.fixed_coord_m) < _FACE_TOL_M
+                and abs(b[fixed_i] - facade.fixed_coord_m) < _FACE_TOL_M
+            ):
+                s0, s1 = sorted((a[along_i] - ref_along, b[along_i] - ref_along))
+                if s1 - s0 > _FACE_TOL_M:
+                    hits.append((s0, s1))
+        base = (
+            f"seg-{r['number']}" if facade.name == "south" else f"seg-{facade.name}-{r['number']}"
+        )
+        for k, (s0, s1) in enumerate(sorted(hits)):
             segs.append(
-                {"id": f"seg-{r['number']}", "s0": x0, "s1": x1, "room_number": r["number"]}
+                {
+                    "id": base if k == 0 else f"{base}-{k}",
+                    "s0": s0,
+                    "s1": s1,
+                    "room_number": r["number"],
+                }
             )
     segs.sort(key=lambda g: g["s0"])
     return segs
+
+
+def south_wall_segments(bldg) -> list:
+    """Wall segments along the south facade, one per room edge touching it."""
+    return wall_segments(bldg, facade_from_meta({}, bldg["D_m"], bldg["W_m"]))
 
 
 _south_wall_segments = south_wall_segments  # backwards-compat alias
@@ -48,7 +112,7 @@ def _link_elevation(
     sh = bldg["sheets"][elev_key]
     meta, data = sh["meta"], sh["data"]
     D, W = bldg["D_m"], bldg["W_m"]
-    facade = Facade(name="south", ref_corner_m=(0.0, D), length_m=W, fixed_coord_m=D, axis="x")
+    facade = facade_from_meta(meta, D, W)
 
     if elev_key == "elev_grid":
         reg = register_elevation_grid(
@@ -72,7 +136,7 @@ def _link_elevation(
         )
         path = "geometric"
 
-    segments = south_wall_segments(bldg)
+    segments = wall_segments(bldg, facade)
     space_of_num = {s.number: s for s in spaces}
     confs = []
 
@@ -122,14 +186,14 @@ def _link_elevation(
         needs_review = ambiguous or conf < REVIEW_CONFIDENCE
         sp.openings.append(
             SpaceOpening(
-                id=f"south-{wdet['id']}",
+                id=f"{facade.name}-{wdet['id']}",
                 tag=wdet["tag"],
                 category="window",
                 width_m=width_m,
                 height_m=height_m,
                 sill_m=round(sill, 3),
                 head_m=(round(sill + height_m, 3) if height_m is not None else None),
-                host_facade="south",
+                host_facade=facade.name,
                 host_interval_m=[round(s0, 3), round(s1, 3)],
                 area_m2=area,
                 provenance=prov,

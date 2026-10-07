@@ -108,8 +108,9 @@ plane to fit.
 - **Synthetic realism limits.** Mechanical sheets are filled-bar ducts, not
   double-line; no risers, leaders, or overlapping systems. Real duct
   tracing is the hard part and remains open (see hvac_trace.py status).
-- **South facade only** in this prototype; north/east/west generalize by
-  adding wall segments per facade.
+- **All four facades** link (#699): each elevation sheet's `facade` meta picks the
+  wall segments (`link._elevation.wall_segments`); the synthetic set only draws
+  south elevations, so north/east/west are covered by unit tests, not goldens.
 - **Arch-plan windows** (if drawn) are not yet reconciled against
   elevation windows — same dedup problem as above.
 - **Space.zone_ids via diffusers, sensors co-located.** A sensor in a

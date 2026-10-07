@@ -165,9 +165,11 @@ without; multiple windows per room; near-corner windows):
 
 ## Limitations / open questions
 
-1. **South facade only** (inherits the v1 scope); other facades need
-   wall segments + `_facade_frame` entries — the math is already
-   facade-generic.
+1. **All four facades** (#699): `facade_from_meta` gives each sheet its facade
+   (south y=D, north y=0, east x=W, west x=0; sheet meta overrides), and
+   `wall_segments(bldg, facade)` matches windows against room edges on that
+   facade, using `polygon_m` outlines when rooms carry them. The synthetic
+   generator still draws only south elevations.
 2. **No door detection on elevations** (hint only); curtain walls /
    ribbon windows (one wide glazed band) will detect as a single
    instance — acceptable for area + daylighting, wrong for counts.
