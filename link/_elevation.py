@@ -133,6 +133,7 @@ def _link_elevation(
             elev_px_per_m=data["px_per_m"],
             v_ground_px=data["v_ground_px"],
             revision=meta["revision"],
+            mirrored=meta.get("elevation_mirrored"),
         )
         path = "geometric"
 
@@ -143,6 +144,7 @@ def _link_elevation(
     for wdet in data["windows"]:
         s0, _ = reg.to_facade(wdet["u0_px"], 0)
         s1, _ = reg.to_facade(wdet["u1_px"], 0)
+        s0, s1 = min(s0, s1), max(s0, s1)  # mirrored sheets run right to left
         _, sill = reg.to_facade(0, wdet["v_sill_px"])
         seg, frac, ambiguous = match_interval_to_segments(s0, s1, segments)
         entry = win_sched.get(wdet["tag"])

@@ -503,7 +503,17 @@ def _render_mech(rooms, strips, n_zones, W, D, rng):
 # ---------------------------------------------------------------------------
 
 
-def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: float = ELEV_PX_PER_M):
+def _render_elevation(
+    south_windows,
+    grids_v,
+    W,
+    with_grids: bool,
+    px_per_m: float = ELEV_PX_PER_M,
+    mirrored: bool = False,
+    title: str | None = None,
+):
+    """Render one elevation. ``mirrored`` draws it as seen from the north
+    (s measured from the west end runs right to left), per #702."""
     epm = px_per_m
     u0 = 60
     wall_w_px = W * epm
@@ -514,14 +524,14 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
     d = sh_.d
 
     def U(s):
-        return u0 + s * epm
+        return u0 + ((W - s) if mirrored else s) * epm
 
     def V(z):
         return v_ground - z * epm
 
     # ground line + wall
     d.line([u0 - 30, v_ground, u0 + wall_w_px + 30, v_ground], fill=0, width=3)
-    d.rectangle([U(0), V(WALL_H_M + PARAPET_M), U(W), V(0)], outline=0, width=4)
+    d.rectangle([u0, V(WALL_H_M + PARAPET_M), u0 + wall_w_px, V(0)], outline=0, width=4)
     # parapet cap line
     d.line([U(0), V(WALL_H_M + PARAPET_M), U(W), V(WALL_H_M + PARAPET_M)], fill=0, width=4)
 
@@ -542,12 +552,13 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
     for i, w in enumerate(south_windows):
         se = SCHED_BY_TAG[w["tag"]]
         h = se["height_m"]
-        d.rectangle([U(w["s0_m"]), V(SILL_M + h), U(w["s1_m"]), V(SILL_M)], outline=0, width=3)
-        d.line([U(w["s0_m"]), V(SILL_M + h / 2), U(w["s1_m"]), V(SILL_M + h / 2)], fill=0, width=1)
+        ua, ub = sorted((U(w["s0_m"]), U(w["s1_m"])))
+        d.rectangle([ua, V(SILL_M + h), ub, V(SILL_M)], outline=0, width=3)
+        d.line([ua, V(SILL_M + h / 2), ub, V(SILL_M + h / 2)], fill=0, width=1)
         # dimension line above the window (width in mm) -- thin clutter
         # the detector must ignore
         dy = V(SILL_M + h + 0.28)
-        d.line([U(w["s0_m"]), dy, U(w["s1_m"]), dy], fill=60, width=1)
+        d.line([ua, dy, ub, dy], fill=60, width=1)
         d.line([U(w["s0_m"]), dy - 4, U(w["s0_m"]), dy + 4], fill=60, width=1)
         d.line([U(w["s1_m"]), dy - 4, U(w["s1_m"]), dy + 4], fill=60, width=1)
         f = _font(14)
@@ -561,15 +572,16 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
             {
                 "id": wid,
                 "tag": w["tag"],
-                "u0_px": U(w["s0_m"]),
-                "u1_px": U(w["s1_m"]),
+                "u0_px": ua,
+                "u1_px": ub,
                 "v_sill_px": V(SILL_M),
                 "v_head_px": V(SILL_M + h),
             }
         )
 
     bubbles = [{"label": lab, "u_px": U(gx)} for lab, gx in grids_v.items()] if with_grids else []
-    title = "SOUTH ELEVATION A201 (grids)" if with_grids else "SOUTH ELEVATION A202 (no grids)"
+    if title is None:
+        title = "SOUTH ELEVATION A201 (grids)" if with_grids else "SOUTH ELEVATION A202 (no grids)"
     d.text((u0, 30), title, fill=0, font=_font(28))
     return (
         sh_.finalize(),
@@ -588,12 +600,14 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
 # ---------------------------------------------------------------------------
 
 
-def _south_windows(rooms, D, rng):
+def _south_windows(rooms, D, rng, edge="south"):
+    """Windows on the south wall (y=D); ``edge="north"`` uses the y=0 wall."""
     wins = []
     south_rooms = []
     for r in rooms:
         x0, y0, x1, y1 = r["rect"]
-        if abs(y1 - D) > 1e-6 or r.get("service"):
+        on_wall = abs(y0) <= 1e-6 if edge == "north" else abs(y1 - D) <= 1e-6
+        if not on_wall or r.get("service"):
             continue
         south_rooms.append(r)
         wdt = x1 - x0
@@ -634,7 +648,10 @@ def _south_windows(rooms, D, rng):
 
 
 def generate_building(
-    seed: int, open_office_span: bool = False, service_rooms: bool = False
+    seed: int,
+    open_office_span: bool = False,
+    service_rooms: bool = False,
+    north_elevation: bool = False,
 ) -> dict:
     """Generate one multi-discipline building. Returns the building dict
     (images as uint8 arrays + GT).
@@ -642,6 +659,11 @@ def generate_building(
     service_rooms: carve an unnumbered closet (with a door onto its parent
     room) and a shaft off one room, so the closet/shaft merge rule runs end
     to end. Off by default; with it off the building is unchanged.
+
+    north_elevation: add north-wall windows and two north elevations
+    (``elev_north`` with grids, ``elev_north_nogrid`` without), drawn as
+    seen from the north (#702). Uses its own RNG stream, so every other
+    sheet and the default building are unchanged.
     """
     rng = np.random.default_rng(seed)
     W, D, n_zones, strips, rooms = _layout(rng, open_office_span)
@@ -676,6 +698,25 @@ def generate_building(
     # second elevation deliberately at a different scale (34 px/m):
     # dedup must merge observations in meters, not pixels
     elev_n_img, elev_n_data = _render_elevation(south_windows, grids_v, W, False, px_per_m=34.0)
+    north_windows: list = []
+    north_sheets: dict = {}
+    if north_elevation:
+        rng_n = np.random.default_rng([seed, 702])
+        north_windows = _south_windows(rooms, D, rng_n, edge="north")
+        for key, sid, grids, ppm in (
+            ("elev_north", "elev_A203", True, 40.0),
+            ("elev_north_nogrid", "elev_A204", False, 34.0),
+        ):
+            img, data = _render_elevation(
+                north_windows,
+                grids_v,
+                W,
+                grids,
+                px_per_m=ppm,
+                mirrored=True,
+                title=f"NORTH ELEVATION {sid[5:]} ({'grids' if grids else 'no grids'})",
+            )
+            north_sheets[key] = {"sid": sid, "image": img, "data": data}
 
     gt_links = {
         "fixture_room": {f["id"]: f["room_number"] for f in fixtures},
@@ -698,6 +739,10 @@ def generate_building(
             gt_links["sensor_zone"][s_["id"]] = zid
     for i, w in enumerate(south_windows):
         gt_links["window_room"][f"W{i + 1}"] = w["room_number"]
+    if north_elevation:
+        gt_links["window_room_north"] = {
+            f"W{i + 1}": w["room_number"] for i, w in enumerate(north_windows)
+        }
 
     def sheet_meta(sheet_id, discipline, origin, ppm):
         return {
@@ -725,6 +770,7 @@ def generate_building(
         "components": components,
         "fixtures": fixtures,
         "south_windows": south_windows,
+        **({"north_windows": north_windows} if north_elevation else {}),
         "gt_links": gt_links,
         "window_schedule": SCHEDULE,
         "lighting_schedule": LIGHTING_SCHEDULE,
@@ -766,6 +812,17 @@ def generate_building(
             },
         },
     }
+    for key, ns in north_sheets.items():
+        bldg["sheets"][key] = {
+            "image": ns["image"],
+            "meta": {
+                **sheet_meta(ns["sid"], "elevation", (0, 0), ns["data"]["px_per_m"]),
+                "facade": "north",
+                "facade_ref_corner_m": [0.0, 0.0],
+                "facade_length_m": W,
+            },
+            "data": ns["data"],
+        }
     return bldg
 
 

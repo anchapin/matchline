@@ -195,6 +195,7 @@ def register_elevation_geometric(
     elev_px_per_m: float,
     v_ground_px: float,
     revision: int,
+    mirrored: bool | None = None,
 ) -> FacadeRegistration:
     """Geometric fallback: no grids on the elevation.
 
@@ -204,9 +205,21 @@ def register_elevation_geometric(
     on the elevation. Confidence is penalized: a real drawing's wall
     origin is an assumption, so every link built on this registration
     is flagged for review.
+
+    An elevation is drawn as seen from outside, so on the north and east
+    elevations the facade reference corner (west / north end) sits at the
+    RIGHT end of the drawn wall and s runs right to left (#702).
+    ``mirrored`` overrides that per-facade default (sheet meta
+    ``elevation_mirrored``).
     """
-    a_s = 1.0 / elev_px_per_m
-    b_s = -wall_u0_px / elev_px_per_m  # s=0 at the wall origin
+    if mirrored is None:
+        mirrored = facade.name in ("north", "east")
+    if mirrored:
+        a_s = -1.0 / elev_px_per_m
+        b_s = wall_u0_px / elev_px_per_m + facade.length_m  # s=0 at the wall's right end
+    else:
+        a_s = 1.0 / elev_px_per_m
+        b_s = -wall_u0_px / elev_px_per_m  # s=0 at the wall origin
     prov = Provenance(
         sheet_id=sheet_id,
         revision=revision,
@@ -214,7 +227,8 @@ def register_elevation_geometric(
         confidence=GEOMETRIC_CONFIDENCE,
         note=(
             f"facade '{facade.name}' ref corner assumed at wall drawing "
-            f"origin u0={wall_u0_px:.0f}px; scale {elev_px_per_m:.1f} px/m "
+            f"{'right end (mirrored)' if mirrored else 'origin'} "
+            f"u0={wall_u0_px:.0f}px; scale {elev_px_per_m:.1f} px/m "
             f"from title block"
         ),
     )

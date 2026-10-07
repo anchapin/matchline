@@ -24,7 +24,7 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
 | `registration.py` | `Affine2D` plan-sheet registration from title-block origin+scale; facade elevation registration via **grid bubbles** (0.95 conf) or **geometric fallback** from a facade reference corner + scale (0.65 conf, always review-flagged); point-in-polygon; along-wall interval-overlap matching. |
 | `link.py` | The linker. Ingests a building's sheets, builds the model, computes rollups. |
 | `roof_geometry.py` | Tilt, azimuth, sloped and plan area of planar roof facets (`RoofPlane`, roadmap item 2). Newell normal; non-planar facets rejected, never fitted. |
-| `synth/multidiscipline.py` | Coordinated synthetic building generator (arch + lighting + mech + two south elevations, one gridded, one not) with ground truth. |
+| `synth/multidiscipline.py` | Coordinated synthetic building generator (arch + lighting + mech + two south elevations, one gridded, one not; opt-in `north_elevation=True` adds two north elevations) with ground truth. |
 | `run_multidiscipline.py` | Validation harness: 3 buildings × 2 elevation paths, scored against GT. |
 
 ## Linking pipeline (link.py)
@@ -109,8 +109,9 @@ plane to fit.
   double-line; no risers, leaders, or overlapping systems. Real duct
   tracing is the hard part and remains open (see hvac_trace.py status).
 - **All four facades** link (#699): each elevation sheet's `facade` meta picks the
-  wall segments (`link._elevation.wall_segments`); the synthetic set only draws
-  south elevations, so north/east/west are covered by unit tests, not goldens.
+  wall segments (`link._elevation.wall_segments`). `generate_building(...,
+  north_elevation=True)` adds north elevations drawn as seen from the north, so
+  the mirrored grid and no-grid paths are tested end to end (#702).
 - **Arch-plan windows** (if drawn) are not yet reconciled against
   elevation windows — same dedup problem as above.
 - **Space.zone_ids via diffusers, sensors co-located.** A sensor in a

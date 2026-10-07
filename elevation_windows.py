@@ -998,6 +998,7 @@ def link_elevations(
                 elev_px_per_m=data["px_per_m"],
                 v_ground_px=data["v_ground_px"],
                 revision=meta["revision"],
+                mirrored=meta.get("elevation_mirrored"),
             )
             method = "geometric"
         fw = observations_to_facade(obs, reg, facade.name)
