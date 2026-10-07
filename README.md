@@ -38,6 +38,7 @@ matchline room-labels          # OCR room labeling (synthetic)
 matchline symbols              # symbol eval + GD&T invariant check
 matchline facade-takeoff --n 5 # CMP Facade area takeoffs
 matchline ingest set.pdf --out sheets/  # PDF drawing set → per-page raster, vectors, text
+matchline scale sheets/        # drawing scale per sheet: notes, scale bars, dimensions
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 matchline ifc-export model.json out.ifc  # IFC4 export
 matchline review model.json     # review queue: list/confirm/reject
@@ -75,6 +76,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
 | `bem_export.py` | gbXML 6.01 + IFC4 export |
 | `pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
+| `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
 | `validate/` | 48-check invariant battery; errors block export |
