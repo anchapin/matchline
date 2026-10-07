@@ -11,6 +11,13 @@ import hvac_trace as H
 import synth.mech as M
 
 
+@pytest.fixture(autouse=True)
+def _no_tight_confirm(monkeypatch):
+    # These stubs place fake detections on a blank sheet; the #735 confirm gate
+    # would drop them, so it is off here and covered in test_tight_confirm_gate.py.
+    monkeypatch.setattr(H, "TIGHT_CONFIRM_NCC", None)
+
+
 def _run(monkeypatch, ncc):
     tmpl = np.zeros((10, 10))
 
