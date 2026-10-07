@@ -218,6 +218,23 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}/ingest.json")
 
 
+def cmd_scale(args: argparse.Namespace) -> None:
+    """Read each ingested sheet's drawing scale (#739); writes scale.json."""
+    from drawing_scale import scale_sheets
+
+    res = scale_sheets(args.sheets)
+    for name, sc in res.items():
+        if sc["ratio"]:
+            what = f"1:{sc['ratio']:.4g} from {sc['source']}  conf {sc['confidence']:.2f}"
+        else:
+            what = sc["reason"]
+        flag = "  REVIEW" if sc["needs_review"] else ""
+        print(f"  {name}  {what}{flag}")
+        for w in sc["warnings"]:
+            print(f"    WARNING {w}")
+    print(f"wrote {args.sheets}/scale.json")
+
+
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
     from ifc_export import export_ifc
@@ -374,6 +391,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dpi", type=float, default=150.0, help="raster resolution (default 150)")
     p.add_argument("--no-raster", action="store_true", help="skip rendering page images")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("scale", help="read each ingested sheet's drawing scale")
+    p.add_argument("sheets", help="folder written by `matchline ingest`")
+    p.set_defaults(func=cmd_scale)
 
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")

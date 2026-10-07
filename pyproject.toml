@@ -67,6 +67,7 @@ py-modules = [
     "ifc_import",
     "opening_identity",
     "pdf_ingest",
+    "drawing_scale",
     "limits",
     "jesse",
     "lighting",
