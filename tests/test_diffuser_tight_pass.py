@@ -7,9 +7,18 @@ on a tight diffuser match is relabeled diffuser.
 """
 
 import numpy as np
+import pytest
 
 import hvac_trace as H
 import synth.mech as M
+
+
+@pytest.fixture(autouse=True)
+def _no_tight_confirm(monkeypatch):
+    # These stubs place fake detections on a blank sheet; the #735 confirm gate
+    # would drop them, so it is off here and covered in test_tight_confirm_gate.py.
+    monkeypatch.setattr(H, "TIGHT_CONFIRM_NCC", None)
+
 
 TIGHT_D = M.render_template("diffuser", margin_px=0, stubs=False)
 TIGHT_G = M.render_template("grille", margin_px=0, stubs=False)

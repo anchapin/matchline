@@ -76,6 +76,75 @@ GRILLE_TIGHT_SNAP_PX = 3
 # every Clinic diffuser and at most 0.47 on any grille, so a grille detection
 # sitting on a tight diffuser match is relabeled diffuser. None disables it.
 DIFFUSER_TIGHT_NCC = 0.95
+# Confirmation gate for diffuser/grille detections (#735). The stubbed
+# proposal pass also fires on duct crossings, room-label text and the solid
+# ink inside wide ducts. A diffuser/grille detection is kept only if its
+# stub-less own-class template matches within TIGHT_CONFIRM_R_PX at NCC >=
+# TIGHT_CONFIRM_NCC, scored with the template's centre column band
+# (half-width TIGHT_CONFIRM_BAND_PX, where a duct drop enters the glyph)
+# masked out of the top half, bottom half, both, or neither (best of the
+# four). Masking matters on synthetic sheets, where the drop overlaps the
+# glyph; Clinic sheets draw glyphs over the ducts. A flat window (solid duct
+# ink, blank paper) scores 0. None disables the gate.
+TIGHT_CONFIRM_NCC = 0.70
+TIGHT_CONFIRM_R_PX = 6
+TIGHT_CONFIRM_BAND_PX = 8
+
+
+def _tight_masks(tmpl: np.ndarray, band_px: float) -> list:
+    h, w = tmpl.shape
+    band = np.abs(np.arange(w) + 0.5 - w / 2) < band_px
+    keep = []
+    for rows in (slice(0, 0), slice(0, h // 2), slice(h // 2, h), slice(0, h)):
+        m = np.ones((h, w), bool)
+        m[rows, band] = False
+        keep.append(m)
+    return keep
+
+
+def _local_ncc(
+    gray: np.ndarray,
+    tmpl: np.ndarray,
+    cx: float,
+    cy: float,
+    r: int,
+    mask: np.ndarray | None = None,
+) -> float:
+    """Best NCC of tmpl (optionally over mask pixels only) centred within r px
+    of (cx, cy); 0.0 for an off-sheet or flat window."""
+    th, tw = tmpl.shape
+    y0, x0 = int(round(cy - th / 2)) - r, int(round(cx - tw / 2)) - r
+    if y0 < 0 or x0 < 0 or y0 + th + 2 * r > gray.shape[0] or x0 + tw + 2 * r > gray.shape[1]:
+        return 0.0
+    if mask is None:
+        mask = np.ones(tmpl.shape, bool)
+    win = gray[y0 : y0 + th + 2 * r, x0 : x0 + tw + 2 * r].astype(np.float64)
+    t = tmpl.astype(np.float64)[mask]
+    t = t - t.mean()
+    tn = math.sqrt(float((t**2).sum()))
+    if tn == 0:
+        return 0.0
+    best = 0.0
+    for dy in range(2 * r + 1):
+        for dx in range(2 * r + 1):
+            p = win[dy : dy + th, dx : dx + tw][mask]
+            p = p - p.mean()
+            pn = math.sqrt(float((p**2).sum()))
+            if pn > 0:
+                best = max(best, float((p * t).sum()) / (pn * tn))
+    return best
+
+
+def _tight_confirm_score(gray: np.ndarray, cls: str, cx: float, cy: float) -> float:
+    from synth.mech import render_template
+
+    t = render_template(cls, margin_px=0, stubs=False)
+    return max(
+        _local_ncc(gray, t, cx, cy, TIGHT_CONFIRM_R_PX, m)
+        for m in _tight_masks(t, TIGHT_CONFIRM_BAND_PX)
+    )
+
+
 WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
@@ -231,6 +300,13 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
                 snap = math.hypot(d["cx"] - cx, d["cy"] - cy) <= GRILLE_TIGHT_SNAP_PX
                 if d["label"] == other and snap:
                     d["label"] = cls
+    if TIGHT_CONFIRM_NCC is not None:
+        out = [
+            d
+            for d in out
+            if d["label"] not in ("grille", "diffuser")
+            or _tight_confirm_score(gray, d["label"], d["cx"], d["cy"]) >= TIGHT_CONFIRM_NCC
+        ]
     # One AHU per sheet in the generator (and typically one per real plan):
     # keep the top-NCC AHU proposal so a lowered accept threshold can't
     # spawn false AHUs on VAV boxes.
