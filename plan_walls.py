@@ -728,7 +728,7 @@ def walls_for_sheets(sheet_dir) -> Dict[str, dict]:
         idx = json.loads((d / "sheet_index.json").read_text())
         keep = {s["file"] for s in idx["sheets"] if s.get("use_for_takeoff")}
     out = {}
-    for p in sorted(d.glob("sheet_*.json")):
+    for p in sorted(d.glob("sheet_[0-9][0-9][0-9].json")):
         if keep is not None and p.name not in keep:
             continue
         sc = scales.get(p.name, {})

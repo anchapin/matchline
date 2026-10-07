@@ -459,7 +459,7 @@ def scale_sheets(sheet_dir) -> Dict[str, dict]:
     """Scale every ``sheet_NNN.json`` in an ingest folder; writes ``scale.json``."""
     d = Path(sheet_dir)
     out = {}
-    for p in sorted(d.glob("sheet_*.json")):
+    for p in sorted(d.glob("sheet_[0-9][0-9][0-9].json")):
         out[p.name] = sheet_scale(json.loads(p.read_text())).to_dict()
     (d / "scale.json").write_text(json.dumps(out, indent=2))
     return out

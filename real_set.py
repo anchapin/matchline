@@ -1,0 +1,371 @@
+"""Run the pipeline on a real PDF drawing set (#741).
+
+``build_set_model(pdf, out_dir)`` runs the drawing stages one sheet at a time
+and assembles a :class:`BuildingModel` that the rest of ``run_pipeline``
+(simplify, validate, BEM export) consumes unchanged:
+
+    ingest -> sheet index -> scale -> walls/rooms -> symbols -> schedules
+    -> building model
+
+Every stage writes its output under ``out_dir`` and records, per sheet,
+whether it ran, was skipped (does not apply to that sheet) or failed, with the
+reason, in ``stage_00_set_report.json``. A sheet that cannot be read (no scale,
+raster-only with no detector, no walls) fails loudly there and the run goes on
+with the sheets that could be read; the run itself stops only when no floor
+plan produced a room.
+
+Facts the drawings did not give are never invented silently: a storey height
+the set does not state is the default with ``storey_height_default``
+provenance and a review note, door heights are left unset (the BEM export
+skips them with a note), and stages not built yet (symbols on a vector
+mechanical sheet without detections, schedules) are reported as such.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from shapely.geometry import LineString, Polygon
+
+SCHEMA = "matchline.set_report/1"
+DEFAULT_STOREY_HEIGHT_M = 3.0
+
+
+@dataclass
+class SheetStatus:
+    file: str
+    number: Optional[str] = None
+    title: Optional[str] = None
+    discipline: Optional[str] = None
+    level: Optional[str] = None
+    stages: Dict[str, dict] = field(default_factory=dict)
+
+    def mark(self, stage: str, status: str, reason: str = "", **extra) -> None:
+        self.stages[stage] = {"status": status, "reason": reason, **extra}
+
+
+@dataclass
+class SetReport:
+    source: str
+    sheets: List[SheetStatus] = field(default_factory=list)
+    levels: List[dict] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        failed = sorted(
+            {s.file for s in self.sheets for st in s.stages.values() if st["status"] == "failed"}
+        )
+        return {
+            "schema": SCHEMA,
+            "source": self.source,
+            "n_sheets": len(self.sheets),
+            "failed_sheets": failed,
+            "levels": self.levels,
+            "notes": self.notes,
+            "sheets": [asdict(s) for s in self.sheets],
+        }
+
+
+class SetError(RuntimeError):
+    """No floor plan in the set produced a room: nothing to model."""
+
+
+def _val(entry: dict, key: str):
+    v = entry.get(key)
+    return v.get("value") if isinstance(v, dict) else v
+
+
+_PREFIX = {"A": "architectural", "M": "mechanical", "E": "electrical", "P": "plumbing"}
+
+
+def _discipline(st: SheetStatus) -> Optional[str]:
+    """Discipline name from the index, else from the sheet number's prefix."""
+    d = (st.discipline or "").lower()
+    if d:
+        return d
+    if st.number and st.number[0].upper() in _PREFIX:
+        return _PREFIX[st.number[0].upper()]
+    return None
+
+
+def _level_order(levels: List[str]) -> List[str]:
+    def key(lv: str):
+        if lv.startswith("B") and lv[1:].isdigit():
+            return (0, -int(lv[1:]))
+        if lv.startswith("L") and lv[1:].isdigit():
+            return (1, int(lv[1:]))
+        return {"MEZZ": (1, 1.5), "PH": (2, 0), "ROOF": (3, 0)}.get(lv, (2, 1))
+
+    return sorted(set(levels), key=key)
+
+
+def build_set_model(
+    pdf,
+    out_dir,
+    *,
+    detections: Optional[dict] = None,
+    storey_height_m: Optional[float] = None,
+    dpi: float = 150,
+):
+    """Read a PDF set and assemble a BuildingModel. Returns (model, report)."""
+    from bem_helpers import _edge_facades
+    from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
+    from drawing_scale import scale_sheets
+    from geometry_simplify import footprint_from_regions
+    from pdf_ingest import ingest_pdf
+    from plan_walls import walls_for_sheets
+    from sheet_index import index_sheets
+
+    out = Path(out_dir)
+    sheets_dir = out / "sheets"
+    report = SetReport(source=str(pdf))
+
+    # ---- ingest, index, scale, walls ------------------------------------
+    ing = ingest_pdf(pdf, out_dir=sheets_dir, dpi=dpi)
+    files = [f"sheet_{i + 1:03d}.json" for i in range(len(ing.sheets))]
+    status = {f: SheetStatus(file=f) for f in files}
+    for f, sh in zip(files, ing.sheets):
+        kind = sh.kind if hasattr(sh, "kind") else sh["kind"]
+        status[f].mark("ingest", "ok", kind=kind)
+
+    idx = index_sheets(sheets_dir).to_dict()
+    entries = {e["file"]: e for e in idx["sheets"]}
+    for f in files:
+        e = entries.get(f, {})
+        st = status[f]
+        st.number, st.title = _val(e, "number"), _val(e, "title")
+        st.discipline, st.level = _val(e, "discipline"), _val(e, "level")
+        st.mark(
+            "sheet_index",
+            "ok" if st.number else "failed",
+            "" if st.number else "no sheet number found in the title block",
+            use_for_takeoff=bool(e.get("use_for_takeoff")),
+            sheet_type=_val(e, "type"),
+        )
+
+    scales = scale_sheets(sheets_dir)
+    for f in files:
+        sc = scales.get(f, {})
+        if sc.get("m_per_pt"):
+            status[f].mark("scale", "ok", m_per_pt=sc["m_per_pt"], method=sc.get("method"))
+        elif entries.get(f, {}).get("use_for_takeoff"):
+            status[f].mark("scale", "failed", "no drawing scale found on a takeoff sheet")
+        else:
+            status[f].mark("scale", "skipped", "no scale; not a takeoff sheet")
+
+    walls = walls_for_sheets(sheets_dir)
+    plan_files = [f for f in files if entries.get(f, {}).get("use_for_takeoff")]
+    arch_plans = [f for f in plan_files if _discipline(status[f]) in ("architectural", None)]
+    for f in files:
+        if f not in plan_files:
+            status[f].mark("walls_rooms", "skipped", "not a floor plan for takeoff")
+        elif f not in arch_plans:
+            status[f].mark("walls_rooms", "skipped", "rooms come from the architectural plan")
+        else:
+            res = walls.get(f)
+            kinds = [r["kind"] for r in (res or {}).get("review", [])]
+            if not res or "no_scale" in kinds:
+                status[f].mark("walls_rooms", "failed", "no scale, walls not read")
+            elif status[f].stages["ingest"]["kind"] == "raster_only":
+                status[f].mark(
+                    "walls_rooms", "failed", "scanned sheet; raster wall finding is not built yet"
+                )
+            elif not res["rooms"]:
+                status[f].mark(
+                    "walls_rooms",
+                    "failed",
+                    "no closed rooms" + (" (no walls found)" if "no_walls" in kinds else ""),
+                    review=len(res["review"]),
+                )
+            else:
+                status[f].mark(
+                    "walls_rooms",
+                    "ok",
+                    walls=res["stats"]["walls"],
+                    rooms=res["stats"]["rooms"],
+                    openings=res["stats"]["openings"],
+                    review=len(res["review"]),
+                )
+
+    # ---- symbols and schedules: report what ran, never fake it ----------
+    for f in files:
+        st = status[f]
+        if f not in plan_files:
+            st.mark("symbols", "skipped", "not a floor plan for takeoff")
+        elif detections and f in detections:
+            st.mark("symbols", "ok", n=len(detections[f]))
+        elif st.stages["ingest"]["kind"] == "raster_only":
+            st.mark("symbols", "failed", "scanned sheet and no detector run (#743)")
+        else:
+            st.mark(
+                "symbols",
+                "failed" if _discipline(st) == "mechanical" else "skipped",
+                "no detections supplied; the detector provider is #743",
+            )
+        st.mark("schedules", "skipped", "schedule tables from PDF are #746")
+
+    # ---- levels ---------------------------------------------------------
+    by_level: Dict[str, List[str]] = {}
+    unknown = 0
+    for f in arch_plans:
+        if status[f].stages["walls_rooms"]["status"] != "ok":
+            continue
+        lv = status[f].level
+        if not lv:
+            unknown += 1
+            lv = f"L?{unknown}"
+            report.notes.append(f"{f}: no level in the title; modelled as its own level {lv}")
+        by_level.setdefault(lv, []).append(f)
+    if not by_level:
+        report.sheets = list(status.values())
+        _write(out, report)
+        raise SetError(
+            "no floor plan produced a room; see stage_00_set_report.json for each sheet's reason"
+        )
+
+    h = storey_height_m or DEFAULT_STOREY_HEIGHT_M
+    h_src = "config" if storey_height_m else "storey_height_default"
+    levels: List[Level] = []
+    spaces: Dict[str, Space] = {}
+    review: List[ReviewItem] = []
+    envelope: List[EnvelopeWall] = []
+    for k, lv in enumerate(_level_order(list(by_level))):
+        lid = lv if not lv.startswith("L?") else f"LX{lv[2:]}"
+        levels.append(Level(id=lid, name=lid, elevation_z_m=round(k * h, 4), wall_height_m=h))
+        report.levels.append(
+            {
+                "id": lid,
+                "sheets": by_level[lv],
+                "elevation_m": round(k * h, 4),
+                "height_source": h_src,
+                # plan openings need door/window schedules for tags and heights (#746);
+                # until then they are counted here, not modelled
+                "plan_openings": len(walls[by_level[lv][0]]["openings"]),
+            }
+        )
+        if len(by_level[lv]) > 1:
+            report.notes.append(
+                f"level {lid}: {len(by_level[lv])} plan sheets; rooms from {by_level[lv][0]} only "
+                "(partial plans are not stitched yet)"
+            )
+        f = by_level[lv][0]
+        res = walls[f]
+        sheet_id = status[f].number or f
+        unl = 0
+        for room in res["rooms"]:
+            lab = room.get("label") or {}
+            number = (lab.get("number") or "").strip()
+            name = (lab.get("name") or "").strip()
+            if number and f"{lid}-{number}" not in spaces:
+                sid = f"{lid}-{number}"
+            else:
+                unl += 1
+                sid = f"{lid}-UNLABELED-{unl}"
+            conf = float(lab.get("parse_confidence") or 0.0)
+            prov = Provenance(
+                sheet_id=sheet_id,
+                revision=0,
+                method="plan_walls_vector",
+                confidence=0.9 if not room["needs_review"] else 0.6,
+                note=f"{f} {room['id']}; label: {lab.get('raw_text', '') or 'none'}",
+            )
+            poly = [[x, -y] for x, y in room["polygon_m"][:-1]]  # y-up -> canonical y-down
+            sp = Space(
+                id=sid,
+                level_id=lid,
+                name=name,
+                number=number,
+                polygon_m=poly,
+                area_m2=room["area_m2"],
+                volume_m3=round(room["area_m2"] * h, 4),
+                core_provenance=prov,
+                label_confidence=conf,
+            )
+            spaces[sid] = sp
+            if room["needs_review"]:
+                review.append(
+                    ReviewItem(
+                        id=f"rq-{sid}",
+                        kind="space_no_geometry",
+                        description=f"{sid}: {'; '.join(room['reasons'])}",
+                        confidence=0.6,
+                        provenance=prov,
+                        needs_review=True,
+                    )
+                )
+        envelope += _envelope(
+            lid, [s for s in spaces.values() if s.level_id == lid], h, sheet_id,
+            footprint_from_regions, _edge_facades, EnvelopeWall, Provenance,
+        )  # fmt: skip
+    if h_src == "storey_height_default":
+        review.append(
+            ReviewItem(
+                id="rq-storey-height",
+                kind="elevation_extraction",  # storey height comes from sections/elevations
+                description=(
+                    f"storey height {h:g} m is the default: no section or elevation was read; "
+                    "set wall_height in the run config to override"
+                ),
+                confidence=0.5,
+                provenance=Provenance(str(pdf), 0, "storey_height_default", 0.5),
+                needs_review=False,
+            )
+        )
+
+    model = BuildingModel(
+        name=Path(pdf).stem,
+        levels=levels,
+        spaces=spaces,
+        zones={},
+        envelope=envelope,
+        bim_elements=[],
+        schedules={},
+        review_queue=review,
+    )
+    report.sheets = list(status.values())
+    _write(out, report)
+    return model, report
+
+
+def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):
+    """Exterior walls of one level: the outline of its rooms at wall centrelines.
+
+    Each edge of the level's footprint is one wall, faced by its outward
+    normal and owned by the room it bounds.
+    """
+    ring = footprint([sp.polygon_m for sp in spaces])
+    if not ring or len(ring) < 3:
+        return []
+    facades = edge_facades(ring, y_north=False)
+    out = []
+    for i, (a, b) in enumerate(zip(ring, ring[1:] + ring[:1])):
+        edge = LineString([a, b])
+        owner = min(
+            spaces,
+            key=lambda sp: Polygon(sp.polygon_m).exterior.distance(
+                edge.interpolate(0.5, normalized=True)
+            ),
+        )
+        L = edge.length
+        out.append(
+            EnvelopeWall(
+                id=f"{lid}-E{i + 1}",
+                facade=facades[i],
+                from_m=[float(a[0]), float(a[1])],
+                to_m=[float(b[0]), float(b[1])],
+                length_m=round(L, 4),
+                height_m=h,
+                area_m2=round(L * h, 4),
+                provenance=Provenance(sheet_id, 0, "room_outline", 0.85),
+                space_id=owner.id,
+            )
+        )
+    return out
+
+
+def _write(out: Path, report: SetReport) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "stage_00_set_report.json").write_text(json.dumps(report.to_dict(), indent=2))

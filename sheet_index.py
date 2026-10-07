@@ -568,7 +568,7 @@ def build_index(sheets: Sequence, files: Optional[Sequence[str]] = None) -> Shee
 def index_sheets(sheet_dir) -> SheetIndex:
     """Index every ``sheet_NNN.json`` in an ingest folder; writes ``sheet_index.json``."""
     d = Path(sheet_dir)
-    paths = sorted(d.glob("sheet_*.json"))
+    paths = sorted(d.glob("sheet_[0-9][0-9][0-9].json"))
     idx = build_index([json.loads(p.read_text()) for p in paths], [p.name for p in paths])
     (d / "sheet_index.json").write_text(json.dumps(idx.to_dict(), indent=2))
     return idx
