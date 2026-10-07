@@ -56,6 +56,7 @@ def _use_fields(space) -> dict:
         "lighting_schedule": use.lighting_schedule,
         "occupancy_schedule": use.occupancy_schedule,
         "equipment_schedule": use.equipment_schedule,
+        "activity_w_per_person": use.activity_w_per_person,
         "loads_source": source,
     }
 

@@ -157,3 +157,53 @@ def test_ifc_load_psets_empty_without_loads():
         equipment_w_m2 = None
 
     assert ifc_load_psets(S()) == {}
+
+
+# --- people heat gain from the prototype activity level (#693) ---
+
+
+def test_activity_level_traces_to_prototype_activity_schedule():
+    for key, row in data.SPACE_USE_DEFAULTS.items():
+        if row["activity_schedule"]:
+            assert row["activity_w_per_person"] > 0, key
+        else:
+            assert row["activity_w_per_person"] is None, key
+    assert (
+        data.SPACE_USE_DEFAULTS["open_office"]["activity_schedule"] == "OfficeMedium ACTIVITY_SCH"
+    )
+    assert data.SPACE_USE_DEFAULTS["open_office"]["activity_w_per_person"] == 120.0
+    # the data-center row has no occupant activity in the prototype: none invented
+    assert data.SPACE_USE_DEFAULTS["data_center"]["activity_w_per_person"] is None
+
+
+def test_apply_fills_activity_but_keeps_a_drawing_value():
+    m = _simple_model()
+    m.spaces["L1-100"].name = "OPEN OFFICE"
+    m.spaces["L1-101"].name = "OPEN OFFICE"
+    m.spaces["L1-101"].use = SpaceUse(activity_w_per_person=95.0)
+    apply_space_use_defaults(m)
+    assert m.spaces["L1-100"].use.activity_w_per_person == 120.0
+    assert "activity_w_per_person" in m.spaces["L1-100"].use.provenance.note or (
+        m.spaces["L1-100"].use.provenance.method == "doe_prototype_default"
+    )
+    assert m.spaces["L1-101"].use.activity_w_per_person == 95.0
+
+
+def test_gbxml_people_heat_gain_written_and_valid(tmp_path):
+    root = _write(_office_model(), tmp_path)
+    hg = _spaces(root)["L1-100"].find("g:PeopleHeatGain", NS)
+    assert hg is not None
+    assert hg.get("unit") == "WattPerPerson"
+    assert hg.get("heatGainType") == "Total"
+    assert float(hg.text) == pytest.approx(120.0)
+
+
+def test_ifc_thermal_load_people_watts():
+    m = _office_model()
+    bem = _bem_from_model(m)
+    sp = next(s for s in bem.spaces if s.sid == "L1-100")
+    psets = ifc_load_psets(sp)
+    row = data.SPACE_USE_DEFAULTS["open_office"]
+    assert psets["Pset_SpaceThermalLoad"]["People"] == pytest.approx(
+        row["people_per_m2"] * sp.area_m2 * 120.0, rel=1e-3
+    )

@@ -156,6 +156,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 ## Changelog
 
 - **2026-10-06 (#681)** — IFC Import B+ → A-: Tier 1 complete (opening attachment and side probes #666; host intervals, `facade_unclear`, `adjacency_ambiguous` #681). Linking gap note updated now that #666 is merged.
+- **2026-10-07 (#693)** — BEM Export: people heat gain now written (gbXML `PeopleHeatGain` W/person Total; IFC `Pset_SpaceThermalLoad.People`) from each DOE prototype row's constant occupancy activity schedule; rows with none (data center) get none.
 - **2026-10-07 (#691)** — BEM Export: gbXML (single- and multi-storey) writes per-space people, lighting and equipment densities with their hourly schedules and a source note; IFC4 writes occupancy and thermal-load psets. People heat gain still not written.
 - **2026-10-06 (#685)** — BEM Export: missing per-room LPD, occupant and plug-load density and schedules now default from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019, openstudio-standards v0.8.6) with `doe_prototype_default` provenance; drawing values are never overwritten. Grade unchanged until gbXML/IDF carry them.
 - **2026-10-06 (#684)** — HVAC B → B+: diffusers on or near a wall line, or just outside every room, are assigned by duct connectivity then nearest room, and genuine ties go to review instead of the first room listed.

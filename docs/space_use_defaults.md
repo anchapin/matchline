@@ -52,10 +52,17 @@ multi-storey) and the IFC4 writer:
   left unreferenced rather than guessed.
 - IFC4: `Pset_SpaceLighting.LightingPower`, `Pset_SpaceOccupancyRequirements`
   (`OccupancyNumber`, `AreaPerOccupant`) and `Pset_SpaceThermalLoad`
-  (`Lighting`, `EquipmentSensible` in W).
+  (`Lighting`, `People`, `EquipmentSensible` in W).
+- People heat gain (#693): gbXML `PeopleHeatGain` in `WattPerPerson`,
+  `heatGainType="Total"`, from the row's prototype occupancy activity
+  schedule (`activity_schedule`, copied into `activity_w_per_person`). Every
+  mapped row's activity schedule is constant in the prototypes (120 W/person
+  for the office, retail and school rows, 131.85 W/person for warehouse); the
+  generator stops if one is not. The data-center row has no activity
+  schedule, so its rooms get no heat gain. A drawing value is never
+  overwritten.
 
-People heat gain is not written: the table carries no activity level, and
-none is invented. IDF output does not carry loads yet.
+IDF output does not carry loads yet.
 
 ## Table
 

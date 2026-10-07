@@ -42,6 +42,7 @@ class BEMSpace:
     lighting_schedule: str = ""
     occupancy_schedule: str = ""
     equipment_schedule: str = ""
+    activity_w_per_person: Optional[float] = None  # total W/person (#693)
     loads_source: str = ""
 
 
