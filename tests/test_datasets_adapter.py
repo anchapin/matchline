@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import zipfile
 
 import numpy as np
@@ -380,6 +381,30 @@ class TestLoadArchCAD:
         loose = {"type": "LINE", "start": [0, 0], "end": [1, 1], "semantic": 1, "instance": None}
         _write_archcad(tmp_path / "b", _ARCHCAD_SLICE + [loose])
         assert len(load_archcad(tmp_path / "b")[0]) == n_base
+
+    @pytest.mark.parametrize(
+        "ell, bbox",
+        [
+            # full ellipse, 20 x 10, axis along x
+            ({"center": [50, 50], "major_axis": [10, 0], "ratio": 0.5,
+              "start_param": 0.0, "end_param": 2 * math.pi}, (40, 45, 60, 55)),
+            # upper half only (params 0..pi run counter-clockwise through +y)
+            ({"center": [50, 50], "major_axis": [10, 0], "ratio": 0.5,
+              "start_param": 0.0, "end_param": math.pi}, (40, 50, 60, 55)),
+            # same params with is_ccw false run clockwise through -y
+            ({"center": [50, 50], "major_axis": [10, 0], "ratio": 0.5, "is_ccw": False,
+              "start_param": 0.0, "end_param": math.pi}, (40, 45, 60, 50)),
+            # major axis rotated to y: 10 wide, 20 tall
+            ({"center": [50, 50], "major_axis": [0, 10], "ratio": 0.5,
+              "start_param": 0.0, "end_param": 2 * math.pi}, (45, 40, 55, 60)),
+        ],
+    )  # fmt: skip
+    def test_ellipse_is_rasterized(self, tmp_path, ell, bbox):
+        prim = {"type": "ELLIPSE", "semantic": "toilet", "instance": "toilet_9", **ell}
+        samples, _ = load_archcad(_write_archcad(tmp_path, [prim]))
+        assert [s.label for s in samples] == ["Toilet"]
+        assert samples[0].bbox == pytest.approx(bbox, abs=0.3)
+        assert samples[0].image.min() < 128
 
     def test_non_list_json_raises(self, tmp_path):
         _write_archcad(tmp_path, {"shapes": []})

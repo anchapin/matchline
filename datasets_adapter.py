@@ -1167,6 +1167,7 @@ def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | N
 # `semantic` is the class (table below); `instance` groups the primitives of
 # one countable object. Only LINE and CIRCLE are shown on the card; ARC and
 # polyline keys below are our best reading and are checked on first real data.
+# ELLIPSE follows the DXF fields seen on the real files (#728).
 
 
 class ArchCADFormatError(ValueError):
@@ -1276,6 +1277,32 @@ def _archcad_number(prim: dict, key: str, where: str) -> float:
     return float(v)
 
 
+def _archcad_ellipse(prim: dict, where: str) -> list[tuple[float, float]]:
+    """ELLIPSE -> polyline, DXF convention (seen on the real files, #728).
+
+    `major_axis` is the center-to-end vector of the major axis, `ratio` is
+    minor/major, and `start_param`/`end_param` are radians on the unit
+    circle (0 to 2*pi for a full ellipse). Points run counter-clockwise from
+    start to end; `is_ccw: false` mirrors the minor axis, so the same params
+    run clockwise.
+    """
+    cx, cy = _archcad_point(prim, "center", where)
+    mx, my = _archcad_point(prim, "major_axis", where)
+    ratio = _archcad_number(prim, "ratio", where)
+    t0 = _archcad_number(prim, "start_param", where) if "start_param" in prim else 0.0
+    t1 = _archcad_number(prim, "end_param", where) if "end_param" in prim else 2 * math.pi
+    if t1 <= t0:
+        t1 += 2 * math.pi
+    sgn = -1.0 if prim.get("is_ccw") is False else 1.0
+    nx, ny = -my * ratio * sgn, mx * ratio * sgn  # minor axis vector
+    n = max(8, int(math.degrees(t1 - t0) / 10.0))
+    ts = np.linspace(t0, t1, n + 1)
+    return [
+        (cx + mx * math.cos(t) + nx * math.sin(t), cy + my * math.cos(t) + ny * math.sin(t))
+        for t in ts
+    ]
+
+
 def _archcad_polylines(prim: dict, where: str) -> list[list[tuple[float, float]]] | None:
     """Primitive -> list of polylines in source coords; None if type unknown."""
     kind = str(prim.get("type", "")).upper()
@@ -1294,6 +1321,8 @@ def _archcad_polylines(prim: dict, where: str) -> list[list[tuple[float, float]]
         n = max(8, int((a1 - a0) / 10.0))
         ts = np.radians(np.linspace(a0, a1, n + 1))
         return [[(cx + r * math.cos(t), cy + r * math.sin(t)) for t in ts]]
+    if kind == "ELLIPSE":
+        return [_archcad_ellipse(prim, where)]
     for key in ("points", "vertices"):
         if key in prim:
             pts = prim[key]
