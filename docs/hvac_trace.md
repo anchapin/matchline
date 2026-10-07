@@ -77,3 +77,20 @@ Each zone reports:
 - `synth/mech.py`: Generator (rooms, VAVs, ducts, gaps, GT)
 - `hvac_trace.py`: Tracer (NCC+WiSARD detection, skeleton, cut-vertex zoning)
 - `synth/out/mech_trace_results.json`: Latest run results
+
+## Real-model room assignment check (#707)
+
+`scripts/validate_clinic_hvac.py` scores diffuser-to-room assignment against a real HVAC design: buildingSMART's Medical-Dental Clinic (`Clinic_HVAC.ifc`, IFC2X3, Revit MEP 2013). It's licensed CC BY 4.0, with attribution: BSI (2020) "Medical-Dental Test Files," buildingSMART International. The 27 MB file is not committed. Download it from https://github.com/buildingsmart-community/Community-Sample-Test-Files and set `MATCHLINE_CLINIC_HVAC` to its path to run `tests/test_clinic_hvac_validation.py::test_clinic_assignment_exact_positions`. Without that variable, the test is skipped.
+
+The designer's own containment is the ground truth: 437 of the 440 air terminals sit in an `IfcSpace`. Matchline sees only each space's floor footprint (as `polygon_m`) and each terminal's plan position, and runs them through `_assign_diffuser_room`. `--jitter` moves every terminal a fixed distance in a random direction, to mimic detector localisation error.
+
+Results (seed 0, 257 rooms on two floors):
+
+| Jitter | Correct | Wrong | Review |
+|--------|---------|-------|--------|
+| 0 m | 437 | 0 | 0 |
+| 0.15 m | 437 | 0 | 0 |
+| 0.30 m | 437 | 0 | 0 |
+| 0.50 m | 435 | 0 | 2 (`ambiguous`) |
+
+Limits: this checks room assignment on real room shapes only. Symbol detection is still validated on synthetic sheets, because no mechanical sheet has been rendered from this model yet. At exact positions every terminal is more than 0.15 m inside its room, so the #684 boundary and tie rules only come into play once jitter is added.
