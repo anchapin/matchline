@@ -255,6 +255,25 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"wrote {args.sheets}/sheet_index.json")
 
 
+def cmd_walls(args: argparse.Namespace) -> None:
+    """Walls and rooms from each takeoff floor plan in an ingest folder (#740)."""
+    from plan_walls import walls_for_sheets
+
+    res = walls_for_sheets(args.sheets)
+    if not res:
+        print("  no sheets to read (run `matchline scale` and `matchline index` first?)")
+    for name, r in res.items():
+        st = r["stats"]
+        n_rev = len(r["review"])
+        print(
+            f"  {name}  walls {st.get('walls', 0)}  openings {st.get('openings', 0)}  "
+            f"rooms {st.get('rooms', 0)}  review {n_rev}"
+        )
+        for item in r["review"][:5]:
+            print(f"    REVIEW {item['reason']}")
+    print(f"wrote walls_NNN.json in {args.sheets}")
+
+
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
     from ifc_export import export_ifc
@@ -419,6 +438,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("index", help="index sheets by discipline, type and level")
     p.add_argument("sheets", help="folder written by `matchline ingest`")
     p.set_defaults(func=cmd_index)
+
+    p = sub.add_parser("walls", help="walls and rooms from vector floor plans")
+    p.add_argument("sheets", help="folder written by `matchline ingest`, with scale.json")
+    p.set_defaults(func=cmd_walls)
 
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")
