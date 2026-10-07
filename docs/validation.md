@@ -271,15 +271,24 @@ and are run in addition to it, so `N_CHECKS` = 45 + 3 = 48.
 ASHRAE 90.1 compliance checks are diagnostic (severity: warn). They do not
 block export but surface code-compliance issues for human review.
 
-- `ashrae_wall_u_factor` — wall assembly U-factor ≤ 0.5 W/m²K (ASHRAE
-  90.1-2019 Table 5.5.4.2). Skipped when no walls in model.
-- `ashrae_roof_u_factor` — roof assembly U-factor ≤ 0.35 W/m²K (ASHRAE
-  90.1-2019 Table 5.5.4.2). Skipped when no roofs in model.
-- `ashrae_window_u_factor` — window U-factor ≤ 2.8 W/m²K (ASHRAE 90.1-2019
-  Table 5.5.4.2-1) **and** window SHGC ≤ the climate-zone maximum
-  (ASHRAE 90.1-2019 Table 5.5.4; defaults to 0.40). Both are evaluated by
-  the one function `validate.ashrae90_1.window_envelope()`, so there is no
-  separate SHGC check id. Skipped when no windows in model.
+- Envelope limits (#763) come from `construction_library_data.py`, ASHRAE
+  90.1-2019 Tables 5.5-0 to 5.5-8 as encoded in openstudio-standards v0.8.6
+  (see [construction_library.md](construction_library.md)). The climate zone
+  and building category are the ones given to the pipeline
+  (`--climate-zone`, `--building-category`, stored on the model). With no
+  zone the three envelope checks skip and say so; a zone is never assumed.
+  Each item is checked against the limit for its own construction class.
+  An item with no class is checked against the loosest class in that table:
+  a value above it fails any class (error), and a value below it is reported
+  as not confirmed (warn), never as compliant.
+- `ashrae_wall_u_factor`: wall U from `EnvelopeWall.u_factor` (Btu/h·ft²·°F)
+  or the wall's construction; class (Mass, SteelFramed, WoodFramed, Metal
+  Building) from the construction's tag and name.
+- `ashrae_roof_u_factor`: roof U from `roof_u_factor`, `roofs[i].u_factor`
+  or `roof_construction_id`; class IEAD, Metal Building or Attic and Other.
+- `ashrae_window_u_factor`: window U-factor **and** SHGC in one check;
+  `operable` (or `construction_type`) picks the Fixed or Operable row.
+  Skipped when no windows in model.
 - `ashrae_lighting_power_density` — space lighting power density ≤ 10.5
   W/m² (ASHRAE 90.1-2019 Table 9.5.1). Skipped when no conditioned
   spaces in model.

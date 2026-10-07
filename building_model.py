@@ -817,6 +817,11 @@ class BuildingModel:
     # Construction.id of the ground slab (IFC import reads a BASESLAB's stated
     # ThermalTransmittance); "" -> generic slab on grade on export
     slab_construction_id: str = ""
+    # ASHRAE climate zone (e.g. "4A") and 90.1 building category, as given by
+    # the user (--climate-zone / --building-category, #747/#763); "" means not
+    # given, and nothing downstream assumes one
+    climate_zone: str = ""
+    building_category: str = ""
     shading: List[ShadingSurface] = field(default_factory=list)
     space_adjacencies: List[SpaceAdjacency] = field(default_factory=list)
     # sloped roof facets (roadmap item 2, #613); empty -> flat roof at wall height

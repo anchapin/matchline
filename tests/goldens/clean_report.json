@@ -312,23 +312,23 @@
   },
   {
    "check_id": "ashrae_wall_u_factor",
-   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Wall U-factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Wall U-factor",
    "severity": "skip",
-   "message": "No walls with u_factor set on model",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
    "entities": []
   },
   {
    "check_id": "ashrae_roof_u_factor",
-   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Roof U-factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Roof U-factor",
    "severity": "skip",
-   "message": "No roof_u_factor or roofs list on model",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
    "entities": []
   },
   {
    "check_id": "ashrae_window_u_factor",
-   "name": "ASHRAE 90.1-2019 Table 5.5.4 \u2014 Window U-factor & SHGC",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Window U-factor & SHGC",
    "severity": "skip",
-   "message": "No windows list found on model",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
    "entities": []
   },
   {

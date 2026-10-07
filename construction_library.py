@@ -185,6 +185,8 @@ def apply_construction_library(
     s = LibrarySummary(climate_zone=climate_zone or "", category=category)
     if climate_zone:
         climate_zone_number(climate_zone)  # validate early
+        model.climate_zone = climate_zone
+        model.building_category = category
     else:
         s.not_run = "no climate zone given"
     roof_id = getattr(model, "roof_construction_id", "") or ""
