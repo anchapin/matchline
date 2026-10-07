@@ -34,6 +34,7 @@ from bem_export import (
     write_ifc4,
 )
 from bem_helpers import _edge_facades
+from construction_library import apply_construction_library
 from convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
@@ -299,6 +300,18 @@ def parse_args():
         type=float,
         default=None,
         help="storey height in metres for --set when the set states none (default 3.0, flagged)",
+    )
+    ap.add_argument(
+        "--climate-zone",
+        default=None,
+        help="ASHRAE climate zone (e.g. 4A) for the construction library (#747); "
+        "unset constructions stay unset without one",
+    )
+    ap.add_argument(
+        "--building-category",
+        default="Nonresidential",
+        choices=["Nonresidential", "Residential", "Semiheated"],
+        help="ASHRAE 90.1 Table 5.5 building category (default Nonresidential)",
     )
     ap.add_argument(
         "--simplify-tol",
@@ -598,6 +611,15 @@ def main(args, config: dict | None = None) -> None:
                 "Ensure wall_height is valid (> 0).",
             ) from e
 
+        # --- Stage 3b: construction library (#747) ---------------------------
+        climate_zone = getattr(args, "climate_zone", None)
+        category = getattr(args, "building_category", None) or "Nonresidential"
+        if config:
+            climate_zone = config.get("climate_zone", climate_zone)
+            category = config.get("building_category", category)
+        constructions = apply_construction_library(model, climate_zone or "", category)
+        write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
+
         # --- Stage 4: validation checks --------------------------------------
         try:
             report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
@@ -625,7 +647,7 @@ def main(args, config: dict | None = None) -> None:
             )
             write_json(
                 out_dir / "stage_06_bem" / "convention_report.json",
-                build_convention_report(model, report, sres),
+                build_convention_report(model, report, sres, constructions),
             )
             _print_pipeline_complete(out_dir, report)
         except StageError:
