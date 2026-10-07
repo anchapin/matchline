@@ -1,0 +1,1485 @@
+"""Dataset adapters + quantity-takeoff measurement layer.
+
+End goal is quantity takeoff from drawings. Per domain input, facades use
+symbols/tags for window (and door) types, with a separate schedule table on
+the drawings giving dimensions per type. The pipeline is therefore
+three-stage -- not dense per-pixel segmentation:
+
+  (1) SYMBOL SPOTTING .... spot + classify window/door type symbols on
+      elevations and floor plans -> count per type tag. This is the WiSARD
+      classifier's job (region in, label out).
+  (2) SCHEDULE PARSING ... document-layout / table-parsing task: find the
+      window/door schedule table on the sheet, parse it into
+      {tag: dimensions}. (Jesse's document-layout analysis is the natural
+      fit here; v1 takes the schedule as CSV.)
+  (3) AREA ROLLUP ........ count x scheduled dimensions, summed per category.
+
+  detections -> schedule entries -> takeoff lines (count x dims = m^2)
+
+Floor areas are the exception: they come from polygon measurement of Room /
+area regions (count x dims cannot produce them), via measure_takeoff.
+
+The WiSARD core (jesse.py) stays a pure classifier. v1 region proposals come
+from ground-truth annotations; v2 will use a WiSARD sliding-window scan plus
+OCR of adjacent tag text; tag text extraction is the v2 gap (current
+annotation sets carry labels but not the type tags).
+
+Output contract
+---------------
+* ``SymbolSample``  - one cropped symbol instance for classifier training.
+* ``Detection``     - one spotted symbol: label, schedule tag, bbox, score.
+* ``ScheduleEntry`` - one schedule row: tag -> category + dimensions (m).
+* ``TakeoffLine``   - joined row: count x dims = area for one tag.
+* ``TakeoffResult`` - per-tag lines + per-category m^2 totals + unmatched
+  detections (tags with no schedule entry -- reported, never silently
+  dropped; auditability is the point).
+* ``Region`` / ``measure_takeoff`` - polygon path, retained for floor_area.
+
+Drawing scale: polygon areas need ``DrawingScale`` (m/px). The count x dims
+path does NOT need drawing scale at all -- dimensions come from the
+schedule, which is why it is more robust than pixel measurement.
+"""
+
+from __future__ import annotations
+
+import csv
+import dataclasses
+import json
+import logging
+import math
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import tomllib
+
+try:
+    import cv2  # opencv-python
+except ImportError:
+    cv2 = None  # lazy import below; parse_schedule_table requires it
+import numpy as np
+
+from detector.classes import CLASS_NAMES
+from safe_xml import safe_xml_parse
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Output contract
+# ---------------------------------------------------------------------------
+
+TAKEOFF_CATEGORIES = (
+    "floor_area",  # enclosed areas: rooms, shafts, balconies, elevators, stairs
+    "wall",
+    "window",
+    "door",
+    "fixture",  # sinks, toilets, tubs, showers, cooktops (counted, area ~0)
+    "lighting",  # light fixtures: counted per schedule tag, watts summed
+    "opening",  # generic openings when the set does not distinguish
+)
+
+
+@dataclass
+class SymbolSample:
+    """One cropped symbol instance for classifier training."""
+
+    image: np.ndarray  # (H, W) float64 grayscale, 0..255, dark ink on light bg
+    label: str
+    source: str  # e.g. "aec-bench:sheet_01"
+    bbox: tuple  # (xtl, ytl, xbr, ybr) in source pixel coords
+
+
+@dataclass
+class Region:
+    """One measured polygon with a takeoff category."""
+
+    category: str  # one of TAKEOFF_CATEGORIES
+    polygon_px: list  # [(x, y), ...] in source pixel coords
+    source: str
+    drawing_type: str = "floor_plan"  # or "elevation"
+    label: str = ""  # original dataset label, e.g. "Single Swing Door"
+
+
+@dataclass
+class DrawingScale:
+    m_per_px: float | None
+    note: str = ""
+
+
+@dataclass
+class TakeoffResult:
+    drawing_type: str
+    scale: DrawingScale
+    regions: list = field(default_factory=list)
+    area_px2: dict = field(default_factory=dict)  # category -> px^2
+    area_m2: dict = field(default_factory=dict)  # category -> m^2 (if scale)
+    counts: dict = field(default_factory=dict)  # category -> region count
+    # --- three-stage pipeline (detections -> schedule -> rollup) ---
+    lines: list = field(default_factory=list)  # TakeoffLine per tag
+    unmatched: list = field(default_factory=list)  # tagged Detections w/o schedule entry
+    untagged: list = field(default_factory=list)  # Detections with no tag read yet
+    untagged_counts: dict = field(default_factory=dict)  # label -> untagged count
+    tag_review: list = field(default_factory=list)  # counted, but tag_score < threshold
+
+
+@dataclass
+class Detection:
+    """Stage-1 output: one spotted + classified symbol instance."""
+
+    label: str  # classifier label, e.g. "Window"
+    tag: str  # schedule tag, e.g. "A" / "W-1" ("" if not extracted)
+    score: float  # classifier margin/confidence
+    bbox: tuple  # (xtl, ytl, xbr, ybr) in source pixel coords
+    source: str  # e.g. "aec-bench:sheet_01"
+    drawing_type: str = "floor_plan"
+    # Confidence of the tag read (e.g. OCR), 0..1. None = the tag came from a
+    # trusted source (ground truth, manual entry) and needs no review.
+    tag_score: float | None = None
+
+
+# Tags read below this confidence are still counted by rollup_takeoff but
+# also listed in TakeoffResult.tag_review.
+TAG_REVIEW_THRESHOLD = 0.5
+
+
+def normalize_tag(tag) -> str:
+    """Canonical schedule-tag form: all whitespace removed, uppercased.
+
+    Applied to both sides of the rollup join so an OCR read of ``w-1`` or
+    ``W 1`` matches schedule tag ``W-1``. ``None`` and blank tags become "".
+    """
+    if tag is None:
+        return ""
+    return "".join(str(tag).split()).upper()
+
+
+@dataclass
+class ScheduleEntry:
+    """Stage-2 output: one schedule-table row.
+
+    Window/door rows carry dimensions in meters; lighting rows carry watts
+    per fixture (width/height None). ``description``/``lamp_type`` are the
+    human-readable schedule text (e.g. "2x4 recessed LED troffer" / "LED").
+    """
+
+    tag: str
+    category: str  # "door" / "window" / "lighting"
+    width_m: float | None
+    height_m: float | None
+    note: str = ""
+    watts: float | None = None  # lighting: W per fixture
+    description: str = ""  # lighting: fixture description
+    lamp_type: str = ""  # lighting: lamp/technology
+
+
+@dataclass
+class TakeoffLine:
+    """Stage-3 output: count x scheduled dims for one tag."""
+
+    tag: str
+    category: str
+    count: int
+    width_m: float | None
+    height_m: float | None
+    area_m2: float | None  # count * width * height (None if dims unknown)
+
+
+def polygon_area_px2(poly) -> float:
+    """Shoelace area of a polygon given as [(x, y), ...]."""
+    p = np.asarray(poly, dtype=np.float64)
+    if len(p) < 3:
+        return 0.0
+    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
+
+
+def box_to_polygon(xtl, ytl, xbr, ybr):
+    return [(xtl, ytl), (xbr, ytl), (xbr, ybr), (xtl, ybr)]
+
+
+def measure_takeoff(regions: list[Region], drawing_type: str, scale: DrawingScale) -> TakeoffResult:
+    """Sum region polygon areas per takeoff category."""
+    res = TakeoffResult(drawing_type=drawing_type, scale=scale, regions=list(regions))
+    for r in regions:
+        a = polygon_area_px2(r.polygon_px)
+        res.area_px2[r.category] = res.area_px2.get(r.category, 0.0) + a
+        res.counts[r.category] = res.counts.get(r.category, 0) + 1
+    if scale.m_per_px:
+        k = scale.m_per_px**2
+        for cat, a in res.area_px2.items():
+            res.area_m2[cat] = a * k
+    return res
+
+
+def scale_from_reference(
+    regions: list[Region], category: str, known_m: float, agg=np.median
+) -> DrawingScale:
+    """Estimate m/px from a known real-world dimension.
+
+    E.g. a single swing door leaf is typically 0.9 m wide: measure the
+    median box width of door regions and solve for the scale. Marked as an
+    estimate -- replace with title-block scale whenever available.
+    """
+    widths = []
+    for r in regions:
+        if r.category == category and len(r.polygon_px) == 4:
+            xs = [p[0] for p in r.polygon_px]
+            widths.append(max(xs) - min(xs))
+    if not widths:
+        return DrawingScale(None, f"no {category} regions for reference scale")
+    m_per_px = known_m / float(agg(widths))
+    return DrawingScale(
+        m_per_px,
+        f"estimated from {category} width={known_m} m "
+        f"(median {float(agg(widths)):.1f} px, n={len(widths)})",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Three-stage takeoff pipeline: detections -> schedule -> rollup
+# ---------------------------------------------------------------------------
+
+
+class DetectorOutputValidationError(ValueError):
+    """Raised when detector JSON output violates the schema contract."""
+
+
+def _validate_detector_output(data: dict, path: str | Path) -> None:
+    """Validate detector JSON output against the versioned schema contract.
+
+    Raises DetectorOutputValidationError with a descriptive message on any
+    violation. The pipeline MUST fail loudly — not silently — on schema
+    violations to catch detector output format drift.
+    """
+    schema_path = Path(__file__).resolve().parent / "schemas" / "detector_output_v1.schema.json"
+    if not schema_path.exists():
+        raise DetectorOutputValidationError(
+            f"Schema not found at {schema_path}; cannot validate {path}"
+        )
+
+    try:
+        import jsonschema
+    except ImportError:
+        raise DetectorOutputValidationError(
+            "jsonschema is required for detector output validation. "
+            "Install with: pip install jsonschema"
+        )
+
+    schema = json.loads(schema_path.read_text())
+    validator = jsonschema.Draft7Validator(schema)
+    errors = list(validator.iter_errors(data))
+    if errors:
+        first = errors[0]
+        raise DetectorOutputValidationError(
+            f"Detector output {path} violates schema "
+            f"at {' > '.join(str(p) for p in first.path)}: {first.message}"
+        )
+
+
+def detections_from_yolo_json(
+    yolo_json_path: str | Path,
+    source: str,
+) -> list[Detection]:
+    """Convert sahi_infer.py JSON output to Detection list.
+
+    yolo_json_path: path to the JSON written by sahi_infer.py main().
+    source: sheet identifier, e.g. "aec-bench:sheet_01" — stored as Detection.source.
+
+    Raises DetectorOutputValidationError if the JSON violates the versioned
+    detector output schema (schemas/detector_output_v1.schema.json).
+    """
+    try:
+        data = json.loads(Path(yolo_json_path).read_text())
+    except json.JSONDecodeError as exc:
+        raise DetectorOutputValidationError(
+            f"Detector output {yolo_json_path} is not valid JSON: {exc}"
+        ) from exc
+    _validate_detector_output(data, yolo_json_path)
+    dets = []
+    for i, p in enumerate(data["preds"]):
+        try:
+            label = CLASS_NAMES[p["cls"]]
+        except IndexError:
+            raise DetectorOutputValidationError(
+                f"preds[{i}]: cls={p['cls']} is out of range for CLASS_NAMES "
+                f"(len={len(CLASS_NAMES)}). Detector output format may have changed."
+            ) from None
+        dets.append(
+            Detection(
+                label=label,
+                tag="",  # tag extracted by separate OCR/WiSARD step (DET-02/DET-03)
+                score=float(p["conf"]),
+                bbox=(float(p["x0"]), float(p["y0"]), float(p["x1"]), float(p["y1"])),
+                source=source,
+                drawing_type="floor_plan",
+            )
+        )
+    return dets
+
+
+def detections_from_regions(regions: list[Region], score: float = 1.0) -> list[Detection]:
+    """Stage 1 (v1): ground-truth regions -> Detections.
+
+    Boxes become detections with the region label; polygons (floor_area,
+    walls) are NOT detections -- they are measured directly by
+    measure_takeoff. Tags are empty: current annotation sets carry class
+    labels but not the type tags printed next to symbols on real sheets.
+    Run :func:`extract_with_tags` afterwards to OCR them (#668).
+    """
+    out = []
+    for r in regions:
+        if r.category not in ("door", "window", "fixture", "lighting"):
+            continue
+        xs = [p[0] for p in r.polygon_px]
+        ys = [p[1] for p in r.polygon_px]
+        out.append(
+            Detection(
+                label=r.label,
+                tag="",
+                score=score,
+                bbox=(min(xs), min(ys), max(xs), max(ys)),
+                source=r.source,
+                drawing_type=r.drawing_type,
+            )
+        )
+    return out
+
+
+def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
+    """Stage 2 (v1): parse a window/door schedule from CSV.
+
+    Columns: tag, category, width_m, height_m[, note]. This is the interchange
+    format: whatever the table parser (stage 2 full version) extracts gets
+    normalized into this before rollup.
+    """
+    if isinstance(path_or_rows, (str, Path)):
+        f = open(path_or_rows, newline="")
+        close = True
+    else:
+        f, close = path_or_rows, False
+    sched: dict[str, ScheduleEntry] = {}
+    try:
+        for row in csv.DictReader(f):
+            tag = normalize_tag(row["tag"])
+            sched[tag] = ScheduleEntry(
+                tag=tag,
+                category=row.get("category", "").strip().lower() or "window",
+                width_m=float(row["width_m"]) if row.get("width_m") else None,
+                height_m=float(row["height_m"]) if row.get("height_m") else None,
+                note=row.get("note", "").strip(),
+            )
+    finally:
+        if close:
+            f.close()
+    return sched
+
+
+def parse_lighting_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
+    """Stage 2 (v1): parse a lighting fixture schedule from CSV.
+
+    Columns: tag, description, lamp_type, watts[, category][, note].
+    Category defaults to "lighting". This is the interchange format for the
+    full table-parser (stage 2): whatever it extracts gets normalized here
+    before the lighting rollup.
+    """
+    if isinstance(path_or_rows, (str, Path)):
+        f = open(path_or_rows, newline="")
+        close = True
+    else:
+        f, close = path_or_rows, False
+    sched: dict[str, ScheduleEntry] = {}
+    try:
+        for row in csv.DictReader(f):
+            tag = row["tag"].strip()
+            watts = row.get("watts", "").strip()
+            sched[tag] = ScheduleEntry(
+                tag=tag,
+                category=row.get("category", "").strip().lower() or "lighting",
+                width_m=None,
+                height_m=None,
+                note=row.get("note", "").strip(),
+                watts=float(watts) if watts else None,
+                description=row.get("description", "").strip(),
+                lamp_type=row.get("lamp_type", "").strip(),
+            )
+    finally:
+        if close:
+            f.close()
+    return sched
+
+
+def parse_schedule_table(sheet_image: np.ndarray) -> dict[str, ScheduleEntry]:
+    """Stage 2 (full): find + parse the schedule table on a sheet image.
+
+    Heuristic approach:
+    1. Detect horizontal/vertical separator lines (table grid)
+    2. Segment cells
+    3. OCR cell text
+    4. Map columns by header row
+
+    Raises ImportError if opencv-python is not installed.
+    """
+    if cv2 is None:
+        raise ImportError(
+            "opencv-python is required for parse_schedule_table: pip install opencv-python"
+        )
+    # Convert to grayscale if needed
+    if len(sheet_image.shape) == 3:
+        gray = cv2.cvtColor(sheet_image, cv2.COLOR_RGB2GRAY)
+    else:
+        gray = sheet_image
+
+    # Detect horizontal lines: close horizontal morphology, threshold
+    horiz = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((1, 40)))
+    h_lines = cv2.threshold(horiz, 0, 255, cv2.THRESH_BINARY)[1]
+    h_coords = [r for r in range(h_lines.shape[0]) if h_lines[r, :].mean() > 200]
+
+    # Detect vertical lines: close vertical morph, threshold
+    vert = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((40, 1)))
+    v_lines = cv2.threshold(vert, 0, 255, cv2.THRESH_BINARY)[1]
+    v_coords = [c for c in range(v_lines.shape[1]) if v_lines[:, c].mean() > 200]
+
+    if len(h_coords) < 2 or len(v_coords) < 2:
+        raise NotImplementedError(
+            "No table grid detected on this sheet. "
+            "Use parse_schedule_csv() with a CSV export instead."
+        )
+
+    # Row detection: split at horizontal lines
+    row_bounds = []
+    prev_h = 0
+    for h in h_coords:
+        if h - prev_h > 10:  # minimum row height
+            row_bounds.append((prev_h, h))
+        prev_h = h
+    if prev_h < gray.shape[0] - 5:
+        row_bounds.append((prev_h, gray.shape[0]))
+
+    # Column detection: split at vertical lines
+    col_bounds = []
+    prev_v = 0
+    for v in v_coords:
+        if v - prev_v > 10:  # minimum col width
+            col_bounds.append((prev_v, v))
+        prev_v = v
+    if prev_v < gray.shape[1] - 5:
+        col_bounds.append((prev_v, gray.shape[1]))
+
+    # OCR each cell with pytesseract
+    try:
+        import pytesseract
+    except ImportError:
+        raise ImportError(
+            "pytesseract required for schedule table parsing: pip install pytesseract"
+        )
+
+    rows_data = []
+    for y0, y1 in row_bounds:
+        row_cells = []
+        for x0, x1 in col_bounds:
+            crop = gray[y0:y1, x0:x1]
+            text = pytesseract.image_to_string(crop, config="--psm 6").strip()
+            row_cells.append(text)
+        rows_data.append(row_cells)
+
+    # Find header row: look for "tag", "type", "width", "height" in first non-empty row
+    header_idx = None
+    for i, row in enumerate(rows_data):
+        joined = " ".join(row).lower()
+        if any(k in joined for k in ["tag", "type", "width", "height", "dims"]):
+            header_idx = i
+            break
+
+    if header_idx is None:
+        raise NotImplementedError(
+            "Could not identify table header row. Use parse_schedule_csv() instead."
+        )
+
+    # Build column index from header
+    header = [c.lower().strip() for c in rows_data[header_idx]]
+    # Map: "tag"->0, "type"/"cat"/"category"->1, "width"/"w"->2, "height"/"h"->3, "note"/"desc"->4
+    col_map = {}
+    for i, h in enumerate(header):
+        if "tag" in h and "num" not in h:
+            col_map["tag"] = i
+        elif "type" in h or "cat" in h or "category" in h:
+            col_map["category"] = i
+        elif "width" in h or ("w" == h.strip()):
+            col_map["width"] = i
+        elif "height" in h or ("h" == h.strip()):
+            col_map["height"] = i
+        elif "note" in h or "desc" in h:
+            col_map["note"] = i
+
+    # Parse data rows
+    schedule = {}
+    for row in rows_data[header_idx + 1 :]:
+        if not any(c.strip() for c in row):
+            continue
+        tag_raw = row[col_map.get("tag", 0)].strip()
+        if not tag_raw or tag_raw in [c.lower() for c in header]:
+            continue
+        tag = tag_raw.upper().replace(" ", "")
+
+        cat_raw = row[col_map.get("category", 1)].strip().lower() if col_map.get("category") else ""
+        category = (
+            "window"
+            if "window" in cat_raw or "win" in cat_raw
+            else "door"
+            if "door" in cat_raw
+            else "lighting"
+            if "light" in cat_raw
+            else "opening"
+        )
+
+        w_raw = row[col_map.get("width", 2)].strip() if col_map.get("width") else ""
+        h_raw = row[col_map.get("height", 3)].strip() if col_map.get("height") else ""
+
+        def parse_dim(s):
+            m = re.search(r"[\d.]+", s)
+            return float(m.group()) if m else None
+
+        width_m = parse_dim(w_raw)
+        height_m = parse_dim(h_raw)
+
+        note = row[col_map.get("note", -1)].strip() if col_map.get("note") else ""
+
+        schedule[tag] = ScheduleEntry(
+            tag=tag,
+            category=category,
+            width_m=width_m,
+            height_m=height_m,
+            note=note,
+        )
+
+    return schedule
+
+
+# ---------------------------------------------------------------------------
+# OCR tag extraction (#668): read the schedule tag printed next to a symbol
+# ---------------------------------------------------------------------------
+
+OCR_BACKENDS = ("auto", "pytesseract", "rapidocr", "none")
+DATASETS_DEFAULTS = {
+    "ocr_backend": "auto",  # auto = pytesseract, then rapidocr, else no OCR
+    "ocr_pad_frac": 1.0,  # search window grows by this x symbol size on each side
+    "ocr_min_conf": 0.3,  # drop OCR reads below this confidence (0..1)
+}
+# Schedule tags are short codes ("A", "W-1", "D2", "101A"); room names and
+# notes ("OFFICE", "SEE DETAIL") are not.
+TAG_TEXT_RE = re.compile(r"^[A-Z0-9]{1,4}(?:-[A-Z0-9]{1,4})?$")
+
+
+def load_datasets_config(config: dict | None = None, pyproject: Path | None = None) -> dict:
+    """Resolve the dataset/OCR settings.
+
+    Precedence, lowest first: ``DATASETS_DEFAULTS``; the ``[tool.matchline.datasets]``
+    table of ``pyproject`` (default: ``./pyproject.toml`` if present); the
+    ``datasets:`` section of the per-building YAML config (``config``).
+    Unknown keys are ignored with a warning; an unknown backend raises ValueError.
+    """
+    cfg = dict(DATASETS_DEFAULTS)
+    path = Path(pyproject) if pyproject is not None else Path.cwd() / "pyproject.toml"
+    if path.is_file():
+        with path.open("rb") as f:
+            table = tomllib.load(f).get("tool", {}).get("matchline", {}).get("datasets", {})
+        cfg.update(table)
+    if config:
+        cfg.update(config.get("datasets") or {})
+    unknown = sorted(set(cfg) - set(DATASETS_DEFAULTS))
+    if unknown:
+        logger.warning("unknown datasets config keys ignored: %s", unknown)
+        for k in unknown:
+            cfg.pop(k)
+    if cfg["ocr_backend"] not in OCR_BACKENDS:
+        raise ValueError(
+            f"datasets.ocr_backend={cfg['ocr_backend']!r} is not one of {OCR_BACKENDS}"
+        )
+    cfg["ocr_pad_frac"] = float(cfg["ocr_pad_frac"])
+    cfg["ocr_min_conf"] = float(cfg["ocr_min_conf"])
+    return cfg
+
+
+def _gray_u8(image: np.ndarray) -> np.ndarray:
+    img = np.asarray(image)
+    if img.ndim == 3:
+        img = img[..., :3].mean(axis=-1)
+    return np.ascontiguousarray(np.clip(img, 0, 255).astype(np.uint8))
+
+
+def _pytesseract_reader():
+    import pytesseract
+
+    pytesseract.get_tesseract_version()  # raises if the tesseract binary is missing
+
+    def read(crop: np.ndarray) -> list:
+        d = pytesseract.image_to_data(
+            _gray_u8(crop), config="--psm 11", output_type=pytesseract.Output.DICT
+        )
+        out = []
+        for text, conf, x, y, w, h in zip(
+            d["text"], d["conf"], d["left"], d["top"], d["width"], d["height"]
+        ):
+            if text.strip() and float(conf) >= 0:
+                out.append((text, float(conf) / 100.0, (x, y, x + w, y + h)))
+        return out
+
+    return read
+
+
+def _rapidocr_reader():
+    from rapidocr_onnxruntime import RapidOCR
+
+    engine = RapidOCR()
+
+    def read(crop: np.ndarray) -> list:
+        g = _gray_u8(crop)
+        result, _ = engine(np.stack([g] * 3, axis=-1))
+        out = []
+        for quad, text, score in result or []:
+            q = np.asarray(quad, dtype=np.float64)
+            box = (q[:, 0].min(), q[:, 1].min(), q[:, 0].max(), q[:, 1].max())
+            out.append((text, float(score), tuple(float(v) for v in box)))
+        return out
+
+    return read
+
+
+_OCR_FACTORIES = {"pytesseract": _pytesseract_reader, "rapidocr": _rapidocr_reader}
+
+
+def get_ocr_reader(backend: str = "auto"):
+    """Return ``(backend_name, read_fn)`` or ``(None, None)`` when unavailable.
+
+    ``read_fn(crop) -> [(text, confidence 0..1, (x0, y0, x1, y1) in crop px)]``.
+    A missing package or binary never raises: it logs a warning and returns
+    ``(None, None)`` so the pipeline carries on with tags left empty.
+    """
+    if backend not in OCR_BACKENDS:
+        raise ValueError(f"ocr backend {backend!r} is not one of {OCR_BACKENDS}")
+    if backend == "none":
+        return None, None
+    names = ["pytesseract", "rapidocr"] if backend == "auto" else [backend]
+    errors = []
+    for name in names:
+        try:
+            return name, _OCR_FACTORIES[name]()
+        except Exception as e:  # ImportError, TesseractNotFoundError, model load
+            logger.debug("OCR backend %s unavailable", name, exc_info=True)
+            errors.append(f"{name}: {type(e).__name__}: {e}")
+    logger.warning(
+        "no OCR backend available (%s); detections keep empty tags. "
+        "Install the `ocr` extra or tesseract to read schedule tags.",
+        "; ".join(errors),
+    )
+    return None, None
+
+
+def _box_gap(a: tuple, b: tuple) -> float:
+    """Euclidean gap between two (x0, y0, x1, y1) boxes; 0 when they overlap."""
+    dx = max(a[0] - b[2], b[0] - a[2], 0.0)
+    dy = max(a[1] - b[3], b[1] - a[3], 0.0)
+    return math.hypot(dx, dy)
+
+
+def extract_with_tags(
+    detections: list[Detection],
+    image: np.ndarray,
+    config: dict | None = None,
+    backend: str | None = None,
+    schedule_tags=None,
+    reader=None,
+) -> list[Detection]:
+    """Stage 1b: OCR the schedule tag next to each untagged detection.
+
+    For each detection whose tag is empty, OCR runs on a window around its
+    bbox (grown by ``ocr_pad_frac`` x the symbol size on every side). Reads
+    that look like a tag (``TAG_TEXT_RE`` after ``normalize_tag``) and reach
+    ``ocr_min_conf`` are candidates; tags in ``schedule_tags`` win, then the
+    read closest to the symbol, then the most confident. The winner fills
+    ``tag`` and ``tag_score`` (so low-confidence reads land in
+    ``TakeoffResult.tag_review``).
+
+    Detections that already carry a tag are returned untouched. When no
+    backend is available the input comes back unchanged (warning logged);
+    the pipeline never fails on OCR. ``reader`` injects a read function
+    (same contract as ``get_ocr_reader``) for tests or custom engines.
+    Returns new Detection objects; the inputs are not modified.
+    """
+    cfg = load_datasets_config(config)
+    if reader is None:
+        _, reader = get_ocr_reader(backend or cfg["ocr_backend"])
+    if reader is None:
+        return list(detections)
+    known = {normalize_tag(t) for t in schedule_tags} if schedule_tags else set()
+    img = np.asarray(image)
+    h, w = img.shape[:2]
+    out = []
+    for d in detections:
+        if normalize_tag(d.tag):
+            out.append(d)
+            continue
+        x0, y0, x1, y1 = (float(v) for v in d.bbox)
+        pad = cfg["ocr_pad_frac"] * max(x1 - x0, y1 - y0, 1.0)
+        cx0, cy0 = max(0, int(x0 - pad)), max(0, int(y0 - pad))
+        cx1, cy1 = min(w, int(math.ceil(x1 + pad))), min(h, int(math.ceil(y1 + pad)))
+        if cx1 <= cx0 or cy1 <= cy0:
+            out.append(d)
+            continue
+        sym = (x0 - cx0, y0 - cy0, x1 - cx0, y1 - cy0)  # symbol bbox in crop px
+        best = None
+        for text, conf, box in reader(img[cy0:cy1, cx0:cx1]):
+            tag = normalize_tag(text)
+            if not TAG_TEXT_RE.match(tag) or conf < cfg["ocr_min_conf"]:
+                continue
+            rank = (tag not in known, _box_gap(sym, tuple(box)), -conf)
+            if best is None or rank < best[0]:
+                best = (rank, tag, conf)
+        if best is None:
+            out.append(d)
+        else:
+            out.append(dataclasses.replace(d, tag=best[1], tag_score=round(best[2], 4)))
+    return out
+
+
+def rollup_takeoff(
+    detections: list[Detection],
+    schedule: dict[str, ScheduleEntry],
+    drawing_type: str = "floor_plan",
+    tag_review_below: float = TAG_REVIEW_THRESHOLD,
+) -> TakeoffResult:
+    """Stage 3: join detections to the schedule; count x dims per tag.
+
+    Areas need NO drawing scale: dimensions come from the schedule table.
+    Tags are compared after ``normalize_tag`` on both sides. Nothing is
+    silently dropped:
+
+    * tagged detections with no schedule entry land in ``result.unmatched``;
+    * detections with no tag yet land in ``result.untagged``, with per-label
+      counts in ``result.untagged_counts``;
+    * detections whose ``tag_score`` is below ``tag_review_below`` are counted
+      under their tag and also listed in ``result.tag_review``.
+    """
+    sched = {normalize_tag(k): v for k, v in schedule.items()}
+    by_tag: dict[str, list[Detection]] = {}
+    res = TakeoffResult(
+        drawing_type=drawing_type, scale=DrawingScale(None, "not needed: count x schedule dims")
+    )
+    for d in detections:
+        tag = normalize_tag(d.tag)
+        if not tag:
+            res.untagged.append(d)
+            res.untagged_counts[d.label] = res.untagged_counts.get(d.label, 0) + 1
+            continue
+        by_tag.setdefault(tag, []).append(d)
+
+    for tag in sorted(by_tag):
+        ds = by_tag[tag]
+        entry = sched.get(tag)
+        if entry is None:
+            res.unmatched.extend(ds)
+            continue
+        res.tag_review.extend(
+            d for d in ds if d.tag_score is not None and d.tag_score < tag_review_below
+        )
+        n = len(ds)
+        area = n * entry.width_m * entry.height_m if entry.width_m and entry.height_m else None
+        res.lines.append(
+            TakeoffLine(
+                tag=tag,
+                category=entry.category,
+                count=n,
+                width_m=entry.width_m,
+                height_m=entry.height_m,
+                area_m2=area,
+            )
+        )
+        if area is not None:
+            res.area_m2[entry.category] = res.area_m2.get(entry.category, 0.0) + area
+        res.counts[entry.category] = res.counts.get(entry.category, 0) + n
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Shared crop / normalize helpers (classifier path)
+# ---------------------------------------------------------------------------
+
+
+def normalize_crop(crop: np.ndarray, size: int = 28, pad_frac: float = 0.15) -> np.ndarray:
+    """Crop -> padded square -> (size, size) float64 0..255, dark ink on light.
+
+    Matches the input contract jesse.py expects (thermometer thresholds at
+    35/120 assume dark strokes on a light background).
+    """
+    from PIL import Image
+
+    arr = np.asarray(crop)
+    if arr.ndim == 3:
+        # luminance; drawings are near-grayscale anyway
+        arr = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    arr = arr.astype(np.float64)
+    # invert if the crop is dark-on-light already? No: keep as-is; ensure
+    # ink is dark: if mean < 128 the background is dark -> invert.
+    if arr.mean() < 128:
+        arr = 255.0 - arr
+    h, w = arr.shape
+    side = int(max(h, w) * (1.0 + 2 * pad_frac))
+    canvas = np.full((side, side), 255.0)
+    y0 = (side - h) // 2
+    x0 = (side - w) // 2
+    canvas[y0 : y0 + h, x0 : x0 + w] = arr
+    img = Image.fromarray(canvas.astype(np.uint8)).resize((size, size), Image.LANCZOS)
+    return np.asarray(img, dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# AEC-geometric-bench: CVAT 1.1 XML + PDF, CC BY-NC 4.0  [VALIDATED]
+# ---------------------------------------------------------------------------
+# 15 real construction sheets. Annotations: 8 object classes as boxes
+# (Single/Double Swing Door, Window, Sink, Toilet, Bathtub, Shower, Cooktops)
+# plus Wall boxes and Room/Shaft/Balcony/Elevator/Stairs polygons.
+# Coordinates are pixels in a 200-dpi rasterization of each PDF page
+# (verified: get_pixmap(dpi=200) gives exactly the XML width/height).
+
+AEC_OBJECT_TO_TAKEOFF = {
+    "Single Swing Door": "door",
+    "Double Swing Door": "door",
+    "Window": "window",
+    "Sink": "fixture",
+    "Toilet": "fixture",
+    "Bathtub": "fixture",
+    "Shower": "fixture",
+    "Cooktops": "fixture",
+}
+AEC_AREA_LABELS = {"Room", "Shaft", "Balcony", "Elevator", "Stairs"}  # -> floor_area
+AEC_WALL_LABELS = {"Wall", "Railing"}  # -> wall
+
+
+def _rasterize_pdf(pdf_path: Path, dpi: int):
+    import pymupdf
+
+    doc = pymupdf.open(str(pdf_path))
+    pix = doc[0].get_pixmap(dpi=dpi)
+    return np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+
+
+def load_aec_bench(
+    root: str | Path,
+    dpi: int = 200,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    drawing_type: str = "floor_plan",
+) -> tuple[list[SymbolSample], TakeoffResult]:
+    """Load AEC-geometric-bench sheets.
+
+    Returns (symbol_samples, takeoff). Takeoff areas are in px^2 unless
+    scale_m_per_px is given (title blocks are redacted, so scale is unknown;
+    use scale_from_reference on the door regions for an estimate).
+
+    Validated against the real 15-sheet release in ~/workspace/datasets/
+    aec-geometric-bench/dataset.
+    """
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(
+            f"AEC Bench dataset root not found: {root}\n"
+            "Hint: Ensure --aec-bench points to the dataset directory containing "
+            "annotations_15.xml and a pdf/ subdirectory."
+        )
+    xml_path = root / "annotations_15.xml"
+    if not xml_path.exists():
+        raise FileNotFoundError(
+            f"AEC Bench annotations file not found: {xml_path}\n"
+            "Hint: The dataset directory should contain 'annotations_15.xml' "
+            "and a 'pdf/' subdirectory."
+        )
+    tree = safe_xml_parse(xml_path)
+    samples: list[SymbolSample] = []
+    regions: list[Region] = []
+
+    for img_el in tree.getroot().findall(".//image"):
+        name = img_el.attrib["name"]  # sheet_01.png
+        stem = Path(name).stem
+        stem = re.sub(r"[^\w\-.]", "_", stem)  # prevent path traversal via name attr
+        W, H = int(img_el.attrib["width"]), int(img_el.attrib["height"])
+        pdf = root / "pdf" / f"{stem}.pdf"
+        try:
+            pdf.resolve().relative_to(root / "pdf")
+        except ValueError:
+            continue  # drops items that escape the pdf subdirectory
+        if not pdf.exists():
+            continue
+        page = _rasterize_pdf(pdf, dpi)
+        # annotation frame is a 200-dpi rasterization; rescale if dpi differs
+        sx, sy = page.shape[1] / W, page.shape[0] / H
+        src = f"aec-bench:{stem}"
+
+        for box in img_el.findall("box"):
+            label = box.attrib["label"]
+            xtl, ytl = float(box.attrib["xtl"]) * sx, float(box.attrib["ytl"]) * sy
+            xbr, ybr = float(box.attrib["xbr"]) * sx, float(box.attrib["ybr"]) * sy
+            poly = box_to_polygon(xtl, ytl, xbr, ybr)
+            if label in AEC_OBJECT_TO_TAKEOFF:
+                cat = AEC_OBJECT_TO_TAKEOFF[label]
+                regions.append(Region(cat, poly, src, drawing_type, label))
+                x0, y0, x1, y1 = (
+                    max(0, int(xtl)),
+                    max(0, int(ytl)),
+                    min(page.shape[1], int(math.ceil(xbr))),
+                    min(page.shape[0], int(math.ceil(ybr))),
+                )
+                if x1 > x0 and y1 > y0:
+                    samples.append(
+                        SymbolSample(
+                            normalize_crop(page[y0:y1, x0:x1], size),
+                            label,
+                            src,
+                            (xtl, ytl, xbr, ybr),
+                        )
+                    )
+            elif label in AEC_WALL_LABELS:
+                regions.append(Region("wall", poly, src, drawing_type, label))
+
+        for poly_el in img_el.findall("polygon"):
+            label = poly_el.attrib["label"]
+            pts = [
+                (float(x) * sx, float(y) * sy)
+                for x, y in (p.split(",") for p in poly_el.attrib["points"].split(";") if p)
+            ]
+            if label in AEC_AREA_LABELS:
+                regions.append(Region("floor_area", pts, src, drawing_type, label))
+            elif label in AEC_WALL_LABELS:
+                regions.append(Region("wall", pts, src, drawing_type, label))
+            # other polygon labels (fixtures drawn as polygons) -> fixture count
+            elif label in AEC_OBJECT_TO_TAKEOFF:
+                regions.append(Region(AEC_OBJECT_TO_TAKEOFF[label], pts, src, drawing_type, label))
+
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (title block redacted)"
+    )
+    return samples, measure_takeoff(regions, drawing_type, scale)
+
+
+# ---------------------------------------------------------------------------
+# FloorPlanCAD (Fan et al., ICCV 2021)
+# ---------------------------------------------------------------------------
+# HF parquet export: huggingface.co/datasets/tilak1114/FloorPlanCAD,
+# data/train-00000-of-00001.parquet (5,308 rows; it is the original *test*
+# split re-labelled "train"). Schema confirmed 2026-10-06 against the HF
+# dataset viewer and detector/convert_floorplancad.py:
+#
+#   image     struct{bytes: binary (PNG), path: string}   1000 x 1000 px
+#   image_id  string
+#   objects   struct of parallel lists:
+#               id       list<string>
+#               bbox     list<list<float32>[4]>  [x0, y0, x1, y1] in a
+#                        0..1000 frame (= image px at 1000 x 1000)
+#               category list<string>  snake_case class names, plus
+#                        "class_31"/"class_32" for unnamed source ids
+#               mask     list<image>   per-object mask (not used here)
+#
+# The original release also ships SVG (svg_gt/*.svg); that path is not
+# implemented yet.
+
+FLOORPLANCAD_COLUMNS = ("image", "image_id", "objects")
+FLOORPLANCAD_OBJECT_FIELDS = ("bbox", "category")
+FLOORPLANCAD_FRAME = 1000.0  # bbox coordinate frame side
+
+# "stuff" classes: wall-like runs with no instance identity, not symbols.
+FLOORPLANCAD_STUFF = frozenset({"wall", "curtain_wall", "railing"})
+
+FLOORPLANCAD_TO_TAKEOFF: dict[str, str] = {
+    "single_door": "door",
+    "double_door": "door",
+    "sliding_door": "door",
+    "folding_door": "door",
+    "revolving_door": "door",
+    "rolling_door": "door",
+    "window": "window",
+    "bay_window": "window",
+    "blind_window": "window",
+    "opening_symbol": "opening",
+    "sink": "fixture",
+    "urinal": "fixture",
+    "toilet": "fixture",
+    "squat_toilet": "fixture",
+    "bath": "fixture",
+    "bath_tub": "fixture",
+    "stair": "floor_area",
+    "elevator": "floor_area",
+    "escalator": "floor_area",
+}
+
+
+class FloorPlanCADFormatError(ValueError):
+    """A FloorPlanCAD parquet does not match the documented schema."""
+
+
+def load_floorplancad(
+    root: str | Path,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    max_samples: int | None = None,
+) -> tuple[list[SymbolSample], TakeoffResult]:
+    """Load FloorPlanCAD symbols + takeoff regions.
+
+    Tries, in order: (1) the HuggingFace parquet export (``*.parquet`` in
+    ``root`` or ``root/data``); (2) an ``svg_gt`` directory (not implemented
+    yet). Raises FileNotFoundError when neither is found.
+
+    Parquet rows: every object whose category is not a "stuff" class (wall,
+    curtain wall, railing) becomes one ``SymbolSample``: the drawing PNG
+    cropped to the object bbox and ``normalize_crop``-ed; label = category
+    as stored (e.g. ``"double_door"``), source = ``floorplancad:<image_id>``,
+    bbox in image px. Categories in ``FLOORPLANCAD_TO_TAKEOFF`` also become a
+    box ``Region``. ``max_samples`` caps the number of drawings (rows) read.
+    The release states no scale, so areas stay px^2 unless
+    ``scale_m_per_px`` is given.
+
+    Raises FloorPlanCADFormatError when a column or object field is missing
+    or a bbox is malformed, so schema drift fails loudly.
+    """
+    root = Path(root)
+    parquets = sorted({*root.glob("*.parquet"), *root.glob("data/*.parquet")}, key=lambda q: q.name)
+    if parquets:
+        return _floorplancad_from_parquet(parquets, size, scale_m_per_px, max_samples)
+    svg_dirs = list(root.glob("**/svg_gt"))
+    if svg_dirs:
+        return _floorplancad_from_svg(svg_dirs[0].parent, size, scale_m_per_px)
+    raise FileNotFoundError(
+        f"No FloorPlanCAD data found under {root}: expected *.parquet (or data/*.parquet) "
+        "from https://huggingface.co/datasets/tilak1114/FloorPlanCAD, or a */svg_gt directory"
+    )
+
+
+def _floorplancad_check_schema(schema, path: Path) -> None:
+    import pyarrow as pa
+
+    names = schema.names
+    missing = [c for c in FLOORPLANCAD_COLUMNS if c not in names]
+    if missing:
+        raise FloorPlanCADFormatError(
+            f"{path.name}: missing column(s) {missing}; columns are {names}. "
+            f"Expected {list(FLOORPLANCAD_COLUMNS)} (see docs/datasets_adapter.md)."
+        )
+    img = schema.field("image").type
+    if not pa.types.is_struct(img) or img.get_field_index("bytes") < 0:
+        raise FloorPlanCADFormatError(f"{path.name}: 'image' must be a struct with 'bytes'")
+    obj = schema.field("objects").type
+    if not pa.types.is_struct(obj):
+        raise FloorPlanCADFormatError(f"{path.name}: 'objects' must be a struct of lists")
+    gone = [f for f in FLOORPLANCAD_OBJECT_FIELDS if obj.get_field_index(f) < 0]
+    if gone:
+        raise FloorPlanCADFormatError(f"{path.name}: 'objects' has no field(s) {gone}")
+
+
+def _floorplancad_from_parquet(
+    paths: list[Path], size: int, scale_m_per_px: float | None, max_samples: int | None = None
+):
+    import io
+
+    import pyarrow.parquet as pq
+    from PIL import Image
+
+    samples: list[SymbolSample] = []
+    regions: list[Region] = []
+    rows_left = max_samples
+    for path in paths:
+        if rows_left is not None and rows_left <= 0:
+            break
+        pf = pq.ParquetFile(str(path))
+        _floorplancad_check_schema(pf.schema_arrow, path)
+        for batch in pf.iter_batches(batch_size=64, columns=list(FLOORPLANCAD_COLUMNS)):
+            for row in batch.to_pylist():
+                if rows_left is not None:
+                    if rows_left <= 0:
+                        break
+                    rows_left -= 1
+                iid = str(row["image_id"])
+                where = f"floorplancad:{iid}"
+                objs = row["objects"] or {}
+                cats = objs.get("category") or []
+                boxes = objs.get("bbox") or []
+                if len(cats) != len(boxes):
+                    raise FloorPlanCADFormatError(
+                        f"{where}: {len(cats)} categories but {len(boxes)} bboxes"
+                    )
+                if not cats:
+                    continue
+                img_bytes = (row["image"] or {}).get("bytes")
+                if not img_bytes:
+                    raise FloorPlanCADFormatError(f"{where}: image has no bytes")
+                arr = np.asarray(Image.open(io.BytesIO(img_bytes)).convert("L"), dtype=np.float64)
+                h, w = arr.shape
+                kx, ky = w / FLOORPLANCAD_FRAME, h / FLOORPLANCAD_FRAME
+                for j, (cat, bb) in enumerate(zip(cats, boxes)):
+                    if not isinstance(cat, str):
+                        raise FloorPlanCADFormatError(f"{where}[{j}]: category must be a string")
+                    if bb is None or len(bb) != 4:
+                        raise FloorPlanCADFormatError(f"{where}[{j}]: bbox must be 4 numbers")
+                    if cat in FLOORPLANCAD_STUFF:
+                        continue
+                    x0, x1 = sorted((float(bb[0]) * kx, float(bb[2]) * kx))
+                    y0, y1 = sorted((float(bb[1]) * ky, float(bb[3]) * ky))
+                    cx0, cy0 = max(0, int(x0)), max(0, int(y0))
+                    cx1, cy1 = min(w, int(math.ceil(x1))), min(h, int(math.ceil(y1)))
+                    if cx1 <= cx0 or cy1 <= cy0:
+                        continue
+                    bbox = (x0, y0, x1, y1)
+                    crop = normalize_crop(arr[cy0:cy1, cx0:cx1], size)
+                    samples.append(SymbolSample(crop, cat, where, bbox))
+                    if cat in FLOORPLANCAD_TO_TAKEOFF:
+                        regions.append(
+                            Region(
+                                FLOORPLANCAD_TO_TAKEOFF[cat],
+                                box_to_polygon(*bbox),
+                                where,
+                                "floor_plan",
+                                cat,
+                            )
+                        )
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (FloorPlanCAD states no scale)"
+    )
+    return samples, measure_takeoff(regions, "floor_plan", scale)
+
+
+def _floorplancad_from_svg(split_dir: Path, size: int, scale_m_per_px: float | None):
+    raise NotImplementedError(
+        f"FloorPlanCAD SVG+JSON loader not yet implemented. "
+        f"SVG root: {split_dir}. "
+        f"Implement _floorplancad_from_svg to decode the SVG+JSON annotation format."
+    )
+
+
+# ---------------------------------------------------------------------------
+# ArchCAD-400K (Luo et al., arXiv 2503.22346)
+# ---------------------------------------------------------------------------
+# Public release: a 40K-sample subset on HuggingFace (jackluoluo/ArchCAD),
+# gated (manual approval) and CC BY-NC 4.0. It is NOT a parquet export: the
+# repo ships five zips under data/ (json, svg, png, point, caption), one
+# drawing slice per file. This loader reads the JSON modality, documented on
+# the dataset card as a list of primitives per slice:
+#
+#   {"type": "LINE", "start": [x1, y1], "end": [x2, y2], "linetype": ...,
+#    "rgb": [0, 0, 0], "semantic": "single_door", "instance": "single_door_23"}
+#   {"type": "CIRCLE", "center": [x, y], "radius": r, "semantic": ..., ...}
+#
+# `semantic` is the class (table below); `instance` groups the primitives of
+# one countable object. Only LINE and CIRCLE are shown on the card; ARC and
+# polyline keys below are our best reading and are checked on first real data.
+# ELLIPSE follows the DXF fields seen on the real files (#728).
+
+
+class ArchCADFormatError(ValueError):
+    """An ArchCAD JSON file does not match the documented primitive layout."""
+
+
+# class id -> (name, countable), from the ArchCAD dataset card.
+ARCHCAD_CLASSES: dict[int, tuple[str, bool]] = {
+    0: ("Axis & Grid", False),
+    1: ("Single Door", True),
+    2: ("Double Door", True),
+    3: ("Parent-Child Door", True),
+    4: ("Other Door", True),
+    5: ("Elevator", True),
+    6: ("Staircase", True),
+    7: ("Sink", True),
+    8: ("Urinal", True),
+    9: ("Toilet", True),
+    10: ("Bathtub", True),
+    11: ("Squat Toilet", True),
+    12: ("Other Fixtures", False),
+    13: ("Drain", False),
+    14: ("Table", True),
+    15: ("Chair", True),
+    16: ("Bed", True),
+    17: ("Sofa", True),
+    18: ("Hole", True),
+    19: ("Glass", False),
+    20: ("Wall", False),
+    21: ("Concrete Column", True),
+    22: ("Steel Column", True),
+    23: ("Concrete Beam", False),
+    24: ("Steel Beam", False),
+    25: ("Parking Space", True),
+    26: ("Foundation", False),
+    27: ("Pile", True),
+    28: ("Rebar", False),
+    29: ("Fire Hydrant", True),
+    100: ("Others", False),
+}
+
+# Countable classes that feed a takeoff category. Other countable classes
+# (furniture, columns, parking, piles, hydrants) still become SymbolSamples.
+ARCHCAD_TO_TAKEOFF: dict[str, str] = {
+    "Single Door": "door",
+    "Double Door": "door",
+    "Parent-Child Door": "door",
+    "Other Door": "door",
+    "Elevator": "floor_area",
+    "Staircase": "floor_area",
+    "Sink": "fixture",
+    "Urinal": "fixture",
+    "Toilet": "fixture",
+    "Bathtub": "fixture",
+    "Squat Toilet": "fixture",
+    "Hole": "opening",
+}
+
+
+def _archcad_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+# "single_door", "Single Door", "single-door" and 1 all resolve to "Single Door".
+_ARCHCAD_BY_KEY = {_archcad_key(n): (n, c) for n, c in ARCHCAD_CLASSES.values()}
+_ARCHCAD_BY_KEY["axis_and_grid"] = ARCHCAD_CLASSES[0]
+
+
+def _archcad_class(semantic, where: str) -> tuple[str, bool]:
+    if isinstance(semantic, bool):
+        raise ArchCADFormatError(f"{where}: semantic must be a class id or name, got {semantic!r}")
+    if isinstance(semantic, int):
+        if semantic not in ARCHCAD_CLASSES:
+            raise ArchCADFormatError(f"{where}: unknown semantic class id {semantic}")
+        return ARCHCAD_CLASSES[semantic]
+    if isinstance(semantic, str):
+        if semantic.strip().isdigit():
+            return _archcad_class(int(semantic), where)
+        hit = _ARCHCAD_BY_KEY.get(_archcad_key(semantic))
+        if hit is None:
+            raise ArchCADFormatError(f"{where}: unknown semantic class {semantic!r}")
+        return hit
+    raise ArchCADFormatError(
+        f"{where}: semantic must be a class id or name, got {type(semantic).__name__}"
+    )
+
+
+def _archcad_point(prim: dict, key: str, where: str) -> tuple[float, float]:
+    if key not in prim:
+        raise ArchCADFormatError(f"{where}: {prim.get('type')} primitive has no {key!r}")
+    v = prim[key]
+    if (
+        not isinstance(v, (list, tuple))
+        or len(v) < 2
+        or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in v[:2])
+    ):
+        raise ArchCADFormatError(f"{where}: {key!r} must be [x, y] numbers, got {v!r}")
+    return float(v[0]), float(v[1])
+
+
+def _archcad_number(prim: dict, key: str, where: str) -> float:
+    if key not in prim:
+        raise ArchCADFormatError(f"{where}: {prim.get('type')} primitive has no {key!r}")
+    v = prim[key]
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        raise ArchCADFormatError(f"{where}: {key!r} must be a number, got {v!r}")
+    return float(v)
+
+
+def _archcad_ellipse(prim: dict, where: str) -> list[tuple[float, float]]:
+    """ELLIPSE -> polyline, DXF convention (seen on the real files, #728).
+
+    `major_axis` is the center-to-end vector of the major axis, `ratio` is
+    minor/major, and `start_param`/`end_param` are radians on the unit
+    circle (0 to 2*pi for a full ellipse). Points run counter-clockwise from
+    start to end; `is_ccw: false` mirrors the minor axis, so the same params
+    run clockwise.
+    """
+    cx, cy = _archcad_point(prim, "center", where)
+    mx, my = _archcad_point(prim, "major_axis", where)
+    ratio = _archcad_number(prim, "ratio", where)
+    t0 = _archcad_number(prim, "start_param", where) if "start_param" in prim else 0.0
+    t1 = _archcad_number(prim, "end_param", where) if "end_param" in prim else 2 * math.pi
+    if t1 <= t0:
+        t1 += 2 * math.pi
+    sgn = -1.0 if prim.get("is_ccw") is False else 1.0
+    nx, ny = -my * ratio * sgn, mx * ratio * sgn  # minor axis vector
+    n = max(8, int(math.degrees(t1 - t0) / 10.0))
+    ts = np.linspace(t0, t1, n + 1)
+    return [
+        (cx + mx * math.cos(t) + nx * math.sin(t), cy + my * math.cos(t) + ny * math.sin(t))
+        for t in ts
+    ]
+
+
+def _archcad_polylines(prim: dict, where: str) -> list[list[tuple[float, float]]] | None:
+    """Primitive -> list of polylines in source coords; None if type unknown."""
+    kind = str(prim.get("type", "")).upper()
+    if kind == "LINE":
+        return [[_archcad_point(prim, "start", where), _archcad_point(prim, "end", where)]]
+    if kind in ("CIRCLE", "ARC"):
+        cx, cy = _archcad_point(prim, "center", where)
+        r = _archcad_number(prim, "radius", where)
+        if kind == "CIRCLE":
+            a0, a1 = 0.0, 360.0
+        else:
+            a0 = _archcad_number(prim, "start_angle", where)
+            a1 = _archcad_number(prim, "end_angle", where)
+            if a1 <= a0:
+                a1 += 360.0
+        n = max(8, int((a1 - a0) / 10.0))
+        ts = np.radians(np.linspace(a0, a1, n + 1))
+        return [[(cx + r * math.cos(t), cy + r * math.sin(t)) for t in ts]]
+    if kind == "ELLIPSE":
+        return [_archcad_ellipse(prim, where)]
+    for key in ("points", "vertices"):
+        if key in prim:
+            pts = prim[key]
+            if not isinstance(pts, list):
+                raise ArchCADFormatError(f"{where}: {key!r} must be a list of [x, y]")
+            return [[_archcad_point({key: q}, key, where) for q in pts]]
+    return None
+
+
+def _archcad_files(root: Path) -> list[tuple[str, callable]]:
+    """Find the JSON slices: a json/ tree, loose *.json, or json.zip (unextracted)."""
+    jsons = sorted(q for q in root.rglob("*.json") if q.is_file())
+    if jsons:
+        return [(q.stem, q.read_text) for q in jsons]
+    zips = sorted(root.rglob("json.zip"))
+    if zips:
+        import zipfile
+
+        zf = zipfile.ZipFile(zips[0])
+        names = sorted(n for n in zf.namelist() if n.endswith(".json") and not n.endswith("/"))
+        return [(Path(n).stem, (lambda n=n: zf.read(n).decode("utf-8"))) for n in names]
+    return []
+
+
+def _render_instance(polylines, size: int) -> np.ndarray:
+    """Rasterize one instance's vector primitives into a normalized crop."""
+    from PIL import Image, ImageDraw
+
+    pts = np.asarray([p for line in polylines for p in line], dtype=np.float64)
+    x0, y0 = pts.min(axis=0)
+    span = float(max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), 1e-9))
+    px = 64  # render side before normalize_crop downsamples
+    k = (px - 1) / span
+    w = int(np.ptp(pts[:, 0]) * k) + 1
+    h = int(np.ptp(pts[:, 1]) * k) + 1
+    img = Image.new("L", (w, h), 255)
+    draw = ImageDraw.Draw(img)
+    for line in polylines:
+        xy = [((x - x0) * k, (y - y0) * k) for x, y in line]
+        if len(xy) == 1:
+            draw.point(xy, fill=0)
+        else:
+            draw.line(xy, fill=0, width=2)
+    return normalize_crop(np.asarray(img, dtype=np.float64), size)
+
+
+def load_archcad(
+    root: str | Path,
+    size: int = 28,
+    scale_m_per_px: float | None = None,
+    max_samples: int | None = None,
+) -> tuple[list[SymbolSample], TakeoffResult]:
+    """Load ArchCAD symbols + takeoff regions from the JSON modality.
+
+    ``root`` holds the extracted ``json.zip`` (any ``*.json`` under it) or
+    the zip itself, unextracted. Each JSON file is one drawing slice: a list
+    of primitives (or a dict whose ``entities``/``primitives`` key is that
+    list).
+
+    Column mapping, per primitive:
+
+    * ``type`` -> geometry: LINE ``start``/``end``; CIRCLE ``center``/
+      ``radius``; ARC ``center``/``radius``/``start_angle``/``end_angle``
+      (degrees); polylines ``points`` or ``vertices``. Other types (text,
+      hatch) carry no symbol geometry and are skipped.
+    * ``semantic`` -> class, as an id (0..29, 100) or name ("single_door",
+      "Single Door"); see ``ARCHCAD_CLASSES``.
+    * ``instance`` -> object grouping. Primitives sharing a countable class
+      and instance id form one symbol.
+
+    Each countable instance becomes one ``SymbolSample`` (its primitives
+    rasterized, then ``normalize_crop``-ed; label = class name, source =
+    ``archcad:<slice>``, bbox = geometry extent in source coords). Instances
+    whose class is in ``ARCHCAD_TO_TAKEOFF`` also become a box ``Region``
+    (doors, fixtures, holes; elevators and stairs as floor area).
+    Non-countable classes (walls, glass, grid, beams) carry no instance and
+    are not symbols, so they are left out. Coordinates are in drawing units
+    with no stated scale: areas stay px^2 unless ``scale_m_per_px`` is given.
+
+    Raises FileNotFoundError when no JSON is found, and ArchCADFormatError
+    when a primitive is missing a key or has the wrong type, so schema drift
+    fails loudly instead of yielding zero counts.
+    """
+    root = Path(root)
+    if not root.exists():
+        raise FileNotFoundError(
+            f"ArchCAD dataset root not found: {root}. Request access at "
+            "https://huggingface.co/datasets/jackluoluo/ArchCAD and download data/json.zip."
+        )
+    files = _archcad_files(root)
+    if not files:
+        found = sorted(q.name for q in root.iterdir())[:10]
+        hint = ""
+        if any(q.endswith(".parquet") for q in found):
+            hint = " The HuggingFace release ships zips (json/svg/png/point/caption), not parquet."
+        raise FileNotFoundError(
+            f"No ArchCAD JSON found under {root} (contains: {', '.join(found) or 'nothing'})."
+            f"{hint} Download data/json.zip from "
+            "https://huggingface.co/datasets/jackluoluo/ArchCAD (gated; request access) "
+            "and extract it there, or place json.zip itself there."
+        )
+    if max_samples is not None:
+        files = files[:max_samples]
+
+    samples: list[SymbolSample] = []
+    regions: list[Region] = []
+    for stem, read in files:
+        where_file = f"archcad:{stem}"
+        try:
+            data = json.loads(read())
+        except json.JSONDecodeError as exc:
+            raise ArchCADFormatError(f"{where_file}: not valid JSON: {exc}") from exc
+        if isinstance(data, dict):
+            data = data.get("entities", data.get("primitives"))
+        if not isinstance(data, list):
+            raise ArchCADFormatError(f"{where_file}: expected a list of primitives")
+        instances: dict[tuple[str, str], list] = {}
+        for i, prim in enumerate(data):
+            where = f"{where_file}[{i}]"
+            if not isinstance(prim, dict):
+                raise ArchCADFormatError(f"{where}: primitive must be an object")
+            if "semantic" not in prim:
+                raise ArchCADFormatError(f"{where}: primitive has no 'semantic'")
+            name, countable = _archcad_class(prim["semantic"], where)
+            if not countable:
+                continue
+            inst = prim.get("instance")
+            if inst is None:
+                # The real release leaves some primitives of countable
+                # classes (e.g. piles) without an instance id. They cannot be
+                # grouped into a symbol, so they are skipped, not counted.
+                continue
+            if isinstance(inst, (bool, list, dict)):
+                raise ArchCADFormatError(
+                    f"{where}: countable class {name!r} needs an 'instance' id, got {inst!r}"
+                )
+            lines = _archcad_polylines(prim, where)
+            if lines is None:
+                continue
+            instances.setdefault((name, str(inst)), []).extend(lines)
+        for (name, _inst), lines in instances.items():
+            pts = np.asarray([p for line in lines for p in line], dtype=np.float64)
+            (xtl, ytl), (xbr, ybr) = pts.min(axis=0), pts.max(axis=0)
+            bbox = (float(xtl), float(ytl), float(xbr), float(ybr))
+            samples.append(SymbolSample(_render_instance(lines, size), name, where_file, bbox))
+            if name in ARCHCAD_TO_TAKEOFF:
+                regions.append(
+                    Region(
+                        ARCHCAD_TO_TAKEOFF[name],
+                        box_to_polygon(*bbox),
+                        where_file,
+                        "floor_plan",
+                        name,
+                    )
+                )
+
+    scale = DrawingScale(
+        scale_m_per_px, "explicit" if scale_m_per_px else "unknown (ArchCAD states no scale)"
+    )
+    return samples, measure_takeoff(regions, "floor_plan", scale)

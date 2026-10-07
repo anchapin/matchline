@@ -1,0 +1,120 @@
+{
+  "schema": "matchline.license_ledger/1",
+  "classes": {
+    "permissive": "may ship in a release",
+    "share_alike": "may ship only with its notice, and the file stays under the source's share-alike license",
+    "noncommercial": "evaluation only: never ships in a release",
+    "copyleft": "evaluation only: never ships in a BSD-3-Clause release"
+  },
+  "datasets": [
+    {
+      "id": "matchline_synthetic",
+      "name": "matchline synthetic generators (synth/, review_classifier/data.py)",
+      "license": "BSD-3-Clause",
+      "class": "permissive",
+      "source": "this repository"
+    },
+    {
+      "id": "review_corpus",
+      "name": "review_classifier/corpus/*.jsonl (90 labelled feature strings, no drawing content)",
+      "license": "BSD-3-Clause",
+      "class": "permissive",
+      "source": "this repository, committed with the phase-4 review queue (1bd31f7, 2026-09-22)"
+    },
+    {
+      "id": "cmp_facade",
+      "name": "CMP Facade Database",
+      "license": "CC BY-SA (the source names no version; 4.0 is the closest match)",
+      "class": "share_alike",
+      "source": "https://cmp.felk.cvut.cz/~tylecr1/facade/",
+      "attribution": "Radim Tylecek and Radim Sara, Spatial Pattern Templates for Recognition of Objects with Regular Structure, GCPR 2013"
+    },
+    {
+      "id": "cubicasa5k",
+      "name": "CubiCasa5K",
+      "license": "CC BY-NC 4.0 (repository LICENSE; some mirrors list CC BY-NC-SA)",
+      "class": "noncommercial",
+      "source": "https://github.com/CubiCasa/CubiCasa5k"
+    },
+    {
+      "id": "aec_bench",
+      "name": "AEC Geometric Bench",
+      "license": "CC BY-NC 4.0",
+      "class": "noncommercial",
+      "source": "see DATASETS.md"
+    },
+    {
+      "id": "archcad",
+      "name": "ArchCAD (gated)",
+      "license": "CC BY-NC 4.0",
+      "class": "noncommercial",
+      "source": "https://huggingface.co/datasets/jackluoluo/ArchCAD"
+    },
+    {
+      "id": "floorplancad",
+      "name": "FloorPlanCAD",
+      "license": "CC BY-NC 4.0",
+      "class": "noncommercial",
+      "source": "https://floorplancad.github.io/"
+    },
+    {
+      "id": "bsi_clinic",
+      "name": "buildingSMART Clinic sample model (IFC2X3)",
+      "license": "CC BY 4.0",
+      "class": "permissive",
+      "source": "buildingSMART sample files; held out, never committed"
+    },
+    {
+      "id": "ultralytics_yolo11n",
+      "name": "Ultralytics YOLO11n COCO-pretrained weights (yolo11n.pt)",
+      "license": "AGPL-3.0 (or an Ultralytics enterprise license)",
+      "class": "copyleft",
+      "source": "https://github.com/ultralytics/ultralytics"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "facade_priors.json",
+      "kind": "statistics",
+      "datasets": ["cmp_facade"],
+      "committed": true,
+      "produced_by": "run_facade_takeoff.py --full (606 facades)",
+      "notice": "facade_priors.json is derived from the CMP Facade Database (Radim Tylecek and Radim Sara, GCPR 2013) and is licensed CC BY-SA, not BSD-3-Clause. Redistributed copies or adaptations must credit the source and carry the same license."
+    },
+    {
+      "path": "review_classifier/trained_model_extraction_type.npz",
+      "kind": "weights",
+      "datasets": ["matchline_synthetic", "review_corpus"],
+      "committed": true,
+      "produced_by": "python -m review_classifier.train"
+    },
+    {
+      "path": "review_classifier/trained_model_route_to_review.npz",
+      "kind": "weights",
+      "datasets": ["matchline_synthetic", "review_corpus"],
+      "committed": true,
+      "produced_by": "python -m review_classifier.train"
+    },
+    {
+      "path": "review_classifier/trained_model_schedule_match.npz",
+      "kind": "weights",
+      "datasets": ["matchline_synthetic", "review_corpus"],
+      "committed": true,
+      "produced_by": "python -m review_classifier.train"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/yolo11n_baseline_s*/weights/best.pt",
+      "kind": "weights",
+      "datasets": ["cubicasa5k", "ultralytics_yolo11n"],
+      "committed": false,
+      "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/yolo11n_eca_s*/weights/best.pt",
+      "kind": "weights",
+      "datasets": ["cubicasa5k", "ultralytics_yolo11n"],
+      "committed": false,
+      "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
+    }
+  ]
+}

@@ -3,6 +3,11 @@
 External datasets are **not committed** to the repository. All demos and commands that
 require external data fail clearly when the data is absent.
 
+Licenses: each dataset's license, and every artifact trained or derived from it, is
+recorded in [`license_ledger.json`](license_ledger.json) (see
+[docs/license_ledger.md](docs/license_ledger.md)). Artifacts from non-commercial or
+copyleft data are evaluation-only and never ship in a release.
+
 Base path convention: all external datasets live under `~/workspace/datasets/`.
 
 ---
@@ -43,7 +48,8 @@ mkdir -p ~/workspace/datasets/aec-geometric-bench/
 **Environment variable:** None (overridden via `--data-root` CLI flag or `DATA_ROOT` in scripts)
 
 **What it is:** Annotated facade images with bounding-box XML annotations for windows,
-doors, and facade elements. License: CC BY-SA.
+doors, and facade elements. License: CC BY-SA (no version named). `facade_priors.json`
+is derived from it and stays CC BY-SA; see `NOTICE.md`.
 
 **Used for in matchline:**
 
