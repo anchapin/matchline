@@ -53,6 +53,7 @@ class SetReport:
     sheets: List[SheetStatus] = field(default_factory=list)
     levels: List[dict] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    schedules: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -65,6 +66,7 @@ class SetReport:
             "failed_sheets": failed,
             "levels": self.levels,
             "notes": self.notes,
+            "schedules": self.schedules,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -116,6 +118,7 @@ def build_set_model(
     from drawing_scale import scale_sheets
     from geometry_simplify import footprint_from_regions
     from pdf_ingest import ingest_pdf
+    from pdf_schedules import schedules_for_sheets
     from plan_walls import walls_for_sheets
     from sheet_index import index_sheets
 
@@ -157,6 +160,9 @@ def build_set_model(
             status[f].mark("scale", "skipped", "no scale; not a takeoff sheet")
 
     walls = walls_for_sheets(sheets_dir)
+    schedules = schedules_for_sheets(
+        sheets_dir, {f: status[f].number for f in files if status[f].number}
+    )
     plan_files = [f for f in files if entries.get(f, {}).get("use_for_takeoff")]
     arch_plans = [f for f in plan_files if _discipline(status[f]) in ("architectural", None)]
     for f in files:
@@ -205,7 +211,21 @@ def build_set_model(
                 "failed" if _discipline(st) == "mechanical" else "skipped",
                 "no detections supplied; the detector provider is #743",
             )
-        st.mark("schedules", "skipped", "schedule tables from PDF are #746")
+        sch = schedules.get(f, {}).get("schedules", [])
+        bad = [x for x in sch if x["status"] != "ok"]
+        if st.stages["ingest"]["kind"] == "raster_only":
+            st.mark("schedules", "skipped", "scanned sheet; schedule tables need the text layer")
+        elif not sch:
+            st.mark("schedules", "skipped", "no schedule table on this sheet")
+        else:
+            st.mark(
+                "schedules",
+                "failed" if bad else "ok",
+                "; ".join(f"{x['title']}: {x['reason']}" for x in bad),
+                n=len(sch),
+                kinds=sorted({x["kind"] for x in sch}),
+                unparsed=len(bad),
+            )
 
     # ---- levels ---------------------------------------------------------
     by_level: Dict[str, List[str]] = {}
@@ -315,6 +335,19 @@ def build_set_model(
             )
         )
 
+    sched_entries, equipment = _merge_schedules(
+        files, status, schedules, review, Provenance, ReviewItem
+    )
+    report.schedules = {
+        "entries": len(sched_entries),
+        "equipment": equipment,
+        "tables": [
+            {"sheet": f, "title": x["title"], "kind": x["kind"], "status": x["status"],
+             "reason": x["reason"], "rows": len(x["rows"])}
+            for f in files for x in schedules.get(f, {}).get("schedules", [])
+        ],
+    }  # fmt: skip
+
     model = BuildingModel(
         name=Path(pdf).stem,
         levels=levels,
@@ -322,12 +355,55 @@ def build_set_model(
         zones={},
         envelope=envelope,
         bim_elements=[],
-        schedules={},
+        schedules=sched_entries,
         review_queue=review,
     )
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
+
+
+def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
+    """Door, window and lighting rows -> model.schedules (tag -> entry dict);
+    mechanical rows -> an equipment list. A tag scheduled twice with different
+    values is kept from the first sheet and sent to review, never overwritten."""
+    entries: Dict[str, dict] = {}
+    where: Dict[str, str] = {}
+    equipment: List[dict] = []
+    for f in files:
+        sheet_id = status[f].number or f
+        for x in schedules.get(f, {}).get("schedules", []):
+            if x["status"] != "ok":
+                review.append(
+                    ReviewItem(
+                        id=f"rq-schedule-{len(review)}",
+                        kind="fixture_schedule",
+                        description=f"{sheet_id}: {x['title']} not read ({x['reason']})",
+                        confidence=0.5,
+                        provenance=Provenance(sheet_id, 0, "pdf_ruled_table", 0.5),
+                    )
+                )
+                continue
+            for e in x["equipment"]:
+                equipment.append({**e, "sheet": sheet_id, "schedule": x["title"]})
+            for tag, e in x["entries"].items():
+                if tag in entries and entries[tag] != e:
+                    review.append(
+                        ReviewItem(
+                            id=f"rq-schedule-{len(review)}",
+                            kind="fixture_schedule",
+                            description=(
+                                f"tag {tag} is scheduled on {where[tag]} and again with "
+                                f"different values on {sheet_id}; kept {where[tag]}"
+                            ),
+                            confidence=0.5,
+                            provenance=Provenance(sheet_id, 0, "pdf_ruled_table", 0.5),
+                        )
+                    )
+                    continue
+                entries[tag] = e
+                where[tag] = sheet_id
+    return entries, equipment
 
 
 def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):
