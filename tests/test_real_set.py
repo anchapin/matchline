@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 from test_plan_walls import DOOR, PARTITION, SHELL, _mass, _outline, _pt  # noqa: E402
