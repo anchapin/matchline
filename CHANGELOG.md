@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Changed
+- gbXML export now writes and validates against schema 8.01 (was 6.01), using a
+  local copy of the 8.01 xsd whose `versionEnum` adds `7.03` and `8.01`; the
+  published 8.01 schema stops at 6.01 and rejects its own version (#804).
 - Renamed the project from `wisard-bem` to **Matchline**: distribution name,
   GitHub repo (`anchapin/matchline`), docs, and the `matchline` CLI. The old
   `wisard-bem` alias was removed in 0.2.0.

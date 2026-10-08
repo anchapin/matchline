@@ -3,7 +3,7 @@
 
 Builds a TakeoffResult from sheet_007's ground truth (detections with GT
 tags -> schedule CSV -> rollup), labels rooms from GT text boxes, simplifies
-the envelope, then exports gbXML (validated against the 6.01 XSD) and IFC4
+the envelope, then exports gbXML (validated against the 8.01 XSD) and IFC4
 (validated structurally) and prints the headline numbers.
 """
 

@@ -18,8 +18,9 @@ from bem_geometry import BEMShade  # noqa: E402
 from bem_roof import shell_volume, space_shell  # noqa: E402
 from tests.test_gbxml_sloped_roofs import BOX, VOL, H, bem, gable, hip, shed  # noqa: E402
 
-# OpenStudio 3.x targets gbXML 7.03 and notes that a 6.01 file skips its own
-# schema check; we validate against the 6.01 XSD ourselves (validate_gbxml).
+# OpenStudio 3.x targets gbXML 7.03 and notes that a file of another version
+# skips its own schema check; we validate against the 8.01 XSD ourselves
+# (validate_gbxml).
 ALLOWED = ("Version of schema specified",)
 
 ROOFS = {"flat": list, "gable": gable, "hip": hip, "shed": shed}

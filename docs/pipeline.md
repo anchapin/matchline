@@ -28,7 +28,7 @@ Stage 6: BEM export               → stage_06_bem/{name}.xml + {name}.ifc + con
 | 4 | `run_checks` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_04_validation.json` | 48-check invariant battery; errors **block export** |
 | 4b | `_run_auto_triage` | `stage_04_validation.json` | `stage_04b_auto_triage.json` | Opt-in via `ENABLE_AUTO_TRIAGE=1`; mutates `model.review_queue` |
 | 5 | `export_gate` | `stage_04_validation.json` | — | Exits with code 1 if any error; no artifact written |
-| 6 | `write_gbxml` + `write_ifc4` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_06_bem/{name}.xml`, `{name}.ifc`, `convention_report.json` | gbXML 6.01 + IFC4 from `BEMModel` |
+| 6 | `write_gbxml` + `write_ifc4` | `stage_02_model.json` + `stage_03_simplified.json` | `stage_06_bem/{name}.xml`, `{name}.ifc`, `convention_report.json` | gbXML 8.01 + IFC4 from `BEMModel` |
 
 ## Intermediate JSON schema (summary)
 
