@@ -165,7 +165,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2142  # +1 single-sheet --image fails loudly (#741) - If the count changes, update this AND docs/ci.md
+          EXPECTED_TEST_COUNT=2144  # +2 Clinic walls harness: plan cut + sheet round trip (#740) - If the count changes, update this AND docs/ci.md
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
