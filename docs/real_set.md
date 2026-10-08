@@ -48,3 +48,22 @@ against a single footprint.
 `stage_01_building.json`, then stops with a Stage 2 error: one raster sheet has no walls
 or rooms to put the symbols in (raster wall finding is not built). The error and its hint
 are printed to stderr and the run exits 1; use `--set drawings.pdf` to build a model.
+
+## Elevation sheets (#810, first slice)
+
+An elevation sheet whose title names exactly one facade ("SOUTH ELEVATION") is
+read for its building outline and the window and door rectangles inside it
+(`elevation_sheets.py`). It is registered to that facade of the first-floor plan's
+exterior footprint: by shared column-grid labels when both sheets show at least
+two of the same grid bubbles (confidence 0.95), otherwise by matching the outline
+to the facade's length (0.65). Positions run from the facade's left end as seen
+from outside, so north and east elevations run right to left in plan terms.
+
+Each opening is written to `sheets/<sheet>.elevation.json` with `s0_m`/`s1_m`
+along the facade, width, sill and head heights; the sheet's `elevation` stage and
+`SetReport.elevations` carry the counts and registration. A title naming several
+facades or none, or an outline more than 5% off the plan's facade length, goes to
+the review queue as `elevation_extraction`.
+
+This slice only reads and registers. Joining elevation openings to plan gaps (sill
+and head heights, storey height from the outline) is the next slice.
