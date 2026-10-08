@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Review page draws the elevation sheets the drawing-set run read (facade outline, windows and doors joined or not), and an item that joins two sheets highlights both ends, labels each with the other sheet, and offers a bar to jump between them (#801).
+
+### Added
 - Elevation join review items name both sheets (`target.ends` with the elevation box and the plan point), and elevation JSON records each opening's matched plan opening (#810, third slice).
 
 ### Added

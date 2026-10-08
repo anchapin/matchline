@@ -18,8 +18,14 @@ history; applying it never rewrites it.
 Sheet overlays (#749): every floor plan the run read for walls and rooms is
 drawn below the queue with its rooms, walls, plan openings and symbol
 detections on top of the sheet raster (embedded, downsized). Selecting an item
-shows the room, opening or detection box it is about. Links between sheets
-(an elevation window to its plan room) are not drawn yet.
+shows the room, opening or detection box it is about.
+
+Elevation sheets (#801): every elevation the run read (``elevation_NNN.json``)
+is drawn with its facade outline and its windows and doors, solid when joined
+to a plan opening and dashed red when not. An item that joins two sheets
+(``target["ends"]``: an elevation window and its plan opening) highlights both
+ends, labels each with the other sheet, and puts a bar above the sheets that
+jumps to either one.
 """
 
 from __future__ import annotations
@@ -536,22 +542,56 @@ _UI_JS = """
       if (g) g.style.display = cb.checked ? "" : "none";
     };
   });
-  function show(id) {
-    var ln = (data.links || {})[id], svg = ln && svgs[ln.sheet];
-    document.querySelectorAll(".hit").forEach(function (e) {
-      if (e.dataset.box) e.remove(); else e.classList.remove("hit"); });
-    if (!svg) return false;
-    if (ln.el) {
-      var t = svg.querySelector("[data-el='" + ln.el + "']");
-      if (t) t.classList.add("hit");
-    }
-    if (ln.box) {
-      var b = ln.box;
+  function jump(file) {
+    var f = document.getElementById("sheet-" + file);
+    if (f) f.scrollIntoView({behavior: "smooth", block: "start"});
+  }
+  function mark(svg, end, other) {
+    var t = end.el && svg.querySelector("[data-el='" + end.el + "']"), at = null;
+    if (t) t.classList.add("hit");
+    if (end.box) {
+      var b = end.box; at = [b[0], b[1]];
       el("rect", {x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1],
         fill: "none", "class": "hit", "data-box": 1}, svg);
     }
-    document.getElementById("sheet-" + ln.sheet)
-      .scrollIntoView({behavior: "smooth", block: "start"});
+    if (end.point) {
+      at = at || end.point;
+      el("circle", {cx: end.point[0], cy: end.point[1], r: 9, "class": "hit", "data-box": 1}, svg);
+    }
+    if (!at && t && t.getBBox) { var bb = t.getBBox(); at = [bb.x, bb.y]; }
+    if (other && at) {
+      el("text", {x: at[0], y: Math.max(at[1] - 12, 14), "font-size": 14, "font-weight": 700,
+        fill: "#e0007a", "class": "link", "data-box": 1}, svg).textContent =
+        "\u2194 " + (other.number || other.sheet) + " "
+        + (other.el || "").replace(/^[a-z]+:/, "");
+    }
+  }
+  function pairBar(ends) {
+    var bar = document.getElementById("pair");
+    if (!bar) return;
+    bar.textContent = ""; bar.style.display = ends.length > 1 ? "" : "none";
+    if (ends.length < 2) return;
+    bar.appendChild(document.createTextNode("Selected item on two sheets: "));
+    ends.forEach(function (e) {
+      var b = document.createElement("button");
+      b.textContent = e.side + " " + (e.number || e.sheet) + " "
+        + (e.el || "").replace(/^[a-z]+:/, "");
+      b.onclick = function () { jump(e.sheet); };
+      bar.appendChild(b);
+    });
+  }
+  function show(id) {
+    var ln = (data.links || {})[id];
+    document.querySelectorAll(".hit, .link").forEach(function (e) {
+      if (e.dataset.box) e.remove(); else e.classList.remove("hit"); });
+    var ends = !ln ? [] : (ln.ends && ln.ends.length ? ln.ends : [ln]);
+    ends = ends.filter(function (e) { return svgs[e.sheet]; });
+    pairBar(ends);
+    if (!ends.length) return false;
+    ends.forEach(function (e, k) {
+      mark(svgs[e.sheet], e, ends.length > 1 ? ends[(k + 1) % ends.length] : null);
+    });
+    jump(ends[0].sheet);
     return true;
   }
   function save() { try { localStorage.setItem(key, JSON.stringify(doc)); } catch (e) {} }
@@ -750,11 +790,51 @@ def sheet_overlays(out_dir, model) -> List[dict]:
                              "box": [round(v / px, 1) for v in b]})  # fmt: skip
         raster = sh.get("raster_file")
         out.append({
-            "file": f, "number": number.get(f, ""), "level": level_of.get(f, ""),
+            "kind": "plan", "file": f, "number": number.get(f, ""), "level": level_of.get(f, ""),
             "w": w_pt, "h": h_pt, "px_per_pt": px,
             "img": _sheet_image(d / raster) if raster and (d / raster).exists() else "",
             "rooms": rooms, "walls": walls, "openings": openings, "dets": dets,
         })  # fmt: skip
+    for ep in sorted(d.glob("elevation_[0-9][0-9][0-9].json")):
+        er = _load_json(ep) or {}
+        f = er.get("sheet") or ep.name.replace("elevation_", "sheet_")
+        sh = _load_json(d / f)
+        if not er or not sh:
+            continue
+        box = lambda b: [round(float(v), 1) for v in b]  # noqa: E731  sheet points, y down
+        elev = [
+            {"id": o["id"], "kind": o.get("kind", ""), "box": box(o["bbox_pt"]),
+             "width_m": o.get("width_m"), "height_m": o.get("height_m"),
+             "sill_m": o.get("sill_m"), "plan_opening": o.get("plan_opening")}
+            for o in er.get("openings", []) if len(o.get("bbox_pt") or []) == 4
+        ]  # fmt: skip
+        outline = er.get("outline_pt")
+        raster = sh.get("raster_file")
+        out.append({
+            "kind": "elevation", "file": f,
+            "number": number.get(f, "") or er.get("sheet_id", ""), "level": "",
+            "facade": er.get("facade") or "", "plan": (er.get("plan") or {}).get("sheet_id", ""),
+            "w": float(sh["width_pt"]), "h": float(sh["height_pt"]),
+            "px_per_pt": float(sh.get("px_per_pt") or 0) or None,
+            "img": _sheet_image(d / raster) if raster and (d / raster).exists() else "",
+            "outline": box(outline) if outline and len(outline) == 4 else None, "elev": elev,
+            "rooms": [], "walls": [], "openings": [], "dets": [],
+        })  # fmt: skip
+    return out
+
+
+def _ends(t: dict, by_number: Dict[str, dict]) -> List[dict]:
+    """The drawn ends of a two-sheet item (``target["ends"]``), in target order."""
+    out = []
+    for e in t.get("ends") or []:
+        s = by_number.get(e.get("sheet")) or by_number.get(e.get("sheet_id"))
+        if not s:
+            continue
+        end = {"sheet": s["file"], "number": s["number"], "side": e.get("side", "")}
+        for k in ("el", "box", "point"):
+            if e.get(k):
+                end[k] = e[k]
+        out.append(end)
     return out
 
 
@@ -766,6 +846,8 @@ def item_links(model, sheets: List[dict]) -> Dict[str, dict]:
             where[("space", r["id"])] = (s["file"], "room:" + r["id"])
         for o in s["openings"]:
             where[("opening", o["id"])] = (s["file"], "op:" + o["id"])
+        if s["number"]:
+            where.setdefault(("sheet", s["number"]), (s["file"], ""))
     by_number = {s["number"]: s for s in sheets if s["number"]}
     by_number.update({s["file"]: s for s in sheets})
     out = {}
@@ -774,7 +856,14 @@ def item_links(model, sheets: List[dict]) -> Dict[str, dict]:
         hit = where.get((t.get("kind"), t.get("id")))
         if hit is None and i.id.startswith("rq-"):
             hit = where.get(("opening", i.id[3:])) or where.get(("space", i.id[3:]))
+        ends = _ends(t, by_number)
+        if ends:
+            hit = (ends[0]["sheet"], ends[0].get("el", ""))
         link = {"sheet": hit[0], "el": hit[1]} if hit else {}
+        if not link.get("el"):
+            link.pop("el", None)
+        if len(ends) > 1 or (ends and ends[0].get("point")):
+            link["ends"] = ends
         p = i.provenance
         s = by_number.get(p.sheet_id) if p else None
         if s and p.bbox and len(p.bbox) == 4 and s["px_per_pt"]:
@@ -793,6 +882,8 @@ width:100%;height:100%}.layers{font-size:11px;color:#555}.layers label{margin-ri
 .hit{stroke:#e0007a!important;stroke-width:6px!important;fill:rgba(224,0,122,.18)!important}
 .legend span{display:inline-block;margin-right:12px;font-size:11px}
 .legend i{display:inline-block;width:12px;height:4px;margin-right:4px;vertical-align:middle}
+.pair{position:sticky;top:0;z-index:2;background:#fff3f9;border:1px solid #e0007a;
+padding:4px 8px;font-size:12px}.pair button{margin-left:6px}
 """
 
 _SHEET_JS = """
@@ -808,8 +899,27 @@ function hue(s) {
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
   return "hsl(" + h + ",70%,40%)";
 }
+function drawElevation(sh, svg) {
+  var go = el("g", {"data-layer": "outline"}, svg), gw = el("g", {"data-layer": "openings"}, svg);
+  if (sh.outline) {
+    var b = sh.outline;
+    el("rect", {x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1], fill: "none",
+      stroke: "#2e7d32", "stroke-width": 2, "data-el": "outline"}, go);
+  }
+  sh.elev.forEach(function (o) {
+    var c = o.plan_opening ? (OP_COLOR[o.kind] || "#00838f") : "#d32f2f", b = o.box;
+    var r = el("rect", {x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1],
+      fill: "none", stroke: c, "stroke-width": 2.5,
+      "stroke-dasharray": o.plan_opening ? "" : "6 4", "data-el": "elev:" + o.id}, gw);
+    el("title", {}, r).textContent = o.id + " " + o.kind
+      + (o.width_m ? ", " + o.width_m + " x " + o.height_m + " m" : "")
+      + (o.plan_opening ? ", plan " + o.plan_opening : ", not joined to the plan");
+    el("text", {x: b[0], y: b[1] - 3, "font-size": 10, fill: c}, gw).textContent = o.id;
+  });
+}
 function drawSheet(sh, host) {
   var svg = el("svg", {viewBox: "0 0 " + sh.w + " " + sh.h, preserveAspectRatio: "none"});
+  if (sh.kind === "elevation") { drawElevation(sh, svg); host.appendChild(svg); return svg; }
   var g = {};
   ["rooms", "walls", "openings", "dets"].forEach(function (n) {
     g[n] = el("g", {"data-layer": n}, svg);
@@ -862,19 +972,25 @@ def _sheets_html(sheets: List[dict]) -> str:
         "<span><i style='background:#6d4c41'></i>gap</span>"
         "<span><i style='background:#d32f2f'></i>opening in review</span>"
         "<span>solid: modelled, dashed: not modelled; detection boxes fade with lower score</span>"
-        "</div>"
+        "<span>elevations: solid when joined to a plan opening, dashed red when not; "
+        "\u2194 names the other sheet of the selected item</span>"
+        "</div><div id=pair class=pair style='display:none'></div>"
     ]
     for s in sheets:
-        cap = html.escape(
-            " ".join(x for x in (s["number"], s["file"], s["level"] and f"level {s['level']}") if x)
-        )
+        elev = s.get("kind") == "elevation"
+        bits = (
+            (s["number"], s["file"], f"{s['facade'] or 'unnamed'} elevation",
+             s["plan"] and f"joined to plan {s['plan']}")
+            if elev else (s["number"], s["file"], s["level"] and f"level {s['level']}")
+        )  # fmt: skip
+        cap = html.escape(" ".join(x for x in bits if x))
+        layers = ("outline", "openings") if elev else ("rooms", "walls", "openings", "dets")
         img = f"<img alt='' src='{s['img']}'>" if s["img"] else ""
         parts.append(
             f"<figure id='sheet-{html.escape(s['file'])}'><figcaption>{cap}</figcaption>"
             "<div class=layers>"
             + "".join(
-                f"<label><input type=checkbox checked data-layer={n}> {n}</label>"
-                for n in ("rooms", "walls", "openings", "dets")
+                f"<label><input type=checkbox checked data-layer={n}> {n}</label>" for n in layers
             )
             + f"</div><div class=sheet data-sheet='{html.escape(s['file'])}' "
             f"style='aspect-ratio:{s['w']:.1f}/{s['h']:.1f}'>{img}</div></figure>"
