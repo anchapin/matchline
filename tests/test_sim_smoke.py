@@ -172,6 +172,21 @@ def test_reference_file_states_its_band_and_provenance():
         assert cb["band_mj_m2"][0] <= ref["site_eui_mj_m2"] <= cb["band_mj_m2"][1]
 
 
+@pytest.mark.parametrize(
+    "zone, code",
+    [("5A", 2), ("5c", 2), ("6B", 1), ("7", 1), ("4C", 3), ("3B", 4), ("2A", 5), ("1B", 5)],
+)
+def test_ashrae_zone_to_cbecs_climate_group(zone, code):
+    assert cbecs.pubclim_for(zone) == code
+
+
+def test_reference_climate_filter_matches_eia_grouping():
+    for ref in json.loads(s.REFERENCE.read_text())["references"]:
+        assert ref["cbecs"]["filter"]["pubclim"] == [cbecs.pubclim_for(ref["climate_zone"])]
+    with pytest.raises(KeyError):
+        cbecs.pubclim_for("0A")
+
+
 def test_weighted_percentile():
     assert cbecs.weighted_percentile([1, 2, 3], [1, 1, 1], 50) == 2
     assert cbecs.weighted_percentile([1, 2, 3], [1, 1, 1], 1) == 1

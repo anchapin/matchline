@@ -33,7 +33,13 @@ microdata, for the buildings matching each reference in
 
 | Reference | CBECS filter | Records (buildings) | p5 / p50 / p95 MJ/m2 |
 |---|---|---|---|
-| SmallOffice, 90.1-2019, 5A | Office, 1,001-10,000 ft2, climate "Cool" (ASHRAE 169 zone 5) | 65 (173,182) | 211.0 / 603.8 / 1912.4 |
+| SmallOffice, 90.1-2019, 5A | Office, 1,001-10,000 ft2, climate "Cool" (5A/5B/5C) | 65 (173,182) | 211.0 / 603.8 / 1912.4 |
+
+The climate group comes from EIA's own grouping of ASHRAE 169-2021 zones
+for the 2018 CBECS ([CBECS maps, "Definitions of CBECS climate zones"](https://www.eia.gov/consumption/commercial/maps.php)):
+Cold or very cold = 6A, 6B, 7, 8; Cool = 5A, 5B, 5C; Mixed mild = 4A, 4B, 4C;
+Warm = 3A, 3B, 3C; Hot or very hot = 1A, 1B, 2A, 2B. `cbecs_band.pubclim_for`
+encodes it and a test keeps each reference's filter on it.
 
 CBECS is the existing stock, mostly built before 90.1-2019, so a code-built
 model sits in its low tail: openstudio-standards' SmallOffice 90.1-2019 5A

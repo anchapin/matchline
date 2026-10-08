@@ -36,7 +36,7 @@
             2
           ]
         },
-        "filter_meaning": "PBA 2 = Office; SQFTC 2-3 = 1,001 to 10,000 ft2 (the prototype is 5,502 ft2); PUBCLIM 2 = Cool, the CBECS group for ASHRAE 169 zone 5 (5A)",
+        "filter_meaning": "PBA 2 = Office; SQFTC 2-3 = 1,001 to 10,000 ft2 (the prototype is 5,502 ft2); PUBCLIM 2 = Cool, which EIA defines as ASHRAE 169-2021 zones 5A, 5B and 5C",
         "eui": "MFBTU / SQFT (major fuels, site, gross floor area), weighted by FINALWT, kBtu/ft2 x 11.356526 = MJ/m2",
         "band_percentiles": [
           5,
@@ -58,7 +58,8 @@
         "band_mj_m2": [
           211.0,
           1912.4
-        ]
+        ],
+        "climate_map": "https://www.eia.gov/consumption/commercial/maps.php (Definitions of CBECS climate zones, 2018 CBECS)"
       }
     }
   ]
