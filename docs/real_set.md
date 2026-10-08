@@ -115,7 +115,13 @@ drawn above the facade outline's base, so a note or dimension that happens to sa
 "EL." is dropped. Floors and the roof count; T.O. PLATE, PARAPET and GRADE do not.
 Each step is the height of the storey whose mark sits at its bottom, matched to a
 plan level by the mark's name (FIRST FLOOR / LEVEL 1 to L1, SECOND FLOOR to L2,
-BASEMENT to B1; ROOF only closes the top step). Each level takes its own height when
+BASEMENT to B1, MEZZANINE to MEZZ, PENTHOUSE to PH; ROOF and PENTHOUSE ROOF only
+close the top step). When one elevation has both GROUND FLOOR and FIRST FLOOR, it is
+read the British way: GROUND is L1, FIRST is L2 (#822). When no plan level matches
+any mark by name (marks named by datum such as LEVEL 100 / LEVEL 115), each
+elevation whose storey count equals the plan level count gives its k-th storey to
+the k-th level (`height_match: order` in the report, `name` otherwise); when none
+does, every level keeps the default and `rq-storey-height` gives the counts. Each level takes its own height when
 every elevation that states it agrees within 0.05 m (`height_source:
 elevation_level_marks`, `height_m` per level in the report, with a note naming the
 sheets), and level elevations are the running sum, so a 4.5 m first floor puts L2 at

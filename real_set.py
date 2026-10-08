@@ -293,22 +293,28 @@ def build_set_model(
             "no floor plan produced a room; see stage_00_set_report.json for each sheet's reason"
         )
 
-    by_storey, marks_desc = _storey_from_elevations(files, entries, status, scales, sheets_dir)
+    by_storey, marks_desc, per_sheet = _storey_from_elevations(
+        files, entries, status, scales, sheets_dir
+    )
     order = _level_order(list(by_level))
     lid_of = {lv: (lv if not lv.startswith("L?") else f"LX{lv[2:]}") for lv in order}
-    heights = _level_heights(order, by_storey, storey_height_m)
+    heights, order_miss = _level_heights(order, by_storey, per_sheet, storey_height_m)
     marked = [lv for lv in order if heights[lv][1] == "elevation_level_marks"]
     if marked:
+        by_order = (
+            " matched to the plan levels by order" if heights[marked[0]][3] == "order" else ""
+        )
         hs = {heights[lv][0] for lv in marked}
         if len(hs) == 1 and len(marked) == len(order):
             report.notes.append(
-                f"storey height {next(iter(hs)):g} m from elevation level marks ({marks_desc})"
+                f"storey height {next(iter(hs)):g} m from elevation level marks{by_order} "
+                f"({marks_desc})"
             )
         else:
             report.notes.append(
                 "storey heights from elevation level marks: "
                 + ", ".join(f"{lid_of[lv]} {heights[lv][0]:g} m" for lv in marked)
-                + f" ({marks_desc})"
+                + f"{by_order} ({marks_desc})"
             )
     levels: List[Level] = []
     spaces: Dict[str, Space] = {}
@@ -318,7 +324,7 @@ def build_set_model(
     z = 0.0
     for lv in order:
         lid = lid_of[lv]
-        h, h_src, _conflict = heights[lv]
+        h, h_src, _conflict, h_match = heights[lv]
         levels.append(Level(id=lid, name=lid, elevation_z_m=round(z, 4), wall_height_m=h))
         report.levels.append(
             {
@@ -327,6 +333,7 @@ def build_set_model(
                 "elevation_m": round(z, 4),
                 "height_m": h,
                 "height_source": h_src,
+                **({"height_match": h_match} if h_match else {}),
                 # every gap the plan shows; "openings" below says which were modelled
                 "plan_openings": len(walls[by_level[lv][0]]["openings"]),
             }
@@ -403,6 +410,8 @@ def build_set_model(
                 why = "elevation level marks disagree (" + "; ".join(
                     f"{lid_of[lv]}: {c}" for lv, c in conflicts.items()
                 ) + "); "  # fmt: skip
+            elif order_miss:
+                why = f"{order_miss}; "
             elif by_storey:
                 why = "the elevation level marks name no modelled level; "
             elif elevations:
@@ -496,13 +505,15 @@ def build_set_model(
 def _storey_from_elevations(files, entries, status, scales, sheets_dir):
     """Storey heights from the level marks on the set's vector elevations.
 
-    Returns ``(by_storey, desc)``: ``by_storey`` maps a storey ordinal (1 for FIRST
-    FLOOR / LEVEL 1, 0 for BASEMENT; ``storey_ordinal``) to the ``(sheet, height)``
-    each elevation states for it; ``desc`` lists every elevation's steps (#813, #814).
+    Returns ``(by_storey, desc, per_sheet)``: ``by_storey`` maps a storey key (1 for
+    FIRST FLOOR / LEVEL 1, 0 for BASEMENT, "MEZZ", "PH"; ``storey_key``) to the
+    ``(sheet, height)`` each elevation states for it; ``desc`` lists every elevation's
+    steps; ``per_sheet`` keeps each elevation's steps bottom to top, for matching by
+    order when no plan level matches by name (#813, #814, #822).
     """
     from elevation_sheets import level_marks, storey_steps
 
-    by_storey: Dict[int, list] = {}
+    by_storey: Dict[object, list] = {}
     found = []
     for f in files:
         e = entries.get(f, {})
@@ -523,41 +534,60 @@ def _storey_from_elevations(files, entries, status, scales, sheets_dir):
             if o is not None:
                 by_storey.setdefault(o, []).append((sid, x))
     desc = "; ".join(f"{sid}: " + ", ".join(f"{x:.2f} m" for x in hs) for sid, hs in found)
-    return by_storey, desc
+    return by_storey, desc, found
 
 
-def _level_ordinal(lv: str) -> Optional[int]:
-    """The storey ordinal of a plan level id: L1 -> 1, B1 -> 0, B2 -> -1 (#814)."""
+def _level_key(lv: str):
+    """The storey key of a plan level id: L1 -> 1, B1 -> 0, B2 -> -1, MEZZ, PH (#814)."""
     if lv[:1] == "L" and lv[1:].isdigit():
         return int(lv[1:])
     if lv[:1] == "B" and lv[1:].isdigit():
         return 1 - int(lv[1:])
+    if lv in ("MEZZ", "PH"):
+        return lv
     return None
 
 
-def _level_heights(order, by_storey, storey_height_m):
-    """Each plan level's ``(height, source, conflict)`` (#814).
+def _level_heights(order, by_storey, per_sheet, storey_height_m):
+    """Each plan level's ``(height, source, conflict, match)`` and an order-miss note.
 
-    The config height wins for every level; otherwise a level takes the height its
-    elevation level marks state when they agree within ``STOREY_AGREE_M``, else the
-    default (``conflict`` names the disagreeing elevations, empty when no mark).
+    The config height wins for every level. Otherwise a level takes the height its
+    elevation level marks state, matched by name (``match`` "name"), when they agree
+    within ``STOREY_AGREE_M``. When no plan level matches any mark by name, the k-th
+    storey of each elevation whose storey count equals the plan level count goes to
+    the k-th level (``match`` "order"); ``miss`` says why when none does. Anything
+    else keeps the default, ``conflict`` naming the disagreeing elevations (#814, #822).
     """
     from elevation_sheets import STOREY_AGREE_M
 
+    if storey_height_m:
+        return {lv: (storey_height_m, "config", "", "") for lv in order}, ""
+    cand = {}
+    for lv in order:
+        k = _level_key(lv)
+        cand[lv] = by_storey.get(k, []) if k is not None else []
+    match, miss = "name", ""
+    if per_sheet and not any(cand.values()):
+        fits = [(sid, hs) for sid, hs in per_sheet if len(hs) == len(order)]
+        if fits:
+            match = "order"
+            cand = {lv: [(sid, hs[i]) for sid, hs in fits] for i, lv in enumerate(order)}
+        else:
+            miss = (
+                "the elevation level marks name no modelled level and their storey counts ("
+                + "; ".join(f"{sid}: {len(hs)}" for sid, hs in per_sheet)
+                + f") do not match the {len(order)} plan level{'s' if len(order) != 1 else ''}"
+            )
     out = {}
     for lv in order:
-        if storey_height_m:
-            out[lv] = (storey_height_m, "config", "")
-            continue
-        o = _level_ordinal(lv)
-        hs = by_storey.get(o, []) if o is not None else []
+        hs = cand[lv]
         vals = [x for _s, x in hs]
         if vals and max(vals) - min(vals) <= STOREY_AGREE_M:
-            out[lv] = (round(sum(vals) / len(vals), 4), "elevation_level_marks", "")
+            out[lv] = (round(sum(vals) / len(vals), 4), "elevation_level_marks", "", match)
         else:
             conflict = "; ".join(f"{s}: {x:.2f} m" for s, x in hs)
-            out[lv] = (DEFAULT_STOREY_HEIGHT_M, "storey_height_default", conflict)
-    return out
+            out[lv] = (DEFAULT_STOREY_HEIGHT_M, "storey_height_default", conflict, "")
+    return out, miss
 
 
 def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, walls, review,
