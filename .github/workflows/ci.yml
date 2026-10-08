@@ -126,6 +126,33 @@ jobs:
       - name: Run ruff check on detector/
         run: ruff check detector/
 
+  review-page-browser:
+    # #802: drive review.html in headless Chromium (keys, edit prompt, layer
+    # toggle, sheet highlight, export -> matchline review --apply).
+    name: review page in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and Playwright Chromium
+        run: |
+          pip install --no-cache-dir -e ".[test,openstudio]" "playwright>=1.48,<2"
+          python -m playwright install --with-deps chromium
+
+      - name: Run browser test
+        env:
+          MATCHLINE_BROWSER_TESTS: "1"  # a missing browser fails instead of skipping
+        run: python -m pytest tests/test_review_page_browser.py -q -rs
+
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
@@ -165,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2247  # +9 review edit adds an unsized gap opening (#798)
+          EXPECTED_TEST_COUNT=2248  # +1 review page browser test (#802)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
