@@ -94,18 +94,22 @@ says which:
   taken at the row's minimum VT/SHGC (1.10 x SHGC)
 - doors `t55-door`: opaque swinging door, U only
 - skylights `t55-skylight`: curbed glass (all three skylight classes carry the
-  same values); U and SHGC, but Table 5.5 gives no VT for skylights
+  same values); U and SHGC from the row. Table 5.5 gives no VT for skylights,
+  so VT is 1.10 x SHGC, the ratio the 90.1 PRM 2019 data in openstudio-standards
+  v0.8.6 (`ashrae_90_1_prm_2019.construction_properties.json`) applies to every
+  glazing row, skylights included (CZ5 nonresidential: SHGC 0.40, VT 0.44) (#784).
+  openstudio-standards' own fallback when a simple glazing name has no VT is
+  0.81; that is a placeholder, not a table value, so it is not used.
 
 Interior openings (with an adjacent space) and openings that already point at a
 construction are left alone. In gbXML, doors reference a layered
 `Construction` and glazing references a `WindowType` with U-value, SHGC and
 visible Transmittance. OpenStudio turns a WindowType into simple glazing only
 when all three are present; without VT it leaves an empty construction that
-will not simulate. So glazing with no VT (today, skylights) is written with no
-WindowType, as before, and the export notes it.
+will not simulate. So glazing with no VT (for example a stated U and SHGC with
+no VT) is written with no WindowType and the export notes it.
 
 ## Not yet
 
-Skylight visible transmittance (so skylights still export with no
-WindowType), opening constructions in the IFC4 export, heated slabs, interior (non-perimeter) slab
+Opening constructions in the IFC4 export, heated slabs, interior (non-perimeter) slab
 edges, wall-type tags read off PDF legends, and Appendix A assemblies.
