@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- A scheduled window tag (e.g. SF-1) on a plan wall with no opening drawn: when its scheduled width spans the wall it is modelled as a full-length storefront window (`plan_wall_tag`, confidence 0.7); a narrower tagged door or window there goes to review as a possible undrawn opening. `walls_NNN.json` gains `wall_tags` (#793).
 - A facade drawn in parts (two sheets, or titles like "SOUTH ELEVATION - EAST HALF") is joined as a whole: each part is placed by shared grid labels or the end its title names, covers its own span, and a plan opening goes to review only when no part shows it. An opening two elevations draw differently goes to review once, naming both sheets (#818).
 - Run config `wall_height` takes a per-level map (`{L1: 4.5, L2: 3.6}`) for drawing-set runs; named levels use it and the rest fall through to the elevation level marks. Config `wall_height` now reaches the drawing-set run at all (before, only `--storey-height` did); unknown level ids fail the run (#821).
 

@@ -281,6 +281,40 @@ def _attach_tags(openings: List[dict], spans, to_m) -> int:
     return len(best)
 
 
+def _wall_tags(walls: List[dict], openings: List[dict], spans, to_m) -> List[dict]:
+    """Tags on a wall with no opening drawn (#793): the storefront case.
+
+    A full-length storefront or curtain wall is often drawn as a plain wall
+    band with its schedule tag (SF-1) beside it. A tag-like span that is not
+    within ``TAG_RADIUS_M`` of any opening, but is within it of a wall with no
+    opening, is kept against that wall. Whether the tag is scheduled, and
+    whether its width explains the wall, is for the caller to decide.
+    """
+    op_lines = [LineString([o["a_m"], o["b_m"]]) for o in openings]
+    has_op = {wid for o in openings for wid in o.get("walls", [])}
+    free = [(w, LineString([w["a_m"], w["b_m"]])) for w in walls if w["id"] not in has_op]
+    best: Dict[str, Tuple[float, str, Tuple[float, float]]] = {}
+    for text, (x0, y0, x1, y1) in spans:
+        t = str(text).strip().upper()
+        if not TAG_RE.match(t) or not free:
+            continue
+        c = Point(to_m(((x0 + x1) / 2, (y0 + y1) / 2)))
+        if any(ln.distance(c) <= TAG_RADIUS_M for ln in op_lines):
+            continue  # belongs to an opening (or would have)
+        d, w = min(((ln.distance(c), w) for w, ln in free), key=lambda t: t[0])
+        if d <= TAG_RADIUS_M and (w["id"] not in best or d < best[w["id"]][0]):
+            best[w["id"]] = (d, t, (c.x, c.y))
+    return [
+        {
+            "wall": wid,
+            "tag_text": t,
+            "point_m": [round(x, 4), round(y, 4)],
+            "tag_dist_m": round(d, 3),
+        }
+        for wid, (d, t, (x, y)) in sorted(best.items())
+    ]
+
+
 def _filled_rects(sheet, t_min: float, t_max: float):
     """Solid poché walls: (index, centreline a, b, thickness) in sheet points."""
     out = []
@@ -755,6 +789,7 @@ class PlanWalls:
     review: List[dict]
     m_per_pt: Optional[float]
     stats: Dict[str, float] = field(default_factory=dict)
+    wall_tags: List[dict] = field(default_factory=list)  # tags on walls with no opening (#793)
 
     def to_dict(self) -> dict:
         return {
@@ -765,6 +800,7 @@ class PlanWalls:
             "rooms": [asdict(r) for r in self.rooms],
             "review": self.review,
             "stats": self.stats,
+            "wall_tags": self.wall_tags,
         }
 
 
@@ -1035,6 +1071,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
             }
         )
     tagged = _attach_tags(openings, spans, to_m)
+    wall_tags = _wall_tags(wall_out, openings, spans, to_m)
     stats = {
         "segments": len(segs),
         "bands": len(bands),
@@ -1043,10 +1080,11 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "doors": doors,
         "windows": len(windows),
         "tagged": tagged,
+        "wall_tags": len(wall_tags),
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }
-    return PlanWalls(wall_out, openings, rooms, review, m_per_pt, stats)
+    return PlanWalls(wall_out, openings, rooms, review, m_per_pt, stats, wall_tags)
 
 
 # -------------------------------------------------------------- measurement
