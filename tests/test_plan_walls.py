@@ -6,6 +6,7 @@ pdf_ingest, so the whole vector path is exercised."""
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -378,3 +379,45 @@ def test_wide_gap_in_a_wall_line_closes_with_an_air_wall(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(SHELL, [((5, 0), (1, 0), 5.0, T_EXT)])))
     assert _areas(res) == []
     assert any(i["kind"] == "unclosed_wall" for i in res.review)
+
+
+# ---- door swings on the plan mark the gap as a door (#743) ---------------
+
+
+def _door_ops(res):
+    return [o for o in res.openings if o.get("kind") == "door"]
+
+
+def test_single_door_swing_marks_the_gap_a_door(tmp_path):
+    mass = _mass(SHELL + PARTITION, [DOOR])
+    res, _ = _read(tmp_path, _outline(mass) + _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45)))
+    (op,) = _door_ops(res)
+    assert op["swing"] == "single" and op["door_confidence"] == 0.85
+    (hinge,) = op["hinges_m"]
+    assert min(math.dist(hinge, op["a_m"]), math.dist(hinge, op["b_m"])) < 1e-3
+    assert res.stats["doors"] == 1
+
+
+def test_double_door_swings_mark_a_pair(tmp_path):
+    pair = ((4, 3), (0, 1), 1.6, T_INT)  # 1.6 m gap: two 0.8 m leaves
+    mass = _mass(SHELL + PARTITION, [pair])
+    sym = _door_symbol((4, 2.2), (4.8, 2.2), (4, 3.0)) + _door_symbol(
+        (4, 3.8), (4.8, 3.8), (4, 3.0)
+    )
+    res, _ = _read(tmp_path, _outline(mass) + sym)
+    (op,) = _door_ops(res)
+    assert op["swing"] == "double" and len(op["hinges_m"]) == 2
+
+
+def test_gap_without_a_swing_is_not_called_a_door(tmp_path):
+    mass = _mass(SHELL + PARTITION, [DOOR])
+    res, _ = _read(tmp_path, _outline(mass))
+    assert len(res.openings) == 1 and "kind" not in res.openings[0]
+    assert res.stats["doors"] == 0
+
+
+def test_curve_of_the_wrong_radius_is_not_a_swing(tmp_path):
+    mass = _mass(SHELL + PARTITION, [DOOR])
+    # a 0.45 m curve hinged on the jamb: half the gap, and no second leaf
+    res, _ = _read(tmp_path, _outline(mass) + _door_symbol((4, 2.55), (4.45, 2.55), (4, 3.0)))
+    assert not _door_ops(res)

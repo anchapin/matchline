@@ -546,12 +546,18 @@ def _plan_openings(
         counts["exterior"] += 1
         width = float(op["width_m"])
         cands = [(t, e) for t, e in sized if abs(e["width_m"] - width) <= WIDTH_TOL_M]
+        swing = op.get("kind") == "door"
+        if swing:
+            # a door swing on the plan rules out same-width windows (#743)
+            cands = [(t, e) for t, e in cands if e["category"] == "door"]
         kinds = {(e["category"], round(e["height_m"], 3)) for _t, e in cands}
         oid = f"{lid}-OP{k + 1}"
         if len(kinds) != 1:
             counts["unsized"] += 1
             why = (
-                "no scheduled door or window is this wide"
+                ("the plan draws a door swing but no scheduled door is this wide")
+                if swing and not kinds
+                else "no scheduled door or window is this wide"
                 if not kinds
                 else "scheduled doors/windows of this width disagree on type or height ("
                 + ", ".join(t for t, _e in cands)
@@ -583,6 +589,7 @@ def _plan_openings(
             confidence=0.8 if len(tags) == 1 else 0.7,
             note=(
                 f"plan gap {float(op['width_m']):.3f} m matched schedule {'/'.join(tags)} by width"
+                + (f"; {op['swing']} door swing drawn on the plan" if swing else "")
             ),
         )
         sp = spaces.get(wall.space_id)
