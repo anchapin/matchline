@@ -126,7 +126,7 @@ def build_set_model(
     out_dir,
     *,
     detections: Optional[dict] = None,
-    storey_height_m: Optional[float] = None,
+    storey_height_m=None,
     dpi: float = 150,
     provider=None,
 ):
@@ -136,6 +136,11 @@ def build_set_model(
     config; it runs on each floor plan's rendered image unless ``detections``
     already holds that sheet. The report records which provider ran and whether
     its weights are evaluation only under the license ledger.
+
+    ``storey_height_m`` is one height for every level (``--storey-height``, run
+    config ``wall_height: 3.5``) or a map of level id to height (``wall_height:
+    {L2: 4.0}``) for those levels only; the rest come from the elevation level marks,
+    then the default (#821).
     """
     from bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
@@ -298,7 +303,19 @@ def build_set_model(
     )
     order = _level_order(list(by_level))
     lid_of = {lv: (lv if not lv.startswith("L?") else f"LX{lv[2:]}") for lv in order}
-    heights, order_miss = _level_heights(order, by_storey, per_sheet, storey_height_m)
+    override = storey_height_m
+    if isinstance(storey_height_m, dict):
+        known = {lid_of[lv]: lv for lv in order}
+        bad = sorted(str(k) for k in storey_height_m if str(k) not in known)
+        if bad:
+            report.sheets = list(status.values())
+            _write(out, report)
+            raise SetError(
+                f"wall_height names level{'s' if len(bad) > 1 else ''} not in the set: "
+                f"{', '.join(bad)} (levels: {', '.join(known)})"
+            )
+        override = {known[str(k)]: float(v) for k, v in storey_height_m.items()}
+    heights, order_miss = _level_heights(order, by_storey, per_sheet, override)
     marked = [lv for lv in order if heights[lv][1] == "elevation_level_marks"]
     if marked:
         by_order = (
@@ -437,7 +454,14 @@ def build_set_model(
                 id="rq-storey-height",
                 kind="elevation_extraction",  # storey height comes from sections/elevations
                 target={"kind": "level", "ids": [lid_of[lv] for lv in defaulted]},
-                description=desc + "set wall_height in the run config to override",
+                description=desc
+                + (
+                    "set wall_height in the run config to override"
+                    if len(defaulted) == len(order)
+                    else "set wall_height: {"
+                    + ", ".join(f"{lid_of[lv]}: <metres>" for lv in defaulted)
+                    + "} in the run config to override those levels"
+                ),
                 confidence=0.5,
                 provenance=Provenance(
                     str(pdf),
@@ -551,7 +575,8 @@ def _level_key(lv: str):
 def _level_heights(order, by_storey, per_sheet, storey_height_m):
     """Each plan level's ``(height, source, conflict, match)`` and an order-miss note.
 
-    The config height wins for every level. Otherwise a level takes the height its
+    The config height wins for every level, or for the levels a per-level config map
+    names (keyed by plan level, #821). Otherwise a level takes the height its
     elevation level marks state, matched by name (``match`` "name"), when they agree
     within ``STOREY_AGREE_M``. When no plan level matches any mark by name, the k-th
     storey of each elevation whose storey count equals the plan level count goes to
@@ -560,7 +585,8 @@ def _level_heights(order, by_storey, per_sheet, storey_height_m):
     """
     from elevation_sheets import STOREY_AGREE_M
 
-    if storey_height_m:
+    per_level = storey_height_m if isinstance(storey_height_m, dict) else {}
+    if storey_height_m and not per_level:
         return {lv: (storey_height_m, "config", "", "") for lv in order}, ""
     cand = {}
     for lv in order:
@@ -580,6 +606,9 @@ def _level_heights(order, by_storey, per_sheet, storey_height_m):
             )
     out = {}
     for lv in order:
+        if lv in per_level:
+            out[lv] = (per_level[lv], "config", "", "")
+            continue
         hs = cand[lv]
         vals = [x for _s, x in hs]
         if vals and max(vals) - min(vals) <= STOREY_AGREE_M:

@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Run config `wall_height` takes a per-level map (`{L1: 4.5, L2: 3.6}`) for drawing-set runs; named levels use it and the rest fall through to the elevation level marks. Config `wall_height` now reaches the drawing-set run at all (before, only `--storey-height` did); unknown level ids fail the run (#821).
+
+### Added
 - Level marks match more plan levels: GROUND then FIRST FLOOR on one elevation reads the British way, MEZZANINE and PENTHOUSE marks match MEZZ and PH, and marks that name no plan level match by order when the storey count agrees (`height_match` per level) (#822).
 
 ### Added

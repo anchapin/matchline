@@ -336,6 +336,16 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 
+def _set_storey_height(args, config: dict | None):
+    """Storey height for a drawing-set run: ``--storey-height`` first, then the run
+    config's ``wall_height`` (a number for every level, or ``{level: metres}``) (#821).
+    """
+    flag = getattr(args, "storey_height", None)
+    if flag is not None:
+        return flag
+    return (config or {}).get("wall_height")
+
+
 def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
     """Stage 1: Generate building or load real-sheet detections.
 
@@ -356,7 +366,7 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
             model, set_report = build_set_model(
                 args.set_pdf,
                 out_dir,
-                storey_height_m=getattr(args, "storey_height", None),
+                storey_height_m=_set_storey_height(args, config),
                 provider=provider,
             )
         except (ProviderConfigError, ProviderLicenseError) as e:
@@ -627,6 +637,9 @@ def main(args, config: dict | None = None) -> None:
         if config:
             simplify_tol = config.get("simplify_tolerance", simplify_tol)
             wall_height = config.get("wall_height", None)
+            if isinstance(wall_height, dict):
+                # per-level heights went to the set model (#821); simplify uses its first level
+                wall_height = None
             min_review_confidence = config.get("review_confidence", None)
 
         # --- Stage 1: generate building or load real-sheet detections ----------

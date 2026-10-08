@@ -129,4 +129,13 @@ sheets), and level elevations are the running sum, so a 4.5 m first floor puts L
 is named in `rq-storey-height` (target `{"kind": "level", "ids": [...]}`; raised for
 review when marks disagree, informational when a level simply has no mark). Uniform
 heights give the same model as before (#814). A `storey_height_m` in the run config
-still wins over the marks for every level; there is no per-level override yet.
+still wins over the marks for every level. A map sets only the levels it names and
+leaves the rest to the marks, then the default (#821):
+
+```yaml
+wall_height: {L1: 4.5, L2: 3.6}   # or one number for every level
+```
+
+`--storey-height` beats the config. A level id that is not in the set fails the run
+and names the set's levels; when only some levels default, `rq-storey-height` says
+which keys to add.
