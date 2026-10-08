@@ -350,3 +350,90 @@ def test_join_items_use_the_window_kinds(tmp_path):
     # same triage task as the building-JSON path's items and the old kind
     tasks = {run_review._kind_to_task(k) for k in ("elevation_conflict", "window_room_link")}
     assert tasks == {run_review._kind_to_task("elevation_extraction")} == {"route_to_review"}
+
+
+# --- per-level storey heights from level marks (#814) ------------------------
+
+
+@pytest.mark.parametrize(
+    "name,o",
+    [("FIRST FLOOR", 1), ("GROUND FLOOR", 1), ("2ND FLOOR", 2), ("LEVEL 3", 3),
+     ("5TH FLOOR", 5), ("BASEMENT", 0), ("ROOF", None), (None, None)],
+)  # fmt: skip
+def test_storey_ordinal(name, o):
+    assert ES.storey_ordinal(name) == o
+
+
+def test_storey_steps_name_each_storey():
+    mk = ES.LevelMark
+    marks = [mk("FIRST FLOOR", 0.0, 0, ""), mk("SECOND FLOOR", 4.5, 0, ""),
+             mk("ROOF", 8.1, 0, ""), mk("PARAPET", 8.7, 0, "")]  # fmt: skip
+    assert ES.storey_steps(marks) == [(1, 4.5), (2, 3.6)]
+
+
+def _tall(title="SOUTH ELEVATION", roof=8.1, sheet="A-201"):
+    """First floor 4.5 m, second floor to roof ``roof - 4.5`` m, stated by marks in metres."""
+    extra = (_mark("FIRST FLOOR", "EL. +0.000", 0.0) + _mark("SECOND FLOOR", "EL. +4.500", 4.5)
+             + _mark("ROOF", f"EL. +{roof:.3f}", roof))  # fmt: skip
+    return _elev(title, extra=extra).replace("A-201", sheet)
+
+
+def _two_storey(tmp_path, *elevs, storey_height_m=None):
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1), _arch_win("A-102", "SECOND FLOOR PLAN", 2),
+             *elevs]  # fmt: skip
+    return real_set.build_set_model(
+        _set(tmp_path, pages), tmp_path / "out", storey_height_m=storey_height_m
+    )
+
+
+def test_each_level_takes_its_own_height_from_the_marks(tmp_path):
+    model, rep = _two_storey(tmp_path, _tall())
+    l1, l2 = model.levels
+    assert (l1.id, l2.id) == ("L1", "L2")
+    assert l1.wall_height_m == pytest.approx(4.5) and l2.wall_height_m == pytest.approx(3.6)
+    assert l2.elevation_z_m == pytest.approx(4.5)
+    assert [lv["height_source"] for lv in rep.levels] == ["elevation_level_marks"] * 2
+    assert [lv["height_m"] for lv in rep.levels] == [pytest.approx(4.5), pytest.approx(3.6)]
+    for sp in model.spaces.values():
+        h = 4.5 if sp.level_id == "L1" else 3.6
+        assert sp.volume_m3 == pytest.approx(sp.area_m2 * h, rel=1e-3)
+    for w in model.envelope:
+        assert w.height_m == pytest.approx(4.5 if w.id.startswith("L1-") else 3.6)
+    assert any("storey heights from elevation level marks: L1 4.5 m, L2 3.6 m" in n
+               for n in rep.notes)  # fmt: skip
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+
+
+def test_marks_that_disagree_on_one_level_send_only_that_level_to_review(tmp_path):
+    # the north elevation agrees on the first floor (4.5 m) but says 4.0 m for the second
+    north = _tall("NORTH ELEVATION", roof=8.5, sheet="A-202")
+    model, rep = _two_storey(tmp_path, _tall(), north)
+    l1, l2 = model.levels
+    assert l1.wall_height_m == pytest.approx(4.5)
+    assert rep.levels[0]["height_source"] == "elevation_level_marks"
+    assert l2.wall_height_m == real_set.DEFAULT_STOREY_HEIGHT_M
+    assert l2.elevation_z_m == pytest.approx(4.5)
+    assert rep.levels[1]["height_source"] == "storey_height_default"
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert rq.target == {"kind": "level", "ids": ["L2"]} and rq.needs_review
+    assert "default for L2 (elevation level marks disagree: A-201: 3.60 m; A-202: 4.00 m)" in (
+        rq.description
+    )
+
+
+def test_a_level_with_no_mark_keeps_the_default_and_is_named(tmp_path):
+    # FIRST FLOOR and ROOF only: the first floor's height, nothing for the second
+    model, rep = _two_storey(tmp_path, _elev_marks())
+    assert model.levels[0].wall_height_m == pytest.approx(FT12, abs=1e-3)
+    assert model.levels[1].wall_height_m == real_set.DEFAULT_STOREY_HEIGHT_M
+    assert model.levels[1].elevation_z_m == pytest.approx(FT12, abs=1e-3)
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert "default for L2 (no level mark)" in rq.description and not rq.needs_review
+    assert rq.target == {"kind": "level", "ids": ["L2"]}
+
+
+def test_config_height_still_overrides_every_level(tmp_path):
+    model, rep = _two_storey(tmp_path, _tall(), storey_height_m=4.0)
+    assert [lv.wall_height_m for lv in model.levels] == [4.0, 4.0]
+    assert model.levels[1].elevation_z_m == 4.0
+    assert [lv["height_source"] for lv in rep.levels] == ["config", "config"]

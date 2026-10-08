@@ -113,8 +113,14 @@ Level marks on vector elevations ("FIRST FLOOR / EL. 100'-0\"", "ROOF EL. +3.600
 are read with their names. Each mark's stated value is checked against where it is
 drawn above the facade outline's base, so a note or dimension that happens to say
 "EL." is dropped. Floors and the roof count; T.O. PLATE, PARAPET and GRADE do not.
-When every floor-to-floor step on every elevation agrees within 0.05 m, that is the
-storey height (`height_source: elevation_level_marks`, with a report note naming the
-sheets) and `rq-storey-height` is not raised. Steps that disagree keep the 3 m
-default and the review item lists them. A `storey_height_m` in the run config still
-wins over the marks.
+Each step is the height of the storey whose mark sits at its bottom, matched to a
+plan level by the mark's name (FIRST FLOOR / LEVEL 1 to L1, SECOND FLOOR to L2,
+BASEMENT to B1; ROOF only closes the top step). Each level takes its own height when
+every elevation that states it agrees within 0.05 m (`height_source:
+elevation_level_marks`, `height_m` per level in the report, with a note naming the
+sheets), and level elevations are the running sum, so a 4.5 m first floor puts L2 at
+4.5 m. A level whose marks disagree, or that no mark names, keeps the 3 m default and
+is named in `rq-storey-height` (target `{"kind": "level", "ids": [...]}`; raised for
+review when marks disagree, informational when a level simply has no mark). Uniform
+heights give the same model as before (#814). A `storey_height_m` in the run config
+still wins over the marks for every level; there is no per-level override yet.
