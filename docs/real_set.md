@@ -65,5 +65,14 @@ along the facade, width, sill and head heights; the sheet's `elevation` stage an
 facades or none, or an outline more than 5% off the plan's facade length, goes to
 the review queue as `elevation_extraction`.
 
-This slice only reads and registers. Joining elevation openings to plan gaps (sill
-and head heights, storey height from the outline) is the next slice.
+### Joined to the plan's openings (second slice)
+
+Each elevation opening is matched to the modelled plan opening of the same
+category on the same facade whose centre is nearest, within 0.3 m. A match sets
+the opening's `sill_m` (0 for doors) and `head_m` = sill + the scheduled height,
+and adds an `elevation_join` entry to its history. The schedule's size stands: a
+width more than 0.15 m or a height more than 0.1 m off the schedule goes to review.
+An elevation opening with no plan opening, or a plan opening on that facade the
+elevation does not draw, goes to review with its sill left unknown. Each entry in
+`SetReport.elevations` carries `matched`, `unmatched_elevation` and
+`unmatched_plan`. Lowest level only; storey height from level marks is still to come.
