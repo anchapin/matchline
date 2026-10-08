@@ -77,6 +77,23 @@ elevation does not draw, goes to review with its sill left unknown. Each entry i
 `SetReport.elevations` carries `matched`, `unmatched_elevation` and
 `unmatched_plan`. Lowest level only.
 
+### Both sheets on each review item (third slice)
+
+Every review item the join raises carries `target["ends"]`, one entry per sheet
+it involves, for the review page (#801):
+
+- elevation end: `{"side": "elevation", "sheet", "sheet_id", "el": "elev:<id>", "box"}`,
+  the opening's box in elevation-sheet points (y down);
+- plan end: `{"side": "plan", "sheet", "sheet_id", "el": "op:<id>", "point"}`, the
+  plan opening's centre in plan-sheet points (y down).
+
+A size mismatch has both ends; an elevation opening with no plan match has the
+elevation end (plus the nearest plan opening of another category, if one is within
+0.3 m); a plan opening the elevation does not draw has the plan end. Matched pairs
+are also written back to `sheets/elevation_NNN.json`: a top-level `plan` names the
+plan sheet, and each opening gets `plan_opening` (the model opening id, or null)
+and `plan_point`.
+
 ### Storey height from level marks
 
 Level marks on vector elevations ("FIRST FLOOR / EL. 100'-0\"", "ROOF EL. +3.600")

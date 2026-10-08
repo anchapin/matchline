@@ -424,9 +424,16 @@ def build_set_model(
         )  # fmt: skip
     if elev_reads:
         first = next(iter(plan_of_level))
+        pf, psid, _li = plan_of_level[first]
+        plan_end = {
+            "sheet": pf, "sheet_id": psid,
+            "h_pt": float(json.loads((sheets_dir / pf).read_text())["height_pt"]),
+            "m_per_pt": (scales.get(pf) or {}).get("m_per_pt"),
+        }  # fmt: skip
         _join_elevations(
             elev_reads, elev_bbox,
             [sp for sp in spaces.values() if sp.level_id == first], centers, review, report,
+            plan_end, sheets_dir,
         )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
@@ -877,7 +884,9 @@ JOIN_WIDTH_TOL_M = 0.15
 JOIN_HEIGHT_TOL_M = 0.1
 
 
-def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
+def _join_elevations(
+    reads, bbox, spaces, centers, review, report, plan_end=None, sheets_dir=None
+) -> None:
     """Give plan openings the sill and head their elevation draws.
 
     Each elevation opening is matched to the plan opening of the same category
@@ -887,8 +896,29 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
     the scheduled size stands. An elevation opening with no plan opening, or a
     plan opening an elevation of its facade does not show, goes to review too.
     Lowest level only, like the registration.
+
+    Every review item it raises names both sheets in ``target["ends"]`` (#810,
+    third slice): the elevation end with the opening's box in sheet points, the
+    plan end with the opening's centre in plan-sheet points, so the review page
+    can draw both (#801). Matched pairs are written back to the elevation's
+    ``sheets/elevation_NNN.json`` as each opening's ``plan_opening``.
     """
     from building_model import Provenance, ReviewItem
+
+    pe = plan_end or {}
+
+    def elev_end(er, eo):
+        return {"side": "elevation", "sheet": er.sheet, "sheet_id": er.sheet_id,
+                "el": f"elev:{eo.id}", "box": [round(v, 1) for v in eo.bbox_pt]}  # fmt: skip
+
+    def plan_end_of(op):
+        end = {"side": "plan", "sheet": pe.get("sheet", ""),
+               "sheet_id": pe.get("sheet_id", ""), "el": f"op:{op.id}"}  # fmt: skip
+        k = pe.get("m_per_pt")
+        if k and op.id in centers:
+            cx, cy = centers[op.id]  # canonical metres (y down) -> sheet points
+            end["point"] = [round(cx / k, 1), round(pe["h_pt"] + cy / k, 1)]
+        return end
 
     x0, y0 = bbox[0], bbox[1]
     by_fac: dict = {}
@@ -900,6 +930,7 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
                 by_fac.setdefault(op.host_facade, []).append((op, s))
     for er, prov in reads:
         stats = {"matched": 0, "unmatched_elevation": 0, "unmatched_plan": 0}
+        pairs = {}
         cands = list(by_fac.get(er.facade, []))
         taken = set()
         for eo in er.openings:
@@ -922,6 +953,8 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
                             "id": er.sheet_id,
                             "facade": er.facade,
                             "opening": eo.id,
+                            "ends": [elev_end(er, eo)]
+                            + ([plan_end_of(near[0][1])] if near else []),
                         },  # fmt: skip
                         description=(
                             f"elevation {er.sheet_id}: {eo.kind} {eo.id} "
@@ -935,6 +968,7 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
                 continue
             _d, op = min(same, key=lambda t: t[0])
             taken.add(op.id)
+            pairs[eo.id] = op
             stats["matched"] += 1
             why = []
             if abs(eo.width_m - op.width_m) > JOIN_WIDTH_TOL_M:
@@ -965,7 +999,12 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
                     ReviewItem(
                         id=f"rq-elev-{er.sheet_id}-{eo.id}",
                         kind="elevation_extraction",
-                        target={"kind": "opening", "id": op.id, "sheet": er.sheet_id},
+                        target={
+                            "kind": "opening",
+                            "id": op.id,
+                            "sheet": er.sheet_id,
+                            "ends": [elev_end(er, eo), plan_end_of(op)],
+                        },  # fmt: skip
                         description=(
                             f"{op.id} ({op.tag}) is {'; '.join(why)}; scheduled size kept"
                         ),
@@ -981,7 +1020,12 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
                 ReviewItem(
                     id=f"rq-elev-{er.sheet_id}-{op.id}",
                     kind="elevation_extraction",
-                    target={"kind": "opening", "id": op.id, "sheet": er.sheet_id},
+                    target={
+                        "kind": "opening",
+                        "id": op.id,
+                        "sheet": er.sheet_id,
+                        "ends": [plan_end_of(op)],
+                    },  # fmt: skip
                     description=(
                         f"{op.id} ({op.tag}, {op.category} at {s:.2f} m along the {er.facade} "
                         f"facade) is not drawn on elevation {er.sheet_id}; sill unknown"
@@ -993,6 +1037,15 @@ def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
         for e in report.elevations:
             if e["sheet_id"] == er.sheet_id:
                 e.update(stats)
+                fp = sheets_dir / e["file"] if sheets_dir else None
+                if fp is not None and fp.exists():
+                    d = json.loads(fp.read_text())
+                    d["plan"] = {"sheet": pe.get("sheet", ""), "sheet_id": pe.get("sheet_id", "")}
+                    for od in d.get("openings", []):
+                        op = pairs.get(od["id"])
+                        od["plan_opening"] = op.id if op else None
+                        od["plan_point"] = plan_end_of(op).get("point") if op else None
+                    fp.write_text(json.dumps(d, indent=1))
 
 
 def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):

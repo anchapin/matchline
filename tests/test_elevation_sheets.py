@@ -163,7 +163,12 @@ def test_height_that_disagrees_with_the_schedule_goes_to_review(tmp_path):
     assert op.head_m == pytest.approx(0.9 + W1_H, abs=0.02)
     (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
     assert "2.10 m tall on the elevation, 1.52 m scheduled" in rq.description
-    assert rq.target == {"kind": "opening", "id": op.id, "sheet": "A-201"}
+    assert {k: rq.target[k] for k in ("kind", "id", "sheet")} == {
+        "kind": "opening",
+        "id": op.id,
+        "sheet": "A-201",
+    }
+    assert [e["side"] for e in rq.target["ends"]] == ["elevation", "plan"]
 
 
 def test_window_far_from_any_plan_window_is_not_joined(tmp_path):
@@ -271,3 +276,54 @@ def test_unnamed_marks_give_no_storey_height(tmp_path):
     assert rep.levels[0]["height_source"] == "storey_height_default"
     (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
     assert "carry no named floor level marks" in rq.description
+
+
+# --- both ends on review items, for the review page (#810, third slice) -----
+
+
+def _plan_pt(x, y):
+    from test_plan_walls import _pt
+
+    px, py = _pt(x, y)  # PDF points, y up
+    return px, 1152 - py  # sheet points, y down (test sheets are 1728 x 1152)
+
+
+def test_size_mismatch_item_names_both_sheets(tmp_path):
+    model, _rep, _s = _run(
+        tmp_path, _elev("SOUTH ELEVATION", wins=((WIN_X + T_EXT / 2, 0.9, 1.2, 2.1),))
+    )
+    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+    ev, pl = rq.target["ends"]
+    assert (ev["sheet"], ev["sheet_id"], ev["el"]) == ("sheet_002.json", "A-201", "elev:A-201-W1")
+    # the window's box on the elevation sheet, in points (y down)
+    x0, y0, x1, y1 = ev["box"]
+    assert x0 == pytest.approx(E0 + (WIN_X + T_EXT / 2) * K, abs=1)
+    assert x1 - x0 == pytest.approx(1.2 * K, abs=1) and y1 - y0 == pytest.approx(2.1 * K, abs=1)
+    (op,) = _ops(model)
+    assert (pl["sheet"], pl["sheet_id"], pl["el"]) == ("sheet_001.json", "A-101", f"op:{op.id}")
+    # the gap's centre on the plan sheet: x = 7 m on the south wall (y = 0)
+    assert pl["point"] == pytest.approx(list(_plan_pt(WIN_X + 0.6, 0.0)), abs=1.5)
+
+
+def test_unmatched_items_carry_the_end_they_have(tmp_path):
+    model, _rep, _s = _run(tmp_path, _elev("SOUTH ELEVATION", wins=((2.0, 0.9, 1.2, 1.5),)))
+    (op,) = _ops(model)
+    ev_only = next(r for r in model.review_queue if r.id == "rq-elev-A-201-A-201-W1")
+    assert [e["side"] for e in ev_only.target["ends"]] == ["elevation"]
+    plan_only = next(r for r in model.review_queue if r.id == f"rq-elev-A-201-{op.id}")
+    assert [e["side"] for e in plan_only.target["ends"]] == ["plan"]
+    assert plan_only.target["ends"][0]["el"] == f"op:{op.id}"
+
+
+def test_elevation_json_records_the_matched_plan_opening(tmp_path):
+    model, rep, sheets = _run(tmp_path, _elev("SOUTH ELEVATION", doors=((1.0, 0.9, 2.1),)))
+    (op,) = _ops(model)
+    st = next(s for s in rep.sheets if s.number == "A-201")
+    er = json.loads((sheets / st.stages["elevation"]["file"]).read_text())
+    assert er["plan"] == {"sheet": "sheet_001.json", "sheet_id": "A-101"}
+    by_id = {o["id"]: o for o in er["openings"]}
+    assert by_id["A-201-W1"]["plan_opening"] == op.id
+    assert by_id["A-201-W1"]["plan_point"] == pytest.approx(
+        list(_plan_pt(WIN_X + 0.6, 0.0)), abs=1.5
+    )
+    assert by_id["A-201-D1"]["plan_opening"] is None and by_id["A-201-D1"]["plan_point"] is None
