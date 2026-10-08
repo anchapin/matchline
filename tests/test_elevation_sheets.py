@@ -541,3 +541,144 @@ def test_the_review_item_names_the_per_level_key(tmp_path):
     assert "set wall_height: {L2: <metres>} in the run config to override those levels" in (
         rq.description
     )
+
+
+# --- #818: one facade drawn in parts ------------------------------------------
+
+HALF = L / 2
+WIN_S = WIN_X + T_EXT / 2  # the plan window's west edge along the south facade
+
+
+def _part(sheet, title, wins=(), length=HALF):
+    """An elevation sheet numbered ``sheet``: outline and windows (s, sill, w, h),
+    s measured from the outline's left end."""
+    body = rect(E0, BASE, length * K, 3.5 * K, 1.5)
+    for s, sill, w, h in wins:
+        body += rect(E0 + s * K, BASE + sill * K, w * K, h * K)
+    return _tb(sheet, title) + text(100, 48, SCALE_NOTE, 8) + body
+
+
+def _elev_file(rep, sheets, number):
+    st = next(s for s in rep.sheets if s.number == number)
+    assert st.stages["elevation"]["status"] == "ok", st.stages["elevation"]
+    return json.loads((sheets / st.stages["elevation"]["file"]).read_text())
+
+
+@pytest.mark.parametrize(
+    "title,part",
+    [
+        ("SOUTH ELEVATION - EAST HALF", (True, "east")),
+        ("North Elevation (west end)", (True, "west")),
+        ("SOUTH ELEVATION - LEFT PART", (True, "left")),
+        ("SOUTH ELEVATION 1 OF 2", (True, None)),
+        ("PARTIAL EAST ELEVATION", (True, None)),
+        ("SOUTH ELEVATION", (False, None)),
+    ],
+)
+def test_partial_from_title(title, part):
+    assert ES.partial_from_title(title) == part
+
+
+def test_the_named_end_is_not_read_as_the_facade():
+    assert ES.facade_from_title("SOUTH ELEVATION - EAST HALF") == "south"
+    assert ES.facade_from_title("EAST ELEVATION - NORTH HALF") == "east"
+
+
+def test_a_facade_split_across_two_sheets_joins_every_opening(tmp_path):
+    model, rep, sheets = _run(
+        tmp_path,
+        _part("A-201", "SOUTH ELEVATION - WEST HALF"),
+        _part("A-202", "SOUTH ELEVATION - EAST HALF", wins=((WIN_S - HALF, 0.9, 1.2, 1.5),)),
+    )
+    west, east = _elev_file(rep, sheets, "A-201"), _elev_file(rep, sheets, "A-202")
+    assert west["partial"] and east["partial"]
+    assert west["span_m"] == pytest.approx([0.0, HALF], abs=0.02)
+    assert east["span_m"] == pytest.approx([HALF, L], abs=0.02)
+    assert east["openings"][0]["s0_m"] == pytest.approx(WIN_S, abs=0.02)
+    (op,) = _ops(model)
+    assert op.sill_m == pytest.approx(0.9, abs=0.02)
+    assert not [r for r in model.review_queue if r.id.startswith("rq-elev")]
+    by = {e["sheet_id"]: e for e in rep.to_dict()["elevations"]}
+    assert (by["A-201"]["matched"], by["A-201"]["unmatched_plan"]) == (0, 0)
+    assert (by["A-202"]["matched"], by["A-202"]["unmatched_plan"]) == (1, 0)
+
+
+def test_a_plan_opening_between_the_parts_names_what_they_cover(tmp_path):
+    model, rep, _s = _run(tmp_path, _part("A-201", "SOUTH ELEVATION - WEST HALF"))
+    (op,) = _ops(model)
+    assert op.sill_m is None
+    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev")]
+    assert rq.id == f"rq-elev-A-201-{op.id}" and rq.kind == "elevation_conflict"
+    assert "not drawn on any south elevation (they cover A-201 0.00-" in rq.description
+    assert rep.to_dict()["elevations"][0]["unmatched_plan"] == 0
+
+
+def test_a_part_with_no_grid_and_no_named_end_is_not_placed(tmp_path):
+    model, rep, _s = _run(tmp_path, _part("A-201", "SOUTH ELEVATION (PART 1 OF 2)"))
+    st = next(s for s in rep.sheets if s.number == "A-201")
+    assert st.stages["elevation"]["status"] == "failed"
+    assert "can't be placed on the facade" in st.stages["elevation"]["reason"]
+    assert [r.kind for r in model.review_queue if r.id.startswith("rq-elev")] == [
+        "elevation_extraction"
+    ]
+
+
+def test_two_sheets_titled_alike_split_the_facade_by_their_grids(tmp_path):
+    # both sheets say "SOUTH ELEVATION"; grids 1 (x=2 m) and 2 (x=4 m) on the
+    # west part, 3 (x=6 m) and 4 (x=8 m) on the east part place each one
+    from test_plan_walls import _pt
+
+    xs = {"1": 2.0, "2": 4.0, "3": 6.0, "4": 8.0}
+    plan_g = ""
+    for lab, x in xs.items():
+        (px, y0), (_, y1) = _pt(x, -2.0), _pt(x, 8.0)
+        plan_g += dashed(px, y0, px, y1) + bubble(px, y1 + 10, lab)
+
+    def grids(labels, s_left):
+        g = ""
+        for lab in labels:
+            u = E0 + (xs[lab] + T_EXT / 2 - s_left) * K
+            g += dashed(u, BASE - 20, u, BASE + 4.5 * K) + bubble(u, BASE + 4.5 * K + 10, lab)
+        return g
+
+    west = _part("A-201", "SOUTH ELEVATION") + grids(("1", "2"), 0.0)
+    east = _part("A-202", "SOUTH ELEVATION", wins=((WIN_S - HALF, 0.9, 1.2, 1.5),)) + grids(
+        ("3", "4"), HALF
+    )
+    model, rep, sheets = _run(tmp_path, west, east, plan_extra=plan_g)
+    e = _elev_file(rep, sheets, "A-202")
+    assert e["partial"] and e["registration"]["method"] == "grid"
+    assert e["span_m"] == pytest.approx([HALF, L], abs=0.05)
+    (op,) = _ops(model)
+    assert op.sill_m == pytest.approx(0.9, abs=0.02)
+    assert not [r for r in model.review_queue if r.kind == "elevation_conflict"]
+
+
+def test_two_full_elevations_that_disagree_go_to_review_once(tmp_path):
+    model, _rep, _s = _run(
+        tmp_path,
+        _part("A-201", "SOUTH ELEVATION", wins=((WIN_S, 0.9, 1.2, 1.5),), length=L),
+        _part("A-202", "SOUTH ELEVATION", wins=((WIN_S, 1.2, 1.2, 1.5),), length=L),
+    )
+    (op,) = _ops(model)
+    assert op.sill_m == pytest.approx(0.9, abs=0.02)  # the first sheet's
+    items = [r for r in model.review_queue if r.id.startswith("rq-elev")]
+    (rq,) = items
+    assert rq.id == f"rq-elev-{op.id}-A-201-A-202" and rq.kind == "elevation_conflict"
+    assert "drawn on elevations A-201 and A-202 with sill 0.90 m vs 1.20 m" in rq.description
+    assert [(e["side"], e["sheet_id"]) for e in rq.target["ends"]] == [
+        ("elevation", "A-201"),
+        ("elevation", "A-202"),
+        ("plan", "A-101"),
+    ]
+    notes = [p.note for p in op.history if p.method == "elevation_join"]
+    assert len(notes) == 2 and "sill kept from A-201" in notes[1]
+
+
+def test_two_full_elevations_that_agree_raise_nothing(tmp_path):
+    model, _rep, _s = _run(
+        tmp_path,
+        _part("A-201", "SOUTH ELEVATION", wins=((WIN_S, 0.9, 1.2, 1.5),), length=L),
+        _part("A-202", "SOUTH ELEVATION", wins=((WIN_S, 0.9, 1.2, 1.5),), length=L),
+    )
+    assert not [r for r in model.review_queue if r.id.startswith("rq-elev")]
