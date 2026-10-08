@@ -320,3 +320,29 @@ class TestSmokeSubcommands:
         assert r.returncode == 0
         assert "rq-open" in r.stdout
         assert "rq-confirmed" not in r.stdout
+
+
+# --- config wall_height: one height or per level (#821) ---------------------
+
+
+@pytest.mark.parametrize(
+    "v,ok",
+    [(None, True), (3.5, True), (4, True), ({"L1": 4.5, "L2": 3.6}, True), (0, False),
+     (-1.0, False), ("tall", False), (True, False), ({}, False), ({"L1": "x"}, False)],
+)  # fmt: skip
+def test_check_wall_height(v, ok):
+    from cli import _check_wall_height
+
+    assert (_check_wall_height(v) == "") is ok
+
+
+def test_set_storey_height_flag_then_config():
+    from types import SimpleNamespace
+
+    from run_pipeline import _set_storey_height
+
+    assert _set_storey_height(SimpleNamespace(storey_height=3.3), {"wall_height": 4.0}) == 3.3
+    assert _set_storey_height(SimpleNamespace(storey_height=None), {"wall_height": {"L2": 4}}) == {
+        "L2": 4
+    }
+    assert _set_storey_height(SimpleNamespace(), None) is None

@@ -510,3 +510,34 @@ def test_levels_with_no_number_match_by_order():
     # one level matched by name: no order fallback for the rest
     out, _ = real_set._level_heights(["L1", "MEZZ"], {1: [("A-201", 4.5)]}, per_sheet, None)
     assert out["L1"][0] == 4.5 and out["MEZZ"][1] == "storey_height_default"
+
+
+# --- per-level storey height override in the run config (#821) --------------
+
+
+def test_a_per_level_override_sets_only_that_level(tmp_path):
+    model, rep = _two_storey(tmp_path, _tall(), storey_height_m={"L2": 4.0})
+    l1, l2 = model.levels
+    assert l1.wall_height_m == pytest.approx(4.5) and l2.wall_height_m == 4.0
+    assert l2.elevation_z_m == pytest.approx(4.5)
+    assert [lv["height_source"] for lv in rep.levels] == ["elevation_level_marks", "config"]
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+
+
+def test_a_per_level_override_fills_a_level_with_no_mark(tmp_path):
+    model, rep = _two_storey(tmp_path, _elev_marks(), storey_height_m={"L2": 3.2})
+    assert model.levels[1].wall_height_m == 3.2
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+
+
+def test_an_unknown_level_in_the_override_fails_the_run(tmp_path):
+    with pytest.raises(real_set.SetError, match=r"not in the set: L5 \(levels: L1, L2\)"):
+        _two_storey(tmp_path, _tall(), storey_height_m={"L5": 4.0})
+
+
+def test_the_review_item_names_the_per_level_key(tmp_path):
+    model, _rep = _two_storey(tmp_path, _elev_marks())  # L2 has no mark
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert "set wall_height: {L2: <metres>} in the run config to override those levels" in (
+        rq.description
+    )

@@ -32,6 +32,23 @@ def check_range_0_1(value: str) -> float:
     return f
 
 
+def _check_wall_height(v) -> str:
+    """Why a config ``wall_height`` is unusable, or "" (a positive number, or a map of
+    level id to positive number, #821)."""
+    if v is None:
+        return ""
+
+    def pos(x):
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0
+
+    if isinstance(v, dict):
+        if not v:
+            return "is an empty map"
+        bad = [str(k) for k, x in v.items() if not pos(x)]
+        return f"must be positive metres for each level (check {', '.join(bad)})" if bad else ""
+    return "" if pos(v) else "must be a positive number of metres or a map of level to metres"
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Unified pipeline: generate + link + validate + BEM export."""
     import run_pipeline
@@ -55,6 +72,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
+        bad = _check_wall_height(config.get("wall_height"))
+        if bad:
+            print(f"Error: config wall_height {bad}", file=sys.stderr)
+            sys.exit(1)
 
     confidence_threshold = args.confidence_threshold
     if confidence_threshold is None:
@@ -372,8 +393,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="config_path",
         help="YAML config file. Keys: review_confidence (float, default 0.0=no filter), "
-        "simplify_tolerance (float, default 0.02=2%%), wall_height (float, metres, "
-        "default from level). "
+        "simplify_tolerance (float, default 0.02=2%%), wall_height (metres for every "
+        "level, or a map of level id to metres such as {L1: 4.5, L2: 3.6}; default from "
+        "the drawings). "
         "Example: review_confidence: 0.85  simplify_tolerance: 0.01  wall_height: 3.5",
     )
     p.add_argument(
