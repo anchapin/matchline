@@ -582,6 +582,7 @@ def _plan_openings(
             cands = [(t, e) for t, e in cands if e["category"] == drawn]
         kinds = {(e["category"], round(e["height_m"], 3)) for _t, e in cands}
         oid = f"{lid}-OP{k + 1}"
+        s = ls.project(mid)
         if len(kinds) != 1:
             counts["unsized"] += 1
             why = (
@@ -597,7 +598,22 @@ def _plan_openings(
                 ReviewItem(
                     id=f"rq-{oid}",
                     kind="opening_unsized",
-                    target={"kind": "wall", "id": wall.id},
+                    # what a review edit needs to add the opening back (#798)
+                    target={
+                        "kind": "wall",
+                        "id": wall.id,
+                        "field": "opening",
+                        "gap": {
+                            "opening_id": oid,
+                            "space_id": wall.space_id if wall.space_id in spaces else "",
+                            "facade": wall.facade,
+                            "s_center_m": round(s, 4),
+                            "width_m": round(width, 4),
+                            "drawn": drawn or "",
+                            "candidates": [t for t, _e in cands],
+                            "sheet_id": sheet_id,
+                        },
+                    },
                     description=(
                         f"{oid}: {width:.2f} m gap in {wall.facade} wall {wall.id}; {why}; "
                         "not modelled"
@@ -632,7 +648,6 @@ def _plan_openings(
         sp = spaces.get(wall.space_id)
         if sp is None:
             continue
-        s = ls.project(mid)
         sp.openings.append(
             SpaceOpening(
                 id=oid,

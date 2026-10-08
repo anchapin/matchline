@@ -58,8 +58,15 @@ def auto_state(item) -> dict:
 
 # Fields a review edit can write, per target kind (#796). Anything else keeps
 # the #749 behaviour: the value is recorded and the item closed.
-EDITABLE = {"opening": ("width_m", "space_id", "construction_id")}
+EDITABLE = {"opening": ("width_m", "space_id", "construction_id"), "wall": ("opening",)}
 MAX_OPENING_WIDTH_M = 30.0
+# An unsized wall gap (#798): a review edit can add the opening the pipeline
+# left out. Its width may exceed the drawn gap by no more than the tolerance
+# the pipeline uses to match a gap to a schedule row (real_set.WIDTH_TOL_M).
+GAP_WIDTH_TOL_M = 0.05
+MAX_OPENING_HEIGHT_M = 10.0
+GAP_CATEGORIES = ("window", "door")
+REVIEW_EDIT_CONFIDENCE = 0.95
 
 
 def _find_opening(model, oid):
@@ -78,10 +85,31 @@ def edit_field(model, item) -> str:
         return ""
     if t["kind"] == "opening" and _find_opening(model, t.get("id"))[1] is None:
         return ""
+    if t["kind"] == "wall":
+        gap = t.get("gap") or {}
+        if not gap.get("opening_id") or gap.get("space_id") not in model.spaces:
+            return ""
     return f
 
 
-def _read(model, kind: str, eid: str, f: str):
+def _spec(op) -> dict:
+    """The fields of a review-created opening an edit sets (#798)."""
+    return {
+        "tag": op.tag,
+        "category": op.category,
+        "width_m": op.width_m,
+        "height_m": op.height_m,
+        "sill_m": op.sill_m,
+    }
+
+
+def _read(model, t: dict, f: str):
+    """Current value of field ``f`` of the target ``t`` points at."""
+    kind, eid = t.get("kind", ""), t.get("id")
+    if kind == "wall" and f == "opening":
+        # several gaps can sit in one wall, so the gap names its opening id
+        _sp, op = _find_opening(model, (t.get("gap") or {}).get("opening_id"))
+        return _spec(op) if op is not None else None
     if kind == "opening":
         sp, op = _find_opening(model, eid)
         if op is None:
@@ -102,8 +130,10 @@ def _split(model, item, value):
     return f, raw
 
 
-def _coerce(model, kind: str, f: str, raw: str):
+def _coerce(model, t: dict, f: str, raw: str):
     """Validated value for ``f`` or ValueError saying what is wrong."""
+    if f == "opening":
+        return _gap_opening(model, t.get("gap") or {}, raw)
     if f == "width_m":
         try:
             w = float(raw)
@@ -133,8 +163,11 @@ def _coerce(model, kind: str, f: str, raw: str):
     return raw
 
 
-def _write(model, kind: str, eid: str, f: str, value) -> None:
-    sp, op = _find_opening(model, eid)
+def _write(model, t: dict, f: str, value) -> None:
+    if f == "opening":
+        _write_gap(model, t, value)
+        return
+    sp, op = _find_opening(model, t.get("id"))
     if f == "space_id":
         if sp.id != value:
             sp.openings.remove(op)
@@ -149,13 +182,142 @@ def _write(model, kind: str, eid: str, f: str, value) -> None:
             op.host_interval_m = [round(c - value / 2, 4), round(c + value / 2, 4)]
 
 
+def _num(key: str, raw: str, lo: float, hi: float, lo_open: bool = True) -> float:
+    try:
+        v = float(raw)
+    except ValueError:
+        raise ValueError(f"{key} {raw!r} is not a number (metres)") from None
+    if not ((lo < v) if lo_open else (lo <= v)) or v > hi:
+        raise ValueError(f"{key} {v:g} is outside {'(' if lo_open else '['}{lo:g}, {hi:g}] m")
+    return v
+
+
+def _gap_opening(model, gap: dict, raw: str) -> dict:
+    """The opening a review edit adds to an unsized wall gap (#798).
+
+    ``raw`` is a schedule tag (``W3``: category and size from the schedule) or
+    ``category=window width_m=1.2 height_m=1.5 [sill_m=0.9]``. Raises
+    ValueError before anything changes when the value is not usable.
+    """
+    words = raw.replace(",", " ").split()
+    if len(words) == 1 and "=" not in words[0]:
+        tag = words[0]
+        e = (getattr(model, "schedules", None) or {}).get(tag)
+        if not isinstance(e, dict):
+            raise ValueError(f"tag {tag!r} is not in the model's schedules")
+        cat = e.get("category")
+        if cat not in GAP_CATEGORIES or not e.get("width_m") or not e.get("height_m"):
+            raise ValueError(f"schedule row {tag!r} is not a sized door or window")
+        spec = {
+            "tag": tag,
+            "category": cat,
+            "width_m": float(e["width_m"]),
+            "height_m": float(e["height_m"]),
+            "sill_m": float(e["sill_m"]) if e.get("sill_m") is not None else None,
+        }
+    else:
+        kv = {}
+        for w in words:
+            if "=" not in w:
+                raise ValueError(f"{w!r}: write key=value, or a single schedule tag")
+            k, v = (x.strip() for x in w.split("=", 1))
+            if k not in ("category", "width_m", "height_m", "sill_m"):
+                raise ValueError(f"unknown key {k!r} (category, width_m, height_m, sill_m)")
+            kv[k] = v
+        missing = [k for k in ("category", "width_m", "height_m") if k not in kv]
+        if missing:
+            raise ValueError("missing " + ", ".join(missing))
+        if kv["category"] not in GAP_CATEGORIES:
+            raise ValueError(f"category {kv['category']!r} is not one of {GAP_CATEGORIES}")
+        spec = {
+            "tag": "",
+            "category": kv["category"],
+            "width_m": _num("width_m", kv["width_m"], 0.0, MAX_OPENING_WIDTH_M),
+            "height_m": _num("height_m", kv["height_m"], 0.0, MAX_OPENING_HEIGHT_M),
+            "sill_m": (
+                _num("sill_m", kv["sill_m"], 0.0, MAX_OPENING_HEIGHT_M, lo_open=False)
+                if "sill_m" in kv
+                else None
+            ),
+        }
+    gw = float(gap.get("width_m") or 0.0)
+    if spec["width_m"] > gw + GAP_WIDTH_TOL_M:
+        raise ValueError(
+            f"width_m {spec['width_m']:g} is wider than the {gw:g} m gap "
+            f"(tolerance {GAP_WIDTH_TOL_M:g} m)"
+        )
+    return spec
+
+
+def _gap_construction(model, spec: dict) -> str:
+    """Assembly for a review-created opening: the one other openings of the
+    same schedule tag use, else none (the construction library fills it)."""
+    if spec["tag"]:
+        for sp in model.spaces.values():
+            for op in sp.openings:
+                if op.tag == spec["tag"] and op.construction_id:
+                    return op.construction_id
+    return ""
+
+
+def _write_gap(model, t: dict, value) -> None:
+    """Add, replace or (``value`` None) remove the opening of an unsized gap."""
+    from building_model import Provenance, SpaceOpening
+
+    gap = t.get("gap") or {}
+    oid = gap["opening_id"]
+    sp, op = _find_opening(model, oid)
+    if op is not None:
+        sp.openings.remove(op)
+    if value is None:
+        return
+    w, h, sill = value["width_m"], value["height_m"], value["sill_m"]
+    c = float(gap["s_center_m"])
+    how = f"schedule {value['tag']}" if value["tag"] else "sizes typed by the reviewer"
+    model.spaces[gap["space_id"]].openings.append(
+        SpaceOpening(
+            id=oid,
+            tag=value["tag"],
+            category=value["category"],
+            width_m=w,
+            height_m=h,
+            sill_m=sill,
+            head_m=round(sill + h, 4) if sill is not None else None,
+            host_facade=gap.get("facade", ""),
+            host_interval_m=[round(c - w / 2, 4), round(c + w / 2, 4)],
+            s_center_m=round(c, 4),
+            area_m2=w * h,
+            provenance=Provenance(
+                sheet_id=gap.get("sheet_id", ""),
+                revision=0,
+                method="review_edit",
+                confidence=REVIEW_EDIT_CONFIDENCE,
+                note=(
+                    f"added in review to the {float(gap.get('width_m') or 0):.2f} m gap "
+                    f"in wall {t.get('id')} ({how})"
+                ),
+            ),
+            needs_review=False,
+            construction_id=_gap_construction(model, value),
+        )
+    )
+    if not model.spaces[gap["space_id"]].openings[-1].construction_id and getattr(
+        model, "climate_zone", ""
+    ):
+        from construction_library import apply_construction_library
+
+        apply_construction_library(
+            model, model.climate_zone, getattr(model, "building_category", "") or "Nonresidential"
+        )
+
+
 def original_value(model, item):
     """What the pipeline wrote to the edited field (what revert restores)."""
     t = item.target or {}
     if "original" in t:
         return t["original"]
     f = edit_field(model, item)
-    return _read(model, t.get("kind", ""), t.get("id"), f) if f else None
+    return _read(model, t, f) if f else None
 
 
 def worst_first(items) -> list:
@@ -265,7 +427,7 @@ def _set(model, item, want: dict, note: str, value=_KEEP, f: str = "") -> bool:
     """
     t = item.target or {}
     f = f or edit_field(model, item)
-    old = _read(model, t.get("kind", ""), t.get("id"), f) if f and value is not _KEEP else None
+    old = _read(model, t, f) if f and value is not _KEEP else None
     same_state = auto_state(item) == {**auto_state(item), **want}
     same_value = value is _KEEP or old == value
     if same_state and same_value:
@@ -276,7 +438,7 @@ def _set(model, item, want: dict, note: str, value=_KEEP, f: str = "") -> bool:
         t.setdefault("original", original_value(model, item))
         t.setdefault("field", f)
         item.target = t
-        _write(model, t["kind"], t["id"], f, value)
+        _write(model, t, f, value)
         note = f"{note} ({f} {old!r} -> {value!r})"
     sheet = item.provenance.sheet_id if item.provenance else ""
     rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
@@ -291,7 +453,7 @@ def _target_value(model, item, action: str, value):
         f, raw = _split(model, item, value)
         if not f:
             return _KEEP, ""
-        return _coerce(model, t["kind"], f, raw), f
+        return _coerce(model, t, f, raw), f
     if "original" not in t:
         return _KEEP, ""
     return t["original"], t.get("field", "")
@@ -397,7 +559,8 @@ _UI_JS = """
     var d = {id: id, action: action, at: new Date().toISOString()};
     if (action === "edit") {
       var ask = it && it.field
-        ? "New " + it.field + " for " + id + " (automatic: " + it.value + "). Changes the model:"
+        ? "New " + it.field + " for " + id + " (automatic: " +
+          (it.value === null ? "none" : it.value) + "). " + (it.hint || "") + "Changes the model:"
         : "Correction note for " + id + " (recorded only; nothing in the model to change):";
       var v = prompt(ask, "");
       if (v === null || !v.trim()) return;
@@ -725,6 +888,11 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
         row, f = _item_row(i), edit_field(model, i)
         row["field"] = f
         row["value"] = original_value(model, i) if f else None
+        if f == "opening":
+            cands = ", ".join((i.target.get("gap") or {}).get("candidates") or [])
+            row["hint"] = (
+                f"Schedule tag ({cands}) or " if cands else "Schedule tag or "
+            ) + "category=window width_m=1.2 height_m=1.5 [sill_m=0.9]. "
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}

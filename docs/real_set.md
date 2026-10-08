@@ -33,7 +33,7 @@ What this slice does not invent:
   detector provider runs. `--detector-config` picks one (see
   `docs/detection_provider.md`); the report's `detector` block records which ran and
   whether its weights are evaluation only. Detections are counted per sheet but not yet
-  joined to openings or tags.
+  joined to openings or tags. A reviewer can add the missing opening with an edit on that item (a schedule tag or typed sizes; see [review_report.md](review_report.md), #798).
 
 Validation closes area and volume per level, so stacked storeys no longer double-count
 against a single footprint.
