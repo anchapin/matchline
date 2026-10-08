@@ -170,6 +170,13 @@ class ScheduleEntry:
     watts: float | None = None  # lighting: W per fixture
     description: str = ""  # lighting: fixture description
     lamp_type: str = ""  # lighting: lamp/technology
+    # door/window (#746): stated thermal values, U converted to W/m2K. None
+    # when the schedule has no such column or the cell does not parse.
+    u_value_w_m2k: float | None = None
+    shgc: float | None = None
+    vt: float | None = None
+    thermal_confidence: float | None = None  # lower when U units were inferred
+    thermal_note: str = ""
 
 
 @dataclass

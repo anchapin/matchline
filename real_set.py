@@ -339,10 +339,11 @@ def build_set_model(
     sched_entries, equipment = _merge_schedules(
         files, status, schedules, review, Provenance, ReviewItem
     )
+    constructions: dict = {}
     for lid, (f, sheet_id, li) in plan_of_level.items():
         report.levels[li]["openings"] = _plan_openings(
             lid, walls[f]["openings"], [w for w in envelope if w.id.startswith(f"{lid}-E")],
-            spaces, sched_entries, sheet_id, review,
+            spaces, sched_entries, sheet_id, review, constructions,
         )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
@@ -363,6 +364,7 @@ def build_set_model(
         bim_elements=[],
         schedules=sched_entries,
         review_queue=review,
+        constructions=constructions,
     )
     report.sheets = list(status.values())
     _write(out, report)
@@ -393,7 +395,8 @@ def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
             for e in x["equipment"]:
                 equipment.append({**e, "sheet": sheet_id, "schedule": x["title"]})
             for tag, e in x["entries"].items():
-                if tag in entries and entries[tag] != e:
+                prev = {k: v for k, v in entries.get(tag, {}).items() if k != "schedule_sheet"}
+                if tag in entries and prev != e:
                     review.append(
                         ReviewItem(
                             id=f"rq-schedule-{len(review)}",
@@ -407,7 +410,7 @@ def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
                         )
                     )
                     continue
-                entries[tag] = e
+                entries[tag] = {**e, "schedule_sheet": sheet_id}
                 where[tag] = sheet_id
     return entries, equipment
 
@@ -421,7 +424,69 @@ EXTERIOR_TOL_M = 0.5
 WIDTH_TOL_M = 0.05
 
 
-def _plan_openings(lid, plan_openings, env_walls, spaces, sched, sheet_id, review) -> dict:
+def _schedule_construction(constructions, cat, tags, cands, sheet_id, review, oid):
+    """Construction id from the scheduled U/SHGC/VT of the matched tags (#746).
+
+    All matched tags must state the same values; a disagreement goes to review
+    and leaves the opening without a construction. A row with no U gives none.
+    """
+    from building_model import Construction, Provenance, ReviewItem
+
+    vals = {(e.get("u_value_w_m2k"), e.get("shgc"), e.get("vt")) for _t, e in cands}
+    if len(vals) != 1:
+        review.append(
+            ReviewItem(
+                id=f"rq-{oid}-thermal",
+                kind="opening_thermal_ambiguous",
+                description=(
+                    f"{oid}: scheduled {'/'.join(tags)} match by width but state different "
+                    "U/SHGC/VT; no stated construction used"
+                ),
+                confidence=0.5,
+                provenance=Provenance(sheet_id, 0, "pdf_schedule_thermal", 0.5),
+                needs_review=True,
+            )
+        )
+        return ""
+    u, shgc, vt = vals.pop()
+    if u is None:
+        return ""
+    cid = f"SCHED-{cat.upper()}-U{u:.4f}"
+    if shgc is not None:
+        cid += f"-S{shgc:.4f}"
+    if vt is not None:
+        cid += f"-V{vt:.4f}"
+    if cid not in constructions:
+        e = cands[0][1]
+        name = f"Scheduled {cat}, U {u:.4f} W/m2K"
+        if shgc is not None:
+            name += f", SHGC {shgc:g}"
+        if vt is not None:
+            name += f", VT {vt:g}"
+        conf = e.get("thermal_confidence") or 0.75
+        constructions[cid] = Construction(
+            id=cid,
+            name=name,
+            u_value_w_m2k=u,
+            provenance=Provenance(
+                sheet_id=e.get("schedule_sheet") or sheet_id,
+                revision=0,
+                method="pdf_schedule_thermal",
+                confidence=conf,
+                note=(
+                    f"{cat} schedule {'/'.join(tags)}: {e.get('thermal_note', '')}; "
+                    f"first placed on plan {sheet_id}"
+                ),
+            ),
+            shgc=shgc,
+            vt=vt,
+        )
+    return cid
+
+
+def _plan_openings(
+    lid, plan_openings, env_walls, spaces, sched, sheet_id, review, constructions=None
+) -> dict:
     """Exterior plan openings -> SpaceOpenings sized by the door/window schedule.
 
     A plan gap carries a width and a position but no tag, so it is matched to
@@ -510,6 +575,11 @@ def _plan_openings(lid, plan_openings, env_walls, spaces, sched, sheet_id, revie
                 area_m2=width * height,
                 provenance=prov,
                 needs_review=False,
+                construction_id=(
+                    _schedule_construction(constructions, cat, tags, cands, sheet_id, review, oid)
+                    if constructions is not None
+                    else ""
+                ),
             )
         )
         counts["modelled"] += 1

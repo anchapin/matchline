@@ -44,6 +44,27 @@ NUMBER, ID or UNIT, else the first column. Tags go through
 `datasets_adapter.normalize_tag` (#479), so `d 1` and `D1` join. A value that
 does not parse stays `None` with a note; nothing is defaulted.
 
+## Stated U, SHGC and VT on door and window schedules
+
+A door or window schedule with a `U-FACTOR` / `U-VALUE` / `U` column, an `SHGC`
+column or a `VT` / `VLT` / `VISIBLE` column also fills `u_value_w_m2k`, `shgc`,
+`vt`, `thermal_confidence` and `thermal_note` on its `ScheduleEntry`.
+
+- U units come from the column header: `BTU` or `IP` is read as Btu/h-ft2-F and
+  converted (x 5.678263), and `W/M2K` or `SI` is read as written. Both get
+  confidence 0.9.
+- A header that names no units is read as IP only when the same schedule gives
+  its sizes in feet and inches, at confidence 0.75, and the note says so.
+  Otherwise the U is not used and the note says why.
+- SHGC and VT must lie in (0, 1]; anything else is not read and is noted.
+  Nothing is defaulted.
+
+On `matchline run --set`, a plan gap matched to scheduled rows that all state
+the same U/SHGC/VT gets a stated construction (`SCHED-WINDOW-U2.0442-S0.3800-V0.4200`,
+method `pdf_schedule_thermal`, cited to the schedule sheet). Rows that agree on
+size but not on these values give an `opening_thermal_ambiguous` review item and
+no construction. Table 5.5 (#747) fills only openings that still have none.
+
 ## Provenance
 
 Every cell carries `Provenance(sheet_id, 0, "pdf_ruled_table", 0.9, bbox)`, with

@@ -506,9 +506,75 @@ def _size(s: str) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 
+U_IP_TO_SI = 5.678263  # Btu/(h ft2 F) -> W/(m2 K)
+_SI_UNITS = re.compile(r"W\s*/\s*M|\bSI\b")
+_IP_UNITS = re.compile(r"BTU|\bIP\b")
+_FT_IN = re.compile(r"\d\s*['\"]")
+
+
+def _ratio(s: str) -> Optional[float]:
+    v = _number(s)
+    return v if v is not None and 0.0 < v <= 1.0 else None
+
+
+def _thermal(sched: PdfSchedule, vals: List[str], sizes_ft_in: bool) -> dict:
+    """Stated U, SHGC and VT of one door/window row (#746).
+
+    U units come from the column header (``BTU``/``IP`` or ``W/M2K``/``SI``).
+    A header that states none is read as IP only when the same schedule gives
+    its sizes in feet and inches, at lower confidence; otherwise the U is not
+    used and the row says why. SHGC and VT must lie in (0, 1].
+    """
+    H = sched.headers
+    uc = _col(H, r"U[-\s]?(FACTOR|VALUE)", r"^U$", r"^U\b")
+    sc = _col(H, r"\bSHGC\b", r"SOLAR\s*HEAT")
+    vc = _col(H, r"\bVT\b", r"\bVLT\b", r"VISIBLE")
+    out: dict = {}
+    notes = []
+    if uc is not None:
+        raw = _number(vals[uc])
+        if raw is not None and raw > 0:
+            head = H[uc]
+            if _SI_UNITS.search(head):
+                out["u_value_w_m2k"], conf = round(raw, 4), 0.9
+                notes.append(f"U {raw:g} W/m2K from '{head}'")
+            elif _IP_UNITS.search(head):
+                out["u_value_w_m2k"], conf = round(raw * U_IP_TO_SI, 4), 0.9
+                notes.append(f"U {raw:g} Btu/h-ft2-F from '{head}'")
+            elif sizes_ft_in:
+                out["u_value_w_m2k"], conf = round(raw * U_IP_TO_SI, 4), 0.75
+                notes.append(
+                    f"U {raw:g} read as Btu/h-ft2-F: '{head}' states no units and the "
+                    "schedule gives sizes in feet and inches"
+                )
+            else:
+                conf = None
+                notes.append(f"U {raw:g} not used: '{head}' states no units")
+            if conf is not None:
+                out["thermal_confidence"] = conf
+        elif vals[uc].strip():
+            notes.append(f"U '{vals[uc]}' not read")
+    if sc is not None:
+        v = _ratio(vals[sc])
+        if v is not None:
+            out["shgc"] = v
+        elif vals[sc].strip():
+            notes.append(f"SHGC '{vals[sc]}' not read")
+    if vc is not None:
+        v = _ratio(vals[vc])
+        if v is not None:
+            out["vt"] = v
+        elif vals[vc].strip():
+            notes.append(f"VT '{vals[vc]}' not read")
+    if notes:
+        out["thermal_note"] = "; ".join(notes)
+    return out
+
+
 def _records(sched: PdfSchedule, tagc: int) -> None:
     H = sched.headers
     desc_c = _col(H, r"DESCRIPTION", r"\bTYPE\b", r"MANUFACTURER")
+    sizes_ft_in = any(_FT_IN.search(v) for vals in sched.rows for v in vals)
     for vals in sched.rows:
         tag = normalize_tag(vals[tagc])
         desc = vals[desc_c] if desc_c is not None and desc_c != tagc else ""
@@ -521,7 +587,13 @@ def _records(sched: PdfSchedule, tagc: int) -> None:
                 sc = _col(H, r"\bSIZE\b", r"\bOPENING\b")
                 if sc is not None:
                     w, h = _size(vals[sc])
-            e = ScheduleEntry(tag=tag, category=sched.kind, width_m=w, height_m=h)
+            e = ScheduleEntry(
+                tag=tag,
+                category=sched.kind,
+                width_m=w,
+                height_m=h,
+                **_thermal(sched, vals, sizes_ft_in),
+            )
             if w is None or h is None:
                 e.note = "size not read from the schedule"
             sched.entries[tag] = asdict(e)
