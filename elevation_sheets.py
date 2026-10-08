@@ -368,12 +368,50 @@ def level_marks(sheet, m_per_pt: Optional[float]) -> List[LevelMark]:
     return sorted(kept, key=lambda mk: mk.value_m) if len(kept) >= 2 else []
 
 
-def storey_heights(marks: List[LevelMark]) -> List[float]:
-    """Floor-to-floor (and top floor to roof) heights from named level marks."""
+def _storeys(marks: List[LevelMark]) -> List[LevelMark]:
     st = [
         mk
         for mk in marks
         if mk.name and STOREY_NAME_RE.search(mk.name) and not NOT_STOREY_RE.search(mk.name)
     ]
-    st = sorted({round(mk.value_m, 3): mk for mk in st}.values(), key=lambda mk: mk.value_m)
+    return sorted({round(mk.value_m, 3): mk for mk in st}.values(), key=lambda mk: mk.value_m)
+
+
+def storey_heights(marks: List[LevelMark]) -> List[float]:
+    """Floor-to-floor (and top floor to roof) heights from named level marks."""
+    st = _storeys(marks)
     return [round(b.value_m - a.value_m, 4) for a, b in zip(st, st[1:])]
+
+
+_ORDINAL_WORDS = {
+    "GROUND": 1, "FIRST": 1, "1ST": 1, "SECOND": 2, "2ND": 2, "THIRD": 3, "3RD": 3,
+    "FOURTH": 4, "FIFTH": 5, "SIXTH": 6,
+}  # fmt: skip
+
+
+def storey_ordinal(name: Optional[str]) -> Optional[int]:
+    """Which storey a level mark names: 1 for FIRST FLOOR / LEVEL 1, 0 for BASEMENT.
+
+    ROOF and unnumbered names give None (#814).
+    """
+    n = (name or "").upper().strip()
+    if "BASEMENT" in n:
+        return 0
+    m = re.search(r"LEVEL\s*(\d+)", n)
+    if m:
+        return int(m.group(1))
+    m = re.match(r"([4-9])TH\b", n)
+    if m:
+        return int(m.group(1))
+    w = n.split()[0] if n else ""
+    return _ORDINAL_WORDS.get(w)
+
+
+def storey_steps(marks: List[LevelMark]) -> List[tuple]:
+    """``(ordinal, height)`` per storey: the step from each storey mark to the next.
+
+    The ordinal is the lower mark's (``storey_ordinal``), so FIRST FLOOR at 0 and
+    SECOND FLOOR at 4.5 m give ``(1, 4.5)`` (#814).
+    """
+    st = _storeys(marks)
+    return [(storey_ordinal(a.name), round(b.value_m - a.value_m, 4)) for a, b in zip(st, st[1:])]

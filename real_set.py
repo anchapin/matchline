@@ -293,29 +293,39 @@ def build_set_model(
             "no floor plan produced a room; see stage_00_set_report.json for each sheet's reason"
         )
 
-    h_marks, marks_note, marks_conflict = _storey_from_elevations(
-        files, entries, status, scales, sheets_dir
-    )
-    if storey_height_m:
-        h, h_src = storey_height_m, "config"
-    elif h_marks:
-        h, h_src = h_marks, "elevation_level_marks"
-        report.notes.append(f"storey height {h:g} m from elevation level marks ({marks_note})")
-    else:
-        h, h_src = DEFAULT_STOREY_HEIGHT_M, "storey_height_default"
+    by_storey, marks_desc = _storey_from_elevations(files, entries, status, scales, sheets_dir)
+    order = _level_order(list(by_level))
+    lid_of = {lv: (lv if not lv.startswith("L?") else f"LX{lv[2:]}") for lv in order}
+    heights = _level_heights(order, by_storey, storey_height_m)
+    marked = [lv for lv in order if heights[lv][1] == "elevation_level_marks"]
+    if marked:
+        hs = {heights[lv][0] for lv in marked}
+        if len(hs) == 1 and len(marked) == len(order):
+            report.notes.append(
+                f"storey height {next(iter(hs)):g} m from elevation level marks ({marks_desc})"
+            )
+        else:
+            report.notes.append(
+                "storey heights from elevation level marks: "
+                + ", ".join(f"{lid_of[lv]} {heights[lv][0]:g} m" for lv in marked)
+                + f" ({marks_desc})"
+            )
     levels: List[Level] = []
     spaces: Dict[str, Space] = {}
     review: List[ReviewItem] = []
     envelope: List[EnvelopeWall] = []
     plan_of_level: Dict[str, tuple] = {}
-    for k, lv in enumerate(_level_order(list(by_level))):
-        lid = lv if not lv.startswith("L?") else f"LX{lv[2:]}"
-        levels.append(Level(id=lid, name=lid, elevation_z_m=round(k * h, 4), wall_height_m=h))
+    z = 0.0
+    for lv in order:
+        lid = lid_of[lv]
+        h, h_src, _conflict = heights[lv]
+        levels.append(Level(id=lid, name=lid, elevation_z_m=round(z, 4), wall_height_m=h))
         report.levels.append(
             {
                 "id": lid,
                 "sheets": by_level[lv],
-                "elevation_m": round(k * h, 4),
+                "elevation_m": round(z, 4),
+                "height_m": h,
                 "height_source": h_src,
                 # every gap the plan shows; "openings" below says which were modelled
                 "plan_openings": len(walls[by_level[lv][0]]["openings"]),
@@ -377,26 +387,48 @@ def build_set_model(
             footprint_from_regions, _edge_facades, EnvelopeWall, Provenance,
         )  # fmt: skip
         plan_of_level[lid] = (f, sheet_id, len(report.levels) - 1)
+        z += h
     elev_reads, elev_bbox = _read_elevations(
         files, entries, status, scales, sheets_dir, plan_of_level, walls, review, report
     )
     elevations = len(elev_reads)
-    if h_src == "storey_height_default":
+    defaulted = [lv for lv in order if heights[lv][1] == "storey_height_default"]
+    if defaulted:
+        dh = DEFAULT_STOREY_HEIGHT_M
+        conflicts = {lv: heights[lv][2] for lv in defaulted if heights[lv][2]}
+        if len(defaulted) == len(order):
+            if conflicts and len(order) == 1:
+                why = f"elevation level marks disagree ({conflicts[order[0]]}); "
+            elif conflicts:
+                why = "elevation level marks disagree (" + "; ".join(
+                    f"{lid_of[lv]}: {c}" for lv, c in conflicts.items()
+                ) + "); "  # fmt: skip
+            elif by_storey:
+                why = "the elevation level marks name no modelled level; "
+            elif elevations:
+                why = "the elevations carry no named floor level marks; "
+            else:
+                why = "no section or elevation was read; "
+            desc = f"storey height {dh:g} m is the default: {why}"
+            who = "every level"
+        else:
+            parts = [
+                f"{lid_of[lv]} (elevation level marks disagree: {conflicts[lv]})"
+                if lv in conflicts
+                else f"{lid_of[lv]} (no level mark)"
+                for lv in defaulted
+            ]
+            desc = (
+                f"storey height {dh:g} m is the default for {', '.join(parts)}; "
+                "the other levels take theirs from the elevation level marks; "
+            )
+            who = "levels " + ", ".join(lid_of[lv] for lv in defaulted)
         review.append(
             ReviewItem(
                 id="rq-storey-height",
                 kind="elevation_extraction",  # storey height comes from sections/elevations
-                description=(
-                    f"storey height {h:g} m is the default: "
-                    + (
-                        f"elevation level marks disagree ({marks_conflict}); "
-                        if marks_conflict
-                        else "the elevations carry no named floor level marks; "
-                        if elevations
-                        else "no section or elevation was read; "
-                    )
-                    + "set wall_height in the run config to override"
-                ),
+                target={"kind": "level", "ids": [lid_of[lv] for lv in defaulted]},
+                description=desc + "set wall_height in the run config to override",
                 confidence=0.5,
                 provenance=Provenance(
                     str(pdf),
@@ -404,11 +436,11 @@ def build_set_model(
                     "storey_height_default",
                     0.5,
                     note=(
-                        f"storey height {h:g} m for every level (matchline default "
+                        f"storey height {dh:g} m for {who} (matchline default "
                         "DEFAULT_STOREY_HEIGHT_M); no section or elevation level marks gave one"
                     ),
                 ),  # fmt: skip
-                needs_review=False,
+                needs_review=bool(conflicts),
             )
         )
 
@@ -462,14 +494,15 @@ def build_set_model(
 
 
 def _storey_from_elevations(files, entries, status, scales, sheets_dir):
-    """Storey height from the level marks on the set's vector elevations.
+    """Storey heights from the level marks on the set's vector elevations.
 
-    Returns ``(height, note, conflict)``: a height only when every floor-to-floor
-    step on every elevation agrees within ``STOREY_AGREE_M`` (the model has one
-    storey height); ``conflict`` lists the steps when they do not.
+    Returns ``(by_storey, desc)``: ``by_storey`` maps a storey ordinal (1 for FIRST
+    FLOOR / LEVEL 1, 0 for BASEMENT; ``storey_ordinal``) to the ``(sheet, height)``
+    each elevation states for it; ``desc`` lists every elevation's steps (#813, #814).
     """
-    from elevation_sheets import STOREY_AGREE_M, level_marks, storey_heights
+    from elevation_sheets import level_marks, storey_steps
 
+    by_storey: Dict[int, list] = {}
     found = []
     for f in files:
         e = entries.get(f, {})
@@ -481,16 +514,50 @@ def _storey_from_elevations(files, entries, status, scales, sheets_dir):
             sheet = json.loads((sheets_dir / f).read_text())
         except (OSError, ValueError):
             continue
-        hs = storey_heights(level_marks(sheet, (scales.get(f) or {}).get("m_per_pt")))
-        if hs:
-            found.append((status[f].number or f, hs))
-    if not found:
-        return None, "", ""
-    steps = [x for _sid, hs in found for x in hs]
+        steps = storey_steps(level_marks(sheet, (scales.get(f) or {}).get("m_per_pt")))
+        if not steps:
+            continue
+        sid = status[f].number or f
+        found.append((sid, [x for _o, x in steps]))
+        for o, x in steps:
+            if o is not None:
+                by_storey.setdefault(o, []).append((sid, x))
     desc = "; ".join(f"{sid}: " + ", ".join(f"{x:.2f} m" for x in hs) for sid, hs in found)
-    if max(steps) - min(steps) > STOREY_AGREE_M:
-        return None, "", desc
-    return round(sum(steps) / len(steps), 4), desc, ""
+    return by_storey, desc
+
+
+def _level_ordinal(lv: str) -> Optional[int]:
+    """The storey ordinal of a plan level id: L1 -> 1, B1 -> 0, B2 -> -1 (#814)."""
+    if lv[:1] == "L" and lv[1:].isdigit():
+        return int(lv[1:])
+    if lv[:1] == "B" and lv[1:].isdigit():
+        return 1 - int(lv[1:])
+    return None
+
+
+def _level_heights(order, by_storey, storey_height_m):
+    """Each plan level's ``(height, source, conflict)`` (#814).
+
+    The config height wins for every level; otherwise a level takes the height its
+    elevation level marks state when they agree within ``STOREY_AGREE_M``, else the
+    default (``conflict`` names the disagreeing elevations, empty when no mark).
+    """
+    from elevation_sheets import STOREY_AGREE_M
+
+    out = {}
+    for lv in order:
+        if storey_height_m:
+            out[lv] = (storey_height_m, "config", "")
+            continue
+        o = _level_ordinal(lv)
+        hs = by_storey.get(o, []) if o is not None else []
+        vals = [x for _s, x in hs]
+        if vals and max(vals) - min(vals) <= STOREY_AGREE_M:
+            out[lv] = (round(sum(vals) / len(vals), 4), "elevation_level_marks", "")
+        else:
+            conflict = "; ".join(f"{s}: {x:.2f} m" for s, x in hs)
+            out[lv] = (DEFAULT_STOREY_HEIGHT_M, "storey_height_default", conflict)
+    return out
 
 
 def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, walls, review,
