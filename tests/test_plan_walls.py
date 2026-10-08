@@ -315,3 +315,27 @@ def test_grid_of_rooms_scales(tmp_path):
     assert len(res.rooms) == n * n
     assert {round(r.area_m2, 2) for r in res.rooms} == {9.0}
     assert time.perf_counter() - t0 < 30
+
+
+def test_wall_that_changes_thickness_still_closes_the_room(tmp_path):
+    # south wall steps from 0.30 m to 0.15 m halfway, inside faces flush (#740)
+    walls = [
+        ((0, 0), (5, 0), T_EXT),
+        ((5, 0.075), (10, 0.075), T_INT),
+        ((10, 0), (10, 6), T_EXT),
+        ((10, 6), (0, 6), T_EXT),
+        ((0, 6), (0, 0), T_EXT),
+    ]
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert len(res.rooms) == 1
+    assert not [r for r in res.review if r["kind"] == "unclosed_wall"]
+
+
+def test_free_end_joins_a_wall_it_stops_against():
+    # partition (t 0.15) stops 0.20 short of a 0.30 wall's centreline: within half of both
+    pairs = [((0.0, 0.0), (10.0, 0.0)), ((4.0, 0.2), (4.0, 5.0))]
+    joins = W._join_free_ends(pairs, [0.30, 0.15], tol=0.01)
+    assert ((4.0, 0.2), (4.0, 0.0)) in joins
+    # 0.40 short is a real gap: no connector from that end
+    far = W._join_free_ends([pairs[0], ((4.0, 0.4), (4.0, 5.0))], [0.30, 0.15], tol=0.01)
+    assert all(a != (4.0, 0.4) for a, _ in far)

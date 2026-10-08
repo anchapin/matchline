@@ -60,19 +60,23 @@ outlines and draws them as stroked lines on a 1:100 sheet with each IfcSpace's
 name and number at its centroid, then runs `extract_walls` and compares against
 the IfcSpace footprints (rooms) and the IFC walls' cut length.
 
-First measurement (2026-10-08):
+Measurements:
 
 | Storey | Rooms matched / truth | Extra faces | Median area err | Wall length err |
 |---|---|---|---|---|
-| First Floor | 27 / 154 | 52 | 11.5% | 2.7% |
-| Second Floor | 27 / 109 | 44 | 9.0% | 0.3% |
+| First Floor, before joins | 27 / 154 | 52 | 11.5% | 2.7% |
+| First Floor, with joins | 72 / 154 | 85 | 9.4% | 2.7% |
+| Second Floor, before joins | 27 / 109 | 44 | 9.0% | 0.3% |
+| Second Floor, with joins | 50 / 109 | 68 | 9.0% | 0.3% |
 
-Wall length is right; rooms are not, because walls do not join. On the First
-Floor, 462 `unclosed_wall` items: 272 wall ends stop within 2.5 m of another
-wall without being bridged (openings between walls that are not on one line),
-233 stop within a wall thickness of another wall's centreline (a T-junction not
-snapped). 90 of the 154 rooms sit in open regions with no face; 37 are merged
-into a face with neighbours.
+Before joins, the First Floor wall graph had 327 free ends (counting door
+bridges as connections): 180 within half of both thicknesses of another wall's
+centreline, 116 between 0.2 and 1.0 m from one, 30 between 1.0 and 2.5 m, 1
+farther. A free end within half of both thicknesses now joins that wall with a
+short connector (a T-junction stopped at a face, a wall that changes thickness
+or steps sideways). `unclosed_wall` items fell from 462 to 261 (First Floor)
+and 225 to 131 (Second Floor). The ends 0.2 to 2.5 m short (openings beside a
+corner, where the wall on the far side is not on the same line) are next.
 
 ## Not yet
 

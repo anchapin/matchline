@@ -438,6 +438,38 @@ def _snap(walls: List[Wall], tol: float) -> None:
         setattr(w, end, x)
 
 
+def _join_free_ends(pairs: List[Tuple[Pt, Pt]], ts: List[float], tol: float) -> List[Tuple[Pt, Pt]]:
+    """Connectors from a free wall end to a wall it stops against (#740).
+
+    A wall end that touches nothing but lies within half of both thicknesses of
+    another wall's centreline is drawn as meeting it: a T-junction whose end
+    stopped at the other wall's face, or a wall that changes thickness or
+    steps sideways along its run. The connector runs from the end to the
+    nearest point on that centreline.
+    """
+    if not pairs:
+        return []
+    lines = [LineString(p) for p in pairs]
+    tree = STRtree(lines)
+    t_big = max(ts)
+    out: List[Tuple[Pt, Pt]] = []
+    for i, (a, b) in enumerate(pairs):
+        for p in (a, b):
+            pt = Point(p)
+            near = [int(j) for j in tree.query(pt.buffer(t_big + tol)) if int(j) != i]
+            if any(lines[j].distance(pt) <= tol for j in near):
+                continue  # already meets another wall
+            best = None
+            for j in near:
+                d = lines[j].distance(pt)
+                if d <= (ts[i] + ts[j]) / 2 + tol and (best is None or d < best[0]):
+                    best = (d, j)
+            if best:
+                q = lines[best[1]].interpolate(lines[best[1]].project(pt))
+                out.append((p, (q.x, q.y)))
+    return out
+
+
 def _node_lines(pairs: List[Tuple[Pt, Pt]], tol: float) -> List[LineString]:
     """Make wall ends that meet share exact coordinates.
 
@@ -599,10 +631,13 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         )
     walls = [w for w in walls if w.id not in alias]
 
-    lines = _node_lines(
-        [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [(br.a, br.b) for br in bridges],
-        tol,
+    pairs = [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [
+        (br.a, br.b) for br in bridges
+    ]
+    joins = _join_free_ends(
+        pairs, [w.t for w in walls if math.dist(w.a, w.b) > tol] + [br.t for br in bridges], tol
     )
+    lines = _node_lines(pairs + joins, tol)
     noded = unary_union(lines)
     faces, _cuts, dangles, _invalid = polygonize_full(noded)
     for dg in getattr(dangles, "geoms", []):
