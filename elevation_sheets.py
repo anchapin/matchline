@@ -44,6 +44,11 @@ WIN_H_M = (0.3, 4.0)
 DOOR_BASE_TOL_M = 0.05  # an opening this close to the outline base is a door
 BORDER_FRAC = 0.8  # a rectangle covering this much of the sheet is its border
 LENGTH_TOL = 0.05  # outline vs plan facade length, relative
+# A partial elevation (#818): one facade drawn in parts, on two sheets or as
+# "SOUTH ELEVATION - EAST HALF" and "- WEST HALF". The named end anchors the
+# part when no grid is shared with the plan.
+PART_END_RE = re.compile(r"\b(NORTH|SOUTH|EAST|WEST|LEFT|RIGHT)\s+(?:HALF|END|PART|PORTION|WING)\b")
+PARTIAL_RE = re.compile(r"\bPART(?:IAL)?\b|\bHALF\b|\b\d+\s+OF\s+\d+\b|\bMATCH\s*LINE\b")
 
 Rect = Tuple[float, float, float, float]  # x0, y0, x1, y1 in sheet points (y down)
 
@@ -81,6 +86,8 @@ class ElevationRead:
     openings: List[ElevationOpening] = field(default_factory=list)
     registration: Optional[dict] = None
     review: List[dict] = field(default_factory=list)
+    partial: bool = False
+    span_m: Optional[List[float]] = None  # [s0, s1] of facade this sheet covers
 
     @property
     def windows(self) -> List[ElevationOpening]:
@@ -96,8 +103,30 @@ class ElevationRead:
 
 def facade_from_title(title: str) -> Optional[str]:
     """``north`` for "NORTH ELEVATION"; None for none or several facades."""
-    hits = {m.group(1).lower() for m in FACADE_RE.finditer((title or "").upper())}
+    t = PART_END_RE.sub(" ", (title or "").upper())  # "EAST HALF" names no facade
+    hits = {m.group(1).lower() for m in FACADE_RE.finditer(t)}
     return hits.pop() if len(hits) == 1 else None
+
+
+def partial_from_title(title: str) -> Tuple[bool, Optional[str]]:
+    """``(True, "east")`` for "SOUTH ELEVATION - EAST HALF"; ``(True, None)`` for
+    "SOUTH ELEVATION (PART 1 OF 2)"; ``(False, None)`` for a whole facade.
+    LEFT / RIGHT are returned as drawn ("left", "right")."""
+    t = (title or "").upper()
+    m = PART_END_RE.search(t)
+    if m:
+        return True, m.group(1).lower()
+    return bool(PARTIAL_RE.search(t)), None
+
+
+def _end_s(facade: Facade, end: str, mirrored: bool) -> Optional[float]:
+    """The facade ``s`` of a named end: 0 at the reference corner (west end of
+    north/south, north end of east/west), ``length_m`` at the other."""
+    if end in ("left", "right"):  # as drawn: s grows rightward unless mirrored
+        return 0.0 if (end == "left") != mirrored else facade.length_m
+    zero = "west" if facade.name in ("north", "south") else "north"
+    far = "east" if facade.name in ("north", "south") else "south"
+    return 0.0 if end == zero else facade.length_m if end == far else None
 
 
 def plan_facade(name: str, bbox_m: Rect) -> Facade:
@@ -156,11 +185,20 @@ def read_elevation(
     plan_grid_s: Optional[dict] = None,
     elev_grid=None,
     revision: int = 0,
+    partial: Optional[bool] = None,
 ) -> ElevationRead:
     """Read one elevation sheet. ``plan_grid_s``: ``{label: s metres}`` along
-    this facade from the plan; ``elev_grid``: the sheet's ``grid_detect.GridSet``."""
+    this facade from the plan; ``elev_grid``: the sheet's ``grid_detect.GridSet``.
+
+    ``partial`` (default: from the title) marks a sheet that draws only part of
+    its facade (#818). A part is registered by shared grid labels, else by the
+    end its title names ("EAST HALF"); one with neither is not read. Its
+    ``span_m`` is the stretch of facade it covers, and its outline is not
+    checked against the whole facade length."""
     name = facade_from_title(title)
     er = ElevationRead(sheet_file, sheet_id, name, False, m_per_pt=m_per_pt)
+    titled, end = partial_from_title(title)
+    er.partial = titled if partial is None else bool(partial)
     if not name:
         er.reason = f"title {title!r} names no single facade (one elevation per sheet for now)"
         return er
@@ -179,6 +217,8 @@ def read_elevation(
     er.outline_pt = out
     er.outline_width_m = round((out[2] - out[0]) * m_per_pt, 4)
     base = out[3]
+    if er.partial and abs(er.outline_width_m - fac.length_m) <= LENGTH_TOL * fac.length_m:
+        er.partial = False  # drawn full length: a whole facade, e.g. a second copy
 
     cand = []
     for r in rects:
@@ -189,7 +229,20 @@ def read_elevation(
             cand.append(r)
     cand = [r for r in cand if not any(o != r and _inside(r, o) for o in cand)]
 
-    reg = _register(er, sheet_id, fac, out, base, m_per_pt, plan_grid_s, elev_grid, revision)
+    reg = _register(
+        er, sheet_id, fac, out, base, m_per_pt, plan_grid_s, elev_grid, revision,
+        end if er.partial else None,
+    )  # fmt: skip
+    if reg is None:
+        er.review = [r for r in er.review if r["kind"] != "elevation_grid_unmatched"]
+        er.reason = (
+            "partial elevation shares fewer than two grid labels with the plan and its "
+            'title names no end (e.g. "EAST HALF"), so it can\'t be placed on the facade'
+        )
+        return er
+    sa, _z = reg.to_facade(out[0], base)
+    sb, _z = reg.to_facade(out[2], base)
+    er.span_m = [round(min(sa, sb), 4), round(max(sa, sb), 4)]
     er.registration = {
         "method": reg.method,
         "confidence": reg.confidence,
@@ -221,7 +274,19 @@ def read_elevation(
             )
         )
     off = abs(er.outline_width_m - fac.length_m) / max(fac.length_m, 1e-9)
-    if off > LENGTH_TOL:
+    tol = LENGTH_TOL * fac.length_m
+    if er.partial:
+        if er.span_m[0] < -tol or er.span_m[1] > fac.length_m + tol:
+            er.review.append(
+                {
+                    "kind": "elevation_length_mismatch",
+                    "reason": (
+                        f"partial {name} elevation runs from {er.span_m[0]:.2f} to "
+                        f"{er.span_m[1]:.2f} m, past the {fac.length_m:.2f} m plan facade"
+                    ),
+                }
+            )
+    elif off > LENGTH_TOL:
         er.review.append(
             {
                 "kind": "elevation_length_mismatch",
@@ -235,7 +300,7 @@ def read_elevation(
     return er
 
 
-def _register(er, sheet_id, fac, out, base, m_per_pt, plan_grid_s, elev_grid, revision):
+def _register(er, sheet_id, fac, out, base, m_per_pt, plan_grid_s, elev_grid, revision, end=None):
     px_per_m = 1.0 / m_per_pt
     if plan_grid_s and elev_grid is not None:
         from grid_detect import elevation_bubbles
@@ -255,7 +320,21 @@ def _register(er, sheet_id, fac, out, base, m_per_pt, plan_grid_s, elev_grid, re
                 ),
             }
         )
-    return register_elevation_geometric(sheet_id, fac, out[0], px_per_m, base, revision)
+    if not er.partial:
+        return register_elevation_geometric(sheet_id, fac, out[0], px_per_m, base, revision)
+    reg = register_elevation_geometric(sheet_id, fac, out[0], px_per_m, base, revision)
+    mirrored = reg.a_s < 0
+    s_end = _end_s(fac, end, mirrored) if end else None
+    if s_end is None:
+        return None
+    # the drawn edge at that end: left edge is s=0 unless mirrored
+    at_zero = s_end == 0.0
+    u_edge = out[0] if at_zero != mirrored else out[2]
+    reg.b_s = s_end - reg.a_s * u_edge
+    note = f"partial elevation: its {end} end placed at s={s_end:.2f} m"
+    if reg.provenance is not None:
+        reg.provenance.note = f"{reg.provenance.note}; {note}"
+    return reg
 
 
 def facade_registration(d: dict, sheet_id: str, facade: str) -> FacadeRegistration:

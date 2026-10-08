@@ -654,6 +654,11 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     except Exception:  # noqa: BLE001 - a grid failure falls back to geometry
         pgrid = None
     reads = []
+    # #818: a facade titled on two or more sheets is drawn in parts
+    n_fac: dict = {}
+    for f in elev_files:
+        fc = facade_from_title(status[f].title or "")
+        n_fac[fc] = n_fac.get(fc, 0) + 1
     for f in elev_files:
         st = status[f]
         sheet_id = st.number or f
@@ -677,6 +682,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
         er = read_elevation(
             sheet, f, sheet_id, st.title or "", (scales.get(f) or {}).get("m_per_pt"),
             bbox, name_s, egrid,
+            partial=True if fac and n_fac.get(fac, 0) > 1 else None,
         )  # fmt: skip
         prov = Provenance(
             sheet_id=sheet_id,
@@ -1054,10 +1060,22 @@ def _join_elevations(
                 cx, cy = centers[op.id]
                 s = cx - x0 if op.host_facade in ("north", "south") else cy - y0
                 by_fac.setdefault(op.host_facade, []).append((op, s))
+
+    # #818: a facade drawn on several sheets (or in parts) is joined as a whole.
+    # Each read matches the plan openings it covers; a plan opening goes to
+    # review only when no read of its facade shows it, and one shown by two
+    # reads that disagree goes to review once, naming both sheets.
+    def covers(er, s):
+        sp = er.span_m
+        return sp is None or sp[0] - JOIN_TOL_M <= s <= sp[1] + JOIN_TOL_M
+
+    per_read = []  # (er, prov, stats, pairs)
+    shown: dict = {}  # plan opening id -> [(er, eo, prov)]
     for er, prov in reads:
         stats = {"matched": 0, "unmatched_elevation": 0, "unmatched_plan": 0}
         pairs = {}
-        cands = list(by_fac.get(er.facade, []))
+        per_read.append((er, prov, stats, pairs))
+        cands = [(op, s) for op, s in by_fac.get(er.facade, []) if covers(er, s)]
         taken = set()
         for eo in er.openings:
             es = (eo.s0_m + eo.s1_m) / 2
@@ -1096,6 +1114,24 @@ def _join_elevations(
             taken.add(op.id)
             pairs[eo.id] = op
             stats["matched"] += 1
+            seen = shown.setdefault(op.id, [])
+            seen.append((er, eo, prov))
+            op.history.append(
+                Provenance(
+                    sheet_id=er.sheet_id,
+                    revision=0,
+                    method="elevation_join",
+                    confidence=prov.confidence,
+                    note=(
+                        f"{eo.id}: sill {0.0 if eo.kind == 'door' else eo.sill_m:.2f} m "
+                        f"read off the {er.facade} elevation "
+                        f"({(er.registration or {}).get('method', '')} registration)"
+                        + ("" if len(seen) == 1 else f"; sill kept from {seen[0][0].sheet_id}")
+                    ),
+                )
+            )
+            if len(seen) > 1:
+                continue  # sill and size already taken from the first sheet showing it
             why = []
             if abs(eo.width_m - op.width_m) > JOIN_WIDTH_TOL_M:
                 why.append(
@@ -1108,18 +1144,6 @@ def _join_elevations(
             sill = 0.0 if eo.kind == "door" else round(eo.sill_m, 4)
             op.sill_m = sill
             op.head_m = round(sill + op.height_m, 4)
-            op.history.append(
-                Provenance(
-                    sheet_id=er.sheet_id,
-                    revision=0,
-                    method="elevation_join",
-                    confidence=prov.confidence,
-                    note=(
-                        f"{eo.id}: sill {sill:.2f} m read off the {er.facade} elevation "
-                        f"({(er.registration or {}).get('method', '')} registration)"
-                    ),
-                )
-            )
             if why:
                 review.append(
                     ReviewItem(
@@ -1138,10 +1162,60 @@ def _join_elevations(
                         provenance=prov,
                     )
                 )
-        for op, s in cands:
-            if op.id in taken:
+    # an opening drawn on two sheets: one item when they disagree
+    for op_id, seen in shown.items():
+        (er1, eo1, prov1), rest = seen[0], seen[1:]
+        for er2, eo2, _p in rest:
+            why = []
+            if eo1.kind != "door" and abs(eo1.sill_m - eo2.sill_m) > JOIN_HEIGHT_TOL_M:
+                why.append(f"sill {eo1.sill_m:.2f} m vs {eo2.sill_m:.2f} m")
+            if abs(eo1.width_m - eo2.width_m) > JOIN_WIDTH_TOL_M:
+                why.append(f"width {eo1.width_m:.2f} m vs {eo2.width_m:.2f} m")
+            if abs(eo1.height_m - eo2.height_m) > JOIN_HEIGHT_TOL_M:
+                why.append(f"height {eo1.height_m:.2f} m vs {eo2.height_m:.2f} m")
+            if not why:
                 continue
-            stats["unmatched_plan"] += 1
+            op = next(o for o, _s in by_fac.get(er1.facade, []) if o.id == op_id)
+            review.append(
+                ReviewItem(
+                    id=f"rq-elev-{op_id}-{er1.sheet_id}-{er2.sheet_id}",
+                    kind="elevation_conflict",  # two elevations draw it differently
+                    target={
+                        "kind": "opening",
+                        "id": op_id,
+                        "sheet": er1.sheet_id,
+                        "ends": [elev_end(er1, eo1), elev_end(er2, eo2), plan_end_of(op)],
+                    },  # fmt: skip
+                    description=(
+                        f"{op_id} ({op.tag}) is drawn on elevations {er1.sheet_id} and "
+                        f"{er2.sheet_id} with {'; '.join(why)}; kept {er1.sheet_id}"
+                    ),
+                    confidence=0.6,
+                    provenance=prov1,
+                )
+            )
+            break  # once per opening
+    # plan openings no elevation of their facade shows
+    for fac, ops in by_fac.items():
+        on_fac = [t for t in per_read if t[0].facade == fac]
+        if not on_fac:
+            continue
+        for op, s in ops:
+            if op.id in shown:
+                continue
+            cov = [t for t in on_fac if covers(t[0], s)]
+            if cov:
+                for t in cov:
+                    t[2]["unmatched_plan"] += 1
+                er, prov = cov[0][0], cov[0][1]
+                names = " or ".join(t[0].sheet_id for t in cov)
+                where = f"elevation {names}"
+            else:
+                er, prov = on_fac[0][0], on_fac[0][1]
+                spans = ", ".join(
+                    f"{t[0].sheet_id} {t[0].span_m[0]:.2f}-{t[0].span_m[1]:.2f} m" for t in on_fac
+                )
+                where = f"any {fac} elevation (they cover {spans})"
             review.append(
                 ReviewItem(
                     id=f"rq-elev-{er.sheet_id}-{op.id}",
@@ -1153,13 +1227,14 @@ def _join_elevations(
                         "ends": [plan_end_of(op)],
                     },  # fmt: skip
                     description=(
-                        f"{op.id} ({op.tag}, {op.category} at {s:.2f} m along the {er.facade} "
-                        f"facade) is not drawn on elevation {er.sheet_id}; sill unknown"
+                        f"{op.id} ({op.tag}, {op.category} at {s:.2f} m along the {fac} "
+                        f"facade) is not drawn on {where}; sill unknown"
                     ),
                     confidence=0.6,
                     provenance=prov,
                 )
             )
+    for er, prov, stats, pairs in per_read:
         for e in report.elevations:
             if e["sheet_id"] == er.sheet_id:
                 e.update(stats)

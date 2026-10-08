@@ -107,6 +107,24 @@ are also written back to `sheets/elevation_NNN.json`: a top-level `plan` names t
 plan sheet, and each opening gets `plan_opening` (the model opening id, or null)
 and `plan_point`.
 
+### A facade drawn in parts
+
+A sheet whose title marks it as part of a facade ("SOUTH ELEVATION - EAST HALF",
+"PART 1 OF 2", "PARTIAL"), or any sheet when two or more sheets name the same
+facade, is read as a part. A part is placed by at least two grid labels it shares
+with the plan; otherwise by the end its title names (north/south/east/west, or
+left/right as drawn). A part with neither is not read and goes to review. A part
+drawn the full facade length is treated as a whole facade.
+
+Each read records `partial` and `span_m` (the stretch of facade it covers) in
+`sheets/elevation_NNN.json`. The join matches each read only against the plan
+openings in its span. A plan opening goes to review only when no read of its
+facade shows it: the item names the sheets covering it, or, when it falls between
+the parts, the spans they cover. An opening shown by two sheets takes its sill
+from the first; if the two disagree on sill or size beyond the join tolerances,
+one `elevation_conflict` item (`rq-elev-<opening>-<sheet1>-<sheet2>`) names both
+sheets, with both elevation ends and the plan end in `target["ends"]`.
+
 ### Storey height from level marks
 
 Level marks on vector elevations ("FIRST FLOOR / EL. 100'-0\"", "ROOF EL. +3.600")
