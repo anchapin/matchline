@@ -142,6 +142,8 @@ def test_run_pipeline_set_exports_gbxml(tmp_path):
     assert xml.count("<Space ") == 4
     assert xml.count("<BuildingStorey ") == 2
     assert (out / "stage_06_bem" / "set.ifc").exists()
+    tr = json.loads((out / "package" / "trust_report.json").read_text())
+    assert tr["inputs"][0]["role"] == "drawing set" and len(tr["inputs"][0]["sha256"]) == 64
 
 
 def test_openstudio_reads_the_set_export(tmp_path):

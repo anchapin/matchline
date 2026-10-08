@@ -586,6 +586,36 @@ def _print_pipeline_complete(out_dir: Path, report):
             print(f"  stage_06_bem/{f.name}")
 
 
+def _run_inputs(args, config: dict | None) -> list:
+    """What this run read, for the trust report: input files (hashed there) and
+    the settings that change the output."""
+    out = []
+    for role, attr in (
+        ("drawing set", "set_pdf"),
+        ("sheet image", "image"),
+        ("detections", "detections"),
+        ("schedule csv", "schedule_csv"),
+        ("aec-bench", "aec_bench"),
+        ("detector config", "detector_config"),
+    ):
+        v = getattr(args, attr, None)
+        if v:
+            out.append({"role": role, "path": str(v)})
+    seed = getattr(args, "seed", None)
+    if seed is not None:
+        out.append({"role": "synthetic seed", "value": seed})
+    for role, attr in (
+        ("climate zone", "climate_zone"),
+        ("building category", "building_category"),
+    ):
+        v = (config or {}).get(attr, getattr(args, attr, None))
+        if v:
+            out.append({"role": role, "value": v})
+    if config:
+        out.append({"role": "config", "value": json.dumps(config, sort_keys=True, default=str)})
+    return out
+
+
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -676,10 +706,15 @@ def main(args, config: dict | None = None) -> None:
             gbxml_path, ifc_path = _stage_6_bem_export(
                 model, sres, wall_height, simplify_tol, out_dir
             )
-            write_json(
-                out_dir / "stage_06_bem" / "convention_report.json",
-                build_convention_report(model, report, sres, constructions),
+            conv = build_convention_report(model, report, sres, constructions)
+            write_json(out_dir / "stage_06_bem" / "convention_report.json", conv)
+            # export package with the one-page trust report (#750)
+            from export_package import build_package
+
+            pkg = build_package(
+                out_dir, model, report, conv, [gbxml_path, ifc_path], _run_inputs(args, config)
             )
+            print(f"  package: {pkg}")
             _print_pipeline_complete(out_dir, report)
         except StageError:
             raise
