@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Level marks match more plan levels: GROUND then FIRST FLOOR on one elevation reads the British way, MEZZANINE and PENTHOUSE marks match MEZZ and PH, and marks that name no plan level match by order when the storey count agrees (`height_match` per level) (#822).
+
+### Added
 - Each level takes its own storey height from the elevation level marks (matched by name: FIRST FLOOR to L1, SECOND FLOOR to L2); level elevations are the running sum, and only levels whose marks disagree or are missing keep the default and go to `rq-storey-height` (#814).
 
 ### Changed

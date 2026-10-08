@@ -284,9 +284,9 @@ LEVEL_VALUE_RE = re.compile(
 )
 LEVEL_NAME_RE = re.compile(
     r"\b(?:(?:GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|1ST|2ND|3RD|[4-9]TH)\s+(?:FLOOR|LEVEL)"
-    r"|LEVEL\s*\d+|ROOF|T\.?\s*O\.?\s*\w+|PARAPET|GRADE|BASEMENT)\b"
+    r"|LEVEL\s*\d+|MEZZANINE|PENTHOUSE(?!\s+ROOF)|ROOF|T\.?\s*O\.?\s*\w+|PARAPET|GRADE|BASEMENT)\b"
 )
-STOREY_NAME_RE = re.compile(r"FLOOR|LEVEL|ROOF|BASEMENT")
+STOREY_NAME_RE = re.compile(r"FLOOR|LEVEL|ROOF|BASEMENT|MEZZANINE|PENTHOUSE")
 NOT_STOREY_RE = re.compile(r"^T\.?\s*O\b|PARAPET|GRADE")
 MARK_NAME_DIST_PT = 24.0  # a name this close to its value (above or beside) labels it
 MARK_Z_TOL_M = 0.3  # drawn height vs stated value, after the common offset
@@ -407,11 +407,34 @@ def storey_ordinal(name: Optional[str]) -> Optional[int]:
     return _ORDINAL_WORDS.get(w)
 
 
-def storey_steps(marks: List[LevelMark]) -> List[tuple]:
-    """``(ordinal, height)`` per storey: the step from each storey mark to the next.
+def _british(st: List[LevelMark]) -> bool:
+    """GROUND FLOOR and FIRST FLOOR on one elevation: ground is 1, first is 2 (#822)."""
+    words = {(mk.name or "").upper().split()[0] for mk in st if mk.name}
+    return "GROUND" in words and bool(words & {"FIRST", "1ST"})
 
-    The ordinal is the lower mark's (``storey_ordinal``), so FIRST FLOOR at 0 and
-    SECOND FLOOR at 4.5 m give ``(1, 4.5)`` (#814).
+
+def storey_key(name: Optional[str], british: bool = False):
+    """The plan level a storey mark names: an ordinal (``storey_ordinal``), ``"MEZZ"``
+    or ``"PH"``; None for ROOF and unnumbered names. ``british`` shifts FIRST, SECOND,
+    ... up one because GROUND is the first storey (#822)."""
+    n = (name or "").upper().strip()
+    if n.startswith("MEZZANINE"):
+        return "MEZZ"
+    if n.startswith("PENTHOUSE"):
+        return "PH"
+    o = storey_ordinal(n)
+    if british and o is not None and not re.search(r"LEVEL\s*\d|GROUND|BASEMENT", n):
+        o += 1
+    return o
+
+
+def storey_steps(marks: List[LevelMark]) -> List[tuple]:
+    """``(key, height)`` per storey: the step from each storey mark to the next.
+
+    The key is the lower mark's (``storey_key``), so FIRST FLOOR at 0 and SECOND
+    FLOOR at 4.5 m give ``(1, 4.5)`` (#814); with GROUND FLOOR below FIRST FLOOR on
+    the same elevation, GROUND is 1 and FIRST is 2 (#822).
     """
     st = _storeys(marks)
-    return [(storey_ordinal(a.name), round(b.value_m - a.value_m, 4)) for a, b in zip(st, st[1:])]
+    br = _british(st)
+    return [(storey_key(a.name, br), round(b.value_m - a.value_m, 4)) for a, b in zip(st, st[1:])]

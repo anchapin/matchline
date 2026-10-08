@@ -437,3 +437,76 @@ def test_config_height_still_overrides_every_level(tmp_path):
     assert [lv.wall_height_m for lv in model.levels] == [4.0, 4.0]
     assert model.levels[1].elevation_z_m == 4.0
     assert [lv["height_source"] for lv in rep.levels] == ["config", "config"]
+
+
+# --- matching level marks beyond numbered names (#822) -----------------------
+
+
+def test_ground_then_first_is_british_numbering():
+    mk = ES.LevelMark
+    marks = [mk("GROUND FLOOR", 0.0, 0, ""), mk("FIRST FLOOR", 4.5, 0, ""),
+             mk("ROOF", 8.1, 0, "")]  # fmt: skip
+    assert ES.storey_steps(marks) == [(1, 4.5), (2, 3.6)]
+
+
+@pytest.mark.parametrize(
+    "name,key",
+    [("MEZZANINE", "MEZZ"), ("MEZZANINE LEVEL", "MEZZ"), ("PENTHOUSE", "PH"),
+     ("FIRST FLOOR", 1), ("ROOF", None)],
+)  # fmt: skip
+def test_storey_key(name, key):
+    assert ES.storey_key(name) == key
+
+
+def test_penthouse_roof_is_a_roof_not_a_storey():
+    m = ES.LEVEL_NAME_RE.search("PENTHOUSE ROOF")
+    assert m and m.group(0) == "ROOF"
+    assert ES.LEVEL_NAME_RE.search("MEZZANINE").group(0) == "MEZZANINE"
+
+
+def _british(sheet="A-201"):
+    extra = (_mark("GROUND FLOOR", "EL. +0.000", 0.0) + _mark("FIRST FLOOR", "EL. +4.500", 4.5)
+             + _mark("ROOF", "EL. +8.100", 8.1))  # fmt: skip
+    return _elev("SOUTH ELEVATION", extra=extra).replace("A-201", sheet)
+
+
+def test_british_numbered_set_gives_each_level_its_height(tmp_path):
+    model, rep = _two_storey(tmp_path, _british())
+    assert [lv.wall_height_m for lv in model.levels] == [pytest.approx(4.5), pytest.approx(3.6)]
+    assert [lv["height_match"] for lv in rep.levels] == ["name", "name"]
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+
+
+def _hundreds(storeys=2, sheet="A-201"):
+    """Marks named by datum (LEVEL 100, LEVEL 115, ...): no plan level matches by name."""
+    extra = _mark("LEVEL 100", "EL. +0.000", 0.0) + _mark("LEVEL 115", "EL. +4.500", 4.5)
+    if storeys == 2:
+        extra += _mark("ROOF", "EL. +8.100", 8.1)
+    return _elev("SOUTH ELEVATION", extra=extra).replace("A-201", sheet)
+
+
+def test_marks_that_name_no_plan_level_match_by_order(tmp_path):
+    model, rep = _two_storey(tmp_path, _hundreds())
+    assert [lv.wall_height_m for lv in model.levels] == [pytest.approx(4.5), pytest.approx(3.6)]
+    assert model.levels[1].elevation_z_m == pytest.approx(4.5)
+    assert [lv["height_match"] for lv in rep.levels] == ["order", "order"]
+    assert any("matched to the plan levels by order" in n for n in rep.notes)
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+
+
+def test_a_storey_count_that_does_not_match_keeps_the_default_and_says_so(tmp_path):
+    model, rep = _two_storey(tmp_path, _hundreds(storeys=1))  # one storey, two plan levels
+    assert [lv["height_source"] for lv in rep.levels] == ["storey_height_default"] * 2
+    assert "height_match" not in rep.levels[0]
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert "storey counts (A-201: 1) do not match the 2 plan levels" in rq.description
+
+
+def test_levels_with_no_number_match_by_order():
+    per_sheet = [("A-201", [4.5, 3.6])]
+    out, miss = real_set._level_heights(["L?1", "L?2"], {}, per_sheet, None)
+    assert [out[lv][0] for lv in ("L?1", "L?2")] == [4.5, 3.6] and not miss
+    assert {out[lv][3] for lv in out} == {"order"}
+    # one level matched by name: no order fallback for the rest
+    out, _ = real_set._level_heights(["L1", "MEZZ"], {1: [("A-201", 4.5)]}, per_sheet, None)
+    assert out["L1"][0] == 4.5 and out["MEZZ"][1] == "storey_height_default"
