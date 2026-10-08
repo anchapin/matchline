@@ -359,3 +359,103 @@ def test_sheet_script_parses():
     r = subprocess.run(["node", "-e", "new Function(process.argv[1])", R._SHEET_JS],
                        capture_output=True, text=True)  # fmt: skip
     assert r.returncode == 0, r.stderr
+
+
+# -- #798: a review edit adds the opening an unsized gap left out -------------
+
+
+def _gap_run(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_t_real_set_798", Path(__file__).with_name("test_real_set.py")
+    )
+    T = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(T)
+    # two 4'-0" rows that disagree on height: the gap stays unsized
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W3", "4'-0\"", "7'-0\"", "FIXED")]
+    model, _rep = T._one_floor(tmp_path, rows)
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    return model, rq
+
+
+def _added(m, rq):
+    return R._find_opening(m, rq.target["gap"]["opening_id"])
+
+
+def test_gap_edit_with_a_schedule_tag_adds_the_opening_and_revert_removes_it(tmp_path):
+    from validate import _Ctx
+    from validate.invariants import _check_takeoff_counts_reconcile
+
+    m, rq = _gap_run(tmp_path)
+    gap = rq.target["gap"]
+    assert R.edit_field(m, rq) == "opening" and gap["candidates"] == ["W1", "W3"]
+    assert _added(m, rq)[1] is None
+    tpl = R.template(m, "x")
+    edit = {"id": rq.id, "action": "edit", "value": "W1"}
+    assert R.apply_decisions(m, _doc0(tpl, edit))["edit"] == 1
+    sp, op = _added(m, rq)
+    assert sp.id == gap["space_id"] and (op.tag, op.category) == ("W1", "window")
+    assert op.width_m == pytest.approx(48 * 0.0254) and op.height_m == pytest.approx(1.524)
+    assert op.area_m2 == pytest.approx(op.width_m * op.height_m)
+    assert op.s_center_m == gap["s_center_m"]
+    assert sum(op.host_interval_m) / 2 == pytest.approx(gap["s_center_m"], abs=1e-4)
+    assert op.provenance.method == "review_edit" and not op.needs_review
+    assert any(f"{rq.id} edit: W1 (opening None ->" in e.note for e in m.revision_log)
+    r = _check_takeoff_counts_reconcile(_Ctx(model=m))
+    assert r.severity == "pass" and "1 window(s) added in review" in r.message
+    # replaying the same file again changes nothing
+    assert R.apply_decisions(m, _doc0(tpl, edit))["unchanged"] == 1
+    # revert, confirm and reject all mean "the pipeline was right to leave it out"
+    for act in ("revert", "confirm", "reject"):
+        R.apply_decisions(m, _doc0(tpl, edit))
+        assert _added(m, rq)[1] is not None
+        R.apply_decisions(m, _doc0(tpl, edit, {"id": rq.id, "action": act}))
+        assert _added(m, rq)[1] is None, act
+
+
+def test_gap_edit_with_typed_sizes_adds_an_untagged_opening(tmp_path):
+    m, rq = _gap_run(tmp_path)
+    v = "category=door width_m=1.2 height_m=2.1"
+    R.apply_decisions(m, _doc(m, {"id": rq.id, "action": "edit", "value": v}))
+    _sp, op = _added(m, rq)
+    assert (op.tag, op.category, op.width_m, op.height_m) == ("", "door", 1.2, 2.1)
+    assert op.sill_m is None and op.head_m is None
+    (tmp_path / "b").mkdir()
+    m2, rq2 = _gap_run(tmp_path / "b")
+    v = "category=window width_m=1.0 height_m=1.5 sill_m=0.9"
+    R.apply_decisions(m2, _doc(m2, {"id": rq2.id, "action": "edit", "value": v}))
+    _sp, op = _added(m2, rq2)
+    assert (op.sill_m, op.head_m) == (0.9, 2.4)
+
+
+@pytest.mark.parametrize(
+    "value, why",
+    [
+        ("W9", "not in the model's schedules"),
+        ("category=window width_m=2.0 height_m=1.5", "wider than"),
+        ("category=window width_m=1.0", "missing height_m"),
+        ("category=skylight width_m=1.0 height_m=1.0", "not one of"),
+        ("category=window width_m=1.0 height_m=1.5 depth=2", "unknown key"),
+        ("category=window width_m=1.0 height_m=99", "outside"),
+    ],
+)
+def test_bad_gap_edits_refuse_the_file_and_change_nothing(tmp_path, value, why):
+    m, rq = _gap_run(tmp_path)
+    before = m.to_json()
+    with pytest.raises(ValueError, match=why):
+        R.apply_decisions(m, _doc(m, {"id": rq.id, "action": "edit", "value": value}))
+    assert m.to_json() == before
+
+
+def test_gap_items_are_editable_on_the_page_and_tolerance_matches_the_pipeline(tmp_path):
+    import real_set
+
+    m, rq = _gap_run(tmp_path)
+    page = R.render_html(m, R.template(m, "x"))
+    assert '"field": "opening"' in page
+    assert R.GAP_WIDTH_TOL_M == real_set.WIDTH_TOL_M
+    # an old model whose gap item has no "gap" record still records only
+    rq.target = {"kind": "wall", "id": rq.target["id"]}
+    assert R.edit_field(m, rq) == ""

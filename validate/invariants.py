@@ -142,11 +142,13 @@ def _check_takeoff_counts_reconcile(ctx: _Ctx) -> CheckResult:
     sched = ctx.model.schedules  # tag -> dict with width_m/height_m
     by_tag = {}
     bad_tags = []
+    reviewed = 0  # windows a review edit added (#798), counted like any other
     for sid, sp in ctx.model.spaces.items():
         for o in sp.openings:
             if o.category != "window" or not o.tag:
                 continue
             by_tag.setdefault(o.tag, []).append(o.area_m2 or 0.0)
+            reviewed += bool(o.provenance and o.provenance.method == "review_edit")
     msgs = []
     for tag, areas in sorted(by_tag.items()):
         e = sched.get(tag, {})
@@ -170,7 +172,8 @@ def _check_takeoff_counts_reconcile(ctx: _Ctx) -> CheckResult:
         "takeoff_counts_reconcile",
         "Takeoff counts reconcile",
         "pass",
-        f"{len(by_tag)} window tag(s): count x dims matches recorded areas",
+        f"{len(by_tag)} window tag(s): count x dims matches recorded areas"
+        + (f" ({reviewed} window(s) added in review)" if reviewed else ""),
     )
 
 

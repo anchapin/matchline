@@ -6,6 +6,11 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Added
+- Review: an edit on an `opening_unsized` item adds the opening the pipeline left
+  out, from a schedule tag or typed sizes, checked against the drawn gap before
+  anything changes; revert, confirm or reject remove it (#798).
+
 ### Changed
 - gbXML export now writes and validates against schema 8.01 (was 6.01), using a
   local copy of the 8.01 xsd whose `versionEnum` adds `7.03` and `8.01`; the
