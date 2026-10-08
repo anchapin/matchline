@@ -7,7 +7,7 @@ disclosed, not hidden.
 | Doc | What it covers |
 |---|---|
 | `belief_derivation.md` | Derivation of the WiSARD belief/normalization formulas |
-| `bem_export.md` | gbXML 6.01 + IFC4 export paths and validation |
+| `bem_export.md` | gbXML 8.01 + IFC4 export paths and validation |
 | `building_model.md` | Canonical `BuildingModel`: spaces, provenance, review queue |
 | `cli.md` | CLI reference: `matchline` command-line interface |
 | `CODE-REVIEW.md` | Code review standards and per-PR checklist (severity levels, domain-specific focus, anti-patterns) |

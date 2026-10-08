@@ -52,7 +52,7 @@
 
 **BEM Export:**
 - Location: `bem_export.py`
-- Purpose: gbXML 6.01 + IFC4 export from canonical model
+- Purpose: gbXML 8.01 + IFC4 export from canonical model
 - Contains: `model_from_takeoff()`, export functions
 - Depends on: `building_model`, `geometry_simplify`
 - Used by: CLI commands, pipeline
@@ -138,7 +138,7 @@
 5. Elevation windows → exact placement + sidelit daylight zones
 6. Geometry simplification → area-budgeted surface reduction
 7. Validation battery → 28 checks, errors block export
-8. BEM export → gbXML 6.01 / IFC4
+8. BEM export → gbXML 8.01 / IFC4
 
 **BIM Import Path:**
 

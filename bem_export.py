@@ -1,4 +1,4 @@
-"""BEM export: gbXML 6.01 (primary) + IFC4 (via IfcOpenShell) from takeoff results.
+"""BEM export: gbXML 8.01 (primary) + IFC4 (via IfcOpenShell) from takeoff results.
 
 Input contracts (from the pipeline):
   * ``takeoff`` : datasets_adapter.TakeoffResult
@@ -12,8 +12,8 @@ Input contracts (from the pipeline):
 
 Pipeline:
   model_from_takeoff(...) -> BEMModel (units: meters, x=east, y=north, z=up)
-  write_gbxml(model, path)   -> gbXML 6.01 file
-  validate_gbxml(path)       -> (ok, errors) via lxml against the 6.01 XSD
+  write_gbxml(model, path)   -> gbXML 8.01 file
+  validate_gbxml(path)       -> (ok, errors) via lxml against the 8.01 XSD
   write_ifc4(model, path)    -> IFC4 file (IfcOpenShell)
   validate_ifc4(path)        -> (ok, errors) round-trip structural checks
 
@@ -79,7 +79,7 @@ __all__ = [
     "write_ifc4",
 ]
 
-SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver6.01.xsd"
+SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
 
 
 def _validate_out_path(path: str | Path) -> Path:
@@ -128,7 +128,7 @@ def _gbxml_root(model: BEMModel):
             "lengthUnit": "Meters",
             "areaUnit": "SquareMeters",
             "volumeUnit": "CubicMeters",
-            "version": "6.01",
+            "version": "8.01",
             "useSIUnitsForResults": "true",
         },
     )
@@ -252,7 +252,7 @@ def _write_constructions(root, model: BEMModel, air_walls) -> dict:
 
 
 def write_gbxml(model: BEMModel, path: str | Path) -> Path:
-    """Write a gbXML 6.01 file for the model. Returns the path written."""
+    """Write a gbXML 8.01 file for the model. Returns the path written."""
     if len(getattr(model, "levels", None) or []) > 1:
         # several storeys (#639): its own writer; single-storey output is unchanged
         from bem_multistorey import write_gbxml_levels
@@ -866,7 +866,7 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
 
 
 def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tuple[bool, list]:
-    """Validate a gbXML file against the 6.01 XSD with lxml.
+    """Validate a gbXML file against the 8.01 XSD with lxml.
 
     Returns (ok, [error strings]). Falls back to well-formedness + key
     element checks if lxml or the XSD is unavailable.

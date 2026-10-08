@@ -60,7 +60,7 @@ def _parse_gbxml_areas_volumes(xml_path: Path):
     tree = safe_xml_parse(xml_path)
     root = tree.getroot()
 
-    # gbXML 6.01 uses namespace
+    # gbXML 8.01 uses namespace
     ns = {"g": GBXML_NS}
 
     spaces = {}

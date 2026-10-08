@@ -15,7 +15,7 @@ drawings
   → HVAC zoning (duct tracing)   →  hvac_trace
   → geometry simplification       →  geometry_simplify  (≤2% area drift)
   → validation battery           →  validate  (errors block export)
-  → BEM export                  →  bem_export (gbXML 6.01 / IFC4)
+  → BEM export                  →  bem_export (gbXML 8.01 / IFC4)
 
 See [`docs/pipeline.md`](docs/pipeline.md) for the full stage chain, intermediate
 artifact schemas, and auto-triage integration.
@@ -59,7 +59,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 | `registration.py` | Affine2D transforms, cross-sheet coordinate registration |
 | `datasets_adapter.py` | Detector → schedule join → count×width×height takeoffs |
 | `validate/` | 48-check invariant battery; errors **block export** |
-| `bem_export.py` | gbXML 6.01 + IFC4 export from canonical model |
+| `bem_export.py` | gbXML 8.01 + IFC4 export from canonical model |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0; Tier 1 = space attachment, open) |
 | `geometry_simplify.py` | Area-budgeted surface reduction (≤2% area drift default) |
 | `hvac_trace.py` | Duct tracing → terminal units → zone graphs |

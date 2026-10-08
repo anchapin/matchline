@@ -1,7 +1,7 @@
 # BEM Export — `bem_export.py`
 
 Exports Jesse-Vision takeoff results to formats that building energy
-modeling (BEM) software can import: **gbXML 6.01** (primary) and **IFC4**
+modeling (BEM) software can import: **gbXML 8.01** (primary) and **IFC4**
 (via IfcOpenShell). Demo: `run_bem_export.py`.
 
 ## Pipeline position
@@ -19,10 +19,15 @@ geometry does. The simplifier's area-preservation report
 (`area_delta_pct`, tolerance) is carried through on the model and embedded
 in the gbXML file comment.
 
-## Schema choices (gbXML 6.01)
+## Schema choices (gbXML 8.01)
 
-- Validated with lxml against the real 6.01 XSD
-  (`schemas/GreenBuildingXML_Ver6.01.xsd`, fetched from gbxml.org).
+- Validated with lxml against the 8.01 XSD
+  (`schemas/GreenBuildingXML_Ver8.01.xsd`, fetched from gbxml.org), with one local
+  fix: the published 8.01 schema lists `versionEnum` values only up to 6.01, so a
+  file declaring `version="8.01"` fails its own schema. Our copy adds `7.03` and
+  `8.01` to that list and changes nothing else; a test checks that the rest is
+  byte-identical to the published file. Drop the fix once gbXML publishes a
+  corrected schema.
 - Structure: `gbXML > Campus > (Location, Building > (BuildingStorey,
   Space*), Surface*)`, plus root-level `Zone` and `Construction` elements.
   (Non-obvious per the XSD: `Space` is a child of `Building`, `Zone` is a
@@ -90,7 +95,7 @@ midpoint (nearest-centroid fallback) for `AdjacentSpaceId`.
 ## Validation performed
 
 - **gbXML**: `validate_gbxml()` — lxml XSD validation against the official
-  6.01 schema, plus semantic checks the XSD can't express (id uniqueness,
+  8.01 schema, plus semantic checks the XSD can't express (id uniqueness,
   idRef integrity). Demo sheets 007/008/009: **PASS** (3/3).
 - **IFC4**: `validate_ifc4()` — round-trip parse; checks schema version,
   wall SweptSolid geometry, space aggregation under the storey, and that
@@ -151,7 +156,7 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 
 ## OpenStudio round-trip gate (#628)
 
-`tests/test_openstudio_roundtrip.py` writes a flat, gable, hip and shed model, each with a window, a door, a skylight and an overhang. Each file goes through OpenStudio's gbXML reverse translator, and the test fails on any translation error, on a missing surface or sub-surface, on a space that is not an enclosed volume, or on a space volume that differs from ours. The only message allowed through is OpenStudio's note that a 6.01 file skips its 7.03 schema check; we validate against the 6.01 XSD ourselves. CI installs the `openstudio` extra (`pip install -e ".[test,openstudio]"`). Without it, the tests skip.
+`tests/test_openstudio_roundtrip.py` writes a flat, gable, hip and shed model, each with a window, a door, a skylight and an overhang. Each file goes through OpenStudio's gbXML reverse translator, and the test fails on any translation error, on a missing surface or sub-surface, on a space that is not an enclosed volume, or on a space volume that differs from ours. The only message allowed through is OpenStudio's note that a file of another version skips its 7.03 schema check; we validate against the 8.01 XSD ourselves. CI installs the `openstudio` extra (`pip install -e ".[test,openstudio]"`). Without it, the tests skip.
 
 The gate's first finding (#627): OpenStudio reads only `PlanarGeometry`, so walls written with `RectangularGeometry` alone were dropped together with their windows and doors. Every wall now carries a PolyLoop (its true outline under a sloped roof), and wall openings carry an absolute PolyLoop alongside their local rectangle.
 

@@ -49,7 +49,7 @@ Quality grades per domain/layer. Scores are qualitative assessments based on tes
 
 **Grade: A-** (was B+)
 
-- gbXML 6.01 and IFC4 export paths, both parsed with `safe_xml` (#272)
+- gbXML 8.01 and IFC4 export paths, both parsed with `safe_xml` (#272)
 - y-down → north-up flip explicit in `model_from_takeoff()`
 - Multi-storey export with inter-storey surface matching and shaft stacks (#632, #639)
 - OpenStudio round-trip gate in CI; RectangularGeometry-only walls fixed (#627, #628)

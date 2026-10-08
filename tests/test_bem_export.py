@@ -343,3 +343,28 @@ class TestBEMExportRoundtripBATTERY:
         check_report = run_checks(model, sres=sres, gbxml_path=str(gbxml_path))
         assert check_report.ok, f"BATTERY checks failed: {[e.message for e in check_report.errors]}"
         assert export_gate(check_report), "export gate closed with BATTERY validation"
+
+
+# -- #804: gbXML 8.01 with the versionEnum fix --------------------------------
+UPSTREAM_801_SHA256 = "83f37b01e2cfe3a07f67bd6611d54efd1aa0c910e0e9ed64d85b6f71951381b3"
+
+
+def test_export_version_is_allowed_by_its_own_patched_8_01_schema():
+    """The published 8.01 xsd lists versionEnum only up to 6.01; our copy adds
+    7.03 and 8.01 and nothing else, and the export declares 8.01."""
+    import hashlib
+    import re
+
+    from bem_export import SCHEMA_PATH
+
+    s = SCHEMA_PATH.read_text(encoding="utf-8")
+    assert SCHEMA_PATH.name == "GreenBuildingXML_Ver8.01.xsd"
+    enum = s[s.index('name="versionEnum"') :]
+    enum = enum[: enum.index("</xsd:simpleType>")]
+    assert re.findall(r'value="([0-9.]+)"', enum)[-3:] == ["6.01", "7.03", "8.01"]
+    # undo the patch and the note: what is left is byte-identical to upstream
+    up = re.sub(r"\n<!-- matchline local patch:.*?-->", "", s, count=1, flags=re.S)
+    up = up.replace(
+        '\t\t\t<xsd:enumeration value="7.03"/>\n\t\t\t<xsd:enumeration value="8.01"/>\n', "", 1
+    )
+    assert hashlib.sha256(up.encode("utf-8")).hexdigest() == UPSTREAM_801_SHA256

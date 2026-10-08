@@ -77,7 +77,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `link/` | Cross-discipline linking: fixtures/sensors/diffusers/windows → rooms |
 | `elevation_windows.py` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
-| `bem_export.py` | gbXML 6.01 + IFC4 export |
+| `bem_export.py` | gbXML 8.01 + IFC4 export |
 | `pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
 | `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
 | `sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
