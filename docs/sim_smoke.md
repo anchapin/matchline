@@ -68,3 +68,13 @@ occupied hours 0 heating / 1.3 cooling, site EUI 836.2 MJ/m2: about CBECS
 p73, above the p70 cap, so `eui_out_of_band`, and 2.6x the 90.1-2019 prototype.
 Natural-gas heating is 528.6 MJ/m2 against the prototype's 21.2; tracked in
 its own issue (#768).
+
+## After #768 (2026-10-07)
+
+Two cited defaults replace the placeholders: exterior walls and roof with no
+named assembly take the Appendix G baseline classes (G3.1-5(b): steel-framed
+wall U 0.3123, IEAD roof U 0.1817 W/m2K, 90.1-2019 Table 5.5-5), and
+`sim/typical.rb` sets infiltration to the DOE prototype rate per above-grade
+exterior wall area, 0.2016 cfm/ft2 (0.001024 m3/s-m2, PNNL-18898). Seed 101:
+site EUI 671.6 MJ/m2 (`ok`, inside 211.0-803.7), 2.08x the prototype; gas
+heating 378.3 MJ/m2; unmet 0 heating / 0.7 cooling h.

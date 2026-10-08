@@ -128,3 +128,36 @@ def test_convention_report_carries_constructions():
     rep = build_convention_report(m, constructions=s)["constructions"]
     assert "W-1" in rep["resolved"] and "EXT-1" in rep["unmatched"]
     assert "constructions" not in build_convention_report(_model(**{"W-1": ("8in CMU", None)}))
+
+
+def test_baseline_defaults_fill_unnamed_walls_and_roof():
+    """#768: no assembly named at all -> Appendix G baseline classes, cited."""
+    m = _model()
+    s = apply_construction_library(m, "5A")
+    wall = lookup("ExteriorWall", "SteelFramed", "5A")
+    roof = lookup("ExteriorRoof", "IEAD", "5A")
+    assert m.envelope[0].construction_id == "appg-wall"
+    assert m.constructions["appg-wall"].u_value_w_m2k == wall.u_si
+    assert m.roof_construction_id == "appg-roof"
+    assert m.constructions["appg-roof"].u_value_w_m2k == roof.u_si
+    for cid in ("appg-wall", "appg-roof"):
+        prov = m.constructions[cid].provenance
+        assert prov.method == METHOD and "Table 5.5-5" in prov.note and "G3.1-5(b)" in prov.note
+    assert s.defaulted["appg-wall"]["segments"] == ["w1"]
+    assert m.spaces["S1"].wall_u_value_w_m2k == pytest.approx(wall.u_si)
+
+
+def test_baseline_defaults_need_a_climate_zone():
+    m = _model()
+    s = apply_construction_library(m, "")
+    assert not s.defaulted and not m.constructions
+    assert m.envelope[0].construction_id == "" and m.roof_construction_id == ""
+
+
+def test_baseline_defaults_never_replace_a_named_assembly():
+    m = _model(**{"EXT-1": ("", None), "R-1": ("roof", 0.25)})
+    m.roof_construction_id = "R-1"
+    s = apply_construction_library(m, "5A")
+    assert not s.defaulted
+    assert m.envelope[0].construction_id == "EXT-1"
+    assert m.constructions["R-1"].u_value_w_m2k == 0.25

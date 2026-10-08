@@ -32,6 +32,15 @@ ok = OpenstudioStandards::CreateTypical.create_typical_building_from_model(
   add_refrigeration: false, sizing_run_directory: "#{out}/sizing"
 )
 abort('create_typical_building_from_model failed') unless ok
+# Infiltration (#768): the DOE prototype rate per above-grade exterior wall
+# area, Idesign = 0.2016 cfm/ft2 (0.001024 m3/s-m2), PNNL-18898 (Gowri et al.
+# 2009) from 1.8 cfm/ft2 at 75 Pa. openstudio-standards applies its rate per
+# exterior surface area, roof included, which over-counts a one-storey
+# flat-roof building. Schedules and wind coefficients are left as created.
+INFIL_M3_S_PER_M2_WALL = 0.001024
+model.getSpaceInfiltrationDesignFlowRates.each do |inf|
+  inf.setFlowperExteriorWallArea(INFIL_M3_S_PER_M2_WALL)
+end
 puts "zones=#{model.getThermalZones.size} airloops=#{model.getAirLoopHVACs.size} " \
      "conditioned_area_m2=#{model.getBuilding.conditionedFloorArea}"
 model.save(OpenStudio::Path.new("#{out}/typical.osm"), true)
