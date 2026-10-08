@@ -110,6 +110,7 @@ class LibraryRow:
     source_construction: str
     u_ip: Optional[float]
     u_si: Optional[float]
+    f_ip: Optional[float] = None  # slab F-factor, Btu/h-ft-F (GroundContactFloor rows)
 
     @property
     def table(self) -> str:
@@ -131,6 +132,7 @@ def lookup(
         row["source_construction"],
         row["u_ip"],
         row["u_si"],
+        row.get("f_ip"),
     )
 
 
@@ -236,6 +238,7 @@ def apply_construction_library(
 # drawings name no assembly at all; the U-value is still the Table 5.5 row.
 DEFAULT_WALL_ID = "appg-wall"
 DEFAULT_ROOF_ID = "appg-roof"
+DEFAULT_SLAB_ID = "appg-slab"
 _BASELINE = {
     DEFAULT_WALL_ID: (
         "ExteriorWall",
@@ -250,7 +253,8 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
     """Default walls with no construction and an unset roof to the baseline (#768).
 
     A segment that already points at a construction (resolved or not) and a
-    stated roof are left alone; the slab is not defaulted (F-factor, later).
+    stated roof are left alone. An unset slab gets the unheated-slab F-factor
+    as an effective U (``_default_slab``).
     """
     from building_model import Construction
 
@@ -285,3 +289,99 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
         else:
             model.roof_construction_id = cid
         s.defaulted[cid] = info
+    if not (getattr(model, "slab_construction_id", "") or ""):
+        _default_slab(model, s, climate_zone, category)
+
+
+# 1 Btu/h-ft-F = 1.730735 W/m-K (F-factor, heat loss per length of exposed slab edge)
+F_IP_TO_SI = 1.730735
+
+
+def _slab_geometry(model):
+    """(area_m2, exposed_perimeter_m, level_id) of the ground-floor footprint.
+
+    The footprint is the same union the exporters write as the SlabOnGrade
+    surface (``footprint_from_regions``: holes dropped, largest part of
+    disjoint wings), taken over the spaces on the lowest level. None when the
+    model has no space polygons.
+    """
+    from geometry_simplify import footprint_from_regions
+
+    spaces = [sp for sp in (model.spaces or {}).values() if len(sp.polygon_m or []) >= 3]
+    if not spaces:
+        return None
+    elev = {lv.id: lv.elevation_z_m for lv in (getattr(model, "levels", None) or [])}
+    low = min(elev.get(sp.level_id, 0.0) for sp in spaces)
+    ground = [sp for sp in spaces if abs(elev.get(sp.level_id, 0.0) - low) < 1e-6]
+    ring = footprint_from_regions([sp.polygon_m for sp in ground])
+    if len(ring) < 3:
+        return None
+    area = perim = 0.0
+    for i, (x0, y0) in enumerate(ring):
+        x1, y1 = ring[(i + 1) % len(ring)]
+        area += x0 * y1 - x1 * y0
+        perim += ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+    area = abs(area) / 2.0
+    if area <= 0 or perim <= 0:
+        return None
+    return area, perim, ground[0].level_id
+
+
+def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
+    """Unset slab -> unheated-slab F-factor as an effective U (#747).
+
+    90.1-2019 Appendix G Table G3.1-5(b): slab-on-grade floors match the
+    F-factor for unheated slabs from Tables 5.5. gbXML carries a U-value, not
+    an F-factor, so the slab gets the U that loses the same heat:
+    U = F x exposed perimeter / slab area (F-factor definition, heat loss per
+    unit length of exposed edge per degree indoor-outdoor). The perimeter and
+    area are the footprint the exporters write.
+    """
+    from building_model import Construction
+
+    cid = DEFAULT_SLAB_ID
+    row = lookup("GroundContactFloor", "Unheated", climate_zone, category)
+    if row is None or row.f_ip is None:
+        s.unmatched[cid] = f"no Table 5.5 F-factor for {category} unheated slab"
+        return
+    geo = _slab_geometry(model)
+    if geo is None:
+        s.unmatched[cid] = "slab: no ground-floor space polygons for perimeter and area"
+        return
+    area, perim, level_id = geo
+    f_si = row.f_ip * F_IP_TO_SI
+    u = round(f_si * perim / area, 6)
+    why = (
+        "no slab assembly stated; Appendix G G3.1-5(b) unheated slab F-factor "
+        f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
+        f"{perim:.2f} m / slab area {area:.2f} m2 (footprint of level {level_id})"
+    )
+    prov = Provenance(
+        sheet_id="",
+        revision=0,
+        method=METHOD,
+        confidence=CONFIDENCE,
+        note=(
+            f"{SOURCE}, {EDITION} {row.table} ({SOURCE_VERSION}); {row.category} "
+            f"GroundContactFloor Unheated, climate zone {climate_zone}; {cid}: {why}; "
+            "code maximum, not the drawn assembly"
+        ),
+    )
+    model.constructions[cid] = Construction(
+        id=cid,
+        name="Slab on grade, Appendix G baseline (default)",
+        u_value_w_m2k=u,
+        provenance=prov,
+    )
+    model.slab_construction_id = cid
+    s.defaulted[cid] = {
+        "surface": "GroundContactFloor",
+        "construction_type": "Unheated",
+        "table": row.table,
+        "f_ip": row.f_ip,
+        "f_si": round(f_si, 6),
+        "exposed_perimeter_m": round(perim, 4),
+        "area_m2": round(area, 4),
+        "u_si": u,
+        "why": why,
+    }
