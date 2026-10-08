@@ -282,3 +282,58 @@ def test_single_sheet_image_fails_loudly_and_points_to_the_set(tmp_path, capsys)
     assert "[Stage 2: build_model]" in err and "no walls or rooms" in err
     assert "hint: Run the PDF drawing set instead: matchline run --set" in err
     assert json.loads((out / "stage_01_building.json").read_text())["n_detections"] == 1
+
+
+def _one_floor_thermal(tmp_path, rows, u_head="U-FACTOR (BTU/HR-SF-F)"):
+    from test_pdf_schedules import window_thermal_schedule
+
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1)]
+    pages.append(_tb("A-601", "WINDOW SCHEDULE") + window_thermal_schedule(u_head, rows, 100, 1000))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+
+
+def test_scheduled_window_u_shgc_vt_become_its_construction(tmp_path):
+    model, _rep = _one_floor_thermal(tmp_path, [("W1", "4'-0\"", "5'-0\"", "0.36", "0.38", "0.42")])
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    c = model.constructions[op.construction_id]
+    assert c.u_value_w_m2k == pytest.approx(0.36 * 5.678263, abs=1e-4)
+    assert (c.shgc, c.vt) == (0.38, 0.42)
+    assert c.provenance.method == "pdf_schedule_thermal" and c.provenance.confidence == 0.9
+    assert c.provenance.sheet_id == "A-601"  # the schedule sheet, not the plan
+    assert "first placed on plan A-101" in c.provenance.note
+    # Table 5.5 never replaces it
+    from construction_library import apply_construction_library
+
+    apply_construction_library(model, climate_zone="5A")
+    assert op.construction_id == c.id
+
+
+def test_same_width_windows_with_different_u_go_to_review(tmp_path):
+    rows = [
+        ("W1", "4'-0\"", "5'-0\"", "0.36", "0.38", "0.42"),
+        ("W2", "4'-0\"", "5'-0\"", "0.30", "0.25", "0.40"),
+    ]
+    model, _rep = _one_floor_thermal(tmp_path, rows)
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    assert op.construction_id == ""  # size agrees, thermal values do not
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_thermal_ambiguous"]
+    assert "W1" in rq.description and "W2" in rq.description
+
+
+def test_scheduled_window_construction_reaches_the_gbxml(tmp_path):
+    from test_pdf_schedules import window_thermal_schedule
+
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1)]
+    pages.append(
+        _tb("A-601", "WINDOW SCHEDULE")
+        + window_thermal_schedule(
+            "U-FACTOR (BTU/HR-SF-F)",
+            [("W1", "4'-0\"", "5'-0\"", "0.36", "0.38", "0.42")],
+            100,
+            1000,
+        )
+    )
+    out = tmp_path / "run"
+    run_pipeline.main(_args(_set(tmp_path, pages), out))
+    xml = (out / "stage_06_bem" / "set.xml").read_text()
+    assert "<WindowType" in xml and "SCHED-WINDOW-U2.0442" in xml

@@ -224,3 +224,61 @@ def test_cli_schedules(tmp_path, capsys):
     main(["schedules", str(tmp_path / "out")])
     printed = capsys.readouterr().out
     assert "door" in printed and "DOOR SCHEDULE  rows 3" in printed
+
+
+# ---- stated U, SHGC and VT on door/window schedules (#746) -------------------
+
+
+def window_thermal_schedule(u_head, rows, x=60, ytop=740):
+    heights = [14] + [14] * len(rows)
+    cells = {(0, 0): "MARK", (0, 1): "WIDTH", (0, 2): "HEIGHT", (0, 3): u_head,
+             (0, 4): "SHGC", (0, 5): "VT"}  # fmt: skip
+    for i, r in enumerate(rows):
+        for c, v in enumerate(r):
+            cells[(1 + i, c)] = v
+    return text(x, ytop + 6, "WINDOW SCHEDULE", 10) + grid(
+        x, ytop, [40, 40, 40, 130, 40, 40], heights, cells=cells
+    )
+
+
+def _win(tmp_path, u_head, rows):
+    (s,) = extract_schedules(_sheet(tmp_path, window_thermal_schedule(u_head, rows)), "A-601")
+    assert s.status == "ok", s.reason
+    return s.entries
+
+
+FT = ("4'-0\"", "5'-0\"")
+
+
+def test_window_u_ip_from_the_header(tmp_path):
+    e = _win(tmp_path, "U-FACTOR (BTU/HR-SF-F)", [("W1", *FT, "0.36", "0.38", "0.42")])["W1"]
+    assert e["u_value_w_m2k"] == pytest.approx(0.36 * 5.678263, abs=1e-4)
+    assert (e["shgc"], e["vt"], e["thermal_confidence"]) == (0.38, 0.42, 0.9)
+    assert "Btu/h-ft2-F" in e["thermal_note"]
+
+
+def test_window_u_si_from_the_header(tmp_path):
+    e = _win(tmp_path, "U-VALUE (W/M2K)", [("W1", *FT, "2.04", "0.38", "")])["W1"]
+    assert e["u_value_w_m2k"] == pytest.approx(2.04)
+    assert e["vt"] is None and e["thermal_confidence"] == 0.9
+
+
+def test_window_u_without_units_is_ip_only_for_feet_and_inches(tmp_path):
+    e = _win(tmp_path, "U-VALUE", [("W1", *FT, "0.36", "0.38", "0.42")])["W1"]
+    assert e["u_value_w_m2k"] == pytest.approx(2.0442, abs=1e-4)
+    assert e["thermal_confidence"] == 0.75 and "states no units" in e["thermal_note"]
+    (tmp_path / "mm").mkdir()
+    e = _win(tmp_path / "mm", "U-VALUE", [("W1", "1200", "1500", "2.0", "0.38", "")])["W1"]
+    assert e["u_value_w_m2k"] is None and e["thermal_confidence"] is None
+    assert "not used" in e["thermal_note"]
+
+
+def test_window_shgc_out_of_range_is_not_read(tmp_path):
+    e = _win(tmp_path, "U-FACTOR (BTU/HR-SF-F)", [("W1", *FT, "0.36", "1.5", "0.42")])["W1"]
+    assert e["shgc"] is None and e["vt"] == 0.42
+    assert "SHGC '1.5' not read" in e["thermal_note"]
+
+
+def test_door_schedule_without_thermal_columns_is_unchanged(full):
+    e = full[0]["door"].entries["D1"]
+    assert e["u_value_w_m2k"] is None and e["thermal_note"] == ""

@@ -27,6 +27,8 @@ What this slice does not invent:
   not modelled. Interior gaps are counted only. Each level reports
   `openings: {exterior, interior, modelled, unsized}` beside `plan_openings`.
   Window sills use the export's 0.9 m convention until elevations are read.
+  A matched gap whose schedule rows state U, SHGC or VT gets a stated construction
+  from them (see `docs/pdf_schedules.md`); rows that disagree go to review.
 - Mechanical symbols. Mechanical plans are marked `failed` at the symbols stage until
   the detector provider (#743) is wired in.
 
