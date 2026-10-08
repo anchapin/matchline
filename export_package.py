@@ -13,8 +13,9 @@
 The report only reads what the run already wrote: inputs and their hashes,
 what was extracted, the convention biases, the validation summary, the open
 review items and every default the model used with its source. The editable
-decisions file belongs to the review report (#749) and is listed as not yet
-available rather than invented.
+decisions file comes from the HTML review report (#749): when the run wrote
+one, ``review/`` (page, decisions template, model) is copied into the package
+and the report says how to replay it.
 """
 
 from __future__ import annotations
@@ -92,7 +93,25 @@ def _inputs(inputs: Iterable[dict]) -> List[dict]:
     return out
 
 
-def build_trust_report(model, report, convention: dict, inputs: Iterable[dict] = ()) -> dict:
+def _decisions(review_dir, n_open: int) -> dict:
+    """Where the reviewer records decisions (#749), or why there is nothing yet."""
+    if not review_dir or not (Path(review_dir) / "decisions.json").exists():
+        return {"available": False, "reason": "no review report was written for this run"}
+    return {
+        "available": True,
+        "page": "review/review.html",
+        "file": "review/decisions.json",
+        "note": (
+            f"{n_open} open item(s): review them in review/review.html, export "
+            "decisions.json, then run: matchline review review/model.json "
+            "--apply decisions.json"
+        ),
+    }
+
+
+def build_trust_report(
+    model, report, convention: dict, inputs: Iterable[dict] = (), review_dir=None
+) -> dict:
     """The trust report as data; every number names where it was read from."""
     spaces = list(model.spaces.values())
     openings = [o for s in spaces for o in s.openings]
@@ -125,6 +144,7 @@ def build_trust_report(model, report, convention: dict, inputs: Iterable[dict] =
     }
     open_items = [r for r in model.review_queue if getattr(r, "needs_review", True)]
     open_items.sort(key=lambda r: float(getattr(r, "confidence", 0) or 0))
+    n_open = len(open_items)
     review = {
         "open": _num(
             "open review items", len(open_items), "stage_02_model.json model.review_queue"
@@ -182,10 +202,7 @@ def build_trust_report(model, report, convention: dict, inputs: Iterable[dict] =
         "validation": validation,
         "review": review,
         "defaults": defaults,
-        "decisions_file": {
-            "available": False,
-            "reason": "the editable decisions file comes with the review report (#749)",
-        },
+        "decisions_file": _decisions(review_dir, n_open),
     }
 
 
@@ -295,10 +312,15 @@ def render_html(tr: dict) -> str:
         f"<h2>Defaults used: {len(tr['defaults'])}</h2>",
         _table(["where", "source"], dfl) or "<p>no defaults used</p>",
         "<h2>Review decisions</h2>",
-        f"<p>{_e(tr['decisions_file']['reason'])}</p>",
+        f"<p>{_e(_dnote(tr))}</p>",
         "</body></html>",
     ]
     return "\n".join(p for p in parts if p) + "\n"
+
+
+def _dnote(tr: dict) -> str:
+    d = tr["decisions_file"]
+    return d.get("note") or d.get("reason", "")
 
 
 def _cells(rows: List[List[str]]):
@@ -375,7 +397,7 @@ def write_pdf(tr: dict, path: Path) -> None:
               (0.45, 0.55))
         or Paragraph("no defaults used", body),
         Paragraph("Review decisions", h2),
-        Paragraph(html.escape(tr["decisions_file"]["reason"]), body),
+        Paragraph(html.escape(_dnote(tr)), body),
         Spacer(1, 2),
     ]  # fmt: skip
     frame = KeepInFrame(w - 2 * m, h - 2 * m, [p for p in parts if p is not None], mode="shrink")
@@ -403,6 +425,7 @@ def build_package(
     files: Iterable[Path],
     inputs: Iterable[dict] = (),
     pdf: bool = True,
+    review_dir: Optional[Path] = None,
 ) -> Path:
     """Write ``out_dir/package``; returns its path."""
     pkg = Path(out_dir) / "package"
@@ -411,7 +434,14 @@ def build_package(
         if f and Path(f).exists():
             shutil.copy2(f, pkg / Path(f).name)
     (pkg / "convention_report.json").write_text(json.dumps(convention, indent=2, default=str))
-    tr = build_trust_report(model, report, convention, inputs)
+    if review_dir and Path(review_dir).is_dir():
+        rv = pkg / "review"
+        rv.mkdir(exist_ok=True)
+        for name in ("review.html", "decisions.json", "model.json"):
+            if (Path(review_dir) / name).exists():
+                shutil.copy2(Path(review_dir) / name, rv / name)
+        review_dir = rv
+    tr = build_trust_report(model, report, convention, inputs, review_dir)
     (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str))
     html_path = pkg / "trust_report.html"
     html_path.write_text(render_html(tr))
@@ -420,8 +450,8 @@ def build_package(
     manifest = {
         "schema": "matchline.package/1",
         "files": {
-            p.name: sha256(p)
-            for p in sorted(pkg.iterdir())
+            p.relative_to(pkg).as_posix(): sha256(p)
+            for p in sorted(pkg.rglob("*"))
             if p.is_file() and p.name != "manifest.json"
         },
         "pdf": {"produced": why is None, **({"reason": why} if why else {})},

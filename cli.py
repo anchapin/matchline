@@ -494,6 +494,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Output format for --list (default: text)",
     )
+    p.add_argument(
+        "--apply",
+        metavar="DECISIONS",
+        help="Replay a decisions.json exported from the HTML review report",
+    )
+    p.add_argument(
+        "--out", metavar="PATH", help="With --apply: write the reviewed model here, not in place"
+    )
+    p.add_argument(
+        "--report",
+        metavar="DIR",
+        help="Write the HTML review report to DIR/review (model, decisions template, page)",
+    )
     p.set_defaults(func=cmd_review)
 
     p = sub.add_parser(

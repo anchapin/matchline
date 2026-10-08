@@ -30,6 +30,7 @@ disclosed, not hidden.
 | `registration.md` | Sheet registration: plan + elevation affine alignment into canonical metres |
 | `review_classifier.md` | Local ML triage layer for the extraction review queue |
 | `room_labels.md` | OCR room names/numbers and polygon association |
+| `review_report.md` | HTML review report (`out/review/`), decisions file and `matchline review --apply` replay |
 | `run_review.md` | `matchline review` — review queue triage, `ReviewItem` fields, `validate.export_gate` blocking |
 | `safe_xml.md` | Hardened XML parser for XXE prevention |
 | `symbols.md` | Programmatic GD&T symbol rendering for synthetic training data |

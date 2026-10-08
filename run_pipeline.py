@@ -698,6 +698,12 @@ def main(args, config: dict | None = None) -> None:
         # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
         _stage_4b_auto_triage(model, out_dir)
 
+        # --- HTML review report, written before the fail-fast gate (#749) ---
+        from review_report import write_review
+
+        review_dir = write_review(out_dir, model)
+        print(f"  review: {review_dir / 'review.html'}")
+
         # --- Stage 5: fail-fast on validation errors ------------------------
         _stage_5_fail_fast(report, min_review_confidence)
 
@@ -712,7 +718,13 @@ def main(args, config: dict | None = None) -> None:
             from export_package import build_package
 
             pkg = build_package(
-                out_dir, model, report, conv, [gbxml_path, ifc_path], _run_inputs(args, config)
+                out_dir,
+                model,
+                report,
+                conv,
+                [gbxml_path, ifc_path],
+                _run_inputs(args, config),
+                review_dir=review_dir,
             )
             print(f"  package: {pkg}")
             _print_pipeline_complete(out_dir, report)

@@ -345,6 +345,35 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args.auto_triage:
         model.auto_triage = True
 
+    # --- Apply a decisions file from the HTML review report (#749) ---
+    if getattr(args, "apply", None):
+        import json
+
+        import review_report
+
+        try:
+            doc = json.loads(pathlib.Path(args.apply).read_text())
+            summary = review_report.apply_decisions(model, doc, review_report.sha256_text(raw))
+        except (OSError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        dest = pathlib.Path(getattr(args, "out", None) or model_path)
+        dest.write_text(model.to_json())
+        for w in summary["warnings"]:
+            print(f"Warning: {w}", file=sys.stderr)
+        print(review_report.summarize(summary))
+        print(f"Model saved: {dest}")
+        print(_summarize_validation(run_checks(model)))
+        return
+
+    # --- Write the HTML review report (#749) ---
+    if getattr(args, "report", None):
+        import review_report
+
+        d = review_report.write_review(pathlib.Path(args.report), model)
+        print(f"Review report: {d / 'review.html'}")
+        return
+
     # --- Confirm or Reject ---
     if args.confirm is not None or args.reject is not None:
         if args.confirm is not None and args.reject is not None:
@@ -455,6 +484,21 @@ def _build_argparser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
         help="Output format for --list (default: text)",
+    )
+    parser.add_argument(
+        "--apply",
+        metavar="DECISIONS",
+        help="Replay a decisions.json exported from the HTML review report",
+    )
+    parser.add_argument(
+        "--out",
+        metavar="PATH",
+        help="With --apply: write the reviewed model here instead of in place",
+    )
+    parser.add_argument(
+        "--report",
+        metavar="DIR",
+        help="Write the HTML review report to DIR/review (model, decisions template, page)",
     )
     return parser
 

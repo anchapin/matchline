@@ -71,7 +71,19 @@ def test_html_is_one_offline_page_with_the_disclaimer(pkg):
     assert E.DISCLAIMER in page
     assert not re.search(r'(src|href)\s*=\s*["\']?https?:', page)  # no external assets
     assert "<script" not in page
-    assert "#749" in page  # the decisions file is named as not yet available, not invented
+    assert "--apply decisions.json" in page  # how to replay the review decisions (#749)
+
+
+def test_package_carries_the_review_report_and_decisions_template(pkg):
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    assert tr["decisions_file"]["available"] is True
+    for name in ("review.html", "decisions.json", "model.json"):
+        assert (pkg / "review" / name).exists()
+    man = json.loads((pkg / "manifest.json").read_text())
+    assert "review/decisions.json" in man["files"]
+    doc = json.loads((pkg / "review" / "decisions.json").read_text())
+    model_sha = hashlib.sha256((pkg / "review" / "model.json").read_bytes()).hexdigest()
+    assert doc["model_sha256"] == model_sha and doc["decisions"] == []
 
 
 def test_manifest_hashes_match_the_files(pkg):
