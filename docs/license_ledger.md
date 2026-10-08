@@ -26,7 +26,8 @@ An artifact takes the most restrictive class among its datasets.
 The current detector weights are evaluation-only twice over: CubiCasa5K is
 non-commercial, and the YOLO11n starting weights are AGPL-3.0. A shippable
 detector (#743) needs both permissive training data and a permissively licensed
-model and starting weights.
+model and starting weights. `detection_provider.py` reads this ledger to mark a
+detector's output evaluation only (see `docs/detection_provider.md`).
 
 ## The quarantine rule
 

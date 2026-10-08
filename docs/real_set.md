@@ -29,8 +29,11 @@ What this slice does not invent:
   Window sills use the export's 0.9 m convention until elevations are read.
   A matched gap whose schedule rows state U, SHGC or VT gets a stated construction
   from them (see `docs/pdf_schedules.md`); rows that disagree go to review.
-- Mechanical symbols. Mechanical plans are marked `failed` at the symbols stage until
-  the detector provider (#743) is wired in.
+- Mechanical symbols. Mechanical plans are marked `failed` at the symbols stage unless a
+  detector provider runs. `--detector-config` picks one (see
+  `docs/detection_provider.md`); the report's `detector` block records which ran and
+  whether its weights are evaluation only. Detections are counted per sheet but not yet
+  joined to openings or tags.
 
 Validation closes area and volume per level, so stacked storeys no longer double-count
 against a single footprint.

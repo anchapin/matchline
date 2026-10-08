@@ -298,6 +298,13 @@ def parse_args():
         help="which elevation variant to link (default: elev_grid)",
     )
     ap.add_argument(
+        "--detector-config",
+        type=Path,
+        default=None,
+        help="JSON naming the door/window detection provider for --set (#743); "
+        "default: none. See docs/detection_provider.md",
+    )
+    ap.add_argument(
         "--storey-height",
         type=float,
         default=None,
@@ -337,12 +344,28 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                or (model, None, None) for aec_bench path.
     """
     if getattr(args, "set_pdf", None):
+        from detection_provider import (
+            ProviderConfigError,
+            ProviderLicenseError,
+            provider_from_config,
+        )
         from real_set import SetError, build_set_model
 
         try:
+            provider = provider_from_config(getattr(args, "detector_config", None))
             model, set_report = build_set_model(
-                args.set_pdf, out_dir, storey_height_m=getattr(args, "storey_height", None)
+                args.set_pdf,
+                out_dir,
+                storey_height_m=getattr(args, "storey_height", None),
+                provider=provider,
             )
+        except (ProviderConfigError, ProviderLicenseError) as e:
+            raise StageError(
+                "Stage 1: drawing set",
+                1,
+                str(e),
+                hint="--detector-config names the provider; see docs/detection_provider.md.",
+            ) from e
         except SetError as e:
             raise StageError(
                 "Stage 1: drawing set",
