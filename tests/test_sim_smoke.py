@@ -216,3 +216,20 @@ def test_cbecs_band_filters_and_converts(tmp_path):
 def test_unknown_reference_raises():
     with pytest.raises(KeyError):
         s.load_reference(s.REFERENCE, "Hospital", "90.1-2019", "5A")
+
+
+def test_typical_rb_uses_prototype_infiltration_per_wall_area():
+    """#768: PNNL-18898 Idesign 0.2016 cfm/ft2 of above-grade wall area."""
+    import re
+    from pathlib import Path
+
+    rb = (Path(__file__).resolve().parents[1] / "sim" / "typical.rb").read_text()
+    rate = float(re.search(r"INFIL_M3_S_PER_M2_WALL = ([0-9.]+)", rb).group(1))
+    cfm_ft2_to_m3_s_m2 = 0.3048**3 / 60 / 0.3048**2
+    assert rate == pytest.approx(0.2016 * cfm_ft2_to_m3_s_m2, abs=5e-7)
+    assert "setFlowperExteriorWallArea(INFIL_M3_S_PER_M2_WALL)" in rb
+    assert "PNNL-18898" in rb
+    # set inside the infiltration step, so the HVAC sizing run already sees it
+    hook = rb.index("def model_set_nist_infiltration")
+    assert hook < rb.index("create_typical_building_from_model(")
+    assert 'abort("infiltration rate not applied' in rb

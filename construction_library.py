@@ -142,6 +142,9 @@ class LibrarySummary:
     kept: List[str] = field(default_factory=list)  # ids with a stated U, untouched
     unmatched: Dict[str, str] = field(default_factory=dict)  # id -> reason
     not_run: str = ""  # why the library did not run at all
+    # Appendix G baseline defaults (#768): construction id -> row info, for
+    # walls/roof the drawings name no assembly for at all
+    defaulted: Dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -152,6 +155,7 @@ class LibrarySummary:
             "resolved": self.resolved,
             "kept_stated_values": sorted(self.kept),
             "unmatched": self.unmatched,
+            "defaulted": self.defaulted,
         }
 
 
@@ -220,6 +224,64 @@ def apply_construction_library(
             "u_si": row.u_si,
             "why": why,
         }
-    if s.resolved:
+    if climate_zone:
+        _apply_baseline_defaults(model, s, climate_zone, category)
+    if s.resolved or s.defaulted:
         apply_wall_u_rollup(model)
     return s
+
+
+# Appendix G baseline construction classes (90.1 G3.1-5(b)): exterior walls
+# steel-framed, roofs insulation entirely above deck. Used only where the
+# drawings name no assembly at all; the U-value is still the Table 5.5 row.
+DEFAULT_WALL_ID = "appg-wall"
+DEFAULT_ROOF_ID = "appg-roof"
+_BASELINE = {
+    DEFAULT_WALL_ID: (
+        "ExteriorWall",
+        "SteelFramed",
+        "Exterior wall, Appendix G baseline (default)",
+    ),
+    DEFAULT_ROOF_ID: ("ExteriorRoof", "IEAD", "Roof, Appendix G baseline (default)"),
+}
+
+
+def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, category: str):
+    """Default walls with no construction and an unset roof to the baseline (#768).
+
+    A segment that already points at a construction (resolved or not) and a
+    stated roof are left alone; the slab is not defaulted (F-factor, later).
+    """
+    from building_model import Construction
+
+    walls = [w for w in model.envelope if not (getattr(w, "construction_id", "") or "")]
+    targets = []
+    if walls:
+        targets.append(DEFAULT_WALL_ID)
+    if not (getattr(model, "roof_construction_id", "") or ""):
+        targets.append(DEFAULT_ROOF_ID)
+    for cid in targets:
+        surface, ctype, name = _BASELINE[cid]
+        row = lookup(surface, ctype, climate_zone, category)
+        if row is None or row.u_si is None:
+            s.unmatched[cid] = f"no Table 5.5 U-value for {category} {surface} {ctype}"
+            continue
+        why = "no assembly stated; Appendix G baseline class (G3.1-5(b))"
+        model.constructions[cid] = Construction(
+            id=cid, name=name, u_value_w_m2k=row.u_si, provenance=_prov(row, cid, why, climate_zone)
+        )
+        info = {
+            "surface": surface,
+            "construction_type": ctype,
+            "table": row.table,
+            "u_ip": row.u_ip,
+            "u_si": row.u_si,
+            "why": why,
+        }
+        if cid == DEFAULT_WALL_ID:
+            for w in walls:
+                w.construction_id = cid
+            info["segments"] = sorted(w.id for w in walls)
+        else:
+            model.roof_construction_id = cid
+        s.defaulted[cid] = info
