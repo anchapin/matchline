@@ -56,6 +56,8 @@ SWING_TOL = 0.20  # door swing radius match, fraction of the leaf width (#743)
 DOOR_CONFIDENCE = {"single": 0.85, "double": 0.8}
 WINDOW_CONFIDENCE = 0.75  # glazing line inside a wall run (#743)
 WINDOW_RETURN_M = 0.30  # wall must run on past the glazing at least this far on one side
+TAG_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,3}[A-Z]?$")  # W1, D-12, SF1, SF-1A (#793)
+TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
 
 Pt = Tuple[float, float]
 
@@ -215,6 +217,30 @@ def _glazing_windows(bands, walls, k: float, tol: float) -> List[Tuple["Wall", P
             out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0]))
             break
     return out
+
+
+def _attach_tags(openings: List[dict], spans, to_m) -> int:
+    """Schedule-tag text placed next to an opening labels it (#793).
+
+    A span reads as a tag when it looks like one (``TAG_RE``: W1, D-12,
+    SF-1). Each tag goes to the single nearest opening within
+    ``TAG_RADIUS_M``; an opening keeps the nearest tag. Whether the tag is
+    really scheduled is for the caller to check.
+    """
+    lines = [LineString([o["a_m"], o["b_m"]]) for o in openings]
+    best: Dict[int, Tuple[float, str]] = {}
+    for text, (x0, y0, x1, y1) in spans:
+        t = str(text).strip().upper()
+        if not TAG_RE.match(t) or not lines:
+            continue
+        c = Point(to_m(((x0 + x1) / 2, (y0 + y1) / 2)))
+        d, i = min((ln.distance(c), i) for i, ln in enumerate(lines))
+        if d <= TAG_RADIUS_M and (i not in best or d < best[i][0]):
+            best[i] = (d, t)
+    for i, (d, t) in best.items():
+        openings[i]["tag_text"] = t
+        openings[i]["tag_dist_m"] = round(d, 3)
+    return len(best)
 
 
 def _filled_rects(sheet, t_min: float, t_max: float):
@@ -968,6 +994,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "window_confidence": WINDOW_CONFIDENCE,
             }
         )
+    tagged = _attach_tags(openings, spans, to_m)
     stats = {
         "segments": len(segs),
         "bands": len(bands),
@@ -975,6 +1002,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "openings": len(openings),
         "doors": doors,
         "windows": len(windows),
+        "tagged": tagged,
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }

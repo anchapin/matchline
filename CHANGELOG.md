@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Plan openings: a schedule tag written next to a plan gap picks its schedule row, even where same-width rows disagree; a contradicting tag goes to review (#793).
 - CI: a browser-level test drives the review page in headless Chromium and
   replays its exported decisions with `matchline review --apply` (#802).
 - Review: an edit on an `opening_unsized` item adds the opening the pipeline left

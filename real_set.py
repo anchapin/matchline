@@ -580,13 +580,28 @@ def _plan_openings(
             # a door swing or a glazing line on the plan rules out same-width
             # rows of the other category (#743)
             cands = [(t, e) for t, e in cands if e["category"] == drawn]
+        # a scheduled tag written next to the gap names its row (#793)
+        tag = op.get("tag_text") or ""
+        row = dict(sized).get(tag)
+        tag_why = ""
+        if row is not None:
+            if drawn and row["category"] != drawn:
+                tag_why = f"tag {tag} is a scheduled {row['category']} but the plan draws a {drawn}"
+            elif abs(row["width_m"] - width) > WIDTH_TOL_M:
+                tag_why = (
+                    f"tag {tag} is scheduled {row['width_m']:.2f} m wide but the gap is "
+                    f"{width:.2f} m"
+                )
+            cands = [] if tag_why else [(tag, row)]
         kinds = {(e["category"], round(e["height_m"], 3)) for _t, e in cands}
         oid = f"{lid}-OP{k + 1}"
         s = ls.project(mid)
         if len(kinds) != 1:
             counts["unsized"] += 1
             why = (
-                (f"the plan draws a {drawn} but no scheduled {drawn} is this wide")
+                tag_why
+                if tag_why
+                else (f"the plan draws a {drawn} but no scheduled {drawn} is this wide")
                 if drawn and not kinds
                 else "no scheduled door or window is this wide"
                 if not kinds
@@ -610,7 +625,7 @@ def _plan_openings(
                             "s_center_m": round(s, 4),
                             "width_m": round(width, 4),
                             "drawn": drawn or "",
-                            "candidates": [t for t, _e in cands],
+                            "candidates": [t for t, _e in cands] or ([tag] if row else []),
                             "sheet_id": sheet_id,
                         },
                     },
@@ -632,10 +647,16 @@ def _plan_openings(
         prov = Provenance(
             sheet_id=sheet_id,
             revision=0,
-            method="plan_gap_schedule_width",
-            confidence=0.8 if len(tags) == 1 else 0.7,
+            method="plan_gap_tag" if row is not None else "plan_gap_schedule_width",
+            confidence=0.85 if row is not None else 0.8 if len(tags) == 1 else 0.7,
             note=(
-                f"plan gap {float(op['width_m']):.3f} m matched schedule {'/'.join(tags)} by width"
+                (
+                    f"plan gap {float(op['width_m']):.3f} m tagged {tag} on the plan "
+                    f"({op.get('tag_dist_m', 0):.2f} m away)"
+                    if row is not None
+                    else f"plan gap {float(op['width_m']):.3f} m matched schedule "
+                    f"{'/'.join(tags)} by width"
+                )
                 + (
                     f"; {op['swing']} door swing drawn on the plan"
                     if drawn == "door"
