@@ -23,6 +23,7 @@ import dataclasses
 import hashlib
 import html
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -205,10 +206,34 @@ def _e(x) -> str:
     return html.escape("" if x is None else str(x))
 
 
+def fmt(v) -> str:
+    """Display form of a number; trust_report.json keeps the full value.
+
+    Floating-point noise (|v| < 1e-9) shows as 0, whole numbers without a
+    decimal point, values of 1 or more to two decimals (thousands separated
+    from 1,000), and smaller values to three significant figures.
+    """
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return "" if v is None else str(v)
+    if isinstance(v, int):
+        return f"{v:,}"
+    if not math.isfinite(v):
+        return str(v)
+    if abs(v) < 1e-9:
+        return "0"
+    if v == int(v) and abs(v) < 1e15:
+        return f"{int(v):,}"
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if abs(v) >= 1:
+        return f"{v:.2f}".rstrip("0").rstrip(".")
+    return f"{v:.3g}"
+
+
 def _val(n: dict) -> str:
     if n.get("value") is None:
         return "unavailable: " + n.get("reason", "")
-    return str(n["value"])
+    return fmt(n["value"])
 
 
 def _rows(nums) -> str:
@@ -240,7 +265,7 @@ def render_html(tr: dict) -> str:
     )
     rv = tr["review"]
     worst = "".join(
-        f"<tr><td>{_e(x['confidence'])}</td><td>{_e(x['kind'])}</td>"
+        f"<tr><td>{_e(fmt(x['confidence']))}</td><td>{_e(x['kind'])}</td>"
         f"<td>{_e(x['description'])}</td></tr>"
         for x in rv["worst"]
     )
@@ -342,7 +367,7 @@ def write_pdf(tr: dict, path: Path) -> None:
               (0.12, 0.28, 0.60)),
         Paragraph(f"Open review items: {rv['open']['value']}", h2),
         table(["confidence", "kind", "description"],
-              [[x["confidence"], x["kind"], x["description"]] for x in rv["worst"]],
+              [[fmt(x["confidence"]), x["kind"], x["description"]] for x in rv["worst"]],
               (0.12, 0.22, 0.66)),
         Paragraph(f"{more} more in stage_02_model.json review_queue.", body) if more > 0 else None,
         Paragraph(f"Defaults used: {len(tr['defaults'])}", h2),
