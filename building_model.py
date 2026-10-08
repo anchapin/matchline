@@ -174,6 +174,9 @@ class SpaceOpening:
     # wall. The opening is stored once, on the lower-id space, so a door is
     # never counted twice; None for exterior openings and skylights.
     adjacent_space_id: Optional[str] = None
+    # The assembly this opening is built from (a key into
+    # BuildingModel.constructions, #747). Empty means not yet known.
+    construction_id: str = ""
 
     def add_source_provenance(self, prov: Provenance) -> None:
         """Record one more source sheet for this opening (max 2, distinct sheets).
@@ -482,6 +485,10 @@ class Construction:
     name: str = ""
     u_value_w_m2k: Optional[float] = None  # assembly U-value, SI
     provenance: Provenance | None = None
+    # glazing only (#747): solar heat gain coefficient and visible
+    # transmittance, fractions
+    shgc: Optional[float] = None
+    vt: Optional[float] = None
 
 
 @dataclass

@@ -73,6 +73,8 @@ class BEMOpeningUnit:
     # matchline identity written to the IFC (#588): {"id", "method",
     # "confidence"}; None writes nothing
     identity: Optional[dict] = None
+    # the opening's construction (#747), a key into BEMModel.opening_constructions
+    construction_id: str = ""
 
 
 @dataclass
@@ -169,6 +171,10 @@ class BEMModel:
     # ground slab U (W/m2K) from BuildingModel.slab_construction_id;
     # None -> the generic slab-on-grade construction
     slab_u_value_w_m2k: Optional[float] = None
+    # opening constructions (#747): construction id -> {"name", "category",
+    # "u", "shgc"}; windows/skylights are written as WindowType, doors as
+    # Construction
+    opening_constructions: dict = field(default_factory=dict)
     # BEMRoof planes (#618); empty -> flat roof at wall_height_m, as before
     roof_planes: list = field(default_factory=list)
     # Appendix G thermal zones (#638): [(block_id, [space_ids])]; empty ->

@@ -169,6 +169,32 @@ def _distribute_openings(openings, edges, edge_facades=None, edge_spaces=None):
     return assign
 
 
+def _opening_refs(model, unit) -> dict:
+    """gbXML Opening attributes naming the opening's construction (#747).
+
+    Glazing (window, skylight) references a WindowType, a door a
+    Construction. Empty when the opening has no exported construction, and
+    for glazing with no visible transmittance: OpenStudio builds simple
+    glazing from a WindowType only when it has U, SHGC and visible
+    Transmittance, and otherwise leaves an empty construction that will not
+    simulate.
+    """
+    cid = getattr(unit, "construction_id", "") or ""
+    info = (getattr(model, "opening_constructions", None) or {}).get(cid) if cid else None
+    if not info:
+        return {}
+    if info["category"] == "door":
+        return {"constructionIdRef": cid}
+    if glazing_exportable(info):
+        return {"windowTypeIdRef": cid}
+    return {}
+
+
+def glazing_exportable(info: dict) -> bool:
+    """A glazing construction has the U, SHGC and VT a WindowType needs (#747)."""
+    return all(info.get(k) is not None for k in ("u", "shgc", "vt"))
+
+
 def _opening_type(category: str) -> str:
     # openingTypeEnum has no generic "Door": NonSlidingDoor is the closest.
     if category == "skylight":
