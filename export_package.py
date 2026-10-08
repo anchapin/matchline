@@ -6,8 +6,8 @@
 - ``trust_report.json``: every number the report shows, each with the file and
   field (or model provenance) it was read from;
 - ``trust_report.html``: one page, rendered from that JSON, offline (inline
-  CSS, no external assets); ``trust_report.pdf`` when LibreOffice is
-  installed, otherwise the manifest says why there is none;
+  CSS, no external assets); ``trust_report.pdf``, the same content on
+  one page, drawn with reportlab from the same JSON;
 - ``DISCLAIMER.txt`` and ``manifest.json`` (file names and SHA-256).
 
 The report only reads what the run already wrote: inputs and their hashes,
@@ -24,7 +24,6 @@ import hashlib
 import html
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Iterable, List, Optional
 
@@ -277,21 +276,97 @@ def render_html(tr: dict) -> str:
     return "\n".join(p for p in parts if p) + "\n"
 
 
-def _pdf(html_path: Path) -> Optional[str]:
-    """Render the PDF with LibreOffice; returns why not when it can't."""
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if not soffice:
-        return "LibreOffice (soffice) not installed"
+def _cells(rows: List[List[str]]):
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+
+    st = ParagraphStyle("c", fontName="Helvetica", fontSize=7, leading=8.5)
+    return [[Paragraph(html.escape(str(c)), st) for c in r] for r in rows]
+
+
+def write_pdf(tr: dict, path: Path) -> None:
+    """One-page PDF of the trust report, drawn from the same JSON as the HTML.
+
+    Pure Python (reportlab, BSD), so it needs no system packages and CI checks
+    it too. Content that would run past one page is scaled down to fit.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import KeepInFrame, Paragraph, SimpleDocTemplate, Spacer, Table
+
+    m = 36
+    w, h = letter
+    h1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=14, leading=17)
+    h2 = ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=9.5, leading=12, spaceBefore=6)
+    body = ParagraphStyle("b", fontName="Helvetica", fontSize=7.5, leading=9)
+    disc = ParagraphStyle(
+        "d", parent=body, borderColor=colors.HexColor("#bb0000"), borderWidth=0.75,
+        borderPadding=4, backColor=colors.HexColor("#fff4f4"), spaceBefore=4, spaceAfter=6,
+    )  # fmt: skip
+
+    def table(head, rows, widths):
+        if not rows:
+            return None
+        t = Table(_cells([head] + rows), colWidths=[f * (w - 2 * m) for f in widths])
+        t.setStyle([
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#555555")),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#dddddd")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ])  # fmt: skip
+        return t
+
+    def nums(ns):
+        return [[n["label"], _val(n), n["source"]] for n in ns]
+
+    val, rv = tr["validation"], tr["review"]
+    more = rv["open"]["value"] - len(rv["worst"])
+    parts = [
+        Paragraph(f"Trust report: {html.escape(str(tr['building']))}", h1),
+        Paragraph(html.escape(tr["disclaimer"]), disc),
+        Paragraph("Inputs", h2),
+        table(["role", "file or value", "sha256"],
+              [[i.get("role"), i.get("path") or i.get("value"), (i.get("sha256") or "")[:16]]
+               for i in tr["inputs"]], (0.18, 0.62, 0.20))
+        or Paragraph("no input files recorded", body),
+        Paragraph("Extracted", h2),
+        table(["", "value", "read from"], nums(tr["extracted"]), (0.30, 0.20, 0.50)),
+        Paragraph("Convention biases", h2),
+        table(["", "value", "read from"], nums(tr["convention_biases"]), (0.30, 0.30, 0.40))
+        or Paragraph("none", body),
+        Paragraph(f"Validation: {'ok' if val['ok'] else 'errors'}", h2),
+        table(["", "checks", "read from"], nums(val["counts"]), (0.30, 0.20, 0.50)),
+        table(["severity", "check", "message"],
+              [[x["severity"], x["check"], x["message"]] for x in val["not_passed"]],
+              (0.12, 0.28, 0.60)),
+        Paragraph(f"Open review items: {rv['open']['value']}", h2),
+        table(["confidence", "kind", "description"],
+              [[x["confidence"], x["kind"], x["description"]] for x in rv["worst"]],
+              (0.12, 0.22, 0.66)),
+        Paragraph(f"{more} more in stage_02_model.json review_queue.", body) if more > 0 else None,
+        Paragraph(f"Defaults used: {len(tr['defaults'])}", h2),
+        table(["where", "source"], [[d["where"], d["source"]] for d in tr["defaults"]],
+              (0.45, 0.55))
+        or Paragraph("no defaults used", body),
+        Paragraph("Review decisions", h2),
+        Paragraph(html.escape(tr["decisions_file"]["reason"]), body),
+        Spacer(1, 2),
+    ]  # fmt: skip
+    frame = KeepInFrame(w - 2 * m, h - 2 * m, [p for p in parts if p is not None], mode="shrink")
+    doc = SimpleDocTemplate(
+        str(path), pagesize=letter, leftMargin=m, rightMargin=m, topMargin=m, bottomMargin=m,
+        title=f"matchline trust report: {tr['building']}", author="matchline",
+    )  # fmt: skip
+    doc.build([frame])
+
+
+def _pdf(tr: dict, path: Path) -> Optional[str]:
+    """Write the PDF; returns why not when it can't."""
     try:
-        subprocess.run(
-            [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(html_path.parent),
-             str(html_path)],
-            check=True, capture_output=True, timeout=180,
-        )  # fmt: skip
-    except (subprocess.SubprocessError, OSError) as e:
-        return f"LibreOffice failed: {e}"
-    if not html_path.with_suffix(".pdf").exists():
-        return "LibreOffice produced no PDF"
+        write_pdf(tr, path)
+    except Exception as e:  # noqa: BLE001  (report it in the manifest, keep the package)
+        return f"PDF rendering failed: {e}"
     return None
 
 
@@ -316,7 +391,7 @@ def build_package(
     html_path = pkg / "trust_report.html"
     html_path.write_text(render_html(tr))
     (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n")
-    why = _pdf(html_path) if pdf else "PDF not requested"
+    why = _pdf(tr, pkg / "trust_report.pdf") if pdf else "PDF not requested"
     manifest = {
         "schema": "matchline.package/1",
         "files": {

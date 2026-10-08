@@ -29,6 +29,8 @@ dependencies = [
     "jsonschema",
     # PDF drawing-set ingestion (#737); Apache-2.0/BSD-3 (PyMuPDF avoided: AGPL)
     "pypdfium2>=4.30",
+    # trust report PDF (#750); BSD, pure Python, no system libraries
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]

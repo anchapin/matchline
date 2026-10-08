@@ -78,7 +78,14 @@ def test_manifest_hashes_match_the_files(pkg):
     man = json.loads((pkg / "manifest.json").read_text())
     for name, digest in man["files"].items():
         assert hashlib.sha256((pkg / name).read_bytes()).hexdigest() == digest
-    assert man["pdf"]["produced"] or man["pdf"]["reason"]
+    # the PDF is pure Python now, so every run (CI included) must produce it, on one page
+    assert man["pdf"] == {"produced": True}
+    import pypdfium2
+
+    doc = pypdfium2.PdfDocument(str(pkg / "trust_report.pdf"))
+    assert len(doc) == 1
+    text = doc[0].get_textpage().get_text_range()
+    assert "Trust report" in text and "qualified" in text
 
 
 def test_input_files_are_hashed(tmp_path):

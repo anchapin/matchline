@@ -8,7 +8,7 @@ Every `run_pipeline` run that reaches the BEM export also writes `out/package/`:
 | `convention_report.json` | measured biases (volume, non-room area, envelope area budget, constructions) |
 | `trust_report.json` | every number the report shows, each with the file and field it was read from |
 | `trust_report.html` | one page rendered from that JSON; inline CSS, no scripts, no external assets |
-| `trust_report.pdf` | only when LibreOffice (`soffice`) is installed; otherwise `manifest.json` says why |
+| `trust_report.pdf` | the same report on one page, drawn with reportlab from `trust_report.json` (no system packages needed); if rendering fails, `manifest.json` says why |
 | `DISCLAIMER.txt` | the professional-use disclaimer |
 | `manifest.json` | SHA-256 of every file in the package, and whether the PDF was produced |
 
