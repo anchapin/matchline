@@ -454,7 +454,7 @@ def test_gap_items_are_editable_on_the_page_and_tolerance_matches_the_pipeline(t
 
     m, rq = _gap_run(tmp_path)
     page = R.render_html(m, R.template(m, "x"))
-    assert '"field": "opening"' in page
+    assert '"field": "opening"' in page and "Schedule tag (W1, W3) or category=window" in page
     assert R.GAP_WIDTH_TOL_M == real_set.WIDTH_TOL_M
     # an old model whose gap item has no "gap" record still records only
     rq.target = {"kind": "wall", "id": rq.target["id"]}

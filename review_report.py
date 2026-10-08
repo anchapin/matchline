@@ -559,7 +559,8 @@ _UI_JS = """
     var d = {id: id, action: action, at: new Date().toISOString()};
     if (action === "edit") {
       var ask = it && it.field
-        ? "New " + it.field + " for " + id + " (automatic: " + it.value + "). Changes the model:"
+        ? "New " + it.field + " for " + id + " (automatic: " +
+          (it.value === null ? "none" : it.value) + "). " + (it.hint || "") + "Changes the model:"
         : "Correction note for " + id + " (recorded only; nothing in the model to change):";
       var v = prompt(ask, "");
       if (v === null || !v.trim()) return;
@@ -887,6 +888,11 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
         row, f = _item_row(i), edit_field(model, i)
         row["field"] = f
         row["value"] = original_value(model, i) if f else None
+        if f == "opening":
+            cands = ", ".join((i.target.get("gap") or {}).get("candidates") or [])
+            row["hint"] = (
+                f"Schedule tag ({cands}) or " if cands else "Schedule tag or "
+            ) + "category=window width_m=1.2 height_m=1.5 [sill_m=0.9]. "
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}
