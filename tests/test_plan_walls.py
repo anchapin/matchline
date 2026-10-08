@@ -509,3 +509,31 @@ def test_door_and_window_on_one_plan(tmp_path):
     sym = _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45))
     res, _ = _read(tmp_path, _outline(mass) + sym + _glazing(6, 8))
     assert sorted(o.get("kind") for o in res.openings) == ["door", "window"]
+
+
+# ---- #793: a schedule tag on a wall with no opening drawn ------------------
+
+
+def test_tag_on_a_plain_wall_is_kept_against_the_wall(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + text(*_pt(5, -0.6), "SF-1", 8))
+    (wt,) = res.wall_tags
+    assert wt["tag_text"] == "SF-1" and wt["tag_dist_m"] == pytest.approx(0.6, abs=0.1)
+    south = next(w for w in res.walls if w["id"] == wt["wall"])
+    assert south["a_m"][1] == pytest.approx(south["b_m"][1], abs=0.01)  # the south wall
+    assert south["length_m"] == pytest.approx(10.0, abs=0.35)
+    assert wt["point_m"][1] < min(w["a_m"][1] for w in res.walls) + 0.01  # tag below it
+    assert res.stats["wall_tags"] == 1 and res.to_dict()["wall_tags"] == res.wall_tags
+
+
+def test_tag_beside_an_opening_is_not_a_wall_tag(tmp_path):
+    win = ((7, 0), (1, 0), 1.2, T_EXT)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL, [win])) + text(*_pt(7, -0.6), "W1", 8))
+    assert not res.wall_tags
+    (op,) = res.openings
+    assert op["tag_text"] == "W1"
+
+
+def test_text_that_is_not_a_tag_or_far_from_walls_is_ignored(tmp_path):
+    body = text(*_pt(5, -0.6), "OFFICE", 8) + text(*_pt(5, 3.0), "SF-1", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + body)
+    assert not res.wall_tags

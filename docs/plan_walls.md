@@ -196,10 +196,22 @@ mullion. These openings carry `source: "glazing_mullions"` and
 0.75, and keep the whole glazed run as their width.
 
 A middle line along the whole wall with fewer than two ticks is still a
-cavity or insulation line and the wall stays opaque. Not covered yet:
-storefront drawn as a thin wall band of its own between opaque walls, a
-scheduled storefront tag placed on the wall, and PDF layer names; door jambs
-inside a full-length glazing line would read as ticks.
+cavity or insulation line and the wall stays opaque.
+
+A storefront drawn as a plain wall band, with no glazing line at all, can still
+be found from its schedule tag. A tag-like span within `TAG_RADIUS_M` of a wall
+that has no opening (and not within it of any opening) is kept in `wall_tags`
+(`wall`, `tag_text`, `point_m`, `tag_dist_m`). The drawing-set run then checks it
+against the schedule: a scheduled window whose width spans the wall (up to
+`WIDTH_TOL_M` over, one wall thickness under, since a schedule may give the
+rough opening between corners) is modelled on that wall at the scheduled size,
+provenance `plan_wall_tag`, confidence 0.7. Any other scheduled door or window
+tag on such a wall goes to review as `opening_unsized` ("may be glazing"), with
+the gap a review edit needs to add it (#798). Unscheduled tags are ignored.
+
+Not covered yet: storefront drawn as a thin wall band of its own between opaque
+walls with no tag, and PDF layer names; door jambs inside a full-length glazing
+line would read as ticks.
 
 ## Opening tags (#793)
 

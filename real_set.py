@@ -486,6 +486,7 @@ def build_set_model(
         report.levels[li]["openings"] = _plan_openings(
             lid, walls[f]["openings"], [w for w in envelope if w.id.startswith(f"{lid}-E")],
             spaces, sched_entries, sheet_id, review, constructions, centers,
+            walls[f].get("wall_tags", []), {w["id"]: w for w in walls[f]["walls"]},
         )  # fmt: skip
     if elev_reads:
         first = next(iter(plan_of_level))
@@ -855,6 +856,8 @@ def _plan_openings(
     review,
     constructions=None,
     centers=None,
+    wall_tags=(),
+    plan_walls_by_id=None,
 ) -> dict:
     """Exterior plan openings -> SpaceOpenings sized by the door/window schedule.
 
@@ -1005,7 +1008,123 @@ def _plan_openings(
         counts["modelled"] += 1
         if centers is not None:
             centers[oid] = (mid.x, mid.y)
+    _wall_tag_openings(
+        lid, wall_tags, plan_walls_by_id or {}, lines, spaces, dict(sized), sheet_id,
+        review, constructions, centers, counts, len(plan_openings),
+    )  # fmt: skip
     return counts
+
+
+# A scheduled window whose width spans the whole wall it is tagged on is a
+# storefront drawn as a plain wall band (#793). The schedule row's width may be
+# the rough opening between the corners, so up to one wall thickness short.
+WALL_TAG_CONFIDENCE = 0.7
+
+
+def _wall_tag_openings(
+    lid, wall_tags, plan_walls, lines, spaces, sized, sheet_id, review, constructions,
+    centers, counts, n_gaps,
+) -> None:  # fmt: skip
+    """Tags on exterior walls with no opening drawn (``plan_walls`` ``wall_tags``).
+
+    A scheduled window as wide as the wall (within ``WIDTH_TOL_M`` over, one
+    wall thickness under) is modelled on it at the scheduled size. Any other
+    scheduled door or window tag on such a wall goes to review as a possible
+    opening the plan does not draw, with what a review edit needs to add it
+    (#798). Unscheduled tags and interior walls are left alone.
+    """
+    from building_model import Provenance, ReviewItem, SpaceOpening
+
+    for k, wt in enumerate(wall_tags):
+        tag = wt.get("tag_text") or ""
+        row = sized.get(tag)
+        pw = plan_walls.get(wt.get("wall"))
+        if row is None or pw is None or not lines:
+            continue
+        (ax, ay), (bx, by) = pw["a_m"], pw["b_m"]
+        mid = Point((ax + bx) / 2, -(ay + by) / 2)  # y-up -> canonical y-down
+        wall, ls = min(lines, key=lambda t: t[1].distance(mid))
+        if ls.distance(mid) > EXTERIOR_TOL_M:
+            continue
+        length, thick = float(pw["length_m"]), float(pw.get("thickness_m") or 0)
+        width, height = float(row["width_m"]), float(row["height_m"])
+        full = row["category"] == "window" and (
+            length - thick - WIDTH_TOL_M <= width <= length + WIDTH_TOL_M
+        )
+        oid = f"{lid}-OP{n_gaps + k + 1}"
+        s = ls.project(mid)
+        if not full:
+            counts["unsized"] += 1
+            why = (
+                f"scheduled {row['category']} {tag} ({width:.2f} m) is tagged on this "
+                f"{length:.2f} m wall but no opening is drawn; may be "
+                + ("glazing" if row["category"] == "window" else "a door")
+            )
+            review.append(
+                ReviewItem(
+                    id=f"rq-{oid}",
+                    kind="opening_unsized",
+                    target={
+                        "kind": "wall",
+                        "id": wall.id,
+                        "field": "opening",
+                        "gap": {
+                            "opening_id": oid,
+                            "space_id": wall.space_id if wall.space_id in spaces else "",
+                            "facade": wall.facade,
+                            "s_center_m": round(s, 4),
+                            "width_m": round(min(width, length), 4),
+                            "drawn": "",
+                            "candidates": [tag],
+                            "sheet_id": sheet_id,
+                        },
+                    },
+                    description=f"{oid}: {wall.facade} wall {wall.id}: {why}; not modelled",
+                    confidence=0.5,
+                    provenance=Provenance(sheet_id, 0, "plan_wall_tag", 0.5),
+                    needs_review=True,
+                )
+            )
+            continue
+        sp = spaces.get(wall.space_id)
+        if sp is None:
+            continue
+        prov = Provenance(
+            sheet_id=sheet_id,
+            revision=0,
+            method="plan_wall_tag",
+            confidence=WALL_TAG_CONFIDENCE,
+            note=(
+                f"storefront: window {tag} scheduled {width:.3f} m wide, tagged on a "
+                f"{length:.3f} m wall with no opening drawn ({wt.get('tag_dist_m', 0):.2f} m away)"
+            ),
+        )
+        sp.openings.append(
+            SpaceOpening(
+                id=oid,
+                tag=tag,
+                category="window",
+                width_m=width,
+                height_m=height,
+                host_facade=wall.facade,
+                host_interval_m=[round(s - width / 2, 4), round(s + width / 2, 4)],
+                s_center_m=round(s, 4),
+                area_m2=width * height,
+                provenance=prov,
+                needs_review=False,
+                construction_id=(
+                    _schedule_construction(
+                        constructions, "window", [tag], [(tag, row)], sheet_id, review, oid
+                    )
+                    if constructions is not None
+                    else ""
+                ),
+            )
+        )
+        counts["exterior"] += 1
+        counts["modelled"] += 1
+        if centers is not None:
+            centers[oid] = (mid.x, mid.y)
 
 
 # Elevation <-> plan join (#810, second slice). The schedule states an

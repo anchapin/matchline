@@ -459,3 +459,42 @@ def test_room_numbers_and_names_are_not_tags():
         assert PW.TAG_RE.match(s), s
     for s in ("101", "OFFICE", "N", "WINDOW-1234", "1/A-501"):
         assert not PW.TAG_RE.match(s), s
+
+
+# ---- #793: a scheduled storefront tagged on a plain wall --------------------
+
+
+def _tagged_wall(tmp_path, rows, tag="SF-1", at=(5, -0.6)):
+    page = _arch("A-101", "FIRST FLOOR PLAN", 1) + text(*_pt(*at), tag, 8)
+    sched = _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(rows)
+    return real_set.build_set_model(_set(tmp_path, [page, sched]), tmp_path / "out")
+
+
+def test_storefront_tag_spanning_the_wall_is_a_window(tmp_path):
+    # the south wall is 10 m at centrelines; SF-1 is scheduled 32'-9" (9.98 m)
+    model, _rep = _tagged_wall(tmp_path, [("SF-1", "32'-9\"", "8'-0\"", "FIXED")])
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    assert (op.tag, op.category, op.host_facade) == ("SF-1", "window", "south")
+    assert op.width_m == pytest.approx(393 * 0.0254, abs=1e-3)
+    assert op.height_m == pytest.approx(96 * 0.0254, abs=1e-3)
+    assert op.provenance.method == "plan_wall_tag"
+    assert op.provenance.confidence == real_set.WALL_TAG_CONFIDENCE
+    assert "storefront" in op.provenance.note
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+def test_narrower_tagged_window_on_a_plain_wall_goes_to_review(tmp_path):
+    model, _rep = _tagged_wall(tmp_path, [("SF-1", "12'-0\"", "8'-0\"", "FIXED")])
+    assert all(not s.openings for s in model.spaces.values())
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "no opening is drawn; may be glazing" in rq.description
+    gap = rq.target["gap"]
+    assert gap["candidates"] == ["SF-1"] and gap["facade"] == "south"
+    assert gap["width_m"] == pytest.approx(144 * 0.0254, abs=1e-3)
+    assert rq.target["kind"] == "wall" and rq.target["field"] == "opening"
+
+
+def test_unscheduled_tag_on_a_plain_wall_is_left_alone(tmp_path):
+    model, _rep = _tagged_wall(tmp_path, [("W1", "4'-0\"", "5'-0\"", "FIXED")], tag="SF-1")
+    assert all(not s.openings for s in model.spaces.values())
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
