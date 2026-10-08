@@ -169,6 +169,7 @@ def _link_elevation(
                 f"window {wdet['id']} at [{s0:.2f}, {s1:.2f}] m matches no wall segment",
                 conf,
                 prov,
+                target={"kind": "window_detection", "id": wdet["id"]},
             )
             model.symbol_linkages.append(
                 SymbolLinkage(
@@ -221,6 +222,11 @@ def _link_elevation(
                 f"({conf:.2f})",
                 conf,
                 prov,
+                target={
+                    "kind": "opening",
+                    "id": f"{facade.name}-{wdet['id']}",
+                    "field": "space_id",
+                },
             )
     model.log_revision(
         meta["sheet_id"],

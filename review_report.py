@@ -51,6 +51,108 @@ def auto_state(item) -> dict:
     }
 
 
+# Fields a review edit can write, per target kind (#796). Anything else keeps
+# the #749 behaviour: the value is recorded and the item closed.
+EDITABLE = {"opening": ("width_m", "space_id", "construction_id")}
+MAX_OPENING_WIDTH_M = 30.0
+
+
+def _find_opening(model, oid):
+    for sp in model.spaces.values():
+        for op in sp.openings:
+            if op.id == oid:
+                return sp, op
+    return None, None
+
+
+def edit_field(model, item) -> str:
+    """The model field an edit of ``item`` writes, or "" when it only records."""
+    t = item.target or {}
+    f = t.get("field", "")
+    if f not in EDITABLE.get(t.get("kind", ""), ()):
+        return ""
+    if t["kind"] == "opening" and _find_opening(model, t.get("id"))[1] is None:
+        return ""
+    return f
+
+
+def _read(model, kind: str, eid: str, f: str):
+    if kind == "opening":
+        sp, op = _find_opening(model, eid)
+        if op is None:
+            return None
+        return sp.id if f == "space_id" else getattr(op, f)
+    return None
+
+
+def _split(model, item, value):
+    """(field, raw value) for an edit; ``width_m=0.9`` picks another field."""
+    t = item.target or {}
+    f = edit_field(model, item)
+    raw = str(value).strip()
+    if f and "=" in raw:
+        k, v = (x.strip() for x in raw.split("=", 1))
+        if k in EDITABLE.get(t["kind"], ()):
+            return k, v
+    return f, raw
+
+
+def _coerce(model, kind: str, f: str, raw: str):
+    """Validated value for ``f`` or ValueError saying what is wrong."""
+    if f == "width_m":
+        try:
+            w = float(raw)
+        except ValueError:
+            raise ValueError(f"width_m {raw!r} is not a number (metres)") from None
+        if not 0 < w <= MAX_OPENING_WIDTH_M:
+            raise ValueError(f"width_m {w:g} is outside (0, {MAX_OPENING_WIDTH_M:g}] m")
+        return w
+    if f == "space_id":
+        if raw in model.spaces:
+            return raw
+        hits = [sid for sid, sp in model.spaces.items() if sp.number == raw]
+        if len(hits) == 1:
+            return hits[0]
+        raise ValueError(
+            f"room {raw!r} is "
+            + (
+                "ambiguous (" + ", ".join(sorted(hits)) + ")"
+                if hits
+                else "not a space id or room number"
+            )
+        )
+    if f == "construction_id":
+        if raw in model.constructions:
+            return raw
+        raise ValueError(f"construction {raw!r} is not in the model")
+    return raw
+
+
+def _write(model, kind: str, eid: str, f: str, value) -> None:
+    sp, op = _find_opening(model, eid)
+    if f == "space_id":
+        if sp.id != value:
+            sp.openings.remove(op)
+            model.spaces[value].openings.append(op)
+        return
+    setattr(op, f, value)
+    if f == "width_m":
+        if op.height_m:
+            op.area_m2 = value * op.height_m
+        if op.host_interval_m and len(op.host_interval_m) == 2:
+            c = op.s_center_m if op.s_center_m is not None else sum(op.host_interval_m) / 2
+            op.host_interval_m = [round(c - value / 2, 4), round(c + value / 2, 4)]
+
+
+def original_value(model, item):
+    """What the pipeline wrote to the edited field (what revert restores)."""
+    t = item.target or {}
+    if "original" in t:
+        return t["original"]
+    f = edit_field(model, item)
+    return _read(model, t.get("kind", ""), t.get("id"), f) if f else None
+
+
 def worst_first(items) -> list:
     """Open items first, then higher urgency, then lower confidence."""
     return sorted(
@@ -118,15 +220,25 @@ def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
             "model has changed since the decisions file was made (SHA-256 differs); "
             "decisions were matched by review item id"
         )
+    plan, bad = [], []
     for iid, st in final_states(doc).items():
         item = items[iid]
+        act = "revert" if st is None else st["action"]
+        try:
+            v, f = _target_value(model, item, act, st and st.get("value"))
+        except ValueError as e:
+            bad.append(f"{iid}: {e}")
+            continue
+        plan.append((item, act, st, v, f))
+    if bad:  # nothing changes unless every edit can be applied
+        raise ValueError("; ".join(bad))
+    for item, act, st, v, f in plan:
         if st is None:
-            want, act, note = dict(doc["auto"][iid]), "revert", "reverted to automatic output"
+            want, note = dict(doc["auto"][item.id]), "reverted to automatic output"
         else:
-            act = st["action"]
             want = _decided(act)
             note = act + (f": {st['value']}" if act == "edit" else "")
-        if _set(model, item, want, note):
+        if _set(model, item, want, note, v, f):
             summary[act] += 1
         else:
             summary["unchanged"] += 1
@@ -137,16 +249,47 @@ def _decided(action: str) -> dict:
     return dict(_STATE[action], needs_review=False, acknowledged=True)
 
 
-def _set(model, item, want: dict, note: str) -> bool:
-    """Put ``item`` in state ``want`` and log it; False when it already was."""
-    if auto_state(item) == {**auto_state(item), **want}:
+_KEEP = object()
+
+
+def _set(model, item, want: dict, note: str, value=_KEEP, f: str = "") -> bool:
+    """Put ``item`` in state ``want`` (and its field at ``value``) and log it.
+
+    False when it already was. ``value`` is only written for an item whose
+    target field an edit can change; the log keeps old and new values.
+    """
+    t = item.target or {}
+    f = f or edit_field(model, item)
+    old = _read(model, t.get("kind", ""), t.get("id"), f) if f and value is not _KEEP else None
+    same_state = auto_state(item) == {**auto_state(item), **want}
+    same_value = value is _KEEP or old == value
+    if same_state and same_value:
         return False
     for k, v in want.items():
         setattr(item, k, v)
+    if not same_value:
+        t.setdefault("original", original_value(model, item))
+        t.setdefault("field", f)
+        item.target = t
+        _write(model, t["kind"], t["id"], f, value)
+        note = f"{note} ({f} {old!r} -> {value!r})"
     sheet = item.provenance.sheet_id if item.provenance else ""
     rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
     model.log_revision(sheet, rev, "review", f"{item.id} {note}")
     return True
+
+
+def _target_value(model, item, action: str, value):
+    """(value to write or _KEEP, field). Confirm/reject/revert restore the original."""
+    t = item.target or {}
+    if action == "edit":
+        f, raw = _split(model, item, value)
+        if not f:
+            return _KEEP, ""
+        return _coerce(model, t["kind"], f, raw), f
+    if "original" not in t:
+        return _KEEP, ""
+    return t["original"], t.get("field", "")
 
 
 def decide(model, item_id: str, action: str, value: Optional[str] = None) -> bool:
@@ -164,7 +307,8 @@ def decide(model, item_id: str, action: str, value: Optional[str] = None) -> boo
     if action == "edit" and not str(value or "").strip():
         raise ValueError(f"edit of {item_id!r} has no value")
     note = action + (f": {value}" if action == "edit" else "")
-    return _set(model, item, _decided(action), note)
+    v, f = _target_value(model, item, action, value)
+    return _set(model, item, _decided(action), note, v, f)
 
 
 def _item_row(i) -> dict:
@@ -178,6 +322,7 @@ def _item_row(i) -> dict:
         "sheet": p.sheet_id if p else "",
         "method": p.method if p else "",
         "auto": auto_state(i),
+        "target": {k: v for k, v in (i.target or {}).items() if k in ("kind", "id")},
     }
 
 
@@ -214,10 +359,13 @@ _UI_JS = """
   catch (e) {}
   var sel = 0, openOnly = false;
   function save() { try { localStorage.setItem(key, JSON.stringify(doc)); } catch (e) {} }
-  function decide(id, action) {
+  function decide(id, action, it) {
     var d = {id: id, action: action, at: new Date().toISOString()};
     if (action === "edit") {
-      var v = prompt("Correction for " + id + " (what the value should be):", "");
+      var ask = it && it.field
+        ? "New " + it.field + " for " + id + " (automatic: " + it.value + "). Changes the model:"
+        : "Correction note for " + id + " (recorded only; nothing in the model to change):";
+      var v = prompt(ask, "");
       if (v === null || !v.trim()) return;
       d.value = v.trim();
     }
@@ -242,14 +390,15 @@ _UI_JS = """
           + " " + (d.at || "").slice(0, 16).replace("T", " "); }).join("<br>");
       var cls = st ? "st-" + label(st, it) : "";
       tr.innerHTML = "<td>" + it.confidence.toFixed(2) + "</td><td>" + it.urgency + "</td>"
-        + "<td class=mono>" + esc(it.kind) + "</td><td>" + esc(it.description)
+        + "<td class=mono>" + esc(it.kind) + (it.field ? "<div class=hist>edits " + esc(it.field)
+          + "</div>" : "") + "</td><td>" + esc(it.description)
         + "<div class=hist>" + esc(it.sheet) + (it.method ? " \\u00b7 " + esc(it.method) : "")
         + "</div></td><td class='" + cls + "'>" + esc(label(st, it))
         + (st && st.value ? "<div class=hist>" + esc(st.value) + "</div>" : "")
         + "<div class=hist>" + hist.replace(/[<>&](?!br>)/g, "") + "</div></td><td></td>";
       ["confirm", "reject", "edit", "revert"].forEach(function (a) {
         var b = document.createElement("button"); b.textContent = a;
-        b.onclick = function () { sel = k; decide(it.id, a); };
+        b.onclick = function () { sel = k; decide(it.id, a, it); };
         tr.lastChild.appendChild(b);
       });
       tb.appendChild(tr);
@@ -282,7 +431,7 @@ _UI_JS = """
     var it = data.items[sel], m = {c: "confirm", r: "reject", e: "edit", u: "revert"};
     if (e.key === "j") sel = Math.min(sel + 1, data.items.length - 1);
     else if (e.key === "k") sel = Math.max(sel - 1, 0);
-    else if (m[e.key] && it) { decide(it.id, m[e.key]); return; }
+    else if (m[e.key] && it) { decide(it.id, m[e.key], it); return; }
     else return;
     render();
   });
@@ -297,7 +446,12 @@ def _json_script(obj) -> str:
 
 
 def render_html(model, doc: dict) -> str:
-    items = [_item_row(i) for i in worst_first(model.review_queue)]
+    items = []
+    for i in worst_first(model.review_queue):
+        row, f = _item_row(i), edit_field(model, i)
+        row["field"] = f
+        row["value"] = original_value(model, i) if f else None
+        items.append(row)
     data = {"doc": doc, "items": items}
     name = html.escape(str(model.name))
     return (

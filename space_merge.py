@@ -136,6 +136,7 @@ def _flag(model: BuildingModel, sp: Space, reason: str, result: MergeResult) -> 
             confidence=REVIEW_CONFIDENCE,
             note=reason,
         ),
+        target={"kind": "space", "id": sp.id},
     )
 
 

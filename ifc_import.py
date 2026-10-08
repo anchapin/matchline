@@ -746,6 +746,7 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
                 f"space {sid} ({sp_name}) has no solid geometry",
                 conf,
                 prov_fn("ifc_import:tier0:space", conf, note),
+                target={"kind": "space", "id": sid},
             )
     if height is None:
         qh = _quantities(sp, "Qto_SpaceBaseQuantities", scale).get("Height")
@@ -990,6 +991,7 @@ def _attach_skylights_to_spaces(model):
                         confidence=0.3,
                         note=f"GlobalId={bo.id}",
                     ),
+                    target={"kind": "bim_opening", "id": bo.id},
                 )
                 continue
             w, h = bo.width_m, bo.height_m
@@ -1168,6 +1170,7 @@ def _attach_openings_to_spaces(model):
                     confidence=0.3,
                     note=f"GlobalId={el.global_id}",
                 ),
+                target={"kind": "bim_element", "id": el.global_id},
             )
             continue
 
@@ -1200,6 +1203,7 @@ def _attach_openings_to_spaces(model):
                         confidence=0.3,
                         note=f"GlobalId={bo.id}",
                     ),
+                    target={"kind": "bim_opening", "id": bo.id},
                 )
                 continue
             prov = bo.provenance

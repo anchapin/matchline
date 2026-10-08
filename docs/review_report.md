@@ -19,7 +19,7 @@ ones, then urgency high to low, then confidence low to high. Each row shows
 the kind, description, sheet and method, the current decision and its
 history. Buttons or keys record a decision:
 
-- `j` / `k` move, `c` confirm, `r` reject, `e` edit (asks for the corrected value), `u` revert to the automatic output
+- `j` / `k` move, `c` confirm, `r` reject, `e` edit (asks for the corrected value; the row says which model field it edits, if any), `u` revert to the automatic output
 - "open only" hides items that already have a decision or were resolved by triage
 - decisions are kept in the browser (local storage, keyed by the model hash) until exported
 - "Export decisions.json" downloads the file; "Load decisions" reopens one
@@ -36,7 +36,7 @@ Decisions run in file order and the last one per item wins.
 |---|---|
 | `confirm` | `status confirmed`, `resolution accept`, `needs_review false`, `acknowledged true` |
 | `reject` | `status rejected`, `resolution drop`, `needs_review false`, `acknowledged true` |
-| `edit` | `status confirmed`, `resolution reassign`; the value is recorded in the revision log |
+| `edit` | `status confirmed`, `resolution reassign`; writes the value to the item's target field (see below) or, with no target field, records it in the revision log |
 | `revert` | the automatic state stored in `decisions.json` |
 
 `matchline review --confirm ID` and `--reject ID` apply one decision the same way (same state, same log entry).
@@ -61,4 +61,5 @@ replay them (#750).
 ## Limitations
 
 - No sheet overlays yet (rooms, walls and detections drawn on the sheet, links between sheets). That is the next slice of #749.
-- An `edit` records the corrected value and closes the item; it does not yet change the geometry or link the item points at, because review items do not name their target entity (follow-up issue).
+- Edits that change the model (#796): every review item names its `target` (`kind`, `id`, and for editable items the `field`). Editable today, on openings only: `space_id` (room link; value is a space id or a unique room number), `width_m` (metres, 0 to 30; area and host interval follow, centred), and `construction_id` (must exist in the model). The default field comes from the item; `width_m=0.9` picks another opening field. Every edit value in a file is checked before anything changes, and one bad value refuses the whole file. The revision log carries old and new values. `revert`, `confirm` and `reject` (in the page or as CLI flags) put the field back to the automatic value, kept in `target.original` the first time an edit changes it.
+- Items whose target has no editable field (spaces, walls, fixtures, BIM elements, detections) keep the #749 behaviour: the value is recorded and the item closed. Creating an opening the pipeline left out (`opening_unsized`) is not an edit yet.

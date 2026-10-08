@@ -68,6 +68,7 @@ def _link_lighting(
                     confidence=0.5,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                 ),
+                target={"kind": "fixture", "id": fid},
             )
         if sid is None:
             report.fixtures_unassigned += 1
@@ -82,6 +83,7 @@ def _link_lighting(
                     confidence=0.4,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                 ),
+                target={"kind": "fixture", "id": fid},
             )
             continue
         report.fixtures_assigned += 1

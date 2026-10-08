@@ -244,6 +244,7 @@ def test_exterior_gap_with_disagreeing_schedule_rows_goes_to_review(tmp_path):
     assert all(not s.openings for s in model.spaces.values())
     (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
     assert "W1" in rq.description and "W3" in rq.description
+    assert rq.target["kind"] == "wall" and rq.target["id"]  # #796: no opening to edit yet
 
 
 def test_set_window_reaches_the_gbxml(tmp_path):
@@ -320,6 +321,7 @@ def test_same_width_windows_with_different_u_go_to_review(tmp_path):
     assert op.construction_id == ""  # size agrees, thermal values do not
     (rq,) = [r for r in model.review_queue if r.kind == "opening_thermal_ambiguous"]
     assert "W1" in rq.description and "W2" in rq.description
+    assert rq.target == {"kind": "opening", "id": op.id, "field": "construction_id"}  # #796
 
 
 def test_scheduled_window_construction_reaches_the_gbxml(tmp_path):
