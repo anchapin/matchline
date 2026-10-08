@@ -65,24 +65,33 @@ Measurements:
 | Storey | Rooms matched / truth | Extra faces | Median area err | Wall length err |
 |---|---|---|---|---|
 | First Floor, before joins | 27 / 154 | 52 | 11.5% | 2.7% |
-| First Floor, with joins | 72 / 154 | 85 | 9.4% | 2.7% |
+| First Floor, near joins (#773) | 72 / 154 | 85 | 9.4% | 2.7% |
+| First Floor, + corner doors | 106 / 154 | 114 | 9.4% | 2.7% |
 | Second Floor, before joins | 27 / 109 | 44 | 9.0% | 0.3% |
-| Second Floor, with joins | 50 / 109 | 68 | 9.0% | 0.3% |
+| Second Floor, near joins (#773) | 50 / 109 | 68 | 9.0% | 0.3% |
+| Second Floor, + corner doors | 81 / 109 | 82 | 9.2% | 0.3% |
 
 Before joins, the First Floor wall graph had 327 free ends (counting door
 bridges as connections): 180 within half of both thicknesses of another wall's
 centreline, 116 between 0.2 and 1.0 m from one, 30 between 1.0 and 2.5 m, 1
-farther. A free end within half of both thicknesses now joins that wall with a
-short connector (a T-junction stopped at a face, a wall that changes thickness
-or steps sideways). `unclosed_wall` items fell from 462 to 261 (First Floor)
-and 225 to 131 (Second Floor). The ends 0.2 to 2.5 m short (openings beside a
-corner, where the wall on the far side is not on the same line) are next.
+farther. Two rules now close them:
+
+- A free end within the two walls' thicknesses added together of another
+  wall's centreline joins it with a short connector (a T-junction stopped at a
+  face, a wall that changes thickness or steps sideways).
+- A free end whose wall, carried on along its own line, crosses another wall
+  within `MAX_OPENING_M` is a door beside a corner. It becomes an opening with
+  `"beside_corner": true`.
+
+`unclosed_wall` items went 462 -> 261 -> 140 (First Floor) and 225 -> 131 -> 32
+(Second Floor). Of the First Floor extra faces, 97 are slivers under 2 m^2
+(wall jogs closing into tiny faces), 11 span several truth rooms and 6 split
+one room.
 
 ## Not yet
 
 Casework drawn within a wall thickness of a wall face (a counter front 0.6 m
 off the wall) can still pair as a wall; the Clinic measurement will show how
 often. Raster fallback for scanned sheets, hatch-pattern walls, curved walls,
-classifying unlabeled faces (`polygon_classify` / `space_merge`), and closing
-the T-junctions and off-line openings the Clinic measurement found are
-follow-ups on #740.
+classifying unlabeled faces (`polygon_classify` / `space_merge`), and dropping
+sliver faces under 2 m^2 left by wall jogs are follow-ups on #740.

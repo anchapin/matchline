@@ -438,36 +438,71 @@ def _snap(walls: List[Wall], tol: float) -> None:
         setattr(w, end, x)
 
 
-def _join_free_ends(pairs: List[Tuple[Pt, Pt]], ts: List[float], tol: float) -> List[Tuple[Pt, Pt]]:
-    """Connectors from a free wall end to a wall it stops against (#740).
+def _join_free_ends(
+    pairs: List[Tuple[Pt, Pt]], ts: List[float], tol: float, max_open: float = 0.0
+) -> Tuple[List[Tuple[Pt, Pt]], List[Tuple[int, int, Pt, Pt]]]:
+    """Close wall ends that touch nothing (#740).
 
-    A wall end that touches nothing but lies within half of both thicknesses of
-    another wall's centreline is drawn as meeting it: a T-junction whose end
-    stopped at the other wall's face, or a wall that changes thickness or
-    steps sideways along its run. The connector runs from the end to the
-    nearest point on that centreline.
+    Returns ``(joins, corner_openings)``.
+
+    A join runs from a free end to the nearest point on another wall's
+    centreline when that point is within the two walls' thicknesses added
+    together: a T-junction that stopped at the far face, a wall that changes
+    thickness, or a wall that steps sideways along its run.
+
+    Otherwise, when the wall carried on along its own line would cross another
+    wall within ``max_open``, the gap is a door beside a corner: the far side
+    of the opening is a crossing wall, not a collinear one, so the collinear
+    gap bridging never sees it. ``corner_openings`` holds
+    ``(pair index, crossed pair index, end, crossing point)``.
     """
     if not pairs:
-        return []
+        return [], []
     lines = [LineString(p) for p in pairs]
     tree = STRtree(lines)
     t_big = max(ts)
-    out: List[Tuple[Pt, Pt]] = []
+    joins: List[Tuple[Pt, Pt]] = []
+    corners: List[Tuple[int, int, Pt, Pt]] = []
     for i, (a, b) in enumerate(pairs):
-        for p in (a, b):
+        for p, q0 in ((a, b), (b, a)):
             pt = Point(p)
-            near = [int(j) for j in tree.query(pt.buffer(t_big + tol)) if int(j) != i]
+            near = [int(j) for j in tree.query(pt.buffer(2 * t_big + tol)) if int(j) != i]
             if any(lines[j].distance(pt) <= tol for j in near):
                 continue  # already meets another wall
             best = None
             for j in near:
                 d = lines[j].distance(pt)
-                if d <= (ts[i] + ts[j]) / 2 + tol and (best is None or d < best[0]):
+                if d <= ts[i] + ts[j] + tol and (best is None or d < best[0]):
                     best = (d, j)
             if best:
                 q = lines[best[1]].interpolate(lines[best[1]].project(pt))
-                out.append((p, (q.x, q.y)))
-    return out
+                joins.append((p, (q.x, q.y)))
+                continue
+            n = math.dist(p, q0)
+            if max_open <= 0 or n <= tol:
+                continue
+            ux, uy = (p[0] - q0[0]) / n, (p[1] - q0[1]) / n
+            ray = LineString([p, (p[0] + ux * max_open, p[1] + uy * max_open)])
+            hit = None
+            for j in tree.query(ray):
+                j = int(j)
+                if j == i:
+                    continue
+                x = ray.intersection(lines[j])
+                if x.is_empty or x.geom_type != "Point":
+                    continue
+                (x0, y0), (x1, y1) = lines[j].coords[0], lines[j].coords[-1]
+                cross = abs((x1 - x0) * uy - (y1 - y0) * ux) / max(
+                    math.hypot(x1 - x0, y1 - y0), 1e-9
+                )
+                if cross < 0.5:  # within 30 degrees of parallel: not a crossing wall
+                    continue
+                d = pt.distance(x)
+                if d > tol and (hit is None or d < hit[0]):
+                    hit = (d, j, (x.x, x.y))
+            if hit:
+                corners.append((i, hit[1], p, hit[2]))
+    return joins, corners
 
 
 def _node_lines(pairs: List[Tuple[Pt, Pt]], tol: float) -> List[LineString]:
@@ -634,10 +669,24 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     pairs = [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [
         (br.a, br.b) for br in bridges
     ]
-    joins = _join_free_ends(
-        pairs, [w.t for w in walls if math.dist(w.a, w.b) > tol] + [br.t for br in bridges], tol
+    pair_walls = [w for w in walls if math.dist(w.a, w.b) > tol]
+    pair_ids = [[w.id] for w in pair_walls] + [list(br.walls) for br in bridges]
+    joins, corners = _join_free_ends(
+        pairs, [w.t for w in pair_walls] + [br.t for br in bridges], tol, MAX_OPENING_M * k
     )
-    lines = _node_lines(pairs + joins, tol)
+    for i, j, a, b in corners:
+        t = pair_walls[i].t if i < len(pair_walls) else bridges[i - len(pair_walls)].t
+        bridges.append(Bridge(a, b, t, (pair_ids[i][0], pair_ids[j][0])))
+        openings.append(
+            {
+                "walls": [pair_ids[i][0], pair_ids[j][0]],
+                "a_m": to_m(a),
+                "b_m": to_m(b),
+                "width_m": round(math.dist(a, b) * m_per_pt, 3),
+                "beside_corner": True,
+            }
+        )
+    lines = _node_lines(pairs + joins + [(a, b) for _i, _j, a, b in corners], tol)
     noded = unary_union(lines)
     faces, _cuts, dangles, _invalid = polygonize_full(noded)
     for dg in getattr(dangles, "geoms", []):

@@ -334,8 +334,18 @@ def test_wall_that_changes_thickness_still_closes_the_room(tmp_path):
 def test_free_end_joins_a_wall_it_stops_against():
     # partition (t 0.15) stops 0.20 short of a 0.30 wall's centreline: within half of both
     pairs = [((0.0, 0.0), (10.0, 0.0)), ((4.0, 0.2), (4.0, 5.0))]
-    joins = W._join_free_ends(pairs, [0.30, 0.15], tol=0.01)
-    assert ((4.0, 0.2), (4.0, 0.0)) in joins
-    # 0.40 short is a real gap: no connector from that end
-    far = W._join_free_ends([pairs[0], ((4.0, 0.4), (4.0, 5.0))], [0.30, 0.15], tol=0.01)
-    assert all(a != (4.0, 0.4) for a, _ in far)
+    joins, corners = W._join_free_ends(pairs, [0.30, 0.15], tol=0.01)
+    assert ((4.0, 0.2), (4.0, 0.0)) in joins and corners == []
+    # 0.60 short is farther than both thicknesses: no join from that end
+    far, _ = W._join_free_ends([pairs[0], ((4.0, 0.6), (4.0, 5.0))], [0.30, 0.15], tol=0.01)
+    assert all(a != (4.0, 0.6) for a, _ in far)
+
+
+def test_door_beside_a_corner_closes_the_room(tmp_path):
+    # the partition stops 1.0 m short of the south wall: a door whose far side is a
+    # crossing wall, not a collinear one (#740)
+    walls = SHELL + [((4, 6), (4, 1), T_INT)]
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert _areas(res) == [24.0, 36.0]
+    corner = [o for o in res.openings if o.get("beside_corner")]
+    assert len(corner) == 1 and corner[0]["width_m"] == pytest.approx(1.0, abs=0.05)
