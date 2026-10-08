@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Storey height comes from elevation level marks when they agree (checked against where each mark is drawn); disagreeing marks keep the default and go to review (#810, second slice).
+
+### Added
 - Elevation openings join the plan's: matched windows and doors get their sill and head height from the elevation, schedule size kept; disagreements and unmatched openings go to review (#810, second slice).
 
 ### Added

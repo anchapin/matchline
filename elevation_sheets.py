@@ -271,3 +271,109 @@ def facade_registration(d: dict, sheet_id: str, facade: str) -> FacadeRegistrati
         b_z=d["b_z"],
         grid_labels_used=list(d.get("grid_labels_used", [])),
     )
+
+
+# --- level marks (#810, second slice: storey height) ------------------------
+# "FIRST FLOOR / EL. 100'-0\"", "LEVEL 2 EL +3.600", "ROOF EL. 112'-6\"". Only
+# floors and the roof count toward storey height; T.O. PLATE, PARAPET and GRADE
+# are read but never become a storey.
+LEVEL_VALUE_RE = re.compile(
+    r"\bEL(?:EV(?:ATION)?)?\.?\s*:?\s*"
+    r"(?:(?P<ft>[+-]?\d+)\s*'\s*-?\s*(?P<inch>\d+(?:\.\d+)?)?(?:\s+(?P<num>\d+)/(?P<den>\d+))?\s*\"?"
+    r"|(?P<m>[+-]?\d+\.\d{1,3})\s*M?\b)"
+)
+LEVEL_NAME_RE = re.compile(
+    r"\b(?:(?:GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|1ST|2ND|3RD|[4-9]TH)\s+(?:FLOOR|LEVEL)"
+    r"|LEVEL\s*\d+|ROOF|T\.?\s*O\.?\s*\w+|PARAPET|GRADE|BASEMENT)\b"
+)
+STOREY_NAME_RE = re.compile(r"FLOOR|LEVEL|ROOF|BASEMENT")
+NOT_STOREY_RE = re.compile(r"^T\.?\s*O\b|PARAPET|GRADE")
+MARK_NAME_DIST_PT = 24.0  # a name this close to its value (above or beside) labels it
+MARK_Z_TOL_M = 0.3  # drawn height vs stated value, after the common offset
+STOREY_AGREE_M = 0.05
+
+
+@dataclass
+class LevelMark:
+    name: Optional[str]
+    value_m: float  # as stated (project datum)
+    z_drawn_m: float  # where the mark sits above the outline base
+    text: str
+
+
+def _value_m(m: "re.Match") -> float:
+    if m.group("m") is not None:
+        return float(m.group("m"))
+    ft = float(m.group("ft"))
+    inch = float(m.group("inch") or 0)
+    if m.group("num"):
+        inch += float(m.group("num")) / float(m.group("den"))
+    sign = -1.0 if ft < 0 or m.group("ft").startswith("-") else 1.0
+    return sign * (abs(ft) * 12 + inch) * 0.0254
+
+
+def _norm(t: str) -> str:
+    """Curly and prime quote marks (PDF text often carries them) to ' and "."""
+    return (
+        t.replace("\u2019", "'")
+        .replace("\u2032", "'")
+        .replace("\u201d", '"')
+        .replace("\u2033", '"')
+    )
+
+
+def level_marks(sheet, m_per_pt: Optional[float]) -> List[LevelMark]:
+    """Level marks on an elevation sheet whose drawn heights agree with their values.
+
+    A mark's value is checked against where it is drawn: every kept mark's
+    ``value_m - z_drawn_m`` must agree with the others' within ``MARK_Z_TOL_M``,
+    so a dimension string or a note that happens to say "EL." is dropped.
+    Fewer than two agreeing marks returns [].
+    """
+    if not m_per_pt:
+        return []
+    W, H = float(_get(sheet, "width_pt")), float(_get(sheet, "height_pt"))
+    rects = [r for r in _rects(sheet) if (r[2] - r[0]) * (r[3] - r[1]) < BORDER_FRAC * W * H]
+    big = [r for r in rects if (r[2] - r[0]) * m_per_pt >= OUTLINE_MIN_M]
+    if not big:
+        return []
+    out = max(big, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]))
+    base = out[3]
+    spans = [(_norm(str(_get(t, "text"))), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
+    names = [(LEVEL_NAME_RE.search(s.upper()), b) for s, b in spans]
+    names = [(m.group(0), b) for m, b in names if m]
+    marks = []
+    for s, b in spans:
+        v = LEVEL_VALUE_RE.search(s.upper())
+        if not v:
+            continue
+        own = LEVEL_NAME_RE.search(s.upper())
+        name = own.group(0) if own else None
+        if name is None:
+            near = [
+                (abs(nb[3] - b[1]) + abs(nb[0] - b[0]), n)
+                for n, nb in names
+                if nb != b
+                and abs(nb[0] - b[0]) <= 3 * MARK_NAME_DIST_PT
+                and -2 <= b[1] - nb[3] <= MARK_NAME_DIST_PT
+            ]
+            name = min(near)[1] if near else None
+        # the mark's line is at the bottom of its value text (or its name above)
+        marks.append(LevelMark(name, round(_value_m(v), 4), round((base - b[3]) * m_per_pt, 4), s))
+    if len(marks) < 2:
+        return []
+    offs = sorted(mk.value_m - mk.z_drawn_m for mk in marks)
+    mid = offs[len(offs) // 2]
+    kept = [mk for mk in marks if abs(mk.value_m - mk.z_drawn_m - mid) <= MARK_Z_TOL_M]
+    return sorted(kept, key=lambda mk: mk.value_m) if len(kept) >= 2 else []
+
+
+def storey_heights(marks: List[LevelMark]) -> List[float]:
+    """Floor-to-floor (and top floor to roof) heights from named level marks."""
+    st = [
+        mk
+        for mk in marks
+        if mk.name and STOREY_NAME_RE.search(mk.name) and not NOT_STOREY_RE.search(mk.name)
+    ]
+    st = sorted({round(mk.value_m, 3): mk for mk in st}.values(), key=lambda mk: mk.value_m)
+    return [round(b.value_m - a.value_m, 4) for a, b in zip(st, st[1:])]

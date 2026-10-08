@@ -82,7 +82,7 @@ def test_south_elevation_window_is_registered_to_the_plan(tmp_path):
     (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
     assert rq.id == "rq-elev-A-201-A-201-D1" and "has no plan door" in rq.description
     (sh,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
-    assert "elevations were read for windows" in sh.description
+    assert "carry no named floor level marks" in sh.description
 
 
 def test_north_elevation_runs_right_to_left(tmp_path):
@@ -182,3 +182,92 @@ def test_other_facades_are_left_alone(tmp_path):
     (op,) = _ops(model)
     assert op.sill_m is None
     assert not [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+
+
+# --- storey height from level marks (#810, second slice) --------------------
+
+FT12 = 12 * 12 * 0.0254  # 3.6576 m
+FT10 = 10 * 12 * 0.0254
+
+
+def _mark(name, value, z_m, x=None):
+    """A level mark at height z_m above the outline base: name over value."""
+    x = E0 + L * K + 12 if x is None else x
+    y = BASE + z_m * K + 2
+    out = text(x, y, value, 8)
+    return out + (text(x, y + 10, name, 8) if name else "")
+
+
+def _marks(storey=FT12, top="12'-0\"", extra=""):
+    return _mark("FIRST FLOOR", "EL. 100'-0\"", 0.0) + _mark("ROOF", f"EL. 1{top}", storey) + extra
+
+
+def _elev_marks(title="SOUTH ELEVATION", **kw):
+    return _elev(title, extra=_marks(**kw))
+
+
+def test_level_marks_read_and_checked_against_the_drawing(tmp_path):
+    from test_grid_detect import _sheet
+
+    sheet = _sheet(tmp_path, _elev_marks(extra=_mark(None, "EL. 150'-0\"", 0.0, x=E0 + 40)),
+                   "e", w=1728, h=1152)  # fmt: skip
+    marks = ES.level_marks(sheet, 96 * 0.0254 / 72)
+    # the stray "EL. 150'-0\"" sits on the base, so its value disagrees with its height
+    assert [m.name for m in marks] == ["FIRST FLOOR", "ROOF"]
+    assert marks[0].value_m == pytest.approx(100 * 12 * 0.0254)
+    assert ES.storey_heights(marks) == [pytest.approx(FT12, abs=1e-3)]
+
+
+@pytest.mark.parametrize(
+    "s,m",
+    [
+        ("EL. 100'-0\"", 30.48),
+        ("EL 112'-6\"", (112 * 12 + 6) * 0.0254),
+        ("ELEV. 98'-4 1/2\"", (98 * 12 + 4.5) * 0.0254),
+        ("EL. +3.600", 3.6),
+        ("ELEVATION: 0.000", 0.0),
+    ],
+)
+def test_level_values(s, m):
+    assert ES._value_m(ES.LEVEL_VALUE_RE.search(s)) == pytest.approx(m, abs=1e-4)
+
+
+def test_parapet_and_plate_are_not_storeys():
+    mk = ES.LevelMark
+    marks = [mk("FIRST FLOOR", 0.0, 0, ""), mk("T.O. PLATE", 2.9, 0, ""),
+             mk("ROOF", 3.6, 0, ""), mk("PARAPET", 4.2, 0, ""), mk(None, 5.0, 0, "")]  # fmt: skip
+    assert ES.storey_heights(marks) == [3.6]
+
+
+def test_storey_height_comes_from_the_elevation(tmp_path):
+    model, rep, _s = _run(tmp_path, _elev_marks())
+    assert model.levels[0].wall_height_m == pytest.approx(FT12, abs=1e-3)
+    assert rep.levels[0]["height_source"] == "elevation_level_marks"
+    assert any("from elevation level marks (A-201: 3.66 m)" in n for n in rep.notes)
+    assert not [r for r in model.review_queue if r.id == "rq-storey-height"]
+    sp = next(iter(model.spaces.values()))
+    assert sp.volume_m3 == pytest.approx(sp.area_m2 * FT12, rel=1e-3)
+
+
+def test_config_storey_height_beats_the_marks(tmp_path):
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1), _elev_marks()]
+    model, rep = real_set.build_set_model(
+        _set(tmp_path, pages), tmp_path / "out", storey_height_m=4.0
+    )
+    assert model.levels[0].wall_height_m == 4.0 and rep.levels[0]["height_source"] == "config"
+
+
+def test_marks_that_disagree_keep_the_default_and_say_why(tmp_path):
+    e2 = _elev_marks("NORTH ELEVATION", storey=FT10, top="10'-0\"").replace("A-201", "A-202")
+    model, rep, _s = _run(tmp_path, _elev_marks(), e2)
+    assert rep.levels[0]["height_source"] == "storey_height_default"
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert "level marks disagree (A-201: 3.66 m; A-202: 3.05 m)" in rq.description
+
+
+def test_unnamed_marks_give_no_storey_height(tmp_path):
+    extra = _mark(None, "EL. 100'-0\"", 0.0) + _mark(None, "EL. 112'-0\"", FT12)
+    model, rep, _s = _run(tmp_path, _elev("SOUTH ELEVATION", extra=extra))
+    assert rep.levels[0]["height_source"] == "storey_height_default"
+    (rq,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
+    assert "carry no named floor level marks" in rq.description

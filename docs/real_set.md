@@ -75,4 +75,16 @@ width more than 0.15 m or a height more than 0.1 m off the schedule goes to revi
 An elevation opening with no plan opening, or a plan opening on that facade the
 elevation does not draw, goes to review with its sill left unknown. Each entry in
 `SetReport.elevations` carries `matched`, `unmatched_elevation` and
-`unmatched_plan`. Lowest level only; storey height from level marks is still to come.
+`unmatched_plan`. Lowest level only.
+
+### Storey height from level marks
+
+Level marks on vector elevations ("FIRST FLOOR / EL. 100'-0\"", "ROOF EL. +3.600")
+are read with their names. Each mark's stated value is checked against where it is
+drawn above the facade outline's base, so a note or dimension that happens to say
+"EL." is dropped. Floors and the roof count; T.O. PLATE, PARAPET and GRADE do not.
+When every floor-to-floor step on every elevation agrees within 0.05 m, that is the
+storey height (`height_source: elevation_level_marks`, with a report note naming the
+sheets) and `rq-storey-height` is not raised. Steps that disagree keep the 3 m
+default and the review item lists them. A `storey_height_m` in the run config still
+wins over the marks.

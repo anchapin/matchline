@@ -293,8 +293,16 @@ def build_set_model(
             "no floor plan produced a room; see stage_00_set_report.json for each sheet's reason"
         )
 
-    h = storey_height_m or DEFAULT_STOREY_HEIGHT_M
-    h_src = "config" if storey_height_m else "storey_height_default"
+    h_marks, marks_note, marks_conflict = _storey_from_elevations(
+        files, entries, status, scales, sheets_dir
+    )
+    if storey_height_m:
+        h, h_src = storey_height_m, "config"
+    elif h_marks:
+        h, h_src = h_marks, "elevation_level_marks"
+        report.notes.append(f"storey height {h:g} m from elevation level marks ({marks_note})")
+    else:
+        h, h_src = DEFAULT_STOREY_HEIGHT_M, "storey_height_default"
     levels: List[Level] = []
     spaces: Dict[str, Space] = {}
     review: List[ReviewItem] = []
@@ -381,7 +389,9 @@ def build_set_model(
                 description=(
                     f"storey height {h:g} m is the default: "
                     + (
-                        "elevations were read for windows but not for level marks yet; "
+                        f"elevation level marks disagree ({marks_conflict}); "
+                        if marks_conflict
+                        else "the elevations carry no named floor level marks; "
                         if elevations
                         else "no section or elevation was read; "
                     )
@@ -395,7 +405,7 @@ def build_set_model(
                     0.5,
                     note=(
                         f"storey height {h:g} m for every level (matchline default "
-                        "DEFAULT_STOREY_HEIGHT_M); no section or elevation was read"
+                        "DEFAULT_STOREY_HEIGHT_M); no section or elevation level marks gave one"
                     ),
                 ),  # fmt: skip
                 needs_review=False,
@@ -442,6 +452,38 @@ def build_set_model(
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
+
+
+def _storey_from_elevations(files, entries, status, scales, sheets_dir):
+    """Storey height from the level marks on the set's vector elevations.
+
+    Returns ``(height, note, conflict)``: a height only when every floor-to-floor
+    step on every elevation agrees within ``STOREY_AGREE_M`` (the model has one
+    storey height); ``conflict`` lists the steps when they do not.
+    """
+    from elevation_sheets import STOREY_AGREE_M, level_marks, storey_heights
+
+    found = []
+    for f in files:
+        e = entries.get(f, {})
+        if e.get("type") != "elevation" and _val(e, "type") != "elevation":
+            continue
+        if status[f].stages["ingest"]["kind"] == "raster_only":
+            continue
+        try:
+            sheet = json.loads((sheets_dir / f).read_text())
+        except (OSError, ValueError):
+            continue
+        hs = storey_heights(level_marks(sheet, (scales.get(f) or {}).get("m_per_pt")))
+        if hs:
+            found.append((status[f].number or f, hs))
+    if not found:
+        return None, "", ""
+    steps = [x for _sid, hs in found for x in hs]
+    desc = "; ".join(f"{sid}: " + ", ".join(f"{x:.2f} m" for x in hs) for sid, hs in found)
+    if max(steps) - min(steps) > STOREY_AGREE_M:
+        return None, "", desc
+    return round(sum(steps) / len(steps), 4), desc, ""
 
 
 def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, walls, review,
