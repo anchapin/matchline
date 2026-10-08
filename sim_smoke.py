@@ -7,8 +7,9 @@ openstudio-standards (``sim/typical.rb``), runs a full year of EnergyPlus on a
 TMY weather file, then reads:
 
 * whether EnergyPlus completed, and its severe/fatal error count
-* site EUI (MJ/m2) against the matching DOE prototype's EUI in
-  ``sim/reference_eui.json``, within the band stated there
+* site EUI (MJ/m2) against the CBECS 2018 percentile band for matching
+  buildings in ``sim/reference_eui.json`` (sim/cbecs_band.py), with the
+  ratio to the matching DOE prototype's EUI as a note
 * occupied unmet heating and cooling hours (reported against the 300 h
   Appendix G limit, not enforced)
 
@@ -132,9 +133,8 @@ def judge(err: dict, res: dict, ref: dict, data: dict) -> dict:
         reasons.append(f"{err['severe']} severe error(s)")
     if not res.get("conditioned_area_m2"):
         reasons.append("no conditioned floor area")
-    band = data["band"]
-    lo = ref["site_eui_mj_m2"] * band["low_factor"]
-    hi = ref["site_eui_mj_m2"] * band["high_factor"]
+    lo, hi = ref["cbecs"]["band_mj_m2"]
+    lo_p, hi_p = ref["cbecs"]["band_percentiles"]
     eui = res.get("site_eui_mj_m2")
     in_band = eui is not None and lo <= eui <= hi
     limit = data["unmet_hours_limit"]["hours"]
@@ -145,11 +145,15 @@ def judge(err: dict, res: dict, ref: dict, data: dict) -> dict:
     status = "fail" if reasons else ("ok" if in_band else "eui_out_of_band")
     if status == "eui_out_of_band":
         notes.append(
-            f"site EUI {eui:.1f} MJ/m2 is outside {lo:.1f}-{hi:.1f} "
-            f"({band['low_factor']}x-{band['high_factor']}x the {ref['building_type']} "
-            f"{ref['template']} {ref['climate_zone']} prototype's {ref['site_eui_mj_m2']})"
+            f"site EUI {eui:.1f} MJ/m2 is outside {lo:.1f}-{hi:.1f}, the CBECS 2018 "
+            f"p{lo_p}-p{hi_p} for {ref['cbecs']['filter_meaning']}"
             if eui is not None
             else "no site EUI"
+        )
+    if eui is not None:
+        notes.append(
+            f"site EUI is {eui / ref['site_eui_mj_m2']:.2f}x the {ref['building_type']} "
+            f"{ref['template']} {ref['climate_zone']} prototype's {ref['site_eui_mj_m2']} MJ/m2"
         )
     return {
         "status": status,

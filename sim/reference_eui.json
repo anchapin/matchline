@@ -1,9 +1,8 @@
 {
   "schema": "matchline.sim_reference/1",
   "band": {
-    "low_factor": 0.5,
-    "high_factor": 2.0,
-    "why": "Smoke-level plausibility band chosen for #752, not a standard: the exported model has its own geometry, glazing and zoning, so only a gross miss (a broken load, a missing construction, an absurd schedule) should leave it."
+    "source": "cbecs",
+    "why": "The EUI band is the weighted 5th to 95th percentile of measured site EUI for matching buildings in the 2018 CBECS (see each reference's cbecs block). CBECS is the existing U.S. stock, mostly older than any 90.1-2019 design, so a code-built model sits in its low tail: the SmallOffice 90.1-2019 5A prototype is at about the 9th percentile, which is why the band is 5th-95th, not 10th-90th. A miss is reported, not enforced."
   },
   "unmet_hours_limit": {
     "hours": 300,
@@ -20,7 +19,47 @@
       "weather_sha256": "3cc3dc0c7bcc93e7203e8d9aab657d384315f5a0c86cdede23f792d437a0309f",
       "produced_by": "python sim_smoke.py --reference-only --building-type SmallOffice --template 90.1-2019 --climate-zone 5A (sim/prototype.rb, then an annual run)",
       "tools": "OpenStudio 3.11.0+241b8abb4d, openstudio-standards 0.8.5, EnergyPlus 25.2.0-cf7368216c",
-      "date": "2026-10-07"
+      "date": "2026-10-07",
+      "cbecs": {
+        "survey": "EIA Commercial Buildings Energy Consumption Survey 2018, public use microdata (December 2022 revision)",
+        "url": "https://www.eia.gov/consumption/commercial/data/2018/xls/cbecs2018_final_public.csv",
+        "sha256": "3e37c81aab2938e63fae47bec837270ba696699aceef904d1326dd25970e7247",
+        "filter": {
+          "pba": [
+            2
+          ],
+          "sqftc": [
+            2,
+            3
+          ],
+          "pubclim": [
+            2
+          ]
+        },
+        "filter_meaning": "PBA 2 = Office; SQFTC 2-3 = 1,001 to 10,000 ft2 (the prototype is 5,502 ft2); PUBCLIM 2 = Cool, the CBECS group for ASHRAE 169 zone 5 (5A)",
+        "eui": "MFBTU / SQFT (major fuels, site, gross floor area), weighted by FINALWT, kBtu/ft2 x 11.356526 = MJ/m2",
+        "band_percentiles": [
+          5,
+          95
+        ],
+        "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write",
+        "caveat": "The public file is masked and its consumption perturbed for disclosure avoidance, so these percentiles differ slightly from EIA's published tables.",
+        "records": 65,
+        "buildings_represented": 173182,
+        "percentiles_mj_m2": {
+          "p5": 211.0,
+          "p10": 331.8,
+          "p25": 438.9,
+          "p50": 603.8,
+          "p75": 932.5,
+          "p90": 1501.1,
+          "p95": 1912.4
+        },
+        "band_mj_m2": [
+          211.0,
+          1912.4
+        ]
+      }
     }
   ]
 }

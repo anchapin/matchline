@@ -14,6 +14,7 @@ import sqlite3
 import pytest
 
 import sim_smoke as s
+from sim import cbecs_band as cbecs
 
 ABUPS = "AnnualBuildingUtilityPerformanceSummary"
 
@@ -111,12 +112,20 @@ def test_eui_inside_the_band_is_ok(tmp_path):
     assert v["status"] == "ok" and v["reasons"] == [] and v["eui_ratio"] == pytest.approx(1.0)
 
 
-def test_eui_miss_is_reported_not_failed(tmp_path):
+@pytest.mark.parametrize("eui", [100.0, 2500.0])
+def test_eui_miss_is_reported_not_failed(tmp_path, eui):
     ref, data = _ref()
-    res = s.read_sql(_sql(tmp_path, site_gj=ref["site_eui_mj_m2"] * 0.2 * 2.6, area=200.0))
+    res = s.read_sql(_sql(tmp_path, site_gj=eui * 0.2, area=200.0))
     v = s.judge(OK_ERR, res, ref, data)
     assert v["status"] == "eui_out_of_band" and v["reasons"] == []
-    assert any("outside" in n for n in v["notes"])
+    assert any("outside" in n and "CBECS 2018" in n for n in v["notes"])
+
+
+def test_seed_101_first_run_is_inside_the_cbecs_band(tmp_path):
+    ref, data = _ref()
+    res = s.read_sql(_sql(tmp_path, site_gj=836.2 * 0.2, area=200.0))
+    v = s.judge(OK_ERR, res, ref, data)
+    assert v["status"] == "ok" and v["eui_ratio"] == pytest.approx(2.596, abs=0.001)
 
 
 @pytest.mark.parametrize(
@@ -145,13 +154,46 @@ def test_unmet_hours_over_appendix_g_limit_are_noted_only(tmp_path):
 def test_reference_file_states_its_band_and_provenance():
     data = json.loads(s.REFERENCE.read_text())
     assert data["schema"] == "matchline.sim_reference/1"
-    assert 0 < data["band"]["low_factor"] < 1 < data["band"]["high_factor"]
-    assert data["band"]["why"] and data["unmet_hours_limit"]["source"]
+    assert data["band"]["source"] == "cbecs" and data["band"]["why"]
+    assert data["unmet_hours_limit"]["source"]
     for ref in data["references"]:
         for k in ("produced_by", "tools", "weather", "date"):
             assert ref[k], k
         assert re.fullmatch(r"[0-9a-f]{64}", ref["weather_sha256"])
         assert ref["site_eui_mj_m2"] > 0
+        cb = ref["cbecs"]
+        assert cb["sha256"] == cbecs.SHA256 and cb["url"] == cbecs.URL
+        lo_p, hi_p = cb["band_percentiles"]
+        pct = cb["percentiles_mj_m2"]
+        assert cb["band_mj_m2"] == [pct[f"p{lo_p}"], pct[f"p{hi_p}"]]
+        assert list(pct.values()) == sorted(pct.values())
+        assert cb["records"] >= 30, "too few CBECS records for a percentile band"
+        # a code-built prototype must not fall outside its own band
+        assert cb["band_mj_m2"][0] <= ref["site_eui_mj_m2"] <= cb["band_mj_m2"][1]
+
+
+def test_weighted_percentile():
+    assert cbecs.weighted_percentile([1, 2, 3], [1, 1, 1], 50) == 2
+    assert cbecs.weighted_percentile([1, 2, 3], [1, 1, 1], 1) == 1
+    assert cbecs.weighted_percentile([1, 2, 3], [1, 1, 1], 99) == 3
+    # a heavy record pulls the median toward itself
+    assert 2.5 < cbecs.weighted_percentile([1, 2, 3], [1, 1, 10], 50) < 3
+
+
+def test_cbecs_band_filters_and_converts(tmp_path):
+    p = tmp_path / "cbecs.csv"
+    p.write_text(
+        "PBA,SQFTC,PUBCLIM,SQFT,MFBTU,FINALWT\n"
+        "2,2,2,1000,50000,10\n"  # 50 kBtu/ft2
+        "2,2,2,2000,200000,10\n"  # 100 kBtu/ft2
+        "2,2,1,1000,999999,10\n"  # wrong climate
+        "14,2,2,1000,999999,10\n"  # not an office
+        "2,2,2,1000,,10\n"  # no consumption
+    )
+    cb = {"filter": {"pba": [2], "sqftc": [2, 3], "pubclim": [2]}, "band_percentiles": [5, 95]}
+    out = cbecs.band(p, cb)
+    assert out["records"] == 2 and out["buildings_represented"] == 20
+    assert out["band_mj_m2"] == [pytest.approx(567.8, abs=0.1), pytest.approx(1135.7, abs=0.1)]
 
 
 def test_unknown_reference_raises():
