@@ -54,6 +54,7 @@ class SetReport:
     levels: List[dict] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     schedules: dict = field(default_factory=dict)
+    detector: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -67,6 +68,7 @@ class SetReport:
             "levels": self.levels,
             "notes": self.notes,
             "schedules": self.schedules,
+            "detector": self.detector,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -111,8 +113,15 @@ def build_set_model(
     detections: Optional[dict] = None,
     storey_height_m: Optional[float] = None,
     dpi: float = 150,
+    provider=None,
 ):
-    """Read a PDF set and assemble a BuildingModel. Returns (model, report)."""
+    """Read a PDF set and assemble a BuildingModel. Returns (model, report).
+
+    ``provider`` is a ``detection_provider.DetectionProvider`` (#743), chosen by
+    config; it runs on each floor plan's rendered image unless ``detections``
+    already holds that sheet. The report records which provider ran and whether
+    its weights are evaluation only under the license ledger.
+    """
     from bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
     from drawing_scale import scale_sheets
@@ -197,12 +206,30 @@ def build_set_model(
                 )
 
     # ---- symbols and schedules: report what ran, never fake it ----------
+    detections = dict(detections or {})
+    if provider is not None and provider.info.provider != "none":
+        report.detector = asdict(provider.info)
+        report.notes.append(f"detector: {provider.info.note()}")
     for f in files:
         st = status[f]
+        png = sheets_dir / f.replace(".json", ".png")
+        ran = False
+        if (
+            f in plan_files
+            and f not in detections
+            and report.detector
+            and png.exists()
+            and (not hasattr(provider, "has") or provider.has(png))
+        ):
+            detections[f] = provider.detect(png, f"{Path(str(pdf)).name}:{f}")
+            ran = True
         if f not in plan_files:
             st.mark("symbols", "skipped", "not a floor plan for takeoff")
-        elif detections and f in detections:
-            st.mark("symbols", "ok", n=len(detections[f]))
+        elif f in detections:
+            extra = {"provider": provider.info.provider} if ran else {}
+            if ran and provider.info.eval_only:
+                extra["eval_only"] = True
+            st.mark("symbols", "ok", n=len(detections[f]), **extra)
         elif st.stages["ingest"]["kind"] == "raster_only":
             st.mark("symbols", "failed", "scanned sheet and no detector run (#743)")
         else:
