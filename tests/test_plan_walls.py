@@ -421,3 +421,50 @@ def test_curve_of_the_wrong_radius_is_not_a_swing(tmp_path):
     # a 0.45 m curve hinged on the jamb: half the gap, and no second leaf
     res, _ = _read(tmp_path, _outline(mass) + _door_symbol((4, 2.55), (4.45, 2.55), (4, 3.0)))
     assert not _door_ops(res)
+
+
+# ---- glazing lines inside a wall make window openings (#743) -------------
+
+
+def _windows(res):
+    return [o for o in res.openings if o.get("kind") == "window"]
+
+
+def _glazing(x0, x1, y=0.0):
+    (gx0, gy), (gx1, _) = _pt(x0, y), _pt(x1, y)
+    return line(gx0, gy, gx1, gy, 0.3)
+
+
+def test_glazing_line_in_a_wall_is_a_window(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(6, 8))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(2.0, abs=0.02)
+    assert op["source"] == "glazing_line" and op["window_confidence"] == 0.75
+    xs = sorted((op["a_m"][0], op["b_m"][0]))
+    assert xs[1] - xs[0] == pytest.approx(2.0, abs=0.02)
+    assert res.stats["windows"] == 1
+    assert _areas(res) == [60.0]  # the wall still closes the room
+
+
+def test_sill_lines_across_a_gap_make_one_window_not_a_gap(tmp_path):
+    win = ((7, 0), (1, 0), 1.2, T_EXT)
+    mass = _mass(SHELL, [win])
+    h = T_EXT / 2
+    sills = _glazing(6.4, 7.6, -h) + _glazing(6.4, 7.6, 0) + _glazing(6.4, 7.6, h)
+    res, _ = _read(tmp_path, _outline(mass) + sills)
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(1.2, abs=0.03)
+    assert not [o for o in res.openings if "kind" not in o]  # the gap closed into the window
+
+
+def test_middle_line_along_the_whole_wall_is_not_a_window(tmp_path):
+    # a cavity or insulation line the length of the south wall
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10))
+    assert not _windows(res)
+
+
+def test_door_and_window_on_one_plan(tmp_path):
+    mass = _mass(SHELL + PARTITION, [DOOR])
+    sym = _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45))
+    res, _ = _read(tmp_path, _outline(mass) + sym + _glazing(6, 8))
+    assert sorted(o.get("kind") for o in res.openings) == ["door", "window"]

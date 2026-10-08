@@ -23,7 +23,8 @@ Nothing is dropped silently: wall ends that connect to nothing, faces too
 small to be rooms, and faces holding two different room numbers go to
 ``review``. A gap with a door swing drawn in it (a curve centred on one
 jamb with the leaf width as radius, or two half-width curves for a pair)
-is marked ``kind: "door"`` (#743). The raster fallback for scanned sheets, label-less face
+is marked ``kind: "door"``; a glazing line inside a wall run is a
+``kind: "window"`` opening (#743). The raster fallback for scanned sheets, label-less face
 classification and the Clinic measurement are follow-ups.
 """
 
@@ -53,6 +54,8 @@ SLIVER_M2 = 2.0  # unlabeled faces below this merge into a neighbour (#740)
 RECT_FILL = 0.90  # filled shape area / its rotated bounding rectangle
 SWING_TOL = 0.20  # door swing radius match, fraction of the leaf width (#743)
 DOOR_CONFIDENCE = {"single": 0.85, "double": 0.8}
+WINDOW_CONFIDENCE = 0.75  # glazing line inside a wall run (#743)
+WINDOW_RETURN_M = 0.30  # wall must run on past the glazing at least this far on one side
 
 Pt = Tuple[float, float]
 
@@ -171,6 +174,49 @@ def _classify_door(arcs, a: Pt, b: Pt, t: float) -> Optional[Tuple[str, List[Pt]
     return None
 
 
+def _glazing_windows(bands, walls, k: float, tol: float) -> List[Tuple["Wall", Pt, Pt]]:
+    """Windows drawn as a glazing line inside a wall (#743).
+
+    ``_merge_glazing`` folds the two half-thickness bands either side of a
+    glazing (or sill) line back into the wall; each such band is a window
+    candidate. It counts when it lies along one wall, is no wider than
+    ``WIDE_OPENING_M``, and the wall runs on past it by ``WINDOW_RETURN_M``
+    (or two wall thicknesses) on at least one side: a middle line along the
+    whole wall is a cavity or insulation line, not glazing. Overlapping
+    candidates on one wall are one window.
+    """
+    atol = math.radians(ANGLE_TOL_DEG)
+    out: List[Tuple[Wall, Pt, Pt]] = []
+    spans: Dict[str, List[Tuple[float, float]]] = {}
+    for g in bands:
+        if not g.glazed:
+            continue
+        ga, gb = _endpoints(g.theta, g.rho, g.u0, g.u1)
+        if math.dist(ga, gb) > WIDE_OPENING_M * k:
+            continue
+        mid = Point((ga[0] + gb[0]) / 2, (ga[1] + gb[1]) / 2)
+        for w in walls:
+            L = math.dist(w.a, w.b)
+            if L <= tol:
+                continue
+            th = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]) % math.pi
+            if not _angle_close(th, g.theta, atol):
+                continue
+            ls = LineString([w.a, w.b])
+            if ls.distance(mid) > max(tol, 0.5 * w.t):
+                continue
+            s0, s1 = sorted((ls.project(Point(ga)), ls.project(Point(gb))))
+            margin = max(2 * w.t, WINDOW_RETURN_M * k)
+            if s0 < margin and L - s1 < margin:
+                break  # runs the whole wall
+            if any(min(s1, b1) - max(s0, b0) > 0.5 * (s1 - s0) for b0, b1 in spans.get(w.id, [])):
+                break
+            spans.setdefault(w.id, []).append((s0, s1))
+            out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0]))
+            break
+    return out
+
+
 def _filled_rects(sheet, t_min: float, t_max: float):
     """Solid poché walls: (index, centreline a, b, thickness) in sheet points."""
     out = []
@@ -214,6 +260,7 @@ class Band:
     t: float  # thickness
     source: str
     segs: Tuple[int, ...] = ()  # face segment indices (line pairs)
+    glazed: bool = False  # merged across a shared face line: a window's glazing (#743)
 
 
 def _frame(theta: float):
@@ -372,7 +419,7 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
                 continue
             merged = Band(
                 a.theta, (lo + hi) / 2, min(a.u0, b0), max(a.u1, b1), hi - lo, "line_pair",
-                tuple(sorted(set(a.segs) | set(b.segs))),
+                tuple(sorted(set(a.segs) | set(b.segs))), True,
             )  # fmt: skip
             bands = [x for k, x in enumerate(bands) if k not in idx] + [merged]
             changed = True
@@ -908,12 +955,26 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 door_confidence=DOOR_CONFIDENCE[swing],
             )
             doors += 1
+    windows = _glazing_windows(bands, walls, k, tol)
+    for w, a, b in windows:
+        openings.append(
+            {
+                "walls": [w.id],
+                "a_m": to_m(a),
+                "b_m": to_m(b),
+                "width_m": round(math.dist(a, b) * m_per_pt, 3),
+                "kind": "window",
+                "source": "glazing_line",
+                "window_confidence": WINDOW_CONFIDENCE,
+            }
+        )
     stats = {
         "segments": len(segs),
         "bands": len(bands),
         "walls": len(walls),
         "openings": len(openings),
         "doors": doors,
+        "windows": len(windows),
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }

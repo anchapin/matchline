@@ -376,3 +376,22 @@ def test_same_width_tie_without_a_swing_still_goes_to_review(tmp_path):
     assert all(not s.openings for s in model.spaces.values())
     (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
     assert "D9" in rq.description and "W1" in rq.description
+
+
+def test_plan_glazing_picks_the_window_over_a_same_width_door(tmp_path):
+    from test_pdf_schedules import door_schedule
+    from test_plan_walls import _glazing
+
+    body = _outline(_mass(SHELL + PARTITION, [DOOR])) + _labels(1) + _glazing(6.4, 7.6)
+    plan = _tb("A-101", "FIRST FLOOR PLAN") + text(100, 48, SCALE_NOTE, 8) + body
+    win = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    door = [("D9", "4'-0\"", "7'-0\"", "HM")]
+    pages = [
+        plan,
+        _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(win),
+        _tb("A-602", "DOOR SCHEDULE") + door_schedule(100, 1000, rows=door),
+    ]
+    model, _rep = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+    ops = [o for s in model.spaces.values() for o in s.openings]
+    assert [(o.category, o.tag, o.host_facade) for o in ops] == [("window", "W1", "south")]
+    assert "glazing line drawn on the plan" in ops[0].provenance.note
