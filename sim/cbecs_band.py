@@ -24,7 +24,7 @@ REFERENCE = Path(__file__).resolve().parent / "reference_eui.json"
 URL = "https://www.eia.gov/consumption/commercial/data/2018/xls/cbecs2018_final_public.csv"
 SHA256 = "3e37c81aab2938e63fae47bec837270ba696699aceef904d1326dd25970e7247"
 KBTU_FT2_TO_MJ_M2 = 11.356526  # 1.055056 MJ/kBtu / 0.09290304 m2/ft2
-PCTS = (5, 10, 25, 50, 75, 90, 95)
+PCTS = (5, 10, 25, 50, 65, 70, 75, 90, 95)
 MAPS_URL = "https://www.eia.gov/consumption/commercial/maps.php"
 # EIA, "Definitions of CBECS climate zones, 2018 CBECS" (MAPS_URL): ASHRAE
 # 169-2021 county climate zones combined by thermal climate zone. Codes are

@@ -2,7 +2,8 @@
   "schema": "matchline.sim_reference/1",
   "band": {
     "source": "cbecs",
-    "why": "The EUI band is the weighted 5th to 95th percentile of measured site EUI for matching buildings in the 2018 CBECS (see each reference's cbecs block). CBECS is the existing U.S. stock, mostly older than any 90.1-2019 design, so a code-built model sits in its low tail: the SmallOffice 90.1-2019 5A prototype is at about the 9th percentile, which is why the band is 5th-95th, not 10th-90th. A miss is reported, not enforced."
+    "why": "The EUI band runs from the weighted 5th to the 70th percentile of measured site EUI for matching buildings in the 2018 CBECS (see each reference's cbecs block). CBECS is the existing U.S. stock, mostly older than any 90.1-2019 design, so the top is capped at p70: a new-code model above most existing buildings of its type points at an export or template error. Precedent for CBECS percentile targets: ANSI/ASHRAE/IES Standard 100 derives its EUI targets from CBECS at the 25th percentile per building type and climate zone. The bottom is p5, not p10, because the SmallOffice 90.1-2019 5A prototype sits near p9. A miss is reported, not enforced.",
+    "standard_100": "ANSI/ASHRAE/IES Standard 100 EUI targets: CBECS 2012 / RECS 2015, 25th (low energy) percentile by building type and climate zone (Addendum k to Standard 100-2018)"
   },
   "unmet_hours_limit": {
     "hours": 300,
@@ -40,7 +41,7 @@
         "eui": "MFBTU / SQFT (major fuels, site, gross floor area), weighted by FINALWT, kBtu/ft2 x 11.356526 = MJ/m2",
         "band_percentiles": [
           5,
-          95
+          70
         ],
         "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write",
         "caveat": "The public file is masked and its consumption perturbed for disclosure avoidance, so these percentiles differ slightly from EIA's published tables.",
@@ -51,13 +52,15 @@
           "p10": 331.8,
           "p25": 438.9,
           "p50": 603.8,
+          "p65": 744.9,
+          "p70": 803.7,
           "p75": 932.5,
           "p90": 1501.1,
           "p95": 1912.4
         },
         "band_mj_m2": [
           211.0,
-          1912.4
+          803.7
         ],
         "climate_map": "https://www.eia.gov/consumption/commercial/maps.php (Definitions of CBECS climate zones, 2018 CBECS)"
       }

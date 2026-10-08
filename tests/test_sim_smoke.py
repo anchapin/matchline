@@ -112,7 +112,7 @@ def test_eui_inside_the_band_is_ok(tmp_path):
     assert v["status"] == "ok" and v["reasons"] == [] and v["eui_ratio"] == pytest.approx(1.0)
 
 
-@pytest.mark.parametrize("eui", [100.0, 2500.0])
+@pytest.mark.parametrize("eui", [100.0, 1000.0])
 def test_eui_miss_is_reported_not_failed(tmp_path, eui):
     ref, data = _ref()
     res = s.read_sql(_sql(tmp_path, site_gj=eui * 0.2, area=200.0))
@@ -121,11 +121,13 @@ def test_eui_miss_is_reported_not_failed(tmp_path, eui):
     assert any("outside" in n and "CBECS 2018" in n for n in v["notes"])
 
 
-def test_seed_101_first_run_is_inside_the_cbecs_band(tmp_path):
+def test_seed_101_first_run_is_above_the_p70_cap(tmp_path):
+    # #768: 836.2 MJ/m2 is about CBECS p73, above the p70 cap for a new-code model
     ref, data = _ref()
     res = s.read_sql(_sql(tmp_path, site_gj=836.2 * 0.2, area=200.0))
     v = s.judge(OK_ERR, res, ref, data)
-    assert v["status"] == "ok" and v["eui_ratio"] == pytest.approx(2.596, abs=0.001)
+    assert v["status"] == "eui_out_of_band" and v["reasons"] == []
+    assert v["eui_ratio"] == pytest.approx(2.596, abs=0.001)
 
 
 @pytest.mark.parametrize(
