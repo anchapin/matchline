@@ -44,6 +44,7 @@ WALL_T_MIN_M = 0.05
 WALL_T_MAX_M = 0.60
 MIN_WALL_LEN_M = 0.25  # shortest wall piece kept (overlap of the two faces)
 MAX_OPENING_M = 2.50  # widest gap bridged inside a wall run
+WIDE_OPENING_M = 4.5  # wider collinear gaps close with an air wall for review (#740)
 ANGLE_TOL_DEG = 1.0
 MIN_ROOM_M2 = 1.0
 SLIVER_M2 = 2.0  # unlabeled faces below this merge into a neighbour (#740)
@@ -673,7 +674,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         review.append({"kind": "no_walls", "reason": "no wall line pairs or solid walls found"})
         return PlanWalls([], [], [], review, m_per_pt)
 
-    walls, gaps = _runs(bands, MAX_OPENING_M * k, tol)
+    walls, gaps = _runs(bands, max(MAX_OPENING_M, WIDE_OPENING_M) * k, tol)
     _snap(walls, tol)
     by_id = {w.id: w for w in walls}
 
@@ -696,6 +697,10 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
             gap.distance(e) <= 0.6 * t and e.distance(Point(a)) > tol and e.distance(Point(b)) > tol
             for e in ends
         )
+        wide = math.dist(a, b) > MAX_OPENING_M * k + tol
+        if junction and wide:
+            # too far to carry the wall through a junction; leave it to the joins
+            continue
         if junction:
             # a wall ending against this one: the run continues through it
             left.b = right.b
@@ -708,8 +713,21 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "a_m": to_m(a),
                 "b_m": to_m(b),
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
+                **({"air_wall": True} if wide else {}),
             }
         )
+        if wide:
+            review.append(
+                {
+                    "kind": "air_wall",
+                    "reason": (
+                        f"{math.dist(a, b) * m_per_pt:.1f} m gap in a wall line closed with an air "
+                        "wall; check it is a window, storefront or open edge"
+                    ),
+                    "a_m": to_m(a),
+                    "b_m": to_m(b),
+                }
+            )
     walls = [w for w in walls if w.id not in alias]
 
     pairs = [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [

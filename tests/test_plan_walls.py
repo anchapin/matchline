@@ -366,3 +366,15 @@ def test_unlabeled_sliver_merges_by_the_closet_and_shaft_rule():
     spans = [("CLOSET 105", (9.4, 10.3, 10.1, 10.7))]
     faces, merged = W._merge_slivers([a, b, s], spans, [], max_area=2.0, tol=0.01)
     assert len(faces) == 3 and merged == [[], [], []]
+
+
+def test_wide_gap_in_a_wall_line_closes_with_an_air_wall(tmp_path):
+    # a 3.5 m storefront or open edge: wider than a door, still one wall line
+    res, _ = _read(tmp_path, _outline(_mass(SHELL, [((5, 0), (1, 0), 3.5, T_EXT)])))
+    assert _areas(res) == [60.0]
+    assert [o.get("air_wall") for o in res.openings] == [True]
+    assert [i["kind"] for i in res.review if i["kind"] == "air_wall"] == ["air_wall"]
+    # wider than WIDE_OPENING_M stays open and goes to review as before
+    res, _ = _read(tmp_path, _outline(_mass(SHELL, [((5, 0), (1, 0), 5.0, T_EXT)])))
+    assert _areas(res) == []
+    assert any(i["kind"] == "unclosed_wall" for i in res.review)

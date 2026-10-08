@@ -89,6 +89,21 @@ misses on joined rooms, the shared edges with nothing found between them were
 81 m (FF) and 17 m (SF), all with no IFC wall there. The truth still counts
 ROOF and OPEN TO BELOW spaces on the Second Floor as regions.
 
+A collinear gap wider than a door but up to `WIDE_OPENING_M` (4.5 m) closes
+with an air wall: the opening carries `"air_wall": true` and goes to review as
+`air_wall` (a window wider than a door cut at sill height, a storefront, or an
+open edge). Swept 2.5 to 8 m on the Clinic; 4.5 m is the widest before extra
+faces climb:
+
+| Storey | Raw matched | Extra | Wall-bounded matched | Extra | Median area err |
+|---|---|---|---|---|---|
+| First Floor, 2.5 m (before) | 106 / 154 | 27 | 100 / 126 | 33 | 11.2% |
+| First Floor, 4.5 m | 106 / 154 | 23 | 102 / 126 | 27 | 10.9% |
+| First Floor, 6.0 m | 111 / 154 | 45 | 101 / 126 | 55 | 11.4% |
+| Second Floor, 2.5 m (before) | 81 / 109 | 22 | 72 / 87 | 31 | 10.6% |
+| Second Floor, 4.5 m | 83 / 109 | 22 | 75 / 87 | 30 | 10.6% |
+| Second Floor, 6.0 m | 87 / 109 | 29 | 74 / 87 | 42 | 10.6% |
+
 What is left is mostly open-plan areas whose walls end in the open (reception
 counters, cubicle partitions, half walls): 21 FF and 18 SF spaces have no face
 over them, 30 of them with an unclosed wall end on their edge.
