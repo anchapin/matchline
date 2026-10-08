@@ -319,6 +319,19 @@ DEFAULT_SKYLIGHT_ID = "t55-skylight"
 # each gets one class and says which: fixed windows (the more common class in
 # nonresidential glazing), opaque swinging doors, and curbed glass skylights
 # (all three skylight classes carry the same values in 90.1-2019).
+# Table 5.5 sets no VT for skylights. The 90.1 PRM 2019 data in
+# openstudio-standards v0.8.6 (ashrae_90_1_prm_2019.construction_properties.json)
+# gives every glazing row VT = round(1.10 x SHGC, 2): all 132 ExteriorWindow,
+# 132 GlassDoor and 66 Skylight rows. Skylights use that ratio rather than
+# openstudio-standards' name-parsing fallback of VT 0.81, which is a placeholder
+# (VT/SHGC 2.0 against a 0.40 SHGC) and not tied to any table (#784).
+SKYLIGHT_VT_SHGC = 1.10
+SKYLIGHT_VT_SHGC_SOURCE = (
+    "VT/SHGC 1.10 as in openstudio-standards v0.8.6 "
+    "ashrae_90_1_prm_2019.construction_properties.json skylight rows"
+)
+
+
 _OPENING_DEFAULTS = {
     "window": (
         DEFAULT_WINDOW_ID,
@@ -369,11 +382,15 @@ def _default_openings(model, s: "LibrarySummary", climate_zone: str, category: s
         why = f"no assembly stated on the drawings; Table 5.5 code maximum, {why_class}"
         # Table 5.5 caps SHGC and sets a minimum VT/SHGC for vertical glazing;
         # VT is taken at that minimum. Skylight rows carry no VT figure, so
-        # skylights get none (the exporter then leaves them unreferenced).
+        # skylights take the same 1.10 ratio the 90.1 PRM 2019 data applies to
+        # every glazing row, skylights included (#784).
         vt = None
         if row.shgc is not None and row.min_vt_shgc is not None:
             vt = round(row.shgc * row.min_vt_shgc, 4)
             why += f"; VT {vt} = minimum VT/SHGC {row.min_vt_shgc} x SHGC {row.shgc}"
+        elif row.shgc is not None and surface == "Skylight":
+            vt = round(row.shgc * SKYLIGHT_VT_SHGC, 4)
+            why += f"; VT {vt} = {SKYLIGHT_VT_SHGC} x SHGC {row.shgc} ({SKYLIGHT_VT_SHGC_SOURCE})"
         model.constructions[cid] = Construction(
             id=cid,
             name=name,

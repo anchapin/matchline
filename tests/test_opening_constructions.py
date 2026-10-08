@@ -47,9 +47,11 @@ def test_exterior_openings_get_table_55_with_shgc():
     assert door.u_value_w_m2k == pytest.approx(0.37 * 5.678263, abs=1e-3) and door.shgc is None
     assert sky.u_value_w_m2k == pytest.approx(0.50 * 5.678263, abs=1e-3) and sky.shgc == 0.40
     assert "fixed class used" in win.provenance.note
-    # VT at Table 5.5's minimum VT/SHGC (1.10) for vertical glazing; the
-    # skylight rows give no VT, so skylights have none
-    assert win.vt == pytest.approx(0.418) and sky.vt is None
+    # VT at Table 5.5's minimum VT/SHGC (1.10) for vertical glazing; skylight
+    # rows give no VT, so skylights take the PRM 2019 data's 1.10 ratio (#784)
+    assert win.vt == pytest.approx(0.418) and sky.vt == pytest.approx(0.44)
+    assert "ashrae_90_1_prm_2019" in sky.provenance.note
+    assert s.defaulted["t55-skylight"]["vt"] == pytest.approx(0.44)
     assert s.defaulted["t55-window"]["openings"] == ["w1"]
     assert s.defaulted["t55-door"]["openings"] == ["d1"]
 
@@ -95,7 +97,8 @@ def test_gbxml_writes_window_type_and_door_construction():
         BEMOpeningUnit("window", "A", 1.2, 1.5, construction_id="t55-window"),
         BEMOpeningUnit("door", "D", 0.9, 2.1, construction_id="t55-door"),
         BEMOpeningUnit("window", "B", 1.2, 1.5),  # no construction: no reference
-        # skylight glazing with no VT: written unreferenced, with a note
+        # glazing with no VT (e.g. a stated U and SHGC only): written
+        # unreferenced, with a note
         BEMOpeningUnit("skylight", "K", 1.0, 1.0, construction_id="t55-skylight"),
     ]
     model = BEMModel(
@@ -142,3 +145,48 @@ def test_gbxml_writes_window_type_and_door_construction():
     ops = root.findall(".//g:Opening", NS)
     refs = sorted((o.get("windowTypeIdRef") or "", o.get("constructionIdRef") or "") for o in ops)
     assert refs == [("", ""), ("", ""), ("", "t55-door"), ("t55-window", "")]
+
+
+def test_skylight_vt_exports_simple_glazing_windowtype():
+    """A defaulted skylight now carries VT, so it exports a referenced WindowType (#784)."""
+    from construction_library import SKYLIGHT_VT_SHGC
+
+    assert SKYLIGHT_VT_SHGC == 1.10
+    space = BEMSpace(
+        sid="S1",
+        name="Office",
+        number="1",
+        polygon_m=[(0, 0), (10, 0), (10, 10), (0, 10)],
+        area_m2=100.0,
+        volume_m3=300.0,
+        lighting_w=0.0,
+    )
+    model = BEMModel(
+        building_name="t",
+        spaces=[space],
+        openings=[BEMOpeningUnit("skylight", "K", 1.0, 1.0, construction_id="t55-skylight")],
+        ring_m=[(0, 0), (10, 0), (10, 10), (0, 10)],
+        wall_height_m=3.0,
+        area_delta_pct=0.0,
+        simplify_tolerance=0.1,
+        opening_constructions={
+            "t55-skylight": {
+                "name": "Skylight",
+                "category": "skylight",
+                "u": 2.8391,
+                "shgc": 0.4,
+                "vt": 0.44,
+            },
+        },
+    )
+    with tempfile.TemporaryDirectory() as d:
+        path = write_gbxml(model, Path(d) / "out.xml")
+        ok, errors = validate_gbxml(path)
+        assert ok, errors
+        root = ET.parse(path).getroot()
+    wt = root.find("g:WindowType[@id='t55-skylight']", NS)
+    assert wt is not None
+    assert float(wt.find("g:Transmittance", NS).text) == pytest.approx(0.44)
+    refs = [o.get("windowTypeIdRef") for o in root.findall(".//g:Opening", NS)]
+    assert "t55-skylight" in refs
+    assert not any("t55-skylight" in n for n in model.notes)
