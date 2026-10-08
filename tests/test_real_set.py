@@ -17,7 +17,7 @@ import pytest
 sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
-from test_plan_walls import DOOR, PARTITION, SHELL, _mass, _outline, _pt  # noqa: E402
+from test_plan_walls import DOOR, PARTITION, SHELL, T_EXT, _mass, _outline, _pt  # noqa: E402
 
 import real_set  # noqa: E402
 import run_pipeline  # noqa: E402
@@ -87,9 +87,10 @@ def test_set_model_two_floors(tmp_path):
     assert sp.name == "OFFICE" and sp.area_m2 == pytest.approx(24.0, abs=0.05)
     assert sp.volume_m3 == pytest.approx(72.0, abs=0.2)
     assert all(y <= 0 for _x, y in sp.polygon_m)  # canonical frame is y-down
-    # plan doors are counted, not modelled, until schedules give tags and heights
+    # the only plan gap is the interior door: counted, never put on the envelope
     assert all(not s.openings for s in model.spaces.values())
     assert [lv["plan_openings"] for lv in rep.levels] == [1, 1]
+    assert rep.levels[0]["openings"] == {"exterior": 0, "interior": 1, "modelled": 0, "unsized": 0}
     env = [w for w in model.envelope if w.id.startswith("L2-")]
     assert sum(w.area_m2 for w in env) == pytest.approx(32 * 3.0, abs=0.1)
     assert {w.facade for w in env} == {"north", "south", "east", "west"}
@@ -188,3 +189,66 @@ def test_set_unreadable_schedule_goes_to_review(tmp_path):
     assert len(rq) == 1 and "D1 appears more than once" in rq[0].description
     rep = report.to_dict()
     assert "sheet_005.json" in rep["failed_sheets"]
+
+
+# ---- exterior plan openings sized by the schedule (#741) -----------------
+
+WIN = ((7, 0), (1, 0), 1.2, T_EXT)  # 1.2 m gap in the south shell, east room
+
+
+def _arch_win(number, title, level):
+    body = _outline(_mass(SHELL + PARTITION, [DOOR, WIN])) + _labels(level)
+    return _tb(number, title) + text(100, 48, SCALE_NOTE, 8) + body
+
+
+def _window_schedule(rows):
+    from test_pdf_schedules import door_schedule
+
+    return door_schedule(100, 1000, rows=rows).replace("DOOR SCHEDULE", "WINDOW SCHEDULE")
+
+
+def _one_floor(tmp_path, schedule_rows=None):
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1)]
+    if schedule_rows:
+        pages.append(_tb("A-601", "WINDOW SCHEDULE") + _window_schedule(schedule_rows))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+
+
+def test_exterior_gap_matched_by_width_becomes_a_window(tmp_path):
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W2", "3'-0\"", "4'-0\"", "FIXED")]
+    model, rep = _one_floor(tmp_path, rows)
+    ops = [o for s in model.spaces.values() for o in s.openings]
+    assert len(ops) == 1
+    op = ops[0]
+    assert (op.category, op.tag, op.host_facade) == ("window", "W1", "south")
+    assert op.width_m == pytest.approx(48 * 0.0254)  # the schedule's size; the plan gap places it
+    assert op.height_m == pytest.approx(60 * 0.0254, abs=1e-3)  # schedule height
+    assert op.provenance.method == "plan_gap_schedule_width"
+    assert model.spaces["L1-102"].openings == [op]  # the room whose wall holds the gap
+    assert rep.levels[0]["openings"] == {"exterior": 1, "interior": 1, "modelled": 1, "unsized": 0}
+
+
+def test_exterior_gap_without_a_schedule_row_is_not_invented(tmp_path):
+    model, rep = _one_floor(tmp_path)
+    assert all(not s.openings for s in model.spaces.values())
+    rq = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert len(rq) == 1 and rq[0].needs_review and "south" in rq[0].description
+    assert rep.levels[0]["openings"]["unsized"] == 1
+
+
+def test_exterior_gap_with_disagreeing_schedule_rows_goes_to_review(tmp_path):
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W3", "4'-0\"", "7'-0\"", "FIXED")]
+    model, _rep = _one_floor(tmp_path, rows)
+    assert all(not s.openings for s in model.spaces.values())
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "W1" in rq.description and "W3" in rq.description
+
+
+def test_set_window_reaches_the_gbxml(tmp_path):
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1)]
+    pages.append(_tb("A-601", "WINDOW SCHEDULE") + _window_schedule(rows))
+    out = tmp_path / "run"
+    run_pipeline.main(_args(_set(tmp_path, pages), out))
+    xml = (out / "stage_06_bem" / "set.xml").read_text()
+    assert xml.count('openingType="FixedWindow"') == 1

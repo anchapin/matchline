@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 
 SCHEMA = "matchline.set_report/1"
 DEFAULT_STOREY_HEIGHT_M = 3.0
@@ -252,6 +252,7 @@ def build_set_model(
     spaces: Dict[str, Space] = {}
     review: List[ReviewItem] = []
     envelope: List[EnvelopeWall] = []
+    plan_of_level: Dict[str, tuple] = {}
     for k, lv in enumerate(_level_order(list(by_level))):
         lid = lv if not lv.startswith("L?") else f"LX{lv[2:]}"
         levels.append(Level(id=lid, name=lid, elevation_z_m=round(k * h, 4), wall_height_m=h))
@@ -261,8 +262,7 @@ def build_set_model(
                 "sheets": by_level[lv],
                 "elevation_m": round(k * h, 4),
                 "height_source": h_src,
-                # plan openings need door/window schedules for tags and heights (#746);
-                # until then they are counted here, not modelled
+                # every gap the plan shows; "openings" below says which were modelled
                 "plan_openings": len(walls[by_level[lv][0]]["openings"]),
             }
         )
@@ -320,6 +320,7 @@ def build_set_model(
             lid, [s for s in spaces.values() if s.level_id == lid], h, sheet_id,
             footprint_from_regions, _edge_facades, EnvelopeWall, Provenance,
         )  # fmt: skip
+        plan_of_level[lid] = (f, sheet_id, len(report.levels) - 1)
     if h_src == "storey_height_default":
         review.append(
             ReviewItem(
@@ -338,6 +339,11 @@ def build_set_model(
     sched_entries, equipment = _merge_schedules(
         files, status, schedules, review, Provenance, ReviewItem
     )
+    for lid, (f, sheet_id, li) in plan_of_level.items():
+        report.levels[li]["openings"] = _plan_openings(
+            lid, walls[f]["openings"], [w for w in envelope if w.id.startswith(f"{lid}-E")],
+            spaces, sched_entries, sheet_id, review,
+        )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
         "equipment": equipment,
@@ -404,6 +410,110 @@ def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
                 entries[tag] = e
                 where[tag] = sheet_id
     return entries, equipment
+
+
+# An exterior plan opening is a gap whose middle lies within this distance of
+# the level outline (the outline runs along wall centrelines; the thickest
+# exterior walls on a plan are well under a metre).
+EXTERIOR_TOL_M = 0.5
+# A plan gap matches a scheduled door/window when its measured width is within
+# this of the scheduled width (about 2 in; gaps are read from the wall outline).
+WIDTH_TOL_M = 0.05
+
+
+def _plan_openings(lid, plan_openings, env_walls, spaces, sched, sheet_id, review) -> dict:
+    """Exterior plan openings -> SpaceOpenings sized by the door/window schedule.
+
+    A plan gap carries a width and a position but no tag, so it is matched to
+    the schedule by width: when every scheduled door/window within
+    ``WIDTH_TOL_M`` of the gap agrees on category and height, the gap is
+    modelled on the wall it sits in at the scheduled size. A gap no schedule
+    row explains, or one several disagree on, goes to review and is not
+    modelled: no default size is invented. Interior gaps are
+    skipped (they do not touch the exterior envelope).
+    """
+    from building_model import Provenance, ReviewItem, SpaceOpening
+
+    counts = {"exterior": 0, "interior": 0, "modelled": 0, "unsized": 0}
+    lines = [(w, LineString([w.from_m, w.to_m])) for w in env_walls]
+    sized = sorted(
+        (tag, e)
+        for tag, e in sched.items()
+        if e.get("category") in ("door", "window") and e.get("width_m") and e.get("height_m")
+    )
+    for k, op in enumerate(plan_openings):
+        (ax, ay), (bx, by) = op["a_m"], op["b_m"]
+        mid = Point((ax + bx) / 2, -(ay + by) / 2)  # y-up -> canonical y-down
+        if not lines:
+            counts["interior"] += 1
+            continue
+        wall, ls = min(lines, key=lambda t: t[1].distance(mid))
+        if ls.distance(mid) > EXTERIOR_TOL_M:
+            counts["interior"] += 1
+            continue
+        counts["exterior"] += 1
+        width = float(op["width_m"])
+        cands = [(t, e) for t, e in sized if abs(e["width_m"] - width) <= WIDTH_TOL_M]
+        kinds = {(e["category"], round(e["height_m"], 3)) for _t, e in cands}
+        oid = f"{lid}-OP{k + 1}"
+        if len(kinds) != 1:
+            counts["unsized"] += 1
+            why = (
+                "no scheduled door or window is this wide"
+                if not kinds
+                else "scheduled doors/windows of this width disagree on type or height ("
+                + ", ".join(t for t, _e in cands)
+                + ")"
+            )
+            review.append(
+                ReviewItem(
+                    id=f"rq-{oid}",
+                    kind="opening_unsized",
+                    description=(
+                        f"{oid}: {width:.2f} m gap in {wall.facade} wall {wall.id}; {why}; "
+                        "not modelled"
+                    ),
+                    confidence=0.5,
+                    provenance=Provenance(sheet_id, 0, "plan_walls_vector", 0.5),
+                    needs_review=True,
+                )
+            )
+            continue
+        cat, height = kinds.pop()
+        tags = [t for t, _e in cands]
+        # the schedule states the size; the plan gap only places it (and the
+        # takeoff reconcile check holds count x schedule size to the area)
+        width = float(cands[0][1]["width_m"])
+        prov = Provenance(
+            sheet_id=sheet_id,
+            revision=0,
+            method="plan_gap_schedule_width",
+            confidence=0.8 if len(tags) == 1 else 0.7,
+            note=(
+                f"plan gap {float(op['width_m']):.3f} m matched schedule {'/'.join(tags)} by width"
+            ),
+        )
+        sp = spaces.get(wall.space_id)
+        if sp is None:
+            continue
+        s = ls.project(mid)
+        sp.openings.append(
+            SpaceOpening(
+                id=oid,
+                tag=tags[0],
+                category=cat,
+                width_m=width,
+                height_m=height,
+                host_facade=wall.facade,
+                host_interval_m=[round(s - width / 2, 4), round(s + width / 2, 4)],
+                s_center_m=round(s, 4),
+                area_m2=width * height,
+                provenance=prov,
+                needs_review=False,
+            )
+        )
+        counts["modelled"] += 1
+    return counts
 
 
 def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):
