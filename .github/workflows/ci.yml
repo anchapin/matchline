@@ -165,7 +165,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2093  # +4 envelope limit tests (#763) - If the count changes, update this AND docs/ci.md
+          EXPECTED_TEST_COUNT=2108  # +15 per-space gbXML tests (#765) - If the count changes, update this AND docs/ci.md
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
