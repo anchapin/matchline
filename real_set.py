@@ -947,7 +947,7 @@ def _join_elevations(
                 review.append(
                     ReviewItem(
                         id=f"rq-elev-{er.sheet_id}-{eo.id}",
-                        kind="elevation_extraction",
+                        kind="window_room_link",  # an elevation opening with no plan opening
                         target={
                             "kind": "sheet",
                             "id": er.sheet_id,
@@ -998,7 +998,7 @@ def _join_elevations(
                 review.append(
                     ReviewItem(
                         id=f"rq-elev-{er.sheet_id}-{eo.id}",
-                        kind="elevation_extraction",
+                        kind="elevation_conflict",  # elevation and schedule disagree on size
                         target={
                             "kind": "opening",
                             "id": op.id,
@@ -1019,7 +1019,7 @@ def _join_elevations(
             review.append(
                 ReviewItem(
                     id=f"rq-elev-{er.sheet_id}-{op.id}",
-                    kind="elevation_extraction",
+                    kind="elevation_conflict",  # a plan opening the elevation does not show
                     target={
                         "kind": "opening",
                         "id": op.id,

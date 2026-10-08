@@ -89,6 +89,8 @@ _KIND_TO_TASK: dict[str, str] = {
     "room_label_extraction": "route_to_review",
     "window_extraction": "route_to_review",
     "elevation_extraction": "route_to_review",
+    "elevation_conflict": "route_to_review",
+    "window_reconciliation": "route_to_review",
     "facade_takeoff": "route_to_review",
 }
 

@@ -327,3 +327,26 @@ def test_elevation_json_records_the_matched_plan_opening(tmp_path):
         list(_plan_pt(WIN_X + 0.6, 0.0)), abs=1.5
     )
     assert by_id["A-201-D1"]["plan_opening"] is None and by_id["A-201-D1"]["plan_point"] is None
+
+
+# --- #817: join items use the review queue's window kinds --------------------
+
+
+def test_join_items_use_the_window_kinds(tmp_path):
+    import run_review
+
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+    m1, _r, _s = _run(
+        tmp_path / "a", _elev("SOUTH ELEVATION", wins=((WIN_X + T_EXT / 2, 0.9, 1.2, 2.1),))
+    )
+    (mismatch,) = [r for r in m1.review_queue if r.id.startswith("rq-elev-")]
+    assert mismatch.kind == "elevation_conflict" and len(mismatch.target["ends"]) == 2
+    m2, _r, _s = _run(tmp_path / "b", _elev("SOUTH ELEVATION", wins=((2.0, 0.9, 1.2, 1.5),)))
+    (op,) = _ops(m2)
+    kinds = {r.id: r.kind for r in m2.review_queue}
+    assert kinds["rq-elev-A-201-A-201-W1"] == "window_room_link"
+    assert kinds[f"rq-elev-A-201-{op.id}"] == "elevation_conflict"
+    # same triage task as the building-JSON path's items and the old kind
+    tasks = {run_review._kind_to_task(k) for k in ("elevation_conflict", "window_room_link")}
+    assert tasks == {run_review._kind_to_task("elevation_extraction")} == {"route_to_review"}

@@ -77,6 +77,19 @@ elevation does not draw, goes to review with its sill left unknown. Each entry i
 `SetReport.elevations` carries `matched`, `unmatched_elevation` and
 `unmatched_plan`. Lowest level only.
 
+Review kinds (#817), the same ones the building-JSON elevation path uses:
+
+- elevation and schedule disagree on a matched opening's size: `elevation_conflict`;
+- a plan opening on that facade the elevation does not draw: `elevation_conflict`;
+- an elevation opening with no plan opening: `window_room_link`;
+- an elevation that was not read or not registered, and the storey-height default,
+  stay `elevation_extraction`.
+
+`window_reconciliation` (two elevations placing one window differently) is left for
+partial elevations of one facade (#818). Item ids and `target` are unchanged, so
+saved decisions files and the review page's sheet links still apply. All of these
+route to the `route_to_review` task, as `elevation_extraction` did.
+
 ### Both sheets on each review item (third slice)
 
 Every review item the join raises carries `target["ends"]`, one entry per sheet

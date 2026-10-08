@@ -6,6 +6,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Changed
+- Elevation join review items use the window kinds: size mismatches and plan openings missing from the elevation are `elevation_conflict`, elevation openings with no plan opening are `window_room_link`; ids, targets and triage task unchanged (#817).
+
 ### Added
 - Review page draws the elevation sheets the drawing-set run read (facade outline, windows and doors joined or not), and an item that joins two sheets highlights both ends, labels each with the other sheet, and offers a bar to jump between them (#801).
 
