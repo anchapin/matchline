@@ -85,6 +85,19 @@ def _val(entry: dict, key: str):
 _PREFIX = {"A": "architectural", "M": "mechanical", "E": "electrical", "P": "plumbing"}
 
 
+def _det_dict(x) -> dict:
+    """One detection as JSON: label, tag, score, bbox (sheet raster pixels)."""
+    from dataclasses import is_dataclass
+
+    d = asdict(x) if is_dataclass(x) else dict(x)
+    return {
+        "label": str(d.get("label", "")),
+        "tag": str(d.get("tag", "") or ""),
+        "score": float(d.get("score", 0.0) or 0.0),
+        "bbox": [float(v) for v in d.get("bbox", ())][:4],
+    }
+
+
 def _discipline(st: SheetStatus) -> Optional[str]:
     """Discipline name from the index, else from the sheet number's prefix."""
     d = (st.discipline or "").lower()
@@ -237,6 +250,11 @@ def build_set_model(
                 "symbols",
                 "failed" if _discipline(st) == "mechanical" else "skipped",
                 "no detections supplied; the detector provider is #743",
+            )
+        if f in detections:
+            # kept beside the sheet so the review report can draw them (#749)
+            (sheets_dir / f.replace("sheet_", "detections_")).write_text(
+                json.dumps([_det_dict(x) for x in detections[f]], indent=1)
             )
         sch = schedules.get(f, {}).get("schedules", [])
         bad = [x for x in sch if x["status"] != "ok"]

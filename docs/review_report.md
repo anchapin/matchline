@@ -24,6 +24,18 @@ history. Buttons or keys record a decision:
 - decisions are kept in the browser (local storage, keyed by the model hash) until exported
 - "Export decisions.json" downloads the file; "Load decisions" reopens one
 
+
+## Sheet overlays
+
+When the run started from a drawing set (`matchline set`), the page also draws every floor plan that was read for walls and rooms, below the queue. Each sheet shows its raster (embedded as a downsized JPEG, at most 1800 px on the longest side, so the page still works offline) with four layers you can switch on and off:
+
+- rooms: green outline, orange when the room itself needs review; hover for the space id and label
+- walls: grey, drawn at their measured thickness
+- openings: blue door, teal window, brown gap, grey air wall; solid when the opening is in the model, dashed when it is not, red when it waits in the review queue
+- detections: symbol boxes from the detection provider (`detections_NNN.json` beside the sheet), coloured by label and faded by score
+
+Room ids are the model's space ids and opening ids are the model's opening ids, so the overlay and the model agree. Press `s` (or the item's "sheet" button) to jump to the sheet and highlight what the item is about: the room or opening its target names, or the box in its provenance. Items with neither have no sheet button.
+
 ## Replaying
 
 ```bash
@@ -60,6 +72,6 @@ replay them (#750).
 
 ## Limitations
 
-- No sheet overlays yet (rooms, walls and detections drawn on the sheet, links between sheets). That is the next slice of #749.
+- Links between sheets (an elevation window drawn to its plan room) are not drawn yet; each sheet is drawn on its own.
 - Edits that change the model (#796): every review item names its `target` (`kind`, `id`, and for editable items the `field`). Editable today, on openings only: `space_id` (room link; value is a space id or a unique room number), `width_m` (metres, 0 to 30; area and host interval follow, centred), and `construction_id` (must exist in the model). The default field comes from the item; `width_m=0.9` picks another opening field. Every edit value in a file is checked before anything changes, and one bad value refuses the whole file. The revision log carries old and new values. `revert`, `confirm` and `reject` (in the page or as CLI flags) put the field back to the automatic value, kept in `target.original` the first time an edit changes it.
 - Items whose target has no editable field (spaces, walls, fixtures, BIM elements, detections) keep the #749 behaviour: the value is recorded and the item closed. Creating an opening the pipeline left out (`opening_unsized`) is not an edit yet.

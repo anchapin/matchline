@@ -15,14 +15,19 @@ item to its automatic state, and every change the replay makes is written to
 the model's revision log. The decisions file itself is the correction
 history; applying it never rewrites it.
 
-Sheet overlays (rooms, walls, detections drawn on the sheet) are the next
-slice and are not drawn here yet.
+Sheet overlays (#749): every floor plan the run read for walls and rooms is
+drawn below the queue with its rooms, walls, plan openings and symbol
+detections on top of the sheet raster (embedded, downsized). Selecting an item
+shows the room, opening or detection box it is about. Links between sheets
+(an elevation window to its plan room) are not drawn yet.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import html
+import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -357,7 +362,36 @@ _UI_JS = """
   var doc = JSON.parse(JSON.stringify(data.doc));
   try { var saved = localStorage.getItem(key); if (saved) doc = JSON.parse(saved); }
   catch (e) {}
-  var sel = 0, openOnly = false;
+  var sel = 0, openOnly = false, svgs = {};
+  (data.sheets || []).forEach(function (sh) {
+    var host = document.querySelector(".sheet[data-sheet='" + sh.file + "']");
+    if (host) svgs[sh.file] = drawSheet(sh, host);
+  });
+  document.querySelectorAll(".layers input").forEach(function (cb) {
+    cb.onchange = function () {
+      var svg = svgs[cb.closest("figure").id.slice(6)];
+      var g = svg && svg.querySelector("g[data-layer='" + cb.dataset.layer + "']");
+      if (g) g.style.display = cb.checked ? "" : "none";
+    };
+  });
+  function show(id) {
+    var ln = (data.links || {})[id], svg = ln && svgs[ln.sheet];
+    document.querySelectorAll(".hit").forEach(function (e) {
+      if (e.dataset.box) e.remove(); else e.classList.remove("hit"); });
+    if (!svg) return false;
+    if (ln.el) {
+      var t = svg.querySelector("[data-el='" + ln.el + "']");
+      if (t) t.classList.add("hit");
+    }
+    if (ln.box) {
+      var b = ln.box;
+      el("rect", {x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1],
+        fill: "none", "class": "hit", "data-box": 1}, svg);
+    }
+    document.getElementById("sheet-" + ln.sheet)
+      .scrollIntoView({behavior: "smooth", block: "start"});
+    return true;
+  }
   function save() { try { localStorage.setItem(key, JSON.stringify(doc)); } catch (e) {} }
   function decide(id, action, it) {
     var d = {id: id, action: action, at: new Date().toISOString()};
@@ -401,6 +435,11 @@ _UI_JS = """
         b.onclick = function () { sel = k; decide(it.id, a, it); };
         tr.lastChild.appendChild(b);
       });
+      if ((data.links || {})[it.id]) {
+        var sb = document.createElement("button"); sb.textContent = "sheet";
+        sb.onclick = function () { sel = k; render(); show(it.id); };
+        tr.lastChild.appendChild(sb);
+      }
       tb.appendChild(tr);
     });
     document.getElementById("left").textContent = n + " still open";
@@ -432,6 +471,7 @@ _UI_JS = """
     if (e.key === "j") sel = Math.min(sel + 1, data.items.length - 1);
     else if (e.key === "k") sel = Math.max(sel - 1, 0);
     else if (m[e.key] && it) { decide(it.id, m[e.key], it); return; }
+    else if (e.key === "s" && it) { show(it.id); return; }
     else return;
     render();
   });
@@ -445,33 +485,272 @@ def _json_script(obj) -> str:
     return json.dumps(obj).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
-def render_html(model, doc: dict) -> str:
+# ---------------------------------------------------------------- overlays
+
+OVERLAY_MAX_PX = 1800  # longest side of the embedded sheet image
+OVERLAY_JPEG_QUALITY = 60
+
+
+def _sheet_image(png: Path) -> str:
+    """The sheet raster as a downsized JPEG data URI ("" when unreadable)."""
+    try:
+        from PIL import Image
+
+        with Image.open(png) as im:
+            im = im.convert("L")
+            im.thumbnail((OVERLAY_MAX_PX, OVERLAY_MAX_PX))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=OVERLAY_JPEG_QUALITY, optimize=True)
+    except Exception:
+        return ""
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _load_json(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def sheet_overlays(out_dir, model) -> List[dict]:
+    """Rooms, walls, plan openings and detections per plan sheet, in sheet points.
+
+    Reads what the drawing-set run left in ``out_dir/sheets`` (``sheet_NNN``
+    json/png, ``walls_NNN.json``, ``detections_NNN.json``, ``sheet_index.json``).
+    Room ids become the model's space ids and plan gaps the model's opening ids
+    (``{level}-OP{k}``), so review items can point at them. Empty for runs that
+    did not start from a drawing set.
+    """
+    d = Path(out_dir) / "sheets"
+    if not d.is_dir():
+        return []
+    index = _load_json(d / "sheet_index.json") or {}
+    number = {}
+    for e in index.get("sheets", []):
+        v = e.get("number")
+        number[e.get("file")] = (v.get("value") if isinstance(v, dict) else v) or ""
+    room_space, level_of = {}, {}
+    for sp in model.spaces.values():
+        note = (sp.core_provenance.note if sp.core_provenance else "") or ""
+        parts = note.split(" ", 2)
+        if len(parts) >= 2 and parts[0].startswith("sheet_"):
+            room_space[(parts[0], parts[1].rstrip(";"))] = sp.id
+            level_of.setdefault(parts[0], sp.level_id)
+    modelled = {op.id for sp in model.spaces.values() for op in sp.openings}
+    queued = {i.id for i in model.review_queue}
+    out = []
+    for wp in sorted(d.glob("walls_[0-9][0-9][0-9].json")):
+        f = wp.name.replace("walls_", "sheet_")
+        sh, res = _load_json(d / f), _load_json(wp)
+        mpp = (res or {}).get("m_per_pt")
+        if not sh or not mpp:
+            continue
+        w_pt, h_pt = float(sh["width_pt"]), float(sh["height_pt"])
+
+        def pt(p, h=h_pt, k=mpp):  # metres, y up -> sheet points, y down
+            return [round(p[0] / k, 1), round(h - p[1] / k, 1)]
+
+        lid = level_of.get(f, f.replace(".json", ""))
+        rooms = []
+        for r in res.get("rooms", []):
+            lab = r.get("label") or {}
+            sid = room_space.get((f, r["id"]))
+            rooms.append({
+                "id": sid or r["id"], "space": bool(sid),
+                "label": " ".join(x for x in (lab.get("number"), lab.get("name")) if x),
+                "pts": [pt(q) for q in r["polygon_m"]], "review": bool(r.get("needs_review")),
+            })  # fmt: skip
+        walls = [
+            {"id": w["id"], "a": pt(w["a_m"]), "b": pt(w["b_m"]),
+             "t": round(w.get("thickness_m", 0.0) / mpp, 1)}
+            for w in res.get("walls", [])
+        ]  # fmt: skip
+        openings = []
+        for k, o in enumerate(res.get("openings", [])):
+            oid = f"{lid}-OP{k + 1}"
+            kind = o.get("kind") or ("air_wall" if o.get("air_wall") else "gap")
+            state = (
+                "modelled" if oid in modelled
+                else "review" if f"rq-{oid}" in queued
+                else "not modelled"
+            )  # fmt: skip
+            openings.append({"id": oid, "kind": kind, "state": state, "width_m": o.get("width_m"),
+                             "a": pt(o["a_m"]), "b": pt(o["b_m"])})  # fmt: skip
+        px = float(sh.get("px_per_pt") or 0) or None
+        dets = []
+        for k, x in enumerate(_load_json(d / f.replace("sheet_", "detections_")) or []):
+            b = x.get("bbox") or []
+            if px and len(b) == 4:
+                dets.append({"id": f"{f}#{k}", "label": x.get("label", ""),
+                             "tag": x.get("tag", ""), "score": float(x.get("score") or 0),
+                             "box": [round(v / px, 1) for v in b]})  # fmt: skip
+        raster = sh.get("raster_file")
+        out.append({
+            "file": f, "number": number.get(f, ""), "level": level_of.get(f, ""),
+            "w": w_pt, "h": h_pt, "px_per_pt": px,
+            "img": _sheet_image(d / raster) if raster and (d / raster).exists() else "",
+            "rooms": rooms, "walls": walls, "openings": openings, "dets": dets,
+        })  # fmt: skip
+    return out
+
+
+def item_links(model, sheets: List[dict]) -> Dict[str, dict]:
+    """Where each review item sits on the sheets: ``{sheet, el}`` and/or a ``box``."""
+    where = {}
+    for s in sheets:
+        for r in s["rooms"]:
+            where[("space", r["id"])] = (s["file"], "room:" + r["id"])
+        for o in s["openings"]:
+            where[("opening", o["id"])] = (s["file"], "op:" + o["id"])
+    by_number = {s["number"]: s for s in sheets if s["number"]}
+    by_number.update({s["file"]: s for s in sheets})
+    out = {}
+    for i in model.review_queue:
+        t = i.target or {}
+        hit = where.get((t.get("kind"), t.get("id")))
+        if hit is None and i.id.startswith("rq-"):
+            hit = where.get(("opening", i.id[3:])) or where.get(("space", i.id[3:]))
+        link = {"sheet": hit[0], "el": hit[1]} if hit else {}
+        p = i.provenance
+        s = by_number.get(p.sheet_id) if p else None
+        if s and p.bbox and len(p.bbox) == 4 and s["px_per_pt"]:
+            link.setdefault("sheet", s["file"])
+            if link["sheet"] == s["file"]:
+                link["box"] = [round(float(v) / s["px_per_pt"], 1) for v in p.bbox]
+        if link:
+            out[i.id] = link
+    return out
+
+
+_SHEET_CSS = """
+figure{margin:18px 0}figcaption{font-weight:600;margin:4px 0}.sheet{position:relative;
+border:1px solid #ccc;background:#fff}.sheet img,.sheet svg{position:absolute;left:0;top:0;
+width:100%;height:100%}.layers{font-size:11px;color:#555}.layers label{margin-right:10px}
+.hit{stroke:#e0007a!important;stroke-width:6px!important;fill:rgba(224,0,122,.18)!important}
+.legend span{display:inline-block;margin-right:12px;font-size:11px}
+.legend i{display:inline-block;width:12px;height:4px;margin-right:4px;vertical-align:middle}
+"""
+
+_SHEET_JS = """
+var SVGNS = "http://www.w3.org/2000/svg";
+var OP_COLOR = {door: "#1565c0", window: "#00838f", gap: "#6d4c41", air_wall: "#9e9e9e"};
+function el(tag, attrs, parent) {
+  var e = document.createElementNS(SVGNS, tag);
+  for (var k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e); return e;
+}
+function hue(s) {
+  var h = 0;
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return "hsl(" + h + ",70%,40%)";
+}
+function drawSheet(sh, host) {
+  var svg = el("svg", {viewBox: "0 0 " + sh.w + " " + sh.h, preserveAspectRatio: "none"});
+  var g = {};
+  ["rooms", "walls", "openings", "dets"].forEach(function (n) {
+    g[n] = el("g", {"data-layer": n}, svg);
+  });
+  sh.rooms.forEach(function (r) {
+    var p = el("polygon", {points: r.pts.map(function (q) { return q.join(","); }).join(" "),
+      fill: r.review ? "rgba(239,108,0,.18)" : "rgba(46,125,50,.12)",
+      stroke: r.review ? "#ef6c00" : "#2e7d32", "stroke-width": 1.5,
+      "data-el": "room:" + r.id}, g.rooms);
+    el("title", {}, p).textContent = r.id + (r.label ? " " + r.label : "")
+      + (r.review ? " (review)" : "");
+  });
+  sh.walls.forEach(function (w) {
+    el("line", {x1: w.a[0], y1: w.a[1], x2: w.b[0], y2: w.b[1], stroke: "rgba(33,33,33,.55)",
+      "stroke-width": Math.max(w.t, 1), "data-el": "wall:" + w.id}, g.walls);
+  });
+  sh.openings.forEach(function (o) {
+    var l = el("line", {x1: o.a[0], y1: o.a[1], x2: o.b[0], y2: o.b[1],
+      stroke: o.state === "review" ? "#d32f2f" : (OP_COLOR[o.kind] || "#6d4c41"),
+      "stroke-width": 5, "stroke-dasharray": o.state === "modelled" ? "" : "6 4",
+      "data-el": "op:" + o.id}, g.openings);
+    el("title", {}, l).textContent = o.id + " " + o.kind + ", " + o.state
+      + (o.width_m ? ", " + o.width_m + " m" : "");
+  });
+  sh.dets.forEach(function (x) {
+    var r = el("rect", {x: x.box[0], y: x.box[1],
+      width: x.box[2] - x.box[0], height: x.box[3] - x.box[1],
+      fill: "none", stroke: hue(x.label), "stroke-width": 1.5, opacity: 0.25 + 0.75 * x.score,
+      "data-el": "det:" + x.id}, g.dets);
+    el("title", {}, r).textContent = x.label + (x.tag ? " " + x.tag : "") + " "
+      + x.score.toFixed(2);
+  });
+  host.appendChild(svg); return svg;
+}
+"""
+
+
+def _sheets_html(sheets: List[dict]) -> str:
+    if not sheets:
+        return (
+            "<h2>Sheets</h2><p>No plan sheets in this run "
+            "(it did not start from a drawing set).</p>"
+        )
+    parts = [
+        "<h2>Sheets</h2><div class=legend>"
+        "<span><i style='background:#2e7d32'></i>room</span>"
+        "<span><i style='background:#ef6c00'></i>room needing review</span>"
+        "<span><i style='background:#1565c0'></i>door</span>"
+        "<span><i style='background:#00838f'></i>window</span>"
+        "<span><i style='background:#6d4c41'></i>gap</span>"
+        "<span><i style='background:#d32f2f'></i>opening in review</span>"
+        "<span>solid: modelled, dashed: not modelled; detection boxes fade with lower score</span>"
+        "</div>"
+    ]
+    for s in sheets:
+        cap = html.escape(
+            " ".join(x for x in (s["number"], s["file"], s["level"] and f"level {s['level']}") if x)
+        )
+        img = f"<img alt='' src='{s['img']}'>" if s["img"] else ""
+        parts.append(
+            f"<figure id='sheet-{html.escape(s['file'])}'><figcaption>{cap}</figcaption>"
+            "<div class=layers>"
+            + "".join(
+                f"<label><input type=checkbox checked data-layer={n}> {n}</label>"
+                for n in ("rooms", "walls", "openings", "dets")
+            )
+            + f"</div><div class=sheet data-sheet='{html.escape(s['file'])}' "
+            f"style='aspect-ratio:{s['w']:.1f}/{s['h']:.1f}'>{img}</div></figure>"
+        )
+    return "\n".join(parts)
+
+
+def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
     items = []
     for i in worst_first(model.review_queue):
         row, f = _item_row(i), edit_field(model, i)
         row["field"] = f
         row["value"] = original_value(model, i) if f else None
         items.append(row)
-    data = {"doc": doc, "items": items}
+    sheets = sheets or []
+    data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}
     name = html.escape(str(model.name))
     return (
         "\n".join(
             [
                 "<!doctype html><html><head><meta charset=utf-8>",
-                f"<title>matchline review: {name}</title><style>{_CSS}</style></head><body>",
+                f"<title>matchline review: {name}</title>",
+                f"<style>{_CSS}{_SHEET_CSS}</style></head><body>",
                 f"<h1>Review queue: {name}</h1>",
                 f"<div class=mono>model SHA-256 {doc['model_sha256']}</div>",
                 "<div class=bar><span id=left></span>"
                 "<label><input type=checkbox id=open> open only</label>"
                 "<button id=export>Export decisions.json</button>"
                 "<label>Load decisions <input type=file id=import accept='.json'></label></div>",
-                "<div class=keys>j/k move, c confirm, r reject, e edit, u revert to automatic. "
+                "<div class=keys>j/k move, c confirm, r reject, e edit, u revert to automatic, "
+                "s show on sheet. "
                 "Then run: matchline review model.json --apply decisions.json</div>",
                 "<table><thead><tr><th>confidence</th><th>urgency</th><th>kind</th>"
                 "<th>item</th><th>decision and history</th><th></th></tr></thead>"
                 "<tbody id=rows></tbody></table>",
+                _sheets_html(sheets),
                 f'<script type="application/json" id="data">{_json_script(data)}</script>',
                 f"<script id=replay>{_REPLAY_JS}</script>",
+                f"<script id=sheets>{_SHEET_JS}</script>",
                 f"<script id=ui>{_UI_JS}</script>",
                 "</body></html>",
             ]
@@ -488,7 +767,7 @@ def write_review(out_dir: Path, model) -> Path:
     (d / "model.json").write_text(text)
     doc = template(model, sha256_text(text))
     (d / "decisions.json").write_text(json.dumps(doc, indent=2))
-    (d / "review.html").write_text(render_html(model, doc))
+    (d / "review.html").write_text(render_html(model, doc, sheet_overlays(out_dir, model)))
     return d
 
 
@@ -504,6 +783,7 @@ def summarize(summary: dict) -> str:
 
 
 __all__: List[str] = [
-    "SCHEMA", "ACTIONS", "apply_decisions", "check", "decide", "final_states", "render_html",
+    "SCHEMA", "ACTIONS", "apply_decisions", "check", "decide", "final_states", "item_links",
+    "render_html", "sheet_overlays",
     "template", "worst_first", "write_review", "summarize",
 ]  # fmt: skip

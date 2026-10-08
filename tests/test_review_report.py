@@ -277,3 +277,85 @@ def test_target_survives_json_and_old_models_load():
     for it in d["model"]["review_queue"]:
         it.pop("target")
     assert BuildingModel.from_dict(d).review_queue[0].target == {}
+
+
+# -- #749 sheet overlays ----------------------------------------------------
+
+
+def _set_run(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_t_real_set", Path(__file__).with_name("test_real_set.py")
+    )
+    T = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(T)
+
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    model, _rep = T._one_floor(tmp_path, rows)
+    return model, tmp_path / "out"
+
+
+def test_overlays_draw_rooms_walls_and_openings_with_model_ids(tmp_path):
+    model, out = _set_run(tmp_path)
+    (sh,) = R.sheet_overlays(out, model)
+    assert sh["file"] == "sheet_001.json" and sh["number"] == "A-101"
+    assert sh["img"].startswith("data:image/jpeg;base64,")
+    assert {r["id"] for r in sh["rooms"]} == set(model.spaces)
+    assert all(r["space"] for r in sh["rooms"])
+    assert sh["walls"] and all(0 <= w["a"][0] <= sh["w"] for w in sh["walls"])
+    modelled = {op.id for s in model.spaces.values() for op in s.openings}
+    states = {o["id"]: o["state"] for o in sh["openings"]}
+    assert modelled and all(states[i] == "modelled" for i in modelled)
+
+
+def test_overlays_read_detections_in_sheet_points(tmp_path):
+    model, out = _set_run(tmp_path)
+    d = out / "sheets"
+    px = json.loads((d / "sheet_001.json").read_text())["px_per_pt"]
+    det = [
+        {"label": "window", "tag": "W1", "score": 0.8, "bbox": [10 * px, 20 * px, 30 * px, 40 * px]}
+    ]
+    (d / "detections_001.json").write_text(json.dumps(det))
+    (sh,) = R.sheet_overlays(out, model)
+    assert sh["dets"] == [
+        {"id": "sheet_001.json#0", "label": "window", "tag": "W1", "score": 0.8,
+         "box": [10.0, 20.0, 30.0, 40.0]}
+    ]  # fmt: skip
+
+
+def test_items_link_to_their_room_and_to_their_detection_box(tmp_path):
+    model, out = _set_run(tmp_path)
+    sid = sorted(model.spaces)[0]
+    nowhere = Provenance(sheet_id="", revision=0, method="m", confidence=0.5)
+    model.flag_for_review(
+        "space_merge", f"check {sid}", 0.5, nowhere, target={"kind": "space", "id": sid}
+    )
+    px = json.loads((out / "sheets" / "sheet_001.json").read_text())["px_per_pt"]
+    boxed = Provenance(sheet_id="A-101", revision=0, method="m", confidence=0.4,
+                       bbox=[0, 0, 50 * px, 25 * px])  # fmt: skip
+    model.flag_for_review("fixture_assignment", "a fixture", 0.4, boxed)
+    links = R.item_links(model, R.sheet_overlays(out, model))
+    by_kind = {i.kind: links.get(i.id) for i in model.review_queue}
+    assert by_kind["space_merge"] == {"sheet": "sheet_001.json", "el": f"room:{sid}"}
+    assert by_kind["fixture_assignment"] == {
+        "sheet": "sheet_001.json",
+        "box": [0.0, 0.0, 50.0, 25.0],
+    }
+
+
+def test_review_page_embeds_sheets_and_says_when_there_are_none(tmp_path):
+    model, out = _set_run(tmp_path)
+    page = (R.write_review(out, model) / "review.html").read_text()
+    assert "<figure id='sheet-sheet_001.json'>" in page and "drawSheet" in page
+    assert "http://" not in page.replace("http://www.w3.org/2000/svg", "")
+    bare = R.render_html(_with_openings(), R.template(_with_openings(), "x"))
+    assert "No plan sheets in this run" in bare
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_sheet_script_parses():
+    r = subprocess.run(["node", "-e", "new Function(process.argv[1])", R._SHEET_JS],
+                       capture_output=True, text=True)  # fmt: skip
+    assert r.returncode == 0, r.stderr
