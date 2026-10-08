@@ -71,7 +71,7 @@ def test_library_resolves_the_type_construction_and_baseline_skips_it():
     assert s.resolved[cid]["construction_type"] == "SteelFramed"
     assert m.constructions[cid].u_value_w_m2k == s.resolved[cid]["u_si"]
     assert "mtl. stud" in s.resolved[cid]["why"]
-    assert s.defaulted["appg-wall"]["segments"] == ["w2"]
+    assert s.defaulted["t55-wall"]["segments"] == ["w2"]
 
 
 def test_no_climate_zone_leaves_it_unset_and_reported():
