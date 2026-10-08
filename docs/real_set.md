@@ -32,3 +32,10 @@ What this slice does not invent:
 
 Validation closes area and volume per level, so stacked storeys no longer double-count
 against a single footprint.
+
+## Single sheet images (`--image`)
+
+`--image sheet.png --detections preds.json` reads symbols and rolls up a takeoff into
+`stage_01_building.json`, then stops with a Stage 2 error: one raster sheet has no walls
+or rooms to put the symbols in (raster wall finding is not built). The error and its hint
+are printed to stderr and the run exits 1; use `--set drawings.pdf` to build a model.
