@@ -7,6 +7,14 @@ import pytest
 from materials import air_layer_resistance, is_air_name
 
 
+def _no_u(model):
+    """No U-value anywhere: at most an unset-U wall-type construction (#747)."""
+    return all(
+        c.u_value_w_m2k is None and c.provenance.method == "ifc_import:tier0:wall_type"
+        for c in model.constructions.values()
+    )
+
+
 @pytest.mark.parametrize(
     "t_m, r",
     [(0.005, 0.11), (0.010, 0.15), (0.020, 0.175), (0.025, 0.18), (0.050, 0.18), (0.300, 0.18)],
@@ -97,11 +105,11 @@ def test_provenance_cites_iso_6946_for_air(tmp_path):
 
 
 def test_ventilated_gap_still_gives_no_value(tmp_path):
-    assert _import(tmp_path, [BRICK, (None, 0.05, None, True), BRICK]).constructions == {}
+    assert _no_u(_import(tmp_path, [BRICK, (None, 0.05, None, True), BRICK]))
 
 
 def test_air_layer_thicker_than_0_3_m_gives_no_value(tmp_path):
-    assert _import(tmp_path, [BRICK, (None, 0.35, None, "UNKNOWN"), BRICK]).constructions == {}
+    assert _no_u(_import(tmp_path, [BRICK, (None, 0.35, None, "UNKNOWN"), BRICK]))
 
 
 def test_stated_conductivity_on_an_air_material_wins(tmp_path):

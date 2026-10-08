@@ -7,6 +7,14 @@ import pytest
 from materials import TABLE, lookup_conductivity
 
 
+def _no_u(model):
+    """No U-value anywhere: at most an unset-U wall-type construction (#747)."""
+    return all(
+        c.u_value_w_m2k is None and c.provenance.method == "ifc_import:tier0:wall_type"
+        for c in model.constructions.values()
+    )
+
+
 @pytest.mark.parametrize(
     "name, eid",
     [
@@ -87,4 +95,4 @@ def test_file_conductivity_wins_per_layer(tmp_path):
 
 def test_one_unknown_name_still_means_no_value(tmp_path):
     layers = NAMED[:1] + [("Mystery board", 0.05, None, False)] + NAMED[1:]
-    assert _import(tmp_path, layers).constructions == {}
+    assert _no_u(_import(tmp_path, layers))

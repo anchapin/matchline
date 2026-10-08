@@ -23,6 +23,14 @@ WALL = [
 ]
 
 
+def _no_u(model):
+    """No U-value anywhere: at most an unset-U wall-type construction (#747)."""
+    return all(
+        c.u_value_w_m2k is None and c.provenance.method == "ifc_import:tier0:wall_type"
+        for c in model.constructions.values()
+    )
+
+
 def _u(layers):
     return 1.0 / (RSI_WALL_M2K_W + RSE_WALL_M2K_W + sum(t / k for _, t, k, _ in layers))
 
@@ -98,17 +106,19 @@ def test_coverage_check_passes(tmp_path):
 def test_one_layer_without_conductivity_means_no_value(tmp_path):
     layers = WALL[:1] + [("Mystery board", 0.05, None, False)] + WALL[1:]
     back = _import(tmp_path, layers)
-    assert back.constructions == {}
-    assert all(w.construction_id == "" for w in back.envelope)
+    assert _no_u(back)
+    assert all(
+        w.construction_id == "" or w.construction_id.startswith("IFC-TYPE-") for w in back.envelope
+    )
 
 
 def test_ventilated_layer_means_no_value(tmp_path):
     layers = WALL[:1] + [("Air", 0.05, 0.026, True)] + WALL[1:]
-    assert _import(tmp_path, layers).constructions == {}
+    assert _no_u(_import(tmp_path, layers))
 
 
 def test_two_layer_sets_are_ambiguous(tmp_path):
-    assert _import(tmp_path, sets=2).constructions == {}
+    assert _no_u(_import(tmp_path, sets=2))
 
 
 def test_stated_thermal_transmittance_wins(tmp_path):
