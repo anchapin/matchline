@@ -34,8 +34,7 @@ F-factors stay in IP. No hand edits; re-run the script to regenerate.
   confidence 0.6, and a note naming the source, edition, table, category,
   construction class, climate zone and the words that matched. The value is
   the code maximum, not the drawn assembly.
-- Unmatched constructions, the slab (Table 5.5 gives an F-factor; not resolved
-  yet) and a missing climate zone are reported in
+- Unmatched constructions and a missing climate zone are reported in
   `stage_03b_constructions.json` and in `convention_report.json` under
   `constructions`.
 
@@ -52,11 +51,20 @@ reaches that wall. On the BSI Clinic, the 80 exterior walls
 conductivity) now resolve as SteelFramed from their type name instead of the
 blanket baseline default: same U, a named source.
 
+Slab on grade (#747): an unset ground slab gets `appg-slab`, the Table 5.5
+unheated-slab F-factor for the category and zone (Appendix G G3.1-5(b)),
+converted to SI (1 Btu/h-ft-F = 1.730735 W/m-K) and carried as an effective U:
+F x exposed perimeter / slab area. Area and perimeter come from the footprint
+of the lowest level's spaces; every slab edge counts as exposed. A stated slab
+U is never replaced. A lowest level with no space polygons is reported, not
+filled. The F-factor, perimeter, area and resulting U are written to
+`stage_03b_constructions.json` under `defaulted`.
+
 Space wall U-values are rolled up again after filling, so gbXML and IFC4
 exports carry the resolved values.
 
 ## Not yet
 
 Windows, skylights and doors (U and SHGC rows are in the data, but the model
-has no window construction yet), the slab F-factor, wall-type tags read off PDF
-legends, and Appendix A assemblies.
+has no window construction yet), heated slabs, interior (non-perimeter) slab
+edges, wall-type tags read off PDF legends, and Appendix A assemblies.
