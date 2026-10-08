@@ -172,7 +172,8 @@ def test_a_two_sheet_item_highlights_both_ends(tmp_path, page):
     pg.keyboard.press("s")
     assert pg.locator("[data-el='elev:A-201-W1'].hit").count() == 1
     assert pg.locator(f"[data-el='op:{op.id}'].hit").count() == 1
-    labels = pg.locator("svg text.link").all_inner_texts()
+    # SVG text has no innerText; read textContent
+    labels = pg.locator("svg text.link").evaluate_all("els => els.map(e => e.textContent)")
     assert sorted(labels) == sorted([f"\u2194 A-101 {op.id}", "\u2194 A-201 A-201-W1"])
     assert pg.locator("#pair").is_visible() and pg.locator("#pair button").count() == 2
     # s on an item with no sheet clears both ends and hides the bar
