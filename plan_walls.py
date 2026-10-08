@@ -46,6 +46,7 @@ MIN_WALL_LEN_M = 0.25  # shortest wall piece kept (overlap of the two faces)
 MAX_OPENING_M = 2.50  # widest gap bridged inside a wall run
 ANGLE_TOL_DEG = 1.0
 MIN_ROOM_M2 = 1.0
+SLIVER_M2 = 2.0  # unlabeled faces below this merge into a neighbour (#740)
 RECT_FILL = 0.90  # filled shape area / its rotated bounding rectangle
 
 Pt = Tuple[float, float]
@@ -558,6 +559,7 @@ class Room:
     label: Optional[dict] = None
     needs_review: bool = False
     reasons: List[str] = field(default_factory=list)
+    merged_m2: List[float] = field(default_factory=list)  # unlabeled slivers folded in
 
 
 @dataclass
@@ -582,6 +584,50 @@ class PlanWalls:
 
 
 _ROOM_NO = re.compile(r"\b[A-Z]?\d{2,4}[A-Z]?\b")
+
+
+def _merge_slivers(faces: List[Polygon], spans, door_lines, max_area: float, tol: float):
+    """Fold small unlabeled faces into a neighbouring face; nothing is dropped (#740).
+
+    Wall jogs (a thick-wall corner, a thickness change) close small loops that
+    are not rooms. Each unlabeled face under ``max_area`` merges, smallest
+    first, by the closet/shaft rule: into the neighbour it shares a door with,
+    else into the neighbour it shares the most boundary with. A face with a
+    room label stays a room however small. Returns ``(faces, merged)``, where
+    ``merged[k]`` lists the areas (sheet units) folded into ``faces[k]``.
+    """
+    faces = list(faces)
+    merged: List[List[float]] = [[] for _ in faces]
+    alive = [True] * len(faces)
+    doors = unary_union([d.buffer(tol) for d in door_lines]) if door_lines else None
+    for i in sorted(range(len(faces)), key=lambda k: faces[k].area):
+        f = faces[i]
+        if f.area >= max_area:
+            break
+        if _label_for(f, spans)[0]:
+            continue
+        best = None
+        for j, g in enumerate(faces):
+            if j == i or not alive[j] or not f.envelope.intersects(g.envelope):
+                continue
+            shared = f.boundary.intersection(g.boundary)
+            if shared.length <= tol:
+                continue
+            door = doors is not None and shared.intersection(doors).length > tol
+            key = (door, shared.length)
+            if best is None or key > best[0]:
+                best = (key, j)
+        if best is None:
+            continue
+        j = best[1]
+        u = unary_union([faces[j], f])
+        if u.geom_type != "Polygon":
+            continue
+        faces[j] = u
+        merged[j] += [f.area] + merged[i]
+        alive[i] = False
+    keep = [k for k in range(len(faces)) if alive[k]]
+    return [faces[k] for k in keep], [merged[k] for k in keep]
 
 
 def _label_for(face: Polygon, spans) -> Tuple[Optional[dict], List[str]]:
@@ -708,8 +754,15 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         + [LineString([br.a, br.b]).buffer(br.t / 2, cap_style="flat") for br in bridges]
     )
     spans = [(_get(t, "text"), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
+    face_list, merged = _merge_slivers(
+        list(getattr(faces, "geoms", [])),
+        spans,
+        [LineString([br.a, br.b]) for br in bridges],
+        SLIVER_M2 / m_per_pt**2,
+        tol,
+    )
     rooms: List[Room] = []
-    for face in sorted(getattr(faces, "geoms", []), key=lambda f: -f.area):
+    for face, folded in sorted(zip(face_list, merged), key=lambda fm: -fm[0].area):
         area = face.area * m_per_pt**2
         net = face.difference(wall_area)
         if net.geom_type == "MultiPolygon":
@@ -721,6 +774,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
             net_polygon_m=[to_m(p) for p in net.exterior.coords] if not net.is_empty else [],
             area_m2=round(area, 3),
             net_area_m2=round(net.area * m_per_pt**2, 3) if not net.is_empty else 0.0,
+            merged_m2=[round(a * m_per_pt**2, 3) for a in folded],
         )
         r.label, reasons = _label_for(face, spans)
         if area < MIN_ROOM_M2:
