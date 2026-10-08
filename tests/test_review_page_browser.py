@@ -12,6 +12,7 @@ turns the skip into a failure.
 
 import json
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -141,4 +142,42 @@ def test_reviewer_drives_the_page_and_the_export_replays(tmp_path, page):
     assert q[ids[other]] == "rejected"
     _sp, op = R._find_opening(m, oid)
     assert op is not None and op.tag == "W1" and op.provenance.method == "review_edit"
+    assert errors == []
+
+
+def test_a_two_sheet_item_highlights_both_ends(tmp_path, page):
+    # #801: an elevation window whose size disagrees with its plan opening
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_t_elevation_sheets_b", Path(__file__).with_name("test_elevation_sheets.py")
+    )
+    TE = importlib.util.module_from_spec(spec)
+    saved = list(sys.path)  # it puts tests/ first, where tests/cli would shadow cli.py
+    try:
+        spec.loader.exec_module(TE)
+    finally:
+        sys.path[:] = saved
+    model, _rep, _s = TE._run(
+        tmp_path, TE._elev("SOUTH ELEVATION", wins=((TE.WIN_X + TE.T_EXT / 2, 0.9, 1.2, 2.1),))
+    )
+    d = R.write_review(tmp_path / "out", model)
+    pg, errors = page
+    pg.goto((d / "review.html").as_uri())
+    items = pg.evaluate("JSON.parse(document.getElementById('data').textContent).items")
+    k = next(k for k, i in enumerate(items) if i["id"].startswith("rq-elev-"))
+    (op,) = [o for sp in model.spaces.values() for o in sp.openings]
+    _go(pg, k)
+    pg.keyboard.press("s")
+    assert pg.locator("[data-el='elev:A-201-W1'].hit").count() == 1
+    assert pg.locator(f"[data-el='op:{op.id}'].hit").count() == 1
+    labels = pg.locator("svg text.link").all_inner_texts()
+    assert sorted(labels) == sorted([f"\u2194 A-101 {op.id}", "\u2194 A-201 A-201-W1"])
+    assert pg.locator("#pair").is_visible() and pg.locator("#pair button").count() == 2
+    # s on an item with no sheet clears both ends and hides the bar
+    other = next(j for j, i in enumerate(items) if i["id"] == "rq-storey-height")
+    _go(pg, other)
+    pg.keyboard.press("s")
+    assert pg.locator("svg text.link").count() == 0 and not pg.locator("#pair").is_visible()
     assert errors == []

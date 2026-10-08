@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -354,9 +355,93 @@ def test_review_page_embeds_sheets_and_says_when_there_are_none(tmp_path):
     assert "No plan sheets in this run" in bare
 
 
+# -- #801 elevation sheets and two-sheet items -------------------------------
+
+
+def _elev_mod():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "_t_elevation_sheets", Path(__file__).with_name("test_elevation_sheets.py")
+    )
+    TE = importlib.util.module_from_spec(spec)
+    saved = list(sys.path)  # it puts tests/ first, where tests/cli would shadow cli.py
+    try:
+        spec.loader.exec_module(TE)
+    finally:
+        sys.path[:] = saved
+    return TE
+
+
+def _elev_run(tmp_path, **kw):
+    TE = _elev_mod()
+    model, _rep, _s = TE._run(tmp_path, TE._elev("SOUTH ELEVATION", **kw))
+    return model, tmp_path / "out", TE
+
+
+def test_overlays_draw_the_elevation_and_its_joined_openings(tmp_path):
+    model, out, _TE = _elev_run(tmp_path)
+    plan, elev = R.sheet_overlays(out, model)
+    assert plan["kind"] == "plan" and elev["kind"] == "elevation"
+    assert (elev["file"], elev["number"], elev["facade"], elev["plan"]) == (
+        "sheet_002.json", "A-201", "south", "A-101",
+    )  # fmt: skip
+    assert elev["img"].startswith("data:image/jpeg;base64,")
+    x0, y0, x1, y1 = elev["outline"]
+    assert 0 <= x0 < x1 <= elev["w"] and 0 <= y0 < y1 <= elev["h"]
+    (w,) = elev["elev"]
+    (op,) = [o for sp in model.spaces.values() for o in sp.openings]
+    assert (w["id"], w["kind"], w["plan_opening"]) == ("A-201-W1", "window", op.id)
+    assert x0 <= w["box"][0] < w["box"][2] <= x1
+
+
+def test_a_two_sheet_item_links_both_ends(tmp_path):
+    TE = _elev_mod()
+    model, out, _ = _elev_run(tmp_path, wins=((TE.WIN_X + TE.T_EXT / 2, 0.9, 1.2, 2.1),))
+    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+    (op,) = [o for sp in model.spaces.values() for o in sp.openings]
+    ln = R.item_links(model, R.sheet_overlays(out, model))[rq.id]
+    assert (ln["sheet"], ln["el"]) == ("sheet_002.json", "elev:A-201-W1")
+    ev, pl = ln["ends"]
+    assert (ev["side"], ev["number"], ev["el"]) == ("elevation", "A-201", "elev:A-201-W1")
+    assert len(ev["box"]) == 4
+    assert (pl["side"], pl["sheet"], pl["number"], pl["el"]) == (
+        "plan", "sheet_001.json", "A-101", f"op:{op.id}",
+    )  # fmt: skip
+    assert len(pl["point"]) == 2
+
+
+def test_one_ended_items_link_to_the_sheet_they_have(tmp_path):
+    model, out, _ = _elev_run(tmp_path, wins=((2.0, 0.9, 1.2, 1.5),))
+    (op,) = [o for sp in model.spaces.values() for o in sp.openings]
+    nowhere = Provenance(sheet_id="", revision=0, method="m", confidence=0.5)
+    model.flag_for_review(
+        "elevation_extraction", "whole sheet", 0.5, nowhere, target={"kind": "sheet", "id": "A-201"}
+    )
+    links = R.item_links(model, R.sheet_overlays(out, model))
+    ev_only = links["rq-elev-A-201-A-201-W1"]
+    assert (ev_only["sheet"], ev_only["el"]) == ("sheet_002.json", "elev:A-201-W1")
+    assert "ends" not in ev_only
+    plan_only = links[f"rq-elev-A-201-{op.id}"]
+    assert (plan_only["sheet"], plan_only["el"]) == ("sheet_001.json", f"op:{op.id}")
+    sheet_item = next(i.id for i in model.review_queue if i.description == "whole sheet")
+    assert links[sheet_item]["sheet"] == "sheet_002.json" and "el" not in links[sheet_item]
+
+
+def test_review_page_draws_the_elevation_offline(tmp_path):
+    model, out, _ = _elev_run(tmp_path)
+    page = (R.write_review(out, model) / "review.html").read_text()
+    assert "<figure id='sheet-sheet_002.json'>" in page
+    assert "A-201 sheet_002.json south elevation joined to plan A-101" in page
+    assert "data-layer=outline" in page and "id=pair" in page and "drawElevation" in page
+    assert "http://" not in page.replace("http://www.w3.org/2000/svg", "")
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
-def test_sheet_script_parses():
-    r = subprocess.run(["node", "-e", "new Function(process.argv[1])", R._SHEET_JS],
+@pytest.mark.parametrize("name", ["_SHEET_JS", "_UI_JS"])
+def test_sheet_script_parses(name):
+    r = subprocess.run(["node", "-e", "new Function(process.argv[1])", getattr(R, name)],
                        capture_output=True, text=True)  # fmt: skip
     assert r.returncode == 0, r.stderr
 
