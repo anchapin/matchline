@@ -21,7 +21,9 @@ within reach, closing L and T junctions.
 
 Nothing is dropped silently: wall ends that connect to nothing, faces too
 small to be rooms, and faces holding two different room numbers go to
-``review``. The raster fallback for scanned sheets, label-less face
+``review``. A gap with a door swing drawn in it (a curve centred on one
+jamb with the leaf width as radius, or two half-width curves for a pair)
+is marked ``kind: "door"`` (#743). The raster fallback for scanned sheets, label-less face
 classification and the Clinic measurement are follow-ups.
 """
 
@@ -49,6 +51,8 @@ ANGLE_TOL_DEG = 1.0
 MIN_ROOM_M2 = 1.0
 SLIVER_M2 = 2.0  # unlabeled faces below this merge into a neighbour (#740)
 RECT_FILL = 0.90  # filled shape area / its rotated bounding rectangle
+SWING_TOL = 0.20  # door swing radius match, fraction of the leaf width (#743)
+DOOR_CONFIDENCE = {"single": 0.85, "double": 0.8}
 
 Pt = Tuple[float, float]
 
@@ -96,6 +100,75 @@ def _segments(sheet, skip: set) -> List[Seg]:
                     out.append(Seg(cur, start, i))
                 cur = start
     return out
+
+
+def _arcs(sheet) -> List[Tuple[Pt, Pt]]:
+    """Stroked curve runs as (start, end): door swing candidates (#743).
+
+    Consecutive curve segments in one path are one run (CAD exporters often
+    split a quarter circle into several Beziers). Dashed swings count.
+    """
+    out: List[Tuple[Pt, Pt]] = []
+    for p in _get(sheet, "primitives"):
+        if not _get(p, "stroked"):
+            continue
+        cur = run = None
+        for kind, pts in _get(p, "segments"):
+            if kind == "C" and cur is not None:
+                run = run or cur
+                cur = tuple(pts[-1])
+                continue
+            if run is not None:
+                out.append((run, cur))
+                run = None
+            if kind in ("M", "L"):
+                cur = tuple(pts[0])
+        if run is not None:
+            out.append((run, cur))
+    return out
+
+
+def _swing(arcs, hinge: Pt, closed: Pt, r: float, t: float) -> bool:
+    """A curve run centred on ``hinge`` with radius ``r``: one end at the closed
+    leaf position ``closed`` (the far jamb or the meeting point), the other
+    swung off the wall line."""
+    tol = max(SWING_TOL * r, t)
+    ux, uy = closed[0] - hinge[0], closed[1] - hinge[1]
+    n = math.hypot(ux, uy) or 1.0
+    for p, q in arcs:
+        for shut, open_ in ((p, q), (q, p)):
+            if math.dist(shut, closed) > tol:
+                continue
+            if abs(math.dist(open_, hinge) - r) > SWING_TOL * r:
+                continue
+            off = abs((open_[0] - hinge[0]) * uy - (open_[1] - hinge[1]) * ux) / n
+            if off >= 0.5 * r:
+                return True
+    return False
+
+
+def _classify_door(arcs, a: Pt, b: Pt, t: float) -> Optional[Tuple[str, List[Pt]]]:
+    """``("single", [hinge])`` / ``("double", [hinge_a, hinge_b])`` when the plan
+    draws a swing in the gap ``a``-``b``, else None. No swing, no claim."""
+    w = math.dist(a, b)
+    if w <= 0:
+        return None
+    lo = (min(a[0], b[0]) - 1.2 * w, min(a[1], b[1]) - 1.2 * w)
+    hi = (max(a[0], b[0]) + 1.2 * w, max(a[1], b[1]) + 1.2 * w)
+    near = [
+        (p, q)
+        for p, q in arcs
+        if all(lo[0] <= z[0] <= hi[0] and lo[1] <= z[1] <= hi[1] for z in (p, q))
+    ]
+    if not near:
+        return None
+    mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    if _swing(near, a, mid, w / 2, t) and _swing(near, b, mid, w / 2, t):
+        return "double", [a, b]
+    for h, o in ((a, b), (b, a)):
+        if _swing(near, h, o, w, t):
+            return "single", [h]
+    return None
 
 
 def _filled_rects(sheet, t_min: float, t_max: float):
@@ -714,6 +787,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "b_m": to_m(b),
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
                 **({"air_wall": True} if wide else {}),
+                "_ab": (a, b, t),
             }
         )
         if wide:
@@ -748,6 +822,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "b_m": to_m(b),
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
                 "beside_corner": True,
+                "_ab": (a, b, t),
             }
         )
     lines = _node_lines(pairs + joins + [(a, b) for _i, _j, a, b in corners], tol)
@@ -815,11 +890,30 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "source": w.source,
             }
         )
+    # door swings drawn in a gap make it a door (#743): vector path, no
+    # trained weights; a gap with no swing stays unclassified
+    arcs = _arcs(sheet)
+    doors = 0
+    for op in openings:
+        a, b, t = op.pop("_ab")
+        if op.get("air_wall"):
+            continue
+        hit = _classify_door(arcs, a, b, t)
+        if hit:
+            swing, hinges = hit
+            op.update(
+                kind="door",
+                swing=swing,
+                hinges_m=[to_m(h) for h in hinges],
+                door_confidence=DOOR_CONFIDENCE[swing],
+            )
+            doors += 1
     stats = {
         "segments": len(segs),
         "bands": len(bands),
         "walls": len(walls),
         "openings": len(openings),
+        "doors": doors,
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }

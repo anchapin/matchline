@@ -140,3 +140,23 @@ off the wall) can still pair as a wall; the Clinic measurement will show how
 often. Raster fallback for scanned sheets, hatch-pattern walls, curved walls,
 classifying unlabeled faces (`polygon_classify` / `space_merge`), and
 simplifying wall jogs so slivers never form are follow-ups on #740.
+
+## Door swings (#743)
+
+A gap is marked `kind: "door"` when the plan draws a swing in it: a stroked
+curve (dashed counts; consecutive Bezier pieces are one run) whose ends both
+sit one leaf width from a jamb, one end at the closed position (the far jamb)
+and the other swung off the wall line. A pair is two half-width curves, one
+hinged on each jamb, meeting at the middle. Radius and position match within
+`SWING_TOL` (20% of the leaf width, or the wall thickness for the closed end).
+
+Each door opening gains `swing` (`single` / `double`), `hinges_m` and
+`door_confidence` (0.85 single, 0.8 pair); `stats.doors` counts them. A gap
+with no swing stays unclassified: it is never called a window for lacking one.
+Air-wall gaps are not checked.
+
+In a set (`real_set.py`) a door swing restricts the schedule width match to
+door rows, so a door and a window of the same scheduled width no longer tie;
+the provenance note records the swing. A swing with no scheduled door of that
+width goes to review as `opening_unsized`. This is a vector rule with no
+trained weights, so it ships under any release.

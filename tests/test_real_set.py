@@ -337,3 +337,42 @@ def test_scheduled_window_construction_reaches_the_gbxml(tmp_path):
     run_pipeline.main(_args(_set(tmp_path, pages), out))
     xml = (out / "stage_06_bem" / "set.xml").read_text()
     assert "<WindowType" in xml and "SCHED-WINDOW-U2.0442" in xml
+
+
+# ---- a door swing on the plan settles a door/window width tie (#743) -----
+
+
+def test_plan_door_swing_picks_the_door_over_a_same_width_window(tmp_path):
+    from test_pdf_schedules import door_schedule
+    from test_plan_walls import _door_symbol
+
+    swing = _door_symbol((6.4, 0), (6.4, 1.2), (7.6, 0))  # hinged on the west jamb, swings in
+    plan = _arch_win("A-101", "FIRST FLOOR PLAN", 1) + swing
+    win = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    door = [("D9", "4'-0\"", "7'-0\"", "HM")]
+    pages = [
+        plan,
+        _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(win),
+        _tb("A-602", "DOOR SCHEDULE") + door_schedule(100, 1000, rows=door),
+    ]
+    model, rep = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+    ops = [o for s in model.spaces.values() for o in s.openings]
+    assert [(o.category, o.tag) for o in ops] == [("door", "D9")]
+    assert "door swing drawn on the plan" in ops[0].provenance.note
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+def test_same_width_tie_without_a_swing_still_goes_to_review(tmp_path):
+    from test_pdf_schedules import door_schedule
+
+    win = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    door = [("D9", "4'-0\"", "7'-0\"", "HM")]
+    pages = [
+        _arch_win("A-101", "FIRST FLOOR PLAN", 1),
+        _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(win),
+        _tb("A-602", "DOOR SCHEDULE") + door_schedule(100, 1000, rows=door),
+    ]
+    model, _rep = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+    assert all(not s.openings for s in model.spaces.values())
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "D9" in rq.description and "W1" in rq.description

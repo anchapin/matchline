@@ -49,3 +49,11 @@ weights): they work through this interface for evaluation, never for a release.
 A door/window backend whose training data and weights may ship, its measurement on
 commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
 to plan openings and mechanical tags, and a vector-path provider.
+
+## Vector door swings
+
+Vector plan sheets do not need a trained detector to find doors: the swing
+arcs drawn in wall gaps are read directly (see `docs/plan_walls.md`, "Door
+swings"). That path has no dataset behind it and is always on; the provider
+here is for raster sheets and for symbol classes a plan does not draw as
+geometry.
