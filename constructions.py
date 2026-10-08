@@ -93,3 +93,32 @@ def roof_u_value(model) -> Optional[float]:
 def slab_u_value(model) -> Optional[float]:
     """U of ``model.slab_construction_id`` (W/m2K), or None when unset/unusable."""
     return _construction_u(model, "slab_construction_id")
+
+
+def opening_constructions(model) -> Dict[str, dict]:
+    """Constructions the model's openings point at (#747), for the exporters.
+
+    construction id -> {"name", "category", "u", "shgc", "vt"}. An id whose
+    construction is missing or has no usable U is left out, so its openings
+    export with no reference as before. One id used by both glazing and a door
+    keeps the first category seen.
+    """
+    cons = getattr(model, "constructions", None) or {}
+    out: Dict[str, dict] = {}
+    for sp in (getattr(model, "spaces", None) or {}).values():
+        for op in getattr(sp, "openings", None) or []:
+            cid = getattr(op, "construction_id", "") or ""
+            if not cid or cid in out:
+                continue
+            c = cons.get(cid)
+            u = getattr(c, "u_value_w_m2k", None)
+            if u is None or u <= 0:
+                continue
+            out[cid] = {
+                "name": c.name or cid,
+                "category": op.category,
+                "u": float(u),
+                "shgc": getattr(c, "shgc", None),
+                "vt": getattr(c, "vt", None),
+            }
+    return out

@@ -83,8 +83,29 @@ filled. The F-factor, perimeter, area and resulting U are written to
 Space wall U-values are rolled up again after filling, so gbXML and IFC4
 exports carry the resolved values.
 
+## Windows, doors and skylights (#747)
+
+Exterior openings with no assembly on the drawings get Table 5.5 values, the
+same tier as unlabeled walls and roofs. Drawings rarely say whether a window
+opens or a door is glazed, so each category gets one class and its provenance
+says which:
+
+- windows `t55-window`: fixed vertical glazing, U and SHGC from the row; VT is
+  taken at the row's minimum VT/SHGC (1.10 x SHGC)
+- doors `t55-door`: opaque swinging door, U only
+- skylights `t55-skylight`: curbed glass (all three skylight classes carry the
+  same values); U and SHGC, but Table 5.5 gives no VT for skylights
+
+Interior openings (with an adjacent space) and openings that already point at a
+construction are left alone. In gbXML, doors reference a layered
+`Construction` and glazing references a `WindowType` with U-value, SHGC and
+visible Transmittance. OpenStudio turns a WindowType into simple glazing only
+when all three are present; without VT it leaves an empty construction that
+will not simulate. So glazing with no VT (today, skylights) is written with no
+WindowType, as before, and the export notes it.
+
 ## Not yet
 
-Windows, skylights and doors (U and SHGC rows are in the data, but the model
-has no window construction yet), heated slabs, interior (non-perimeter) slab
+Skylight visible transmittance (so skylights still export with no
+WindowType), opening constructions in the IFC4 export, heated slabs, interior (non-perimeter) slab
 edges, wall-type tags read off PDF legends, and Appendix A assemblies.

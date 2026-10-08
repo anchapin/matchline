@@ -170,6 +170,7 @@ def model_from_linked_model(
                     history=list(op.history),
                     host_facade=op.host_facade or "",
                     space_sid=sp.id,
+                    construction_id=op.construction_id or "",
                 )
             )
 
@@ -212,7 +213,7 @@ def model_from_linked_model(
     )
     notes.extend(shade_notes)
 
-    from constructions import roof_u_value, slab_u_value
+    from constructions import opening_constructions, roof_u_value, slab_u_value
 
     bem = BEMModel(
         building_name=model.name,
@@ -230,6 +231,7 @@ def model_from_linked_model(
         shades=shades,
         roof_u_value_w_m2k=roof_u_value(model),
         slab_u_value_w_m2k=slab_u_value(model),
+        opening_constructions=opening_constructions(model),
     )
 
     return bem

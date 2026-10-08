@@ -53,10 +53,12 @@ from bem_helpers import (
     _edge_spaces,
     _el,
     _fmt,
+    _opening_refs,
     _opening_type,
     _place_openings_on_wall,
     _place_skylights_on_roof,
     _wall_edges,
+    glazing_exportable,
 )
 from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
 from bem_layers import write_layered, write_partition
@@ -203,6 +205,36 @@ def _write_constructions(root, model: BEMModel, air_walls) -> dict:
         )
         if note:
             layer_notes.append(note)
+    # Opening constructions (#747): doors as layered Constructions, glazing
+    # as WindowType (U-value and SHGC, which OpenStudio reads as simple
+    # glazing). Written only when openings carry one.
+    opening_cons = getattr(model, "opening_constructions", None) or {}
+    for cid, info in sorted(opening_cons.items()):
+        if info["category"] == "door":
+            note = write_layered(root, cid, info["name"], _fmt(info["u"]), "ExteriorWall")
+            if note:
+                layer_notes.append(note)
+    for cid, info in sorted(opening_cons.items()):
+        if info["category"] == "door":
+            continue
+        if not glazing_exportable(info):
+            layer_notes.append(
+                f"{cid}: glazing has no visible transmittance (or SHGC); its "
+                f"{info['category']}s are written with no WindowType, as before"
+            )
+            continue
+        wt = _el(root, "WindowType", id=cid)
+        _el(wt, "Name", info["name"])
+        _el(wt, "U-value", _fmt(info["u"]), unit="WPerSquareMeterK")
+        _el(wt, "SolarHeatGainCoeff", _fmt(info["shgc"]), unit="Fraction")
+        _el(
+            wt,
+            "Transmittance",
+            _fmt(info["vt"]),
+            unit="Fraction",
+            type="Visible",
+            surfaceType="Both",
+        )
     if layer_notes:
         model.notes.extend(layer_notes)
     if getattr(model, "shades", None):
@@ -363,6 +395,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
                 surf_count,
                 open_count,
                 placement_notes,
+                model=model,
             )
             continue
         ug = bool(pieces and pieces[0][0] == "UndergroundWall")
@@ -437,6 +470,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
                     "Opening",
                     id=f"op-{open_count:04d}",
                     openingType=_opening_type(u.category),
+                    **_opening_refs(model, u),
                 )
                 _el(op, "Name", f"{u.tag} ({u.category})")
                 org = _el(op, "RectangularGeometry")
@@ -508,6 +542,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
                 "Opening",
                 id=f"op-{open_count:04d}",
                 openingType=_opening_type(u.category),
+                **_opening_refs(model, u),
                 coordinatesAbsolute="true",
             )
             _el(op, "Name", f"{u.tag} ({u.category})")
@@ -694,7 +729,7 @@ def _grade_plan(model, edges, opening_assign, roofs, sloped, h) -> dict:
 
 
 def _write_grade_pieces(
-    campus, i, sid, cons, pieces, ops, bl, br, L, az, surf_count, open_count, notes
+    campus, i, sid, cons, pieces, ops, bl, br, L, az, surf_count, open_count, notes, model=None
 ):
     """Write one wall cut at grade (#649); openings go on the exposed part holding them."""
     from shapely.geometry import box
@@ -729,7 +764,11 @@ def _write_grade_pieces(
             left.remove(o)
             open_count += 1
             op = _el(
-                su, "Opening", id=f"op-{open_count:04d}", openingType=_opening_type(u.category)
+                su,
+                "Opening",
+                id=f"op-{open_count:04d}",
+                openingType=_opening_type(u.category),
+                **_opening_refs(model, u),
             )
             _el(op, "Name", f"{u.tag} ({u.category})")
             org = _el(op, "RectangularGeometry")
@@ -813,6 +852,7 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
             "Opening",
             id=f"op-{open_count:04d}",
             openingType=_opening_type(u.category),
+            **_opening_refs(model, u),
             coordinatesAbsolute="true",
         )
         _el(op, "Name", f"{u.tag} ({u.category})")

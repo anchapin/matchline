@@ -38,6 +38,7 @@ from bem_helpers import (
     _edge_spaces,
     _el,
     _fmt,
+    _opening_refs,
     _opening_type,
     _place_openings_on_wall,
     _place_skylights_on_roof,
@@ -366,7 +367,13 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         nonlocal open_count
         ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
         open_count += 1
-        op = _el(su, "Opening", id=f"op-{open_count:04d}", openingType=_opening_type(u.category))
+        op = _el(
+            su,
+            "Opening",
+            id=f"op-{open_count:04d}",
+            openingType=_opening_type(u.category),
+            **_opening_refs(model, u),
+        )
         _el(op, "Name", f"{u.tag} ({u.category})")
         org = _el(op, "RectangularGeometry")
         for sv, zv in ((s0, sill), (s1, sill), (s1, top), (s0, top)):
@@ -485,6 +492,7 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
                 "Opening",
                 id=f"op-{open_count:04d}",
                 openingType=_opening_type(u.category),
+                **_opening_refs(model, u),
                 coordinatesAbsolute="true",
             )
             _el(op, "Name", f"{u.tag} ({u.category})")

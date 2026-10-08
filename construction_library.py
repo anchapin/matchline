@@ -114,6 +114,8 @@ class LibraryRow:
     u_ip: Optional[float]
     u_si: Optional[float]
     f_ip: Optional[float] = None  # slab F-factor, Btu/h-ft-F (GroundContactFloor rows)
+    shgc: Optional[float] = None  # glazing rows only
+    min_vt_shgc: Optional[float] = None  # vertical glazing rows only
 
     @property
     def table(self) -> str:
@@ -136,6 +138,8 @@ def lookup(
         row["u_ip"],
         row["u_si"],
         row.get("f_ip"),
+        row.get("shgc"),
+        row.get("min_vt_shgc"),
     )
 
 
@@ -304,6 +308,93 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
         s.defaulted[cid] = info
     if not (getattr(model, "slab_construction_id", "") or ""):
         _default_slab(model, s, climate_zone, category)
+    _default_openings(model, s, climate_zone, category)
+
+
+DEFAULT_WINDOW_ID = "t55-window"
+DEFAULT_DOOR_ID = "t55-door"
+DEFAULT_SKYLIGHT_ID = "t55-skylight"
+# category -> (construction id, Table 5.5 surface, class, name, why the class).
+# Drawings rarely say whether a window opens or whether a door is glazed, so
+# each gets one class and says which: fixed windows (the more common class in
+# nonresidential glazing), opaque swinging doors, and curbed glass skylights
+# (all three skylight classes carry the same values in 90.1-2019).
+_OPENING_DEFAULTS = {
+    "window": (
+        DEFAULT_WINDOW_ID,
+        "ExteriorWindow",
+        "Fixed",
+        "Window, Table 5.5 code maximum (unlabeled)",
+        "fixed vs operable not stated; fixed class used",
+    ),
+    "door": (
+        DEFAULT_DOOR_ID,
+        "ExteriorDoor",
+        "Swinging",
+        "Exterior door, Table 5.5 code maximum (unlabeled)",
+        "door type not stated; opaque swinging class used",
+    ),
+    "skylight": (
+        DEFAULT_SKYLIGHT_ID,
+        "Skylight",
+        "Glass with Curb",
+        "Skylight, Table 5.5 code maximum (unlabeled)",
+        "skylight type not stated; all Table 5.5 skylight classes share these values",
+    ),
+}
+
+
+def _default_openings(model, s: "LibrarySummary", climate_zone: str, category: str):
+    """Give exterior windows, doors and skylights with no assembly Table 5.5 values (#747).
+
+    Interior openings (an ``adjacent_space_id``) and openings that already
+    point at a construction are left alone. Windows and skylights carry the
+    row's SHGC as well as its U.
+    """
+    from building_model import Construction
+
+    by_cat: Dict[str, list] = {}
+    for sp in (model.spaces or {}).values():
+        for op in getattr(sp, "openings", None) or []:
+            if getattr(op, "adjacent_space_id", None) or (getattr(op, "construction_id", "") or ""):
+                continue
+            if op.category in _OPENING_DEFAULTS:
+                by_cat.setdefault(op.category, []).append(op)
+    for cat, ops in sorted(by_cat.items()):
+        cid, surface, ctype, name, why_class = _OPENING_DEFAULTS[cat]
+        row = lookup(surface, ctype, climate_zone, category)
+        if row is None or row.u_si is None:
+            s.unmatched[cid] = f"no Table 5.5 U-value for {category} {surface} {ctype}"
+            continue
+        why = f"no assembly stated on the drawings; Table 5.5 code maximum, {why_class}"
+        # Table 5.5 caps SHGC and sets a minimum VT/SHGC for vertical glazing;
+        # VT is taken at that minimum. Skylight rows carry no VT figure, so
+        # skylights get none (the exporter then leaves them unreferenced).
+        vt = None
+        if row.shgc is not None and row.min_vt_shgc is not None:
+            vt = round(row.shgc * row.min_vt_shgc, 4)
+            why += f"; VT {vt} = minimum VT/SHGC {row.min_vt_shgc} x SHGC {row.shgc}"
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=name,
+            u_value_w_m2k=row.u_si,
+            provenance=_prov(row, cid, why, climate_zone),
+            shgc=row.shgc,
+            vt=vt,
+        )
+        for op in ops:
+            op.construction_id = cid
+        s.defaulted[cid] = {
+            "surface": surface,
+            "construction_type": ctype,
+            "table": row.table,
+            "u_ip": row.u_ip,
+            "u_si": row.u_si,
+            "shgc": row.shgc,
+            "vt": vt,
+            "why": why,
+            "openings": sorted(op.id for op in ops),
+        }
 
 
 # 1 Btu/h-ft-F = 1.730735 W/m-K (F-factor, heat loss per length of exposed slab edge)
