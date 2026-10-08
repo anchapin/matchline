@@ -39,11 +39,24 @@ F-factors stay in IP. No hand edits; re-run the script to regenerate.
   `stage_03b_constructions.json` and in `convention_report.json` under
   `constructions`.
 
+IFC walls (#747): when a wall has no stated `ThermalTransmittance` and no U
+can be derived from its layers, the import gives it an unset-U construction
+`IFC-TYPE-<type name>` (provenance `ifc_import:tier0:wall_type`, confidence
+0.5) if the wall's type name, or else its material layer names, names exactly
+one class. The library then fills it like any drawn tag. Layers are read one
+at a time with separators flattened (`Metal - Stud Layer` reads as metal
+stud); a framing layer beside a mass layer (CMU with stud furring) is
+ambiguous and stays unassigned, so the Appendix G baseline default still
+reaches that wall. On the BSI Clinic, the 80 exterior walls
+(`Exterior - Insul Panel on Mtl. Stud`, insulated panel and plywood have no
+conductivity) now resolve as SteelFramed from their type name instead of the
+blanket baseline default: same U, a named source.
+
 Space wall U-values are rolled up again after filling, so gbXML and IFC4
 exports carry the resolved values.
 
 ## Not yet
 
 Windows, skylights and doors (U and SHGC rows are in the data, but the model
-has no window construction yet), the slab F-factor, IFC material layer sets,
-and Appendix A assemblies.
+has no window construction yet), the slab F-factor, wall-type tags read off PDF
+legends, and Appendix A assemblies.

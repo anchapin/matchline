@@ -2219,7 +2219,87 @@ def _wall_construction_id(model, wall, scale, prov, gid):
             ),
             source="lookup",
         )
+    return _wall_type_construction(model, wall, scale, prov, gid)
+
+
+def _wall_type_name(wall) -> str:
+    """The wall's type name: ``ObjectType``, else its IfcTypeObject's Name."""
+    name = (getattr(wall, "ObjectType", None) or "").strip()
+    if name:
+        return name
+    rels = list(getattr(wall, "IsTypedBy", None) or []) + [
+        r for r in getattr(wall, "IsDefinedBy", None) or [] if r.is_a("IfcRelDefinesByType")
+    ]
+    for rel in rels:
+        t = getattr(rel, "RelatingType", None)
+        if t is not None and (t.Name or "").strip():
+            return t.Name.strip()
     return ""
+
+
+def _layer_class(names):
+    """(class, why) from material layer names, or (None, why) (#747).
+
+    Each layer is read on its own with separators flattened ("Metal - Stud
+    Layer" -> "metal stud layer"). Exactly one class across the layers
+    resolves; a framing layer beside a mass layer (CMU with stud furring) is
+    ambiguous and resolves to nothing, because the library's framing-governs
+    rule is for one description, not a stack of layers.
+    """
+    from construction_library import classify
+
+    found = {}
+    for n in names:
+        flat = re.sub(r"[\s\-_/,:]+", " ", n or "").strip()
+        ctype, why = classify(flat, "ExteriorWall")
+        if ctype is not None:
+            found.setdefault(ctype, (n, why))
+    if len(found) == 1:
+        ((ctype, (n, why)),) = found.items()
+        return ctype, f"layer {n!r} {why}"
+    if found:
+        return None, "layers name more than one class: " + ", ".join(sorted(found))
+    return None, "no layer names a construction class"
+
+
+def _wall_type_construction(model, wall, scale, prov, gid):
+    """An unset-U construction named for the wall's type or layers (#747).
+
+    Used only when no U is stated or derivable. It carries no value: the
+    cited construction library resolves its U from Table 5.5 once a climate
+    zone is known, and reports it otherwise. Returns "" when neither the type
+    name nor the layers name exactly one construction class, so the wall stays
+    unassigned and the Appendix G baseline default can still reach it.
+    """
+    from construction_library import classify
+
+    tname = _wall_type_name(wall)
+    ctype, why = classify(tname, "ExteriorWall") if tname else (None, "")
+    if ctype is not None:
+        text, how = tname, f"IFC wall type name {tname!r}"
+    else:
+        layers = [lay["material"] for lay in _material_layers(wall, scale)[0]]
+        ctype, why = _layer_class(layers)
+        if ctype is None:
+            return ""
+        flat = "; ".join(re.sub(r"[\s\-_/,:]+", " ", n).strip().lower() for n in layers)
+        text, how = f"layers {flat}", f"IFC material layers of {tname or 'an untyped wall'!r}"
+    slug = re.sub(r"[^a-z0-9]+", "-", (tname or text).lower()).strip("-")[:48] or "wall"
+    cid = f"IFC-TYPE-{slug}"
+    if cid not in model.constructions:
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=f"IFC wall, {text}",
+            u_value_w_m2k=None,
+            provenance=prov(
+                "ifc_import:tier0:wall_type",
+                0.5,
+                f"no U stated or derivable; construction class {ctype} from {how} "
+                f"({why}); U left for the cited construction library; first wall carrying it",
+                gid,
+            ),
+        )
+    return cid
 
 
 LINING_FULL_FRAC = 0.999  # a lining covering this share of its host's area is full (#597)
