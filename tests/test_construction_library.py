@@ -131,19 +131,23 @@ def test_convention_report_carries_constructions():
 
 
 def test_baseline_defaults_fill_unnamed_walls_and_roof():
-    """#768: no assembly named at all -> Appendix G baseline classes, cited."""
+    """#768/#781: no assembly named at all -> Table 5.5 code maximum, cited."""
     m = _model()
     s = apply_construction_library(m, "5A")
     wall = lookup("ExteriorWall", "SteelFramed", "5A")
     roof = lookup("ExteriorRoof", "IEAD", "5A")
-    assert m.envelope[0].construction_id == "appg-wall"
-    assert m.constructions["appg-wall"].u_value_w_m2k == wall.u_si
-    assert m.roof_construction_id == "appg-roof"
-    assert m.constructions["appg-roof"].u_value_w_m2k == roof.u_si
-    for cid in ("appg-wall", "appg-roof"):
+    assert m.envelope[0].construction_id == "t55-wall"
+    assert m.constructions["t55-wall"].u_value_w_m2k == wall.u_si
+    assert m.roof_construction_id == "t55-roof"
+    assert m.constructions["t55-roof"].u_value_w_m2k == roof.u_si
+    for cid in ("t55-wall", "t55-roof"):
         prov = m.constructions[cid].provenance
-        assert prov.method == METHOD and "Table 5.5-5" in prov.note and "G3.1-5(b)" in prov.note
-    assert s.defaulted["appg-wall"]["segments"] == ["w1"]
+        assert (
+            prov.method == METHOD
+            and "Table 5.5-5" in prov.note
+            and "no assembly stated" in prov.note
+        )
+    assert s.defaulted["t55-wall"]["segments"] == ["w1"]
     assert m.spaces["S1"].wall_u_value_w_m2k == pytest.approx(wall.u_si)
 
 
@@ -181,25 +185,29 @@ def _slab_model(**spaces):
 
 
 def test_unset_slab_gets_unheated_f_factor_as_effective_u():
-    """#747: G3.1-5(b) unheated slab F-factor, U = F x P / A on the exported footprint."""
+    """#747/#781: Table 5.5 unheated slab F-factor, U = F x P / A on the exported footprint."""
     m = _slab_model(A=("L1", _rect(0, 0, 10, 20)), B=("L1", _rect(10, 0, 20, 20)))
     s = apply_construction_library(m, "5A")
     row = lookup("GroundContactFloor", "Unheated", "5A")
     assert row.f_ip is not None and row.u_si is None
     want = row.f_ip * 1.730735 * 80.0 / 400.0  # 20 x 20 footprint: P 80 m, A 400 m2
-    assert m.slab_construction_id == "appg-slab"
-    assert m.constructions["appg-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
-    d = s.defaulted["appg-slab"]
+    assert m.slab_construction_id == "t55-slab"
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
+    d = s.defaulted["t55-slab"]
     assert d["exposed_perimeter_m"] == pytest.approx(80.0) and d["area_m2"] == pytest.approx(400.0)
-    note = m.constructions["appg-slab"].provenance.note
-    assert "G3.1-5(b)" in note and "Table 5.5-5" in note and "F x exposed perimeter" in note
+    note = m.constructions["t55-slab"].provenance.note
+    assert (
+        "Table 5.5 unheated slab" in note
+        and "Table 5.5-5" in note
+        and "F x exposed perimeter" in note
+    )
 
 
 def test_slab_uses_the_lowest_level_only():
     m = _slab_model(G=("L1", _rect(0, 0, 10, 10)), U=("L2", _rect(0, 0, 30, 30)))
     s = apply_construction_library(m, "5A")
-    assert s.defaulted["appg-slab"]["area_m2"] == pytest.approx(100.0)
-    assert s.defaulted["appg-slab"]["exposed_perimeter_m"] == pytest.approx(40.0)
+    assert s.defaulted["t55-slab"]["area_m2"] == pytest.approx(100.0)
+    assert s.defaulted["t55-slab"]["exposed_perimeter_m"] == pytest.approx(40.0)
 
 
 def test_stated_slab_never_replaced_and_no_zone_no_slab():
@@ -207,17 +215,17 @@ def test_stated_slab_never_replaced_and_no_zone_no_slab():
     m.constructions["S"] = Construction(id="S", name="slab", u_value_w_m2k=0.5)
     m.slab_construction_id = "S"
     s = apply_construction_library(m, "5A")
-    assert "appg-slab" not in s.defaulted and m.constructions["S"].u_value_w_m2k == 0.5
+    assert "t55-slab" not in s.defaulted and m.constructions["S"].u_value_w_m2k == 0.5
     m2 = _slab_model(G=("L1", _rect(0, 0, 10, 10)))
     apply_construction_library(m2, "")
-    assert m2.slab_construction_id == "" and "appg-slab" not in m2.constructions
+    assert m2.slab_construction_id == "" and "t55-slab" not in m2.constructions
 
 
 def test_slab_without_polygons_is_reported_not_filled():
     m = _model()
     s = apply_construction_library(m, "5A")
-    assert m.slab_construction_id == "" and "appg-slab" not in m.constructions
-    assert "perimeter and area" in s.unmatched["appg-slab"]
+    assert m.slab_construction_id == "" and "t55-slab" not in m.constructions
+    assert "perimeter and area" in s.unmatched["t55-slab"]
 
 
 def test_slab_u_reaches_the_exporters():
@@ -225,4 +233,78 @@ def test_slab_u_reaches_the_exporters():
 
     m = _slab_model(G=("L1", _rect(0, 0, 10, 10)))
     apply_construction_library(m, "5A")
-    assert slab_u_value(m) == pytest.approx(m.constructions["appg-slab"].u_value_w_m2k)
+    assert slab_u_value(m) == pytest.approx(m.constructions["t55-slab"].u_value_w_m2k)
+
+
+# --- #781: Appendix G baseline envelope from Table G3.4 (PRM 2019) ------------
+
+
+def _baseline_model(window_m2: float = 0.0, skylight_m2: float = 0.0):
+    from building_model import SpaceOpening
+
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)))
+    m.envelope.append(EnvelopeWall(id="w1", facade="south", length_m=80.0, height_m=4.0))
+    sp = m.spaces["A"]
+    if window_m2:
+        sp.openings.append(
+            SpaceOpening(id="o1", tag="W1", category="window", width_m=1.0, height_m=window_m2)
+        )
+    if skylight_m2:
+        sp.openings.append(
+            SpaceOpening(id="o2", tag="S1", category="skylight", width_m=1.0, height_m=skylight_m2)
+        )
+    return m
+
+
+def test_prm_rows_are_table_g34_not_table_55():
+    from construction_library import prm_rows
+
+    wall, _ = prm_rows("ExteriorWall", "SteelFramed", "5A", "Nonresidential")
+    roof, _ = prm_rows("ExteriorRoof", "IEAD", "5A", "Nonresidential")
+    slab, _ = prm_rows("GroundContactFloor", "Unheated", "5A", "Nonresidential")
+    assert wall[0]["u_ip"] == 0.084 and wall[0]["u_si"] == pytest.approx(0.084 * 5.678263, abs=1e-4)
+    assert roof[0]["u_ip"] == 0.063 and slab[0]["f_ip"] == 0.73
+    assert lookup("ExteriorWall", "SteelFramed", "5A").u_ip == 0.055  # Table 5.5 is stricter
+
+
+def test_baseline_recorded_but_proposed_keeps_table_55():
+    m = _baseline_model(window_m2=32.0)  # 32 / 320 m2 wall = 10% WWR
+    s = apply_construction_library(m, "5A")
+    b = s.baseline["surfaces"]
+    assert b["wall"]["u_ip"] == 0.084 and b["roof"]["u_ip"] == 0.063
+    assert m.constructions["t55-wall"].u_value_w_m2k == pytest.approx(
+        lookup("ExteriorWall", "SteelFramed", "5A").u_si
+    )
+    assert b["slab"]["u_si_effective"] == pytest.approx(0.73 * 1.730735 * 80.0 / 400.0, rel=1e-5)
+    assert s.to_dict()["baseline"]["source"].startswith("ASHRAE Standard 90.1-2019, Appendix G")
+
+
+def test_baseline_glazing_band_follows_the_model_wwr():
+    low = apply_construction_library(_baseline_model(window_m2=16.0), "5A")  # 5%
+    mid = apply_construction_library(_baseline_model(window_m2=80.0), "5A")  # 25%
+    high = apply_construction_library(_baseline_model(window_m2=160.0), "5A")  # 50%
+    assert low.baseline["window_to_wall_pct"] == pytest.approx(5.0)
+    assert low.baseline["surfaces"]["vertical_glazing"]["shgc"] == 0.49
+    assert mid.baseline["surfaces"]["vertical_glazing"]["band_pct"] == [20.001, 30]
+    g = high.baseline["surfaces"]["vertical_glazing"]
+    assert g["band_pct"] == [30.001, 40] and "cap" in g["note"]
+    assert g["u_ip"] == 0.57
+
+
+def test_baseline_skylight_band_and_unknown_wwr():
+    s = apply_construction_library(_baseline_model(skylight_m2=12.0), "5A")  # 3% of 400 m2
+    assert s.baseline["skylight_to_roof_pct"] == pytest.approx(3.0)
+    assert s.baseline["surfaces"]["skylight"]["shgc"] == 0.39
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)))  # no walls: WWR unknown
+    s2 = apply_construction_library(m, "5A")
+    assert "vertical_glazing" in s2.baseline["unmatched"]
+
+
+def test_baseline_zone_3_uses_the_lettered_row_and_no_zone_records_nothing():
+    from construction_library import prm_rows
+
+    rows, zk = prm_rows("ExteriorWall", "SteelFramed", "3B", "Nonresidential")
+    assert zk == "3B" and rows
+    rows4, zk4 = prm_rows("ExteriorWall", "SteelFramed", "4A", "Nonresidential")
+    assert zk4 == "4" and rows4[0]["u_ip"] == 0.124
+    assert apply_construction_library(_baseline_model(), "").baseline == {}

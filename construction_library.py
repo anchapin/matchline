@@ -32,6 +32,9 @@ from construction_library_data import (
     SOURCE,
     SOURCE_VERSION,
 )
+from construction_library_prm_data import PRM_LIBRARY
+from construction_library_prm_data import SOURCE as PRM_SOURCE
+from construction_library_prm_data import SOURCE_VERSION as PRM_SOURCE_VERSION
 
 METHOD = "construction_default"
 CONFIDENCE = 0.6  # a code-maximum baseline, not the assembly on the drawings
@@ -147,6 +150,10 @@ class LibrarySummary:
     # Appendix G baseline defaults (#768): construction id -> row info, for
     # walls/roof the drawings name no assembly for at all
     defaulted: Dict[str, dict] = field(default_factory=dict)
+    # Appendix G baseline envelope (#781): Table G3.4 (PRM 2019) values for
+    # the baseline model; recorded only, the exported proposed model is not
+    # changed by it
+    baseline: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -158,6 +165,7 @@ class LibrarySummary:
             "kept_stated_values": sorted(self.kept),
             "unmatched": self.unmatched,
             "defaulted": self.defaulted,
+            "baseline": self.baseline,
         }
 
 
@@ -228,29 +236,34 @@ def apply_construction_library(
         }
     if climate_zone:
         _apply_baseline_defaults(model, s, climate_zone, category)
+        s.baseline = baseline_envelope(model, climate_zone, category)
     if s.resolved or s.defaulted:
         apply_wall_u_rollup(model)
     return s
 
 
-# Appendix G baseline construction classes (90.1 G3.1-5(b)): exterior walls
-# steel-framed, roofs insulation entirely above deck. Used only where the
-# drawings name no assembly at all; the U-value is still the Table 5.5 row.
-DEFAULT_WALL_ID = "appg-wall"
-DEFAULT_ROOF_ID = "appg-roof"
-DEFAULT_SLAB_ID = "appg-slab"
+# Unlabeled envelope (#781, Alex's order: drawings first, Table 5.5 for
+# anything the drawings leave unlabeled, Table G3.4 for the Appendix G
+# baseline). Walls with no construction and an unset roof or slab get the
+# Table 5.5 code maximum. Table 5.5 needs a construction class and the
+# drawings name none, so the class is the one Appendix G uses for its
+# baseline (G3.1-5(b): steel-framed walls, insulation entirely above deck).
+DEFAULT_WALL_ID = "t55-wall"
+DEFAULT_ROOF_ID = "t55-roof"
+DEFAULT_SLAB_ID = "t55-slab"
 _BASELINE = {
     DEFAULT_WALL_ID: (
         "ExteriorWall",
         "SteelFramed",
-        "Exterior wall, Appendix G baseline (default)",
+        "Exterior wall, Table 5.5 code maximum (unlabeled)",
     ),
-    DEFAULT_ROOF_ID: ("ExteriorRoof", "IEAD", "Roof, Appendix G baseline (default)"),
+    DEFAULT_ROOF_ID: ("ExteriorRoof", "IEAD", "Roof, Table 5.5 code maximum (unlabeled)"),
 }
+_UNLABELED_WHY = "no assembly stated on the drawings; Table 5.5 code maximum, class {ctype}"
 
 
 def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, category: str):
-    """Default walls with no construction and an unset roof to the baseline (#768).
+    """Default walls with no construction and an unset roof to Table 5.5 (#768, #781).
 
     A segment that already points at a construction (resolved or not) and a
     stated roof are left alone. An unset slab gets the unheated-slab F-factor
@@ -270,7 +283,7 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
         if row is None or row.u_si is None:
             s.unmatched[cid] = f"no Table 5.5 U-value for {category} {surface} {ctype}"
             continue
-        why = "no assembly stated; Appendix G baseline class (G3.1-5(b))"
+        why = _UNLABELED_WHY.format(ctype=ctype)
         model.constructions[cid] = Construction(
             id=cid, name=name, u_value_w_m2k=row.u_si, provenance=_prov(row, cid, why, climate_zone)
         )
@@ -297,7 +310,7 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
 F_IP_TO_SI = 1.730735
 
 
-def _slab_geometry(model):
+def _slab_geometry(model, lowest: bool = True):
     """(area_m2, exposed_perimeter_m, level_id) of the ground-floor footprint.
 
     The footprint is the same union the exporters write as the SlabOnGrade
@@ -311,7 +324,8 @@ def _slab_geometry(model):
     if not spaces:
         return None
     elev = {lv.id: lv.elevation_z_m for lv in (getattr(model, "levels", None) or [])}
-    low = min(elev.get(sp.level_id, 0.0) for sp in spaces)
+    pick = min if lowest else max
+    low = pick(elev.get(sp.level_id, 0.0) for sp in spaces)
     ground = [sp for sp in spaces if abs(elev.get(sp.level_id, 0.0) - low) < 1e-6]
     ring = footprint_from_regions([sp.polygon_m for sp in ground])
     if len(ring) < 3:
@@ -328,10 +342,9 @@ def _slab_geometry(model):
 
 
 def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
-    """Unset slab -> unheated-slab F-factor as an effective U (#747).
+    """Unset slab -> Table 5.5 unheated-slab F-factor as an effective U (#747, #781).
 
-    90.1-2019 Appendix G Table G3.1-5(b): slab-on-grade floors match the
-    F-factor for unheated slabs from Tables 5.5. gbXML carries a U-value, not
+    gbXML carries a U-value, not
     an F-factor, so the slab gets the U that loses the same heat:
     U = F x exposed perimeter / slab area (F-factor definition, heat loss per
     unit length of exposed edge per degree indoor-outdoor). The perimeter and
@@ -352,7 +365,7 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     f_si = row.f_ip * F_IP_TO_SI
     u = round(f_si * perim / area, 6)
     why = (
-        "no slab assembly stated; Appendix G G3.1-5(b) unheated slab F-factor "
+        "no slab assembly stated on the drawings; Table 5.5 unheated slab F-factor "
         f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
         f"{perim:.2f} m / slab area {area:.2f} m2 (footprint of level {level_id})"
     )
@@ -369,7 +382,7 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     )
     model.constructions[cid] = Construction(
         id=cid,
-        name="Slab on grade, Appendix G baseline (default)",
+        name="Slab on grade, Table 5.5 code maximum (unlabeled)",
         u_value_w_m2k=u,
         provenance=prov,
     )
@@ -385,3 +398,118 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
         "u_si": u,
         "why": why,
     }
+
+
+# Appendix G baseline envelope (#781): 90.1-2019 Table G3.4 (PRM 2019).
+# Name -> (surface, construction type) as the PRM table keys them.
+_PRM_SURFACES = (
+    ("wall", "ExteriorWall", "SteelFramed"),
+    ("roof", "ExteriorRoof", "IEAD"),
+    ("slab", "GroundContactFloor", "Unheated"),
+    ("exterior_floor", "ExteriorFloor", "SteelFramed"),
+    ("door_swinging", "ExteriorDoor", "Swinging"),
+    ("door_nonswinging", "ExteriorDoor", "NonSwinging"),
+    ("vertical_glazing", "ExteriorWindow", "Any Vertical Glazing"),
+    ("glass_door", "GlassDoor", "Any Vertical Glazing"),
+    ("skylight", "Skylight", "Any Skylight"),
+)
+
+
+def prm_rows(surface: str, construction_type: str, climate_zone: str, category: str):
+    """(rows, zone key) from Table G3.4; zone 3 is split 3A/3B/3C there."""
+    z = (climate_zone or "").strip().upper().removeprefix("CZ").strip()
+    num = climate_zone_number(climate_zone)
+    for zk in (z, num):
+        rows = PRM_LIBRARY.get((category, zk, surface, construction_type))
+        if rows:
+            return rows, zk
+    return None, None
+
+
+def _pick_band(rows: list, pct: Optional[float]):
+    """(row, note) for a percent of surface; above the top band uses the top
+    band (G3.1-5(c) caps the baseline window-to-wall ratio at 40%)."""
+    if len(rows) == 1 and rows[0]["pct_min"] is None:
+        return rows[0], ""
+    if pct is None:
+        return None, "percent of surface unknown; band not chosen"
+    for r in rows:
+        hi = 100.0 if r["pct_max"] is None else r["pct_max"]
+        if pct <= hi:
+            return r, ""
+    return rows[-1], f"{pct:.1f}% is above the top band; top band used (G3.1-5(c) cap)"
+
+
+def _glazing_ratios(model):
+    """(window-to-wall %, skylight-to-roof %) from the model, None if unknown."""
+    win = sky = 0.0
+    for sp in (model.spaces or {}).values():
+        for o in sp.openings or []:
+            if getattr(o, "adjacent_space_id", None):
+                continue
+            a = o.area_m2 if o.area_m2 else (o.width_m or 0.0) * (o.height_m or 0.0)
+            if o.category == "window":
+                win += a
+            elif o.category == "skylight":
+                sky += a
+    wall = 0.0
+    for w in model.envelope or []:
+        if w.area_m2:
+            wall += w.area_m2
+        elif w.length_m and w.height_m:
+            wall += w.length_m * w.height_m
+    wwr = round(100.0 * win / wall, 2) if wall > 0 else None
+    top = _slab_geometry(model, lowest=False)
+    srr = round(100.0 * sky / top[0], 2) if top else None
+    return wwr, srr
+
+
+def baseline_envelope(model, climate_zone: str, category: str) -> dict:
+    """Appendix G baseline envelope values for this model (Table G3.4).
+
+    Recorded for the baseline model; it does not change the proposed model.
+    Glazing picks its band from the model's own window-to-wall and
+    skylight-to-roof ratios. The slab also gets the effective U the
+    exporters would carry (F x exposed perimeter / area).
+    """
+    wwr, srr = _glazing_ratios(model)
+    out: dict = {
+        "source": f"{PRM_SOURCE} ({PRM_SOURCE_VERSION})",
+        "climate_zone": climate_zone,
+        "building_category": category,
+        "window_to_wall_pct": wwr,
+        "skylight_to_roof_pct": srr,
+        "surfaces": {},
+        "unmatched": {},
+    }
+    for name, surface, ctype in _PRM_SURFACES:
+        rows, zk = prm_rows(surface, ctype, climate_zone, category)
+        if not rows:
+            out["unmatched"][name] = f"no Table G3.4 row for {category} {surface} {ctype}"
+            continue
+        pct = srr if surface == "Skylight" else wwr
+        row, note = _pick_band(rows, pct)
+        if row is None:
+            out["unmatched"][name] = note
+            continue
+        info = {
+            "surface": surface,
+            "construction_type": ctype,
+            "table_zone": zk,
+            "source_construction": row["source_construction"],
+            "u_ip": row["u_ip"],
+            "u_si": row["u_si"],
+            "f_ip": row["f_ip"],
+            "shgc": row["shgc"],
+            "vt": row["vt"],
+            "band_pct": [row["pct_min"], row["pct_max"]],
+        }
+        if note:
+            info["note"] = note
+        if name == "slab" and row["f_ip"] is not None:
+            geo = _slab_geometry(model)
+            if geo is not None:
+                area, perim, _ = geo
+                info["u_si_effective"] = round(row["f_ip"] * F_IP_TO_SI * perim / area, 6)
+        out["surfaces"][name] = info
+    return out
