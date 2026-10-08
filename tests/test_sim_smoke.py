@@ -232,4 +232,4 @@ def test_typical_rb_uses_prototype_infiltration_per_wall_area():
     # set inside the infiltration step, so the HVAC sizing run already sees it
     hook = rb.index("def model_set_nist_infiltration")
     assert hook < rb.index("create_typical_building_from_model(")
-    assert "abort(\"infiltration rate not applied" in rb
+    assert 'abort("infiltration rate not applied' in rb
