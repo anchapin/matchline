@@ -165,7 +165,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2216  # +1 trust report number display (#750)
+          EXPECTED_TEST_COUNT=2226  # +10 HTML review report, replayable decisions, flags match (#749)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

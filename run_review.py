@@ -289,30 +289,24 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
+def _decide(model: BuildingModel, item_id: str, action: str) -> tuple[BuildingModel, str]:
+    """Same state and revision log entry as the HTML review report (#749)."""
+    from review_report import decide
+
+    done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
+    if decide(model, item_id, action):
+        return model, f"{done} {item_id}."
+    return model, f"{item_id} is already {done.lower()}; nothing changed."
+
+
 def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "confirmed"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Confirmed {item_id}."
+    return _decide(model, item_id, "confirm")
 
 
 def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "rejected"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Rejected {item_id}."
+    return _decide(model, item_id, "reject")
 
 
 def _summarize_validation(report) -> str:
@@ -344,6 +338,35 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     if args.auto_triage:
         model.auto_triage = True
+
+    # --- Apply a decisions file from the HTML review report (#749) ---
+    if getattr(args, "apply", None):
+        import json
+
+        import review_report
+
+        try:
+            doc = json.loads(pathlib.Path(args.apply).read_text())
+            summary = review_report.apply_decisions(model, doc, review_report.sha256_text(raw))
+        except (OSError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        dest = pathlib.Path(getattr(args, "out", None) or model_path)
+        dest.write_text(model.to_json())
+        for w in summary["warnings"]:
+            print(f"Warning: {w}", file=sys.stderr)
+        print(review_report.summarize(summary))
+        print(f"Model saved: {dest}")
+        print(_summarize_validation(run_checks(model)))
+        return
+
+    # --- Write the HTML review report (#749) ---
+    if getattr(args, "report", None):
+        import review_report
+
+        d = review_report.write_review(pathlib.Path(args.report), model)
+        print(f"Review report: {d / 'review.html'}")
+        return
 
     # --- Confirm or Reject ---
     if args.confirm is not None or args.reject is not None:
@@ -455,6 +478,21 @@ def _build_argparser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
         help="Output format for --list (default: text)",
+    )
+    parser.add_argument(
+        "--apply",
+        metavar="DECISIONS",
+        help="Replay a decisions.json exported from the HTML review report",
+    )
+    parser.add_argument(
+        "--out",
+        metavar="PATH",
+        help="With --apply: write the reviewed model here instead of in place",
+    )
+    parser.add_argument(
+        "--report",
+        metavar="DIR",
+        help="Write the HTML review report to DIR/review (model, decisions template, page)",
     )
     return parser
 

@@ -45,10 +45,10 @@ matchline review model.json --reject RVW-002 --auto-triage  # enable auto-triage
 : Output format for `--list` (default: `text`).
 
 `--confirm ID`
-: Confirm a review item. Marks it confirmed, then re-runs validation.
+: Confirm a review item, exactly as the HTML review report's confirm does: `status confirmed`, `resolution accept`, `needs_review false`, `acknowledged true`, and a revision log entry. Works on a rejected item too; an item already confirmed is left alone. Then re-runs validation.
 
 `--reject ID`
-: Reject a review item. Marks it rejected, then re-runs validation.
+: Reject a review item, exactly as the HTML review report's reject does: `status rejected`, `resolution drop`, `needs_review false`, `acknowledged true`, and a revision log entry. Works on a confirmed item too; an item already rejected is left alone. Then re-runs validation.
 
 `--auto-triage`
 : Enable auto-triage for review items (sets `model.auto_triage=True`).
