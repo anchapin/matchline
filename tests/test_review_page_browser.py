@@ -49,7 +49,7 @@ def page():
 
 
 def _run(tmp_path):
-    from test_real_set import _one_floor
+    from tests.test_real_set import _one_floor
 
     # two 4'-0" rows that disagree on height leave the plan gap unsized
     rows = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W3", "4'-0\"", "7'-0\"", "FIXED")]
