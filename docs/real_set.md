@@ -18,8 +18,15 @@ What this slice does not invent:
 
 - Storey height. Plans do not show it. `--storey-height` sets it; without it the run
   uses 3.0 m and adds an `elevation_extraction` review item so the default is visible.
-- Door and window sizes and tags. Plan openings are counted per level
-  (`plan_openings`) but are not modelled until schedules from the PDF land (#746).
+- Door and window sizes. A plan gap carries a width and a position but no tag. A gap
+  whose middle lies within 0.5 m of the level outline is exterior; it is matched to the
+  door/window schedules in the set by width (within 0.05 m). When every matching row
+  agrees on category and height, the gap is modelled on that wall, in the room that
+  owns it, at the scheduled size (provenance `plan_gap_schedule_width`). A gap no row
+  explains, or one rows disagree on, becomes an `opening_unsized` review item and is
+  not modelled. Interior gaps are counted only. Each level reports
+  `openings: {exterior, interior, modelled, unsized}` beside `plan_openings`.
+  Window sills use the export's 0.9 m convention until elevations are read.
 - Mechanical symbols. Mechanical plans are marked `failed` at the symbols stage until
   the detector provider (#743) is wired in.
 

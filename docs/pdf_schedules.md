@@ -66,6 +66,6 @@ keeps the first and goes to review.
 ## Not done yet
 
 Joining mechanical rows onto HVAC zones needs detected tags on the plans (#743),
-and plan openings are still counted, not modelled, until door and window tags
-are read off the plans. Unruled (whitespace-aligned) tables and scanned
+and plan openings are matched to door and window rows by width only (see
+`docs/real_set.md`) until tags are read off the plans. Unruled (whitespace-aligned) tables and scanned
 schedules are not read.
