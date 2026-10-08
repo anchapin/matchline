@@ -70,13 +70,23 @@
       "license": "AGPL-3.0 (or an Ultralytics enterprise license)",
       "class": "copyleft",
       "source": "https://github.com/ultralytics/ultralytics"
+    },
+    {
+      "id": "cbecs_2018",
+      "name": "EIA Commercial Buildings Energy Consumption Survey 2018, public use microdata",
+      "license": "Public domain (U.S. government data, EIA)",
+      "class": "permissive",
+      "source": "https://www.eia.gov/consumption/commercial/data/2018/index.php?view=microdata",
+      "use": "weighted site-EUI percentiles for the simulation smoke test band (sim/cbecs_band.py); the CSV is downloaded, never committed"
     }
   ],
   "artifacts": [
     {
       "path": "facade_priors.json",
       "kind": "statistics",
-      "datasets": ["cmp_facade"],
+      "datasets": [
+        "cmp_facade"
+      ],
       "committed": true,
       "produced_by": "run_facade_takeoff.py --full (606 facades)",
       "notice": "facade_priors.json is derived from the CMP Facade Database (Radim Tylecek and Radim Sara, GCPR 2013) and is licensed CC BY-SA, not BSD-3-Clause. Redistributed copies or adaptations must credit the source and carry the same license."
@@ -84,37 +94,61 @@
     {
       "path": "review_classifier/trained_model_extraction_type.npz",
       "kind": "weights",
-      "datasets": ["matchline_synthetic", "review_corpus"],
+      "datasets": [
+        "matchline_synthetic",
+        "review_corpus"
+      ],
       "committed": true,
       "produced_by": "python -m review_classifier.train"
     },
     {
       "path": "review_classifier/trained_model_route_to_review.npz",
       "kind": "weights",
-      "datasets": ["matchline_synthetic", "review_corpus"],
+      "datasets": [
+        "matchline_synthetic",
+        "review_corpus"
+      ],
       "committed": true,
       "produced_by": "python -m review_classifier.train"
     },
     {
       "path": "review_classifier/trained_model_schedule_match.npz",
       "kind": "weights",
-      "datasets": ["matchline_synthetic", "review_corpus"],
+      "datasets": [
+        "matchline_synthetic",
+        "review_corpus"
+      ],
       "committed": true,
       "produced_by": "python -m review_classifier.train"
     },
     {
       "path": "~/workspace/datasets/detector_runs/yolo11n_baseline_s*/weights/best.pt",
       "kind": "weights",
-      "datasets": ["cubicasa5k", "ultralytics_yolo11n"],
+      "datasets": [
+        "cubicasa5k",
+        "ultralytics_yolo11n"
+      ],
       "committed": false,
       "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
     },
     {
       "path": "~/workspace/datasets/detector_runs/yolo11n_eca_s*/weights/best.pt",
       "kind": "weights",
-      "datasets": ["cubicasa5k", "ultralytics_yolo11n"],
+      "datasets": [
+        "cubicasa5k",
+        "ultralytics_yolo11n"
+      ],
       "committed": false,
       "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
+    },
+    {
+      "path": "sim/reference_eui.json",
+      "kind": "statistics",
+      "datasets": [
+        "cbecs_2018"
+      ],
+      "committed": true,
+      "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write (prototype EUI from sim_smoke.py --reference-only)"
     }
   ]
 }
