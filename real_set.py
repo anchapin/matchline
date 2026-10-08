@@ -55,6 +55,7 @@ class SetReport:
     notes: List[str] = field(default_factory=list)
     schedules: dict = field(default_factory=dict)
     detector: dict = field(default_factory=dict)
+    elevations: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -69,6 +70,7 @@ class SetReport:
             "notes": self.notes,
             "schedules": self.schedules,
             "detector": self.detector,
+            "elevations": self.elevations,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -367,14 +369,22 @@ def build_set_model(
             footprint_from_regions, _edge_facades, EnvelopeWall, Provenance,
         )  # fmt: skip
         plan_of_level[lid] = (f, sheet_id, len(report.levels) - 1)
+    elevations = _read_elevations(
+        files, entries, status, scales, sheets_dir, plan_of_level, walls, review, report
+    )
     if h_src == "storey_height_default":
         review.append(
             ReviewItem(
                 id="rq-storey-height",
                 kind="elevation_extraction",  # storey height comes from sections/elevations
                 description=(
-                    f"storey height {h:g} m is the default: no section or elevation was read; "
-                    "set wall_height in the run config to override"
+                    f"storey height {h:g} m is the default: "
+                    + (
+                        "elevations were read for windows but not for level marks yet; "
+                        if elevations
+                        else "no section or elevation was read; "
+                    )
+                    + "set wall_height in the run config to override"
                 ),
                 confidence=0.5,
                 provenance=Provenance(
@@ -424,6 +434,111 @@ def build_set_model(
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
+
+
+def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, walls, review,
+                     report) -> int:  # fmt: skip
+    """Read windows off the set's elevation sheets (#810, first slice).
+
+    Each elevation is registered to the lowest level's plan footprint: by the
+    shared column grid when both sheets carry it, else by the facade outline.
+    Writes ``sheets/elevation_NNN.json`` and returns how many sheets were read.
+    """
+    from building_model import Provenance, ReviewItem
+    from elevation_sheets import facade_from_title, read_elevation
+    from grid_detect import detect_grids, plan_grid_m
+
+    elev_files = [f for f in files if entries.get(f, {}).get("type") == "elevation"
+                  or _val(entries.get(f, {}), "type") == "elevation"]  # fmt: skip
+    if not elev_files or not plan_of_level:
+        return 0
+    lid = next(iter(plan_of_level))
+    pf = plan_of_level[lid][0]
+    # exterior footprint: wall centrelines widened by half their thickness,
+    # canonical metres (x right, y down)
+    xs, ys = [], []
+    for w in walls[pf]["walls"]:
+        t = float(w.get("thickness_m") or 0) / 2
+        for x, y in (w["a_m"], w["b_m"]):
+            xs += [x - t, x + t]
+            ys += [-y - t, -y + t]
+    bbox = (min(xs), min(ys), max(xs), max(ys))
+    plan = json.loads((sheets_dir / pf).read_text())
+    pm = (scales.get(pf) or {}).get("m_per_pt")
+    try:
+        pgrid = detect_grids(plan, status[pf].number or pf)
+    except Exception:  # noqa: BLE001 - a grid failure falls back to geometry
+        pgrid = None
+    n = 0
+    for f in elev_files:
+        st = status[f]
+        sheet_id = st.number or f
+        if st.stages["ingest"]["kind"] == "raster_only":
+            st.mark("elevation", "failed", "scanned elevation; raster window reading is not built")
+            continue
+        sheet = json.loads((sheets_dir / f).read_text())
+        name_s = None
+        fac = facade_from_title(st.title or "")
+        if pgrid is not None and pm and fac:
+            if fac in ("south", "north"):
+                g = plan_grid_m(pgrid, "v", pm)
+                name_s = {k: round(v - bbox[0], 4) for k, v in g.items()}
+            else:
+                g = plan_grid_m(pgrid, "h", pm, origin_pt=float(plan["height_pt"]))
+                name_s = {k: round(v - bbox[1], 4) for k, v in g.items()}
+        try:
+            egrid = detect_grids(sheet, sheet_id) if name_s else None
+        except Exception:  # noqa: BLE001
+            egrid = None
+        er = read_elevation(
+            sheet, f, sheet_id, st.title or "", (scales.get(f) or {}).get("m_per_pt"),
+            bbox, name_s, egrid,
+        )  # fmt: skip
+        prov = Provenance(
+            sheet_id=sheet_id,
+            revision=0,
+            method="elevation_vector",
+            confidence=(er.registration or {}).get("confidence", 0.5),
+            note=f"{f}: {er.reason or (er.registration or {}).get('note', '')}",
+        )
+        if not er.ok:
+            st.mark("elevation", "failed", er.reason)
+            review.append(
+                ReviewItem(
+                    id=f"rq-elev-{sheet_id}",
+                    kind="elevation_extraction",
+                    target={"kind": "sheet", "id": sheet_id},
+                    description=f"elevation {sheet_id} not read: {er.reason}",
+                    confidence=0.5,
+                    provenance=prov,
+                )
+            )
+            continue
+        n += 1
+        out = f.replace("sheet_", "elevation_")
+        (sheets_dir / out).write_text(json.dumps(er.to_dict(), indent=1))
+        st.mark(
+            "elevation", "ok", facade=er.facade, windows=len(er.windows),
+            doors=len(er.openings) - len(er.windows),
+            registration=er.registration["method"], file=out,
+        )  # fmt: skip
+        report.elevations.append(
+            {"sheet": f, "sheet_id": sheet_id, "facade": er.facade, "file": out,
+             "windows": len(er.windows), "registration": er.registration["method"],
+             "confidence": er.registration["confidence"]}
+        )  # fmt: skip
+        for k, r in enumerate(er.review):
+            review.append(
+                ReviewItem(
+                    id=f"rq-elev-{sheet_id}-{k + 1}",
+                    kind="elevation_extraction",
+                    target={"kind": "sheet", "id": sheet_id, "facade": er.facade},
+                    description=f"elevation {sheet_id}: {r['reason']}",
+                    confidence=0.6,
+                    provenance=prov,
+                )
+            )
+    return n
 
 
 def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):

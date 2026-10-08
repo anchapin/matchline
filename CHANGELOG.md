@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Drawing-set run reads elevation sheets: windows and doors with sill/head heights, registered to the plan facade by shared grid labels or outline length; unnamed or mismatched elevations go to review (#810, first slice).
+
+### Added
 - Plan windows: full-length or extra-wide glazing broken by at least two
   mullion ticks is a window (`source: "glazing_mullions"`, confidence 0.6);
   a cavity line along the whole wall still is not (#793).
