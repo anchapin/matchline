@@ -369,9 +369,10 @@ def build_set_model(
             footprint_from_regions, _edge_facades, EnvelopeWall, Provenance,
         )  # fmt: skip
         plan_of_level[lid] = (f, sheet_id, len(report.levels) - 1)
-    elevations = _read_elevations(
+    elev_reads, elev_bbox = _read_elevations(
         files, entries, status, scales, sheets_dir, plan_of_level, walls, review, report
     )
+    elevations = len(elev_reads)
     if h_src == "storey_height_default":
         review.append(
             ReviewItem(
@@ -405,10 +406,17 @@ def build_set_model(
         files, status, schedules, review, Provenance, ReviewItem
     )
     constructions: dict = {}
+    centers: dict = {}
     for lid, (f, sheet_id, li) in plan_of_level.items():
         report.levels[li]["openings"] = _plan_openings(
             lid, walls[f]["openings"], [w for w in envelope if w.id.startswith(f"{lid}-E")],
-            spaces, sched_entries, sheet_id, review, constructions,
+            spaces, sched_entries, sheet_id, review, constructions, centers,
+        )  # fmt: skip
+    if elev_reads:
+        first = next(iter(plan_of_level))
+        _join_elevations(
+            elev_reads, elev_bbox,
+            [sp for sp in spaces.values() if sp.level_id == first], centers, review, report,
         )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
@@ -442,7 +450,8 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
 
     Each elevation is registered to the lowest level's plan footprint: by the
     shared column grid when both sheets carry it, else by the facade outline.
-    Writes ``sheets/elevation_NNN.json`` and returns how many sheets were read.
+    Writes ``sheets/elevation_NNN.json`` and returns the reads that registered,
+    as ``(ElevationRead, Provenance)`` pairs, with the footprint box they share.
     """
     from building_model import Provenance, ReviewItem
     from elevation_sheets import facade_from_title, read_elevation
@@ -451,7 +460,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     elev_files = [f for f in files if entries.get(f, {}).get("type") == "elevation"
                   or _val(entries.get(f, {}), "type") == "elevation"]  # fmt: skip
     if not elev_files or not plan_of_level:
-        return 0
+        return [], None
     lid = next(iter(plan_of_level))
     pf = plan_of_level[lid][0]
     # exterior footprint: wall centrelines widened by half their thickness,
@@ -469,7 +478,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
         pgrid = detect_grids(plan, status[pf].number or pf)
     except Exception:  # noqa: BLE001 - a grid failure falls back to geometry
         pgrid = None
-    n = 0
+    reads = []
     for f in elev_files:
         st = status[f]
         sheet_id = st.number or f
@@ -514,7 +523,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
                 )
             )
             continue
-        n += 1
+        reads.append((er, prov))
         out = f.replace("sheet_", "elevation_")
         (sheets_dir / out).write_text(json.dumps(er.to_dict(), indent=1))
         st.mark(
@@ -538,7 +547,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
                     provenance=prov,
                 )
             )
-    return n
+    return reads, bbox
 
 
 def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
@@ -656,7 +665,15 @@ def _schedule_construction(constructions, cat, tags, cands, sheet_id, review, oi
 
 
 def _plan_openings(
-    lid, plan_openings, env_walls, spaces, sched, sheet_id, review, constructions=None
+    lid,
+    plan_openings,
+    env_walls,
+    spaces,
+    sched,
+    sheet_id,
+    review,
+    constructions=None,
+    centers=None,
 ) -> dict:
     """Exterior plan openings -> SpaceOpenings sized by the door/window schedule.
 
@@ -805,7 +822,135 @@ def _plan_openings(
             )
         )
         counts["modelled"] += 1
+        if centers is not None:
+            centers[oid] = (mid.x, mid.y)
     return counts
+
+
+# Elevation <-> plan join (#810, second slice). The schedule states an
+# opening's size and the plan places it along the wall; the elevation is the
+# only sheet that says how high it sits.
+JOIN_TOL_M = 0.3  # centre-to-centre along the facade
+JOIN_WIDTH_TOL_M = 0.15
+JOIN_HEIGHT_TOL_M = 0.1
+
+
+def _join_elevations(reads, bbox, spaces, centers, review, report) -> None:
+    """Give plan openings the sill and head their elevation draws.
+
+    Each elevation opening is matched to the plan opening of the same category
+    on the same facade whose centre is nearest, within ``JOIN_TOL_M``. A match
+    sets ``sill_m`` (and ``head_m`` = sill + the scheduled height); a width or
+    height that disagrees with the schedule beyond tolerance goes to review and
+    the scheduled size stands. An elevation opening with no plan opening, or a
+    plan opening an elevation of its facade does not show, goes to review too.
+    Lowest level only, like the registration.
+    """
+    from building_model import Provenance, ReviewItem
+
+    x0, y0 = bbox[0], bbox[1]
+    by_fac: dict = {}
+    for sp in spaces:
+        for op in sp.openings:
+            if op.id in centers and op.category in ("window", "door"):
+                cx, cy = centers[op.id]
+                s = cx - x0 if op.host_facade in ("north", "south") else cy - y0
+                by_fac.setdefault(op.host_facade, []).append((op, s))
+    for er, prov in reads:
+        stats = {"matched": 0, "unmatched_elevation": 0, "unmatched_plan": 0}
+        cands = list(by_fac.get(er.facade, []))
+        taken = set()
+        for eo in er.openings:
+            es = (eo.s0_m + eo.s1_m) / 2
+            near = [
+                (abs(s - es), op)
+                for op, s in cands
+                if op.id not in taken and abs(s - es) <= JOIN_TOL_M
+            ]
+            same = [t for t in near if t[1].category == eo.kind]
+            if not same:
+                stats["unmatched_elevation"] += 1
+                other = f"; the plan has a {near[0][1].category} there" if near else ""
+                review.append(
+                    ReviewItem(
+                        id=f"rq-elev-{er.sheet_id}-{eo.id}",
+                        kind="elevation_extraction",
+                        target={
+                            "kind": "sheet",
+                            "id": er.sheet_id,
+                            "facade": er.facade,
+                            "opening": eo.id,
+                        },  # fmt: skip
+                        description=(
+                            f"elevation {er.sheet_id}: {eo.kind} {eo.id} "
+                            f"({eo.width_m:.2f} m wide at {es:.2f} m along the {er.facade} "
+                            f"facade) has no plan {eo.kind} within {JOIN_TOL_M:g} m{other}"
+                        ),
+                        confidence=0.6,
+                        provenance=prov,
+                    )
+                )
+                continue
+            _d, op = min(same, key=lambda t: t[0])
+            taken.add(op.id)
+            stats["matched"] += 1
+            why = []
+            if abs(eo.width_m - op.width_m) > JOIN_WIDTH_TOL_M:
+                why.append(
+                    f"{eo.width_m:.2f} m wide on the elevation, {op.width_m:.2f} m scheduled"
+                )
+            if abs(eo.height_m - op.height_m) > JOIN_HEIGHT_TOL_M:
+                why.append(
+                    f"{eo.height_m:.2f} m tall on the elevation, {op.height_m:.2f} m scheduled"
+                )
+            sill = 0.0 if eo.kind == "door" else round(eo.sill_m, 4)
+            op.sill_m = sill
+            op.head_m = round(sill + op.height_m, 4)
+            op.history.append(
+                Provenance(
+                    sheet_id=er.sheet_id,
+                    revision=0,
+                    method="elevation_join",
+                    confidence=prov.confidence,
+                    note=(
+                        f"{eo.id}: sill {sill:.2f} m read off the {er.facade} elevation "
+                        f"({(er.registration or {}).get('method', '')} registration)"
+                    ),
+                )
+            )
+            if why:
+                review.append(
+                    ReviewItem(
+                        id=f"rq-elev-{er.sheet_id}-{eo.id}",
+                        kind="elevation_extraction",
+                        target={"kind": "opening", "id": op.id, "sheet": er.sheet_id},
+                        description=(
+                            f"{op.id} ({op.tag}) is {'; '.join(why)}; scheduled size kept"
+                        ),
+                        confidence=0.6,
+                        provenance=prov,
+                    )
+                )
+        for op, s in cands:
+            if op.id in taken:
+                continue
+            stats["unmatched_plan"] += 1
+            review.append(
+                ReviewItem(
+                    id=f"rq-elev-{er.sheet_id}-{op.id}",
+                    kind="elevation_extraction",
+                    target={"kind": "opening", "id": op.id, "sheet": er.sheet_id},
+                    description=(
+                        f"{op.id} ({op.tag}, {op.category} at {s:.2f} m along the {er.facade} "
+                        f"facade) is not drawn on elevation {er.sheet_id}; sill unknown"
+                    ),
+                    confidence=0.6,
+                    provenance=prov,
+                )
+            )
+        for e in report.elevations:
+            if e["sheet_id"] == er.sheet_id:
+                e.update(stats)
 
 
 def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):

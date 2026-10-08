@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Elevation openings join the plan's: matched windows and doors get their sill and head height from the elevation, schedule size kept; disagreements and unmatched openings go to review (#810, second slice).
+
+### Added
 - Drawing-set run reads elevation sheets: windows and doors with sill/head heights, registered to the plan facade by shared grid labels or outline length; unnamed or mismatched elevations go to review (#810, first slice).
 
 ### Added

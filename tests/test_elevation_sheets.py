@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pdf_fixtures import rect, text  # noqa: E402
 from test_grid_detect import bubble, dashed  # noqa: E402
 from test_plan_walls import T_EXT, K  # noqa: E402
-from test_real_set import SCALE_NOTE, _arch_win, _set, _tb  # noqa: E402
+from test_real_set import SCALE_NOTE, _arch_win, _set, _tb, _window_schedule  # noqa: E402
 
 import elevation_sheets as ES  # noqa: E402
 import real_set  # noqa: E402
@@ -35,8 +35,14 @@ def _elev(title, wins=((WIN_X + T_EXT / 2, 0.9, 1.2, 1.5),), length=L, doors=(),
     return _tb("A-201", title) + text(100, 48, SCALE_NOTE, 8) + body + extra
 
 
-def _run(tmp_path, *elevs, plan_extra=""):
+W1 = ("W1", "4'-0\"", "5'-0\"", "FIXED")  # 1.219 m x 1.524 m, fits the 1.2 m plan gap
+W1_H = 60 * 0.0254
+
+
+def _run(tmp_path, *elevs, plan_extra="", rows=(W1,)):
     pages = [_arch_win("A-101", "FIRST FLOOR PLAN", 1) + plan_extra, *elevs]
+    if rows:
+        pages.append(_tb("A-601", "WINDOW SCHEDULE") + _window_schedule(list(rows)))
     model, rep = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
     return model, rep, tmp_path / "out" / "sheets"
 
@@ -72,7 +78,9 @@ def test_south_elevation_window_is_registered_to_the_plan(tmp_path):
     (d,) = [o for o in er["openings"] if o["kind"] == "door"]
     assert d["sill_m"] == pytest.approx(0.0, abs=0.02) and d["id"] == "A-201-D1"
     assert rep.to_dict()["elevations"][0]["windows"] == 1
-    assert not [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+    # the plan has no door on the south wall, so the elevation's door goes to review
+    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+    assert rq.id == "rq-elev-A-201-A-201-D1" and "has no plan door" in rq.description
     (sh,) = [r for r in model.review_queue if r.id == "rq-storey-height"]
     assert "elevations were read for windows" in sh.description
 
@@ -121,5 +129,56 @@ def test_unnamed_elevation_goes_to_review(tmp_path):
 
 def test_outline_length_that_disagrees_with_the_plan_goes_to_review(tmp_path):
     model, _rep, _s = _run(tmp_path, _elev("SOUTH ELEVATION", length=12.0))
-    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-A-201-")]
-    assert "12.00 m wide on the elevation" in rq.description
+    (rq,) = [r for r in model.review_queue if "12.00 m wide on the elevation" in r.description]
+    assert rq.id.startswith("rq-elev-A-201-")
+
+
+# --- joined to the plan's openings (#810, second slice) ---------------------
+
+
+def _ops(model):
+    return [o for sp in model.spaces.values() for o in sp.openings]
+
+
+def test_elevation_gives_the_plan_window_its_sill_and_head(tmp_path):
+    model, rep, _s = _run(tmp_path, _elev("SOUTH ELEVATION"))
+    (op,) = _ops(model)
+    assert op.tag == "W1" and op.host_facade == "south"
+    assert op.sill_m == pytest.approx(0.9, abs=0.02)
+    assert op.head_m == pytest.approx(0.9 + W1_H, abs=0.02)  # sill + the scheduled height
+    assert op.height_m == pytest.approx(W1_H, abs=1e-3)  # schedule size stands
+    (h,) = [p for p in op.history if p.method == "elevation_join"]
+    assert h.sheet_id == "A-201" and "sill 0.90 m" in h.note
+    e = rep.to_dict()["elevations"][0]
+    assert (e["matched"], e["unmatched_elevation"], e["unmatched_plan"]) == (1, 0, 0)
+    assert not [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+
+
+def test_height_that_disagrees_with_the_schedule_goes_to_review(tmp_path):
+    model, _rep, _s = _run(
+        tmp_path, _elev("SOUTH ELEVATION", wins=((WIN_X + T_EXT / 2, 0.9, 1.2, 2.1),))
+    )
+    (op,) = _ops(model)
+    assert op.sill_m == pytest.approx(0.9, abs=0.02)
+    assert op.head_m == pytest.approx(0.9 + W1_H, abs=0.02)
+    (rq,) = [r for r in model.review_queue if r.id.startswith("rq-elev-")]
+    assert "2.10 m tall on the elevation, 1.52 m scheduled" in rq.description
+    assert rq.target == {"kind": "opening", "id": op.id, "sheet": "A-201"}
+
+
+def test_window_far_from_any_plan_window_is_not_joined(tmp_path):
+    model, rep, _s = _run(tmp_path, _elev("SOUTH ELEVATION", wins=((2.0, 0.9, 1.2, 1.5),)))
+    (op,) = _ops(model)
+    assert op.sill_m is None and op.head_m is None
+    ids = sorted(r.id for r in model.review_queue if r.id.startswith("rq-elev-"))
+    assert ids == ["rq-elev-A-201-A-201-W1", f"rq-elev-A-201-{op.id}"]
+    e = rep.to_dict()["elevations"][0]
+    assert (e["matched"], e["unmatched_elevation"], e["unmatched_plan"]) == (0, 1, 1)
+
+
+def test_other_facades_are_left_alone(tmp_path):
+    # a north elevation says nothing about the south window
+    model, _rep, _s = _run(tmp_path, _elev("NORTH ELEVATION", wins=()))
+    (op,) = _ops(model)
+    assert op.sill_m is None
+    assert not [r for r in model.review_queue if r.id.startswith("rq-elev-")]
