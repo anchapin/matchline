@@ -19,7 +19,7 @@ Every `run_pipeline` run that reaches the BEM export also writes `out/package/`:
 - **Convention biases**: the numeric fields of `convention_report.json`; a bias that could not be measured shows its reason, never zero.
 - **Validation**: counts by severity and every check that warned or failed, with its message.
 - **Open review items**: the count and the 15 lowest-confidence items.
-- **Defaults used**: every provenance in the model whose method means the value was not drawn (today `construction_default`, the 90.1 Table 5.5 fills), with where it sits in the model and the table it came from.
+- **Defaults used**: every provenance in the model whose method means the value was not drawn (`construction_default`, the 90.1 Table 5.5 fills, and `storey_height_default`, the 3.0 m storey height a drawing-set run uses when no section or elevation was read), with where it sits in the model and the table it came from.
 - **Review decisions**: `review/` holds the HTML review report, the decisions template and the model it applies to (#749); the report gives the `matchline review review/model.json --apply decisions.json` command. A run with no review report says so.
 
 ## Disclaimer

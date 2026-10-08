@@ -36,7 +36,9 @@ DISCLAIMER = (
     "substitute for professional judgement. Check every value against the drawings before "
     "using it."
 )
-DEFAULT_METHODS = ("construction_default",)  # provenance methods that mean "not drawn"
+# provenance methods that mean "not drawn": 90.1 envelope fills and the storey
+# height a drawing set falls back to when no section or elevation was read
+DEFAULT_METHODS = ("construction_default", "storey_height_default")
 TOP_REVIEW = 15
 
 

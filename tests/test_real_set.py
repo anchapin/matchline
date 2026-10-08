@@ -399,3 +399,13 @@ def test_plan_glazing_picks_the_window_over_a_same_width_door(tmp_path):
     ops = [o for s in model.spaces.values() for o in s.openings]
     assert [(o.category, o.tag, o.host_facade) for o in ops] == [("window", "W1", "south")]
     assert "glazing line drawn on the plan" in ops[0].provenance.note
+
+
+def test_default_storey_height_is_listed_in_the_trust_report(tmp_path):
+    import export_package as E
+
+    model, _rep = _one_floor(tmp_path)
+    tr = E.build_trust_report(model, SimpleNamespace(results=[], errors=[], ok=True), {})
+    (row,) = [d for d in tr["defaults"] if d["method"] == "storey_height_default"]
+    assert "3 m" in row["source"] and "no section or elevation" in row["source"]
+    assert row["where"].startswith("model.review_queue")

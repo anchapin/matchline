@@ -377,7 +377,16 @@ def build_set_model(
                     "set wall_height in the run config to override"
                 ),
                 confidence=0.5,
-                provenance=Provenance(str(pdf), 0, "storey_height_default", 0.5),
+                provenance=Provenance(
+                    str(pdf),
+                    0,
+                    "storey_height_default",
+                    0.5,
+                    note=(
+                        f"storey height {h:g} m for every level (matchline default "
+                        "DEFAULT_STOREY_HEIGHT_M); no section or elevation was read"
+                    ),
+                ),  # fmt: skip
                 needs_review=False,
             )
         )
