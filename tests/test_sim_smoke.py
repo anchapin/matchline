@@ -1,0 +1,159 @@
+"""The annual simulation smoke test's parsing and verdict (#752).
+
+The simulation itself needs the OpenStudio CLI and runs nightly
+(.github/workflows/sim-smoke.yml); these tests pin what the harness reads
+from EnergyPlus output and how it judges it, on small synthetic files.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+
+import pytest
+
+import sim_smoke as s
+
+ABUPS = "AnnualBuildingUtilityPerformanceSummary"
+
+
+def _sql(tmp_path, site_gj=100.0, area=200.0, cond=200.0, unmet_h=5.0, unmet_c=2.0):
+    p = tmp_path / "eplusout.sql"
+    con = sqlite3.connect(p)
+    con.execute(
+        "create table TabularDataWithStrings "
+        "(ReportName, TableName, RowName, ColumnName, Value, Units)"
+    )
+    rows = [
+        ("Site and Source Energy", "Total Site Energy", "Total Energy", f"  {site_gj}", "GJ"),
+        ("Building Area", "Total Building Area", "Area", f"  {area}", "m2"),
+        ("Building Area", "Net Conditioned Building Area", "Area", f"  {cond}", "m2"),
+        (
+            "Comfort and Setpoint Not Met Summary",
+            "Time Setpoint Not Met During Occupied Heating",
+            "Facility",
+            str(unmet_h),
+            "Hours",
+        ),
+        (
+            "Comfort and Setpoint Not Met Summary",
+            "Time Setpoint Not Met During Occupied Cooling",
+            "Facility",
+            str(unmet_c),
+            "Hours",
+        ),
+        ("End Uses", "Heating", "Natural Gas", "  40.0", "GJ"),
+        ("End Uses", "Cooling", "Electricity", "  10.0", "GJ"),
+        ("End Uses", "Pumps", "Electricity", "  0.00", "GJ"),
+        ("End Uses", "Total End Uses", "Electricity", "  10.0", "GJ"),
+    ]
+    con.executemany(
+        "insert into TabularDataWithStrings values (?,?,?,?,?,?)",
+        [(ABUPS, *r) for r in rows],
+    )
+    con.commit()
+    con.close()
+    return p
+
+
+def _err(tmp_path, text):
+    p = tmp_path / "eplusout.err"
+    p.write_text(text)
+    return p
+
+
+def _ref():
+    return s.load_reference(s.REFERENCE, "SmallOffice", "90.1-2019", "5A")
+
+
+OK_ERR = {"completed": True, "warnings": 3, "severe": 0, "fatal": False}
+
+
+def test_read_err_completed_run(tmp_path):
+    p = _err(
+        tmp_path,
+        "   ************* EnergyPlus Completed Successfully-- 23 Warning; 0 Severe Errors; "
+        "Elapsed Time=00hr 00min  0.74sec\n",
+    )
+    assert s.read_err(p) == {"completed": True, "warnings": 23, "severe": 0, "fatal": False}
+
+
+def test_read_err_fatal_run(tmp_path):
+    p = _err(
+        tmp_path,
+        "   ** Severe  ** [Construction][const-roof] Missing required property 'outside_layer'\n"
+        "   **  Fatal  ** Errors occurred on processing input file.\n"
+        "   ** Fatal  ** Preceding condition causes termination.\n"
+        "   ************* EnergyPlus Terminated--Fatal Error Detected. "
+        "0 Warning; 1 Severe Errors\n",
+    )
+    r = s.read_err(p)
+    assert r["completed"] is False and r["fatal"] is True and r["severe"] == 1
+
+
+def test_read_err_missing_file_is_not_completed(tmp_path):
+    assert s.read_err(tmp_path / "nope.err")["completed"] is False
+
+
+def test_read_sql_site_eui_and_end_uses(tmp_path):
+    r = s.read_sql(_sql(tmp_path))
+    assert r["site_eui_mj_m2"] == pytest.approx(500.0)
+    assert r["conditioned_area_m2"] == 200.0
+    assert (r["unmet_heating_h"], r["unmet_cooling_h"]) == (5.0, 2.0)
+    assert r["end_uses_mj_m2"] == {"Cooling / Electricity": 50.0, "Heating / Natural Gas": 200.0}
+
+
+def test_eui_inside_the_band_is_ok(tmp_path):
+    ref, data = _ref()
+    res = s.read_sql(_sql(tmp_path, site_gj=ref["site_eui_mj_m2"] * 0.2, area=200.0))
+    v = s.judge(OK_ERR, res, ref, data)
+    assert v["status"] == "ok" and v["reasons"] == [] and v["eui_ratio"] == pytest.approx(1.0)
+
+
+def test_eui_miss_is_reported_not_failed(tmp_path):
+    ref, data = _ref()
+    res = s.read_sql(_sql(tmp_path, site_gj=ref["site_eui_mj_m2"] * 0.2 * 2.6, area=200.0))
+    v = s.judge(OK_ERR, res, ref, data)
+    assert v["status"] == "eui_out_of_band" and v["reasons"] == []
+    assert any("outside" in n for n in v["notes"])
+
+
+@pytest.mark.parametrize(
+    "err, cond, reason",
+    [
+        ({"completed": False, "warnings": None, "severe": 1, "fatal": True}, 200.0, "complete"),
+        ({"completed": True, "warnings": 0, "severe": 2, "fatal": False}, 200.0, "severe"),
+        (OK_ERR, 0.0, "conditioned"),
+    ],
+)
+def test_broken_simulation_fails(tmp_path, err, cond, reason):
+    ref, data = _ref()
+    res = s.read_sql(_sql(tmp_path, cond=cond))
+    v = s.judge(err, res, ref, data)
+    assert v["status"] == "fail" and any(reason in r for r in v["reasons"])
+
+
+def test_unmet_hours_over_appendix_g_limit_are_noted_only(tmp_path):
+    ref, data = _ref()
+    res = s.read_sql(_sql(tmp_path, site_gj=ref["site_eui_mj_m2"] * 0.2, unmet_h=450.0))
+    v = s.judge(OK_ERR, res, ref, data)
+    assert v["status"] == "ok"
+    assert any("unmet_heating_h 450 h" in n for n in v["notes"])
+
+
+def test_reference_file_states_its_band_and_provenance():
+    data = json.loads(s.REFERENCE.read_text())
+    assert data["schema"] == "matchline.sim_reference/1"
+    assert 0 < data["band"]["low_factor"] < 1 < data["band"]["high_factor"]
+    assert data["band"]["why"] and data["unmet_hours_limit"]["source"]
+    for ref in data["references"]:
+        for k in ("produced_by", "tools", "weather", "date"):
+            assert ref[k], k
+        assert re.fullmatch(r"[0-9a-f]{64}", ref["weather_sha256"])
+        assert ref["site_eui_mj_m2"] > 0
+
+
+def test_unknown_reference_raises():
+    with pytest.raises(KeyError):
+        s.load_reference(s.REFERENCE, "Hospital", "90.1-2019", "5A")
