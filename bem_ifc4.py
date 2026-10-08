@@ -88,6 +88,46 @@ def _write_identity(f, products, ident):
         _Ps.edit_pset(f, pset=pset, properties=props)
 
 
+def _write_opening_thermal(f, fill, model, unit) -> bool:
+    """Pset_WindowCommon/Pset_DoorCommon U, plus glazing SHGC and VT (#747).
+
+    Written only when the opening points at a construction the model holds
+    (``model.opening_constructions``), so files without one are unchanged.
+    Windows and skylights also get Pset_DoorWindowGlazingType
+    SolarHeatGainTransmittance and VisibleLightTransmittance when known.
+    Returns True when a U-value was written.
+    """
+    cid = getattr(unit, "construction_id", "") or ""
+    oc = (getattr(model, "opening_constructions", None) or {}).get(cid)
+    if not oc or oc.get("u") is None or float(oc["u"]) <= 0:
+        return False
+    import ifcopenshell.api.pset as _Ps
+
+    common = "Pset_WindowCommon" if fill.is_a("IfcWindow") else "Pset_DoorCommon"
+    try:
+        pset = _Ps.add_pset(f, product=fill, name=common)
+        _Ps.edit_pset(
+            f,
+            pset=pset,
+            properties={
+                "Reference": cid,
+                "ThermalTransmittance": float(oc["u"]),
+                "IsExternal": True,
+            },
+        )
+        glazing = {}
+        if oc.get("shgc") is not None:
+            glazing["SolarHeatGainTransmittance"] = float(oc["shgc"])
+        if oc.get("vt") is not None:
+            glazing["VisibleLightTransmittance"] = float(oc["vt"])
+        if glazing and fill.is_a("IfcWindow"):
+            gp = _Ps.add_pset(f, product=fill, name="Pset_DoorWindowGlazingType")
+            _Ps.edit_pset(f, pset=gp, properties=glazing)
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        return False  # thermal properties are enrichment, not core validity
+    return True
+
+
 def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2) -> Path:
     """Write a minimal but structurally valid IFC4 file.
 
@@ -216,6 +256,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     terrain = Terrain(getattr(model, "terrain", None) or [])
     grade_bounds = []  # (space id, wall, [(surface type, (s, z) polygon)], bl, br, L)
+    opening_thermal: list = []  # tags of openings given a U (#747)
     for w_storey, w_pl, w_h, edges, opening_assign, owners, prefix, w_z0 in wall_groups:
         for i, (p0, p1) in enumerate(edges):
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
@@ -331,6 +372,8 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                 )
                 _Sp.assign_container(f, products=[fill], relating_structure=w_storey)
                 _write_identity(f, [opening, fill], getattr(u, "identity", None))
+                if _write_opening_thermal(f, fill, model, u):
+                    opening_thermal.append(u.tag)
 
     # --- ground slab -------------------------------------------------------
     # Written only when the model knows its U (Pset_SlabCommon), so files
@@ -426,6 +469,8 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             )
             _Sp.assign_container(f, products=[fill], relating_structure=st)
             _write_identity(f, [opening, fill], getattr(u, "identity", None))
+            if _write_opening_thermal(f, fill, model, u):
+                opening_thermal.append(u.tag)
 
     # --- roof slab + skylights (roadmap item 3, wave 2b) ------------------
     # Flat-roof convention from #540: one roof over the footprint at the wall
@@ -746,6 +791,13 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         )
         + ("".join(f" Roof: {n}" for n in sky_notes))
         + (f" {shades_written} shading device(s)." if shades_written else "")
+        + (
+            f" {len(opening_thermal)} window/door/skylight U-value(s) "
+            "(Pset_WindowCommon/Pset_DoorCommon, glazing SHGC/VT in "
+            "Pset_DoorWindowGlazingType) (#747)."
+            if opening_thermal
+            else ""
+        )
         + (
             f" {len(levels)} storeys, {n_level_slabs} floor/ceiling/roof slab(s) (#639)."
             if multi
