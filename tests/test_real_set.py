@@ -409,3 +409,53 @@ def test_default_storey_height_is_listed_in_the_trust_report(tmp_path):
     (row,) = [d for d in tr["defaults"] if d["method"] == "storey_height_default"]
     assert "3 m" in row["source"] and "no section or elevation" in row["source"]
     assert row["where"].startswith("model.review_queue")
+
+
+# ---- a schedule tag written next to a plan gap names its row (#793) ------
+
+ROWS_4FT = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W3", "4'-0\"", "7'-0\"", "FIXED")]
+
+
+def _one_floor_tagged(tmp_path, tag, rows=ROWS_4FT, at=(7, -0.6)):
+    page = _arch_win("A-101", "FIRST FLOOR PLAN", 1) + text(*_pt(*at), tag, 8)
+    sched = _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(rows)
+    return real_set.build_set_model(_set(tmp_path, [page, sched]), tmp_path / "out")
+
+
+def test_plan_tag_picks_the_row_when_widths_disagree(tmp_path):
+    # without the tag, W1 and W3 are both 4'-0" and disagree on height: unsized
+    model, rep = _one_floor_tagged(tmp_path, "W3")
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    assert op.tag == "W3" and op.height_m == pytest.approx(84 * 0.0254, abs=1e-3)
+    assert op.provenance.method == "plan_gap_tag" and op.provenance.confidence == 0.85
+    assert "tagged W3" in op.provenance.note
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+def test_plan_tag_with_the_wrong_width_goes_to_review(tmp_path):
+    rows = ROWS_4FT + [("W5", "6'-0\"", "5'-0\"", "FIXED")]
+    model, _rep = _one_floor_tagged(tmp_path, "W5", rows)
+    assert all(not s.openings for s in model.spaces.values())
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "tag W5 is scheduled 1.83 m wide" in rq.description
+    assert rq.target["gap"]["candidates"] == ["W5"]
+
+
+def test_unscheduled_or_far_tag_falls_back_to_width(tmp_path):
+    # X9 is not in the schedule; W3 sits 3 m from the gap
+    for k, (tag, at) in enumerate([("X9", (7, -0.6)), ("W3", (7, 3.0))]):
+        d = tmp_path / str(k)
+        d.mkdir()
+        rows = [("W1", "4'-0\"", "5'-0\"", "FIXED"), ("W3", "3'-0\"", "7'-0\"", "FIXED")]
+        model, _rep = _one_floor_tagged(d, tag, rows, at)
+        (op,) = [o for s in model.spaces.values() for o in s.openings]
+        assert op.tag == "W1" and op.provenance.method == "plan_gap_schedule_width"
+
+
+def test_room_numbers_and_names_are_not_tags():
+    import plan_walls as PW
+
+    for s in ("W1", "D-12", "SF-1", "SF1A"):
+        assert PW.TAG_RE.match(s), s
+    for s in ("101", "OFFICE", "N", "WINDOW-1234", "1/A-501"):
+        assert not PW.TAG_RE.match(s), s

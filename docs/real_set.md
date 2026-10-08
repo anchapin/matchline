@@ -22,7 +22,11 @@ What this slice does not invent:
   whose middle lies within 0.5 m of the level outline is exterior; it is matched to the
   door/window schedules in the set by width (within 0.05 m). When every matching row
   agrees on category and height, the gap is modelled on that wall, in the room that
-  owns it, at the scheduled size (provenance `plan_gap_schedule_width`). A gap no row
+  owns it, at the scheduled size (provenance `plan_gap_schedule_width`). A schedule tag (`W3`, `D-12`, `SF-1`) written on the plan
+  within 1.5 m of the gap names the row outright (provenance `plan_gap_tag`, confidence
+  0.85), even where rows of the same width disagree; a tag whose scheduled width or
+  category contradicts the gap sends it to review instead, and a tag not in the
+  schedule is ignored (#793). A gap no row
   explains, or one rows disagree on, becomes an `opening_unsized` review item and is
   not modelled. Interior gaps are counted only. Each level reports
   `openings: {exterior, interior, modelled, unsized}` beside `plan_openings`.

@@ -181,3 +181,10 @@ unclassified. `stats.windows` counts them. In a set, a window restricts the
 schedule width match to window rows, the mirror of the door-swing rule, and
 the provenance note records the glazing line. A window flush with a corner
 on both sides (a full-length storefront) is not found by this rule.
+
+## Opening tags (#793)
+
+Text that reads like a schedule tag (letters then digits, e.g. `W3`, `D-12`, `SF-1`;
+room numbers and names do not match) within 1.5 m of an opening's midpoint is attached
+as `tag_text` with `tag_dist_m`; the nearest opening wins when two are in range.
+`stats.tagged` counts them. The set pipeline uses the tag to pick the schedule row.
