@@ -109,7 +109,14 @@ when all three are present; without VT it leaves an empty construction that
 will not simulate. So glazing with no VT (for example a stated U and SHGC with
 no VT) is written with no WindowType and the export notes it.
 
+The IFC4 export carries the same values on each window, door and skylight
+that points at a construction: `Pset_WindowCommon` or `Pset_DoorCommon` with
+`ThermalTransmittance` (W/m2K), `IsExternal` and `Reference` (the construction
+id), and for windows and skylights `Pset_DoorWindowGlazingType` with
+`SolarHeatGainTransmittance` and `VisibleLightTransmittance` when known.
+Openings with no construction get none of these, so those files are unchanged.
+
 ## Not yet
 
-Opening constructions in the IFC4 export, heated slabs, interior (non-perimeter) slab
-edges, wall-type tags read off PDF legends, and Appendix A assemblies.
+Reading opening U, SHGC and VT back from IFC on import, heated slabs, interior
+(non-perimeter) slab edges, wall-type tags read off PDF legends, and Appendix A assemblies.
