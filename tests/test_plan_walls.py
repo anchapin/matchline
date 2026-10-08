@@ -463,6 +463,47 @@ def test_middle_line_along_the_whole_wall_is_not_a_window(tmp_path):
     assert not _windows(res)
 
 
+def _mullion_ticks(xs, y=0.0, t=T_EXT):
+    out = ""
+    for x in xs:
+        out += line(*_pt(x, y - t / 2), *_pt(x, y + t / 2), 0.3)
+    return out
+
+
+def test_full_length_storefront_with_mullions_is_a_window(tmp_path):
+    # #793: glazing the whole length of the south wall, broken by mullions
+    res, _ = _read(
+        tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([2, 4, 6, 8])
+    )
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_mullions"
+    assert op["window_confidence"] == W.STOREFRONT_CONFIDENCE < W.WINDOW_CONFIDENCE
+    assert op["width_m"] > W.WIDE_OPENING_M  # wider than a punched window is fine here
+    assert len(op["walls"]) == 1
+    assert _areas(res) == [60.0]  # the wall still closes the room
+
+
+def test_one_tick_does_not_make_a_cavity_line_a_storefront(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([5]))
+    assert not _windows(res)
+
+
+def test_ticks_at_the_wall_ends_are_not_mullions(tmp_path):
+    # ticks at the corners (frame or a return), none inside the run
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([0.1, 9.9]))
+    assert not _windows(res)
+
+
+def test_wide_glazing_without_mullions_is_still_not_a_window(tmp_path):
+    # 6 m of middle line in a 10 m wall: wider than any punched window
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(2, 8))
+    assert not _windows(res)
+    (tmp_path / "m").mkdir()
+    res, _ = _read(tmp_path / "m", _outline(_mass(SHELL)) + _glazing(2, 8) + _mullion_ticks([4, 6]))
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_mullions" and op["width_m"] == pytest.approx(6.0, abs=0.05)
+
+
 def test_door_and_window_on_one_plan(tmp_path):
     mass = _mass(SHELL + PARTITION, [DOOR])
     sym = _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45))

@@ -7,6 +7,9 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Plan windows: full-length or extra-wide glazing broken by at least two
+  mullion ticks is a window (`source: "glazing_mullions"`, confidence 0.6);
+  a cavity line along the whole wall still is not (#793).
 - Plan openings: a schedule tag written next to a plan gap picks its schedule row, even where same-width rows disagree; a contradicting tag goes to review (#793).
 - CI: a browser-level test drives the review page in headless Chromium and
   replays its exported decisions with `matchline review --apply` (#802).
