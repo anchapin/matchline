@@ -289,30 +289,24 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
+def _decide(model: BuildingModel, item_id: str, action: str) -> tuple[BuildingModel, str]:
+    """Same state and revision log entry as the HTML review report (#749)."""
+    from review_report import decide
+
+    done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
+    if decide(model, item_id, action):
+        return model, f"{done} {item_id}."
+    return model, f"{item_id} is already {done.lower()}; nothing changed."
+
+
 def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "confirmed"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Confirmed {item_id}."
+    return _decide(model, item_id, "confirm")
 
 
 def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "rejected"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Rejected {item_id}."
+    return _decide(model, item_id, "reject")
 
 
 def _summarize_validation(report) -> str:

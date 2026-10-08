@@ -161,3 +161,26 @@ def test_cli_report_then_apply_round_trip(tmp_path, capsys):
     q = {i.id: i.status for i in BuildingModel.from_json(out.read_text()).review_queue}
     assert q == {"R1": "open", "R2": "rejected", "R3": "confirmed", "R4": "confirmed"}
     assert (d / "model.json").read_text() == _model().to_json()  # --out leaves the input alone
+
+
+def test_cli_flags_match_the_report(tmp_path):
+    # --confirm/--reject leave an item exactly as the report's decision would
+    flag, page = _model(), _model()
+    run_review._confirm_item(flag, "R1")
+    run_review._reject_item(flag, "R2")
+    R.apply_decisions(page, _doc(page, {"id": "R1", "action": "confirm"},
+                                 {"id": "R2", "action": "reject"}))  # fmt: skip
+    for a, b in zip(flag.review_queue, page.review_queue):
+        assert R.auto_state(a) == R.auto_state(b)
+    assert [e.note for e in flag.revision_log] == [e.note for e in page.revision_log]
+
+
+def test_cli_flags_can_change_a_decision_like_the_report():
+    m = _model()
+    run_review._confirm_item(m, "R1")
+    _, msg = run_review._confirm_item(m, "R1")
+    assert "nothing changed" in msg and len(m.revision_log) == 1
+    run_review._reject_item(m, "R1")
+    assert (m.review_queue[0].status, m.review_queue[0].resolution) == ("rejected", "drop")
+    with pytest.raises(ValueError, match="not found"):
+        run_review._confirm_item(m, "R9")

@@ -39,6 +39,8 @@ Decisions run in file order and the last one per item wins.
 | `edit` | `status confirmed`, `resolution reassign`; the value is recorded in the revision log |
 | `revert` | the automatic state stored in `decisions.json` |
 
+`matchline review --confirm ID` and `--reject ID` apply one decision the same way (same state, same log entry).
+
 Every change the replay makes is written to the model's revision log
 (`action: "review"`, note `"<id> <action>[: value]"`). Replaying the same file
 twice changes and logs nothing. A file naming an unknown item, an unknown
@@ -59,4 +61,4 @@ replay them (#750).
 ## Limitations
 
 - No sheet overlays yet (rooms, walls and detections drawn on the sheet, links between sheets). That is the next slice of #749.
-- An `edit` records the corrected value and closes the item; it does not yet change the geometry or link the item points at, because review items do not name their target entity.
+- An `edit` records the corrected value and closes the item; it does not yet change the geometry or link the item points at, because review items do not name their target entity (follow-up issue).

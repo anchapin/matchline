@@ -124,18 +124,47 @@ def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
             want, act, note = dict(doc["auto"][iid]), "revert", "reverted to automatic output"
         else:
             act = st["action"]
-            want = dict(_STATE[act], needs_review=False, acknowledged=True)
+            want = _decided(act)
             note = act + (f": {st['value']}" if act == "edit" else "")
-        if auto_state(item) == {**auto_state(item), **want}:
+        if _set(model, item, want, note):
+            summary[act] += 1
+        else:
             summary["unchanged"] += 1
-            continue
-        for k, v in want.items():
-            setattr(item, k, v)
-        summary[act] += 1
-        sheet = item.provenance.sheet_id if item.provenance else ""
-        rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
-        model.log_revision(sheet, rev, "review", f"{iid} {note}")
     return summary
+
+
+def _decided(action: str) -> dict:
+    return dict(_STATE[action], needs_review=False, acknowledged=True)
+
+
+def _set(model, item, want: dict, note: str) -> bool:
+    """Put ``item`` in state ``want`` and log it; False when it already was."""
+    if auto_state(item) == {**auto_state(item), **want}:
+        return False
+    for k, v in want.items():
+        setattr(item, k, v)
+    sheet = item.provenance.sheet_id if item.provenance else ""
+    rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
+    model.log_revision(sheet, rev, "review", f"{item.id} {note}")
+    return True
+
+
+def decide(model, item_id: str, action: str, value: Optional[str] = None) -> bool:
+    """One decision, exactly as a replayed decisions file would apply it.
+
+    Used by ``matchline review --confirm/--reject`` so the flags and the HTML
+    report leave an item in the same state with the same revision log entry.
+    Returns False when the item was already in that state (nothing logged).
+    """
+    item = next((i for i in model.review_queue if i.id == item_id), None)
+    if item is None:
+        raise ValueError(f"Item {item_id} not found in review queue.")
+    if action not in _STATE:
+        raise ValueError(f"unknown action {action!r}")
+    if action == "edit" and not str(value or "").strip():
+        raise ValueError(f"edit of {item_id!r} has no value")
+    note = action + (f": {value}" if action == "edit" else "")
+    return _set(model, item, _decided(action), note)
 
 
 def _item_row(i) -> dict:
@@ -321,6 +350,6 @@ def summarize(summary: dict) -> str:
 
 
 __all__: List[str] = [
-    "SCHEMA", "ACTIONS", "apply_decisions", "check", "final_states", "render_html",
+    "SCHEMA", "ACTIONS", "apply_decisions", "check", "decide", "final_states", "render_html",
     "template", "worst_first", "write_review", "summarize",
 ]  # fmt: skip
