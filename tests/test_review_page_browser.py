@@ -75,17 +75,17 @@ def test_reviewer_drives_the_page_and_the_export_replays(tmp_path, page):
     items = pg.evaluate("JSON.parse(document.getElementById('data').textContent).items")
     ids = [i["id"] for i in items]
     gap = next(k for k, i in enumerate(items) if i["kind"] == "opening_unsized")
-    others = [k for k in range(len(items)) if k != gap][:2]
-    assert len(others) == 2, ids
+    other = next(k for k in range(len(items)) if k != gap)  # the storey-height default
     assert pg.locator("#rows tr").count() == len(items)
 
-    # c confirms the selected item, j moves down, r rejects
-    _go(pg, others[0])
+    # c confirms the selected item, u reverts it, r rejects; j/k move
+    _go(pg, other)
     pg.keyboard.press("c")
-    assert _status(pg, others[0]).startswith("confirmed")
-    _go(pg, others[1])
+    assert _status(pg, other).startswith("confirmed")
+    pg.keyboard.press("u")
+    assert not _status(pg, other).startswith("confirmed")
     pg.keyboard.press("r")
-    assert _status(pg, others[1]).startswith("rejected")
+    assert _status(pg, other).startswith("rejected")
 
     # e opens the edit prompt, which names the field and the candidate tags
     asked = []
@@ -115,7 +115,7 @@ def test_reviewer_drives_the_page_and_the_export_replays(tmp_path, page):
 
     # decisions survive a reload (localStorage)
     pg.reload()
-    assert _status(pg, others[0]).startswith("confirmed")
+    assert _status(pg, other).startswith("rejected")
     assert _status(pg, gap).startswith("edited")
 
     # export, then replay with the CLI
@@ -125,8 +125,9 @@ def test_reviewer_drives_the_page_and_the_export_replays(tmp_path, page):
     dl.value.save_as(out)
     doc = json.loads(out.read_text())
     assert [(x["id"], x["action"]) for x in doc["decisions"]] == [
-        (ids[others[0]], "confirm"),
-        (ids[others[1]], "reject"),
+        (ids[other], "confirm"),
+        (ids[other], "revert"),
+        (ids[other], "reject"),
         (ids[gap], "edit"),
     ]
     reviewed = tmp_path / "reviewed.json"
@@ -137,7 +138,7 @@ def test_reviewer_drives_the_page_and_the_export_replays(tmp_path, page):
     )
     m = BuildingModel.from_json(reviewed.read_text())
     q = {i.id: i.status for i in m.review_queue}
-    assert q[ids[others[0]]] == "confirmed" and q[ids[others[1]]] == "rejected"
+    assert q[ids[other]] == "rejected"
     _sp, op = R._find_opening(m, oid)
     assert op is not None and op.tag == "W1" and op.provenance.method == "review_edit"
     assert errors == []
