@@ -73,6 +73,26 @@ Measurements:
 | First Floor, + sliver merge | 106 / 154 | 27 | 11.2% | 2.7% |
 | Second Floor, + sliver merge | 81 / 109 | 22 | 10.6% | 0.3% |
 
+IfcSpace boundaries include virtual ones (corridor segments, a waiting area
+open to a corridor, an alcove) that no plan line shows. `rooms_wall_bounded`
+in `scripts/validate_clinic_walls.py` joins spaces whose shared edge has at
+least 0.8 m with no wall and no door or window opening between them, and scores
+the same rooms against those regions:
+
+| Storey | Spaces / regions | Matched / regions | Extra faces | Median area err |
+|---|---|---|---|---|
+| First Floor | 154 / 126 | 100 / 126 (79%) | 33 | 11.2% |
+| Second Floor | 109 / 87 | 72 / 87 (83%) | 31 | 10.6% |
+
+Against raw spaces the same output matches 69% (FF) and 74% (SF). Of the raw
+misses on joined rooms, the shared edges with nothing found between them were
+81 m (FF) and 17 m (SF), all with no IFC wall there. The truth still counts
+ROOF and OPEN TO BELOW spaces on the Second Floor as regions.
+
+What is left is mostly open-plan areas whose walls end in the open (reception
+counters, cubicle partitions, half walls): 21 FF and 18 SF spaces have no face
+over them, 30 of them with an unclosed wall end on their edge.
+
 Before joins, the First Floor wall graph had 327 free ends (counting door
 bridges as connections): 180 within half of both thicknesses of another wall's
 centreline, 116 between 0.2 and 1.0 m from one, 30 between 1.0 and 2.5 m, 1

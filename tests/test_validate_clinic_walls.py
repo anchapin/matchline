@@ -7,7 +7,13 @@ import numpy as np
 from shapely.geometry import Polygon, box
 
 from plan_walls import compare_rooms, extract_walls
-from scripts.validate_clinic_walls import M_PER_PT, cut_polygons, section, sheet_for
+from scripts.validate_clinic_walls import (
+    M_PER_PT,
+    cut_polygons,
+    section,
+    sheet_for,
+    wall_bounded_truth,
+)
 
 
 def _box_mesh(x0, y0, x1, y1, z0, z1):
@@ -44,3 +50,20 @@ def test_one_room_round_trips_through_the_sheet_in_ifc_coordinates():
     assert cmp["matched"] == 1
     # the room face is drawn on wall centrelines, so it is a little larger than the net room
     assert Polygon(pred[0]).area >= Polygon(ring).area
+
+
+def test_spaces_join_across_an_edge_no_wall_stands_on():
+    from shapely.geometry import box
+
+    rooms = [
+        ("101", "CORRIDOR", [(0, 0), (4, 0), (4, 2), (0, 2)]),
+        ("102", "CORRIDOR", [(4, 0), (8, 0), (8, 2), (4, 2)]),
+        ("103", "OFFICE", [(0, 2), (4, 2), (4, 5), (0, 5)]),
+    ]
+    # a wall between the corridor and the office, none between the two corridor segments
+    walls = [box(-0.1, 1.9, 8.1, 2.1)]
+    out = sorted(wall_bounded_truth(rooms, walls), key=lambda g: len(g[0]))
+    assert [sorted(n) for n, _ in out] == [["OFFICE"], ["CORRIDOR", "CORRIDOR"]]
+    from shapely.geometry import Polygon
+
+    assert abs(Polygon(out[1][1]).area - 16.0) < 1e-6
