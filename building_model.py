@@ -546,6 +546,14 @@ class BimOpening:
     # Pset_DoorCommon.GlazingAreaFraction (0..1) and the glazed area it gives.
     glazing_area_fraction: Optional[float] = None
     glazed_area_m2: Optional[float] = None
+    # Stated thermal values on the fill (#787): Pset_WindowCommon or
+    # Pset_DoorCommon ThermalTransmittance (W/m2K) and, for glazing,
+    # Pset_DoorWindowGlazingType SolarHeatGainTransmittance and
+    # VisibleLightTransmittance. None when the file does not state them.
+    u_value_w_m2k: Optional[float] = None
+    shgc: Optional[float] = None
+    vt: Optional[float] = None
+    thermal_reference: str = ""  # the common pset's Reference, kept for traceability
 
 
 @dataclass
