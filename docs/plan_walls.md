@@ -70,6 +70,8 @@ Measurements:
 | Second Floor, before joins | 27 / 109 | 44 | 9.0% | 0.3% |
 | Second Floor, near joins (#773) | 50 / 109 | 68 | 9.0% | 0.3% |
 | Second Floor, + corner doors | 81 / 109 | 82 | 9.2% | 0.3% |
+| First Floor, + sliver merge | 106 / 154 | 27 | 11.2% | 2.7% |
+| Second Floor, + sliver merge | 81 / 109 | 22 | 10.6% | 0.3% |
 
 Before joins, the First Floor wall graph had 327 free ends (counting door
 bridges as connections): 180 within half of both thicknesses of another wall's
@@ -84,14 +86,22 @@ farther. Two rules now close them:
   `"beside_corner": true`.
 
 `unclosed_wall` items went 462 -> 261 -> 140 (First Floor) and 225 -> 131 -> 32
-(Second Floor). Of the First Floor extra faces, 97 are slivers under 2 m^2
-(wall jogs closing into tiny faces), 11 span several truth rooms and 6 split
-one room.
+(Second Floor). Before the sliver merge, 97 of the 114 First Floor extra
+faces were slivers under 2 m^2 (wall jogs closing into tiny loops), 11 spanned
+several truth rooms and 6 split one room.
+
+Nothing is dropped: an unlabeled face under `SLIVER_M2` (2 m^2) merges into a
+neighbour by the closet/shaft rule, into the face it shares a door with, else
+the face it shares the most wall with. The folded areas are kept on the room
+as `merged_m2`. A face with a room label stays a room however small. Merging
+cut `room` review items from 88 to 4 (First Floor) and 58 to 4 (Second
+Floor). Median area error rose about 1.5 points because sliver area is now
+counted in the room next to it.
 
 ## Not yet
 
 Casework drawn within a wall thickness of a wall face (a counter front 0.6 m
 off the wall) can still pair as a wall; the Clinic measurement will show how
 often. Raster fallback for scanned sheets, hatch-pattern walls, curved walls,
-classifying unlabeled faces (`polygon_classify` / `space_merge`), and dropping
-sliver faces under 2 m^2 left by wall jogs are follow-ups on #740.
+classifying unlabeled faces (`polygon_classify` / `space_merge`), and
+simplifying wall jogs so slivers never form are follow-ups on #740.

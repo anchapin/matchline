@@ -349,3 +349,20 @@ def test_door_beside_a_corner_closes_the_room(tmp_path):
     assert _areas(res) == [24.0, 36.0]
     corner = [o for o in res.openings if o.get("beside_corner")]
     assert len(corner) == 1 and corner[0]["width_m"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_unlabeled_sliver_merges_by_the_closet_and_shaft_rule():
+    # a wall-jog sliver (1.5 units^2) between two rooms is folded in, never dropped (#740)
+    a, b, s = box(0, 0, 10, 10), box(10, 0, 20, 10), box(9, 10, 10.5, 11)
+    # shaft rule: most shared boundary (1.0 with a, 0.5 with b)
+    faces, merged = W._merge_slivers([a, b, s], [], [], max_area=2.0, tol=0.01)
+    assert len(faces) == 2 and merged[0] == [1.5] and merged[1] == []
+    assert sum(f.area for f in faces) == pytest.approx(201.5)
+    # closet rule: a door on the shared edge wins over the longer edge
+    door = LineString([(10, 10), (10.5, 10)])
+    faces, merged = W._merge_slivers([a, b, s], [], [door], max_area=2.0, tol=0.01)
+    assert merged == [[], [1.5]]
+    # a labeled face stays a room however small
+    spans = [("CLOSET 105", (9.4, 10.3, 10.1, 10.7))]
+    faces, merged = W._merge_slivers([a, b, s], spans, [], max_area=2.0, tol=0.01)
+    assert len(faces) == 3 and merged == [[], [], []]
