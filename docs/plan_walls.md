@@ -49,12 +49,36 @@ Never silently dropped:
 `compare_rooms(pred, truth)` matches rooms by IoU >= 0.5 and reports room
 count, missed/extra rooms and per-room area error; `wall_length_error` compares
 total wall length. These are for the held-out BSI Clinic sheets, which are run
-on the development machine and never committed.
+on the development machine and never committed:
+
+```bash
+python scripts/validate_clinic_walls.py /path/Clinic_Architectural.ifc --json clinic_walls.json
+```
+
+The script cuts every wall Body at 1.2 m above its storey floor, unions the cut
+outlines and draws them as stroked lines on a 1:100 sheet with each IfcSpace's
+name and number at its centroid, then runs `extract_walls` and compares against
+the IfcSpace footprints (rooms) and the IFC walls' cut length.
+
+First measurement (2026-10-08):
+
+| Storey | Rooms matched / truth | Extra faces | Median area err | Wall length err |
+|---|---|---|---|---|
+| First Floor | 27 / 154 | 52 | 11.5% | 2.7% |
+| Second Floor | 27 / 109 | 44 | 9.0% | 0.3% |
+
+Wall length is right; rooms are not, because walls do not join. On the First
+Floor, 462 `unclosed_wall` items: 272 wall ends stop within 2.5 m of another
+wall without being bridged (openings between walls that are not on one line),
+233 stop within a wall thickness of another wall's centreline (a T-junction not
+snapped). 90 of the 154 rooms sit in open regions with no face; 37 are merged
+into a face with neighbours.
 
 ## Not yet
 
 Casework drawn within a wall thickness of a wall face (a counter front 0.6 m
 off the wall) can still pair as a wall; the Clinic measurement will show how
 often. Raster fallback for scanned sheets, hatch-pattern walls, curved walls,
-classifying unlabeled faces (`polygon_classify` / `space_merge`), and the
-Clinic measurement itself are follow-ups on #740.
+classifying unlabeled faces (`polygon_classify` / `space_merge`), and closing
+the T-junctions and off-line openings the Clinic measurement found are
+follow-ups on #740.
