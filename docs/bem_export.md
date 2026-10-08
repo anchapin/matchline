@@ -56,7 +56,8 @@ in the gbXML file comment.
 |---|---|---|
 | Room (name, number, polygon, area) | `Space` (+ shell) | `IfcSpace` (+ `Qto_SpaceBaseQuantities.GrossFloorArea`) |
 | Simplified envelope edge | `ExteriorWall` surface | `IfcWall` (SweptSolid, 0.2 m thick) |
-| Roof / ground | `Roof` / `SlabOnGrade` | — (v1 gap) |
+| Roof / ground | `Roof` / `SlabOnGrade`, one per space when the spaces tile the footprint (#765) | — (v1 gap) |
+| Boundary two rooms share | `InteriorWall` (both spaces adjacent, `const-intwall`) (#765) | — |
 | Window/door unit (tag × schedule dims) | `Opening` (`FixedWindow` / `NonSlidingDoor` — the enum has no generic "Door") | `IfcOpeningElement` → `IfcRelVoidsElement` → `IfcWindow`/`IfcDoor` (`IfcRelFillsElement`) |
 | Storey | `BuildingStorey` | `IfcBuildingStorey` (+ Site/Building/Project hierarchy) |
 
@@ -107,13 +108,20 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 
 ## Gaps (v2)
 
-1. **Interior partitions omitted** — spaces are bounded only by the
-   envelope; no `InteriorWall` surfaces between rooms. Fine for loads, wrong
-   for zoning/adjacency.
+1. **Interior walls (#765)**: every boundary two spaces share is an
+   `InteriorWall` with both spaces adjacent, normal from the first into the
+   second, using the DOE prototype partition (2 x G01 13 mm gypsum board,
+   openstudio-standards 0.8.5 "LargeHotel Interior Wall"). Exterior walls are
+   cut where the spaces behind them change, never through an opening, and the
+   roof and slab are cut per space when the spaces tile the footprint (else
+   they stay whole on the largest space, with a note). Sloped roofs still go
+   whole through the roof planes.
 2. **Single storey, uniform 3.0 m height** — no multi-storey or
-   floor-to-floor variation; roof/slab adjacency points at the largest
-   space (approximation).
-3. **Placeholder constructions** — generic U-values unless a space has an
+   floor-to-floor variation.
+3. **Placeholder constructions** — every opaque construction now also
+   carries one no-mass layer with R = 1/U minus the ASHRAE 90.1 Appendix A
+   air films (as openstudio-standards uses them), so the export imports into
+   OpenStudio and simulates (#765); the U-value is unchanged. Generic U-values unless a space has an
    area-weighted wall U from its wall constructions. The roof uses the
    model's `roof_construction_id` U-value when one is set (gbXML
    `const-roof` "Exterior roof (from model)", IFC4

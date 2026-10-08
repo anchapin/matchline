@@ -59,8 +59,11 @@ from bem_helpers import (
     _wall_edges,
 )
 from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
+from bem_layers import write_layered, write_partition
 from bem_loads import write_schedules, write_space_loads
 from bem_roof import is_sloped, roof_pieces, shell_volume, space_shell, wall_top
+from bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
+from room_labels import point_in_polygon as _pip
 from safe_xml import safe_xml_parse, safe_xml_parser
 
 __all__ = [
@@ -180,21 +183,28 @@ def _write_constructions(root, model: BEMModel, air_walls) -> dict:
         if slab_u is not None and slab_u > 0
         else ("const-slab", "Generic slab on grade", "0.40")
     )
-    for cid, cname, uval in (
-        ("const-wall", "Generic exterior wall", "0.50"),
-        roof_row,
-        slab_row,
+    # each opaque construction also carries one no-mass layer that reproduces
+    # its U-value with the air films, so the model simulates as exported (#765)
+    layer_notes = []
+    for cid, cname, uval, stype in (
+        ("const-wall", "Generic exterior wall", "0.50", "ExteriorWall"),
+        roof_row + ("Roof",),
+        slab_row + ("SlabOnGrade",),
     ):
-        co = _el(root, "Construction", id=cid)
-        _el(co, "Name", cname)
-        _el(co, "U-value", uval, unit="WPerSquareMeterK")
+        note = write_layered(root, cid, cname, uval, stype)
+        if note:
+            layer_notes.append(note)
     # Per-space exterior wall constructions (roadmap item 6): a space with an
     # area-weighted wall U gets its own construction; its walls reference it.
     wall_cons = _space_wall_constructions(model.spaces)
     for sid, (cid, u) in wall_cons.items():
-        co = _el(root, "Construction", id=cid)
-        _el(co, "Name", f"Exterior wall, area-weighted ({sid})")
-        _el(co, "U-value", _fmt(u), unit="WPerSquareMeterK")
+        note = write_layered(
+            root, cid, f"Exterior wall, area-weighted ({sid})", _fmt(u), "ExteriorWall"
+        )
+        if note:
+            layer_notes.append(note)
+    if layer_notes:
+        model.notes.extend(layer_notes)
     if getattr(model, "shades", None):
         # gbXML requires constructionIdRef on every Surface, Shade included.
         # Shading carries no heat; this construction only names the surface
@@ -241,6 +251,23 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     grade = _grade_plan(model, edges, opening_assign, roofs, sloped, h)
 
     wall_cons = _write_constructions(root, model, air_walls)
+    # per-space envelope (#765): roof and slab cut per space when the spaces
+    # tile the footprint; shared boundaries become interior walls
+    per_space = (
+        len(model.spaces) > 1 and not sloped and covers_footprint(model.ring_m, model.spaces)
+    )
+    if len(model.spaces) > 1 and not sloped and not per_space:
+        model.notes.append(
+            "gbXML: spaces do not tile the footprint, so the roof and slab stay "
+            "whole on the largest space"
+        )
+    int_walls = shared_walls(
+        model.spaces,
+        model.ring_m,
+        skip_pairs={frozenset(aw.space_ids) for aw in air_walls},
+    )
+    if int_walls:
+        write_partition(root)
     if any(t == "UndergroundWall" for pieces, _ in grade.values() for t, _ in pieces):
         # walls cut at grade from the site terrain (#649); no U invented
         co = _el(root, "Construction", id="const-ugwall")
@@ -300,6 +327,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     surf_count = 0
     open_count = 0
     n_split = 0
+    n_space_split = 0
     for i, (p0, p1) in enumerate(edges):
         dx, dy = p1[0] - p0[0], p1[1] - p0[1]
         L = math.hypot(dx, dy)
@@ -337,103 +365,146 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
                 placement_notes,
             )
             continue
-        if pieces and pieces[0][0] == "UndergroundWall":
-            stype, cons = "UndergroundWall", "const-ugwall"
-        surf_count += 1
-        su = _el(
-            campus,
-            "Surface",
-            id=f"wall-{i + 1:03d}",
-            surfaceType=stype,
-            constructionIdRef=cons,
-        )
-        _el(su, "Name", f"Wall {i + 1}")
-        _el(su, "AdjacentSpaceId", spaceIdRef=sp.sid)
-        rg = _el(su, "RectangularGeometry")
-        _el(rg, "Azimuth", _fmt(az))
-        _el(rg, "Tilt", "90")
-        _cartesian(rg, bl[0], bl[1], 0.0)
-        _cartesian(rg, br[0], br[1], 0.0)
-        _cartesian(rg, br[0], br[1], h)
-        _cartesian(rg, bl[0], bl[1], h)
+        ug = bool(pieces and pieces[0][0] == "UndergroundWall")
         h_open = h
-        top = [(p0[0], p0[1], h), (p1[0], p1[1], h)]
         if sloped:
-            # wall under a sloped roof (#618): the true outline runs up to
-            # the roof, peaked under a gable; openings stay under its lowest
-            # point so none pokes through the slope
-            top, _unc = wall_top(p0, p1, roofs, h)
-            h_open = min([h] + [z for _, _, z in top])
-        # PlanarGeometry on every wall: importers such as OpenStudio read
-        # only the PolyLoop and drop a wall that has RectangularGeometry
-        # alone (#627). Under a sloped roof the loop is the true outline.
-        wpg = _el(su, "PlanarGeometry")
-        wpl = _el(wpg, "PolyLoop")
-        for x, y, z in [(p0[0], p0[1], 0.0), (p1[0], p1[1], 0.0)] + list(reversed(top)):
-            _cartesian(wpl, x, y, z)
-        # openings on this wall (local coords from parent bottom-left)
-        units = opening_assign[i]
-        bl_is_p0 = bl == p0
-        placements, notes = _place_openings_on_wall(units, L, h_open)
+            # wall under a sloped roof (#618): openings stay under the lowest
+            # point of its true outline so none pokes through the slope
+            _top, _unc = wall_top(p0, p1, roofs, h)
+            h_open = min([h] + [z for _, _, z in _top])
+        # openings on this wall, placed along the whole wall (p0 frame)
+        placements, notes = _place_openings_on_wall(opening_assign[i], L, h_open)
         for n in notes:
             placement_notes.append(f"wall-{i + 1:03d}: {n}")
-        for pl_ in placements:
-            u = pl_["unit"]
-            s0, s1 = pl_["s0"], pl_["s1"]
-            if not bl_is_p0:
-                # mirror into the bottom-left frame (BL == p1 here)
-                s0, s1 = L - s1, L - s0
-            open_count += 1
-            op = _el(
-                su, "Opening", id=f"op-{open_count:04d}", openingType=_opening_type(u.category)
+        # one piece per space the wall encloses (#765); a cut never splits an opening
+        parts = [(0.0, L, sp)] if ug else split_edge(p0, p1, model.spaces, sp)
+        parts = keep_openings_whole(parts, [(q["s0"], q["s1"]) for q in placements])
+        if len(parts) > 1:
+            n_space_split += 1
+        bl_is_p0 = bl == p0
+        ux, uy = dx / L, dy / L
+        for k, (t0, t1, psp) in enumerate(parts):
+            q0 = p0 if t0 == 0.0 else (p0[0] + ux * t0, p0[1] + uy * t0)
+            q1 = p1 if t1 == L else (p0[0] + ux * t1, p0[1] + uy * t1)
+            Lp = t1 - t0
+            qbl, qbr = (q0, q1) if bl_is_p0 else (q1, q0)
+            one = len(parts) == 1
+            wid = f"wall-{i + 1:03d}" if one else f"wall-{i + 1:03d}{chr(97 + k)}"
+            pcons = "const-ugwall" if ug else wall_cons.get(psp.sid, ("const-wall", None))[0]
+            surf_count += 1
+            su = _el(
+                campus,
+                "Surface",
+                id=wid,
+                surfaceType="UndergroundWall" if ug else stype,
+                constructionIdRef=pcons,
             )
-            _el(op, "Name", f"{u.tag} ({u.category})")
-            org = _el(op, "RectangularGeometry")
-            # 2-D local coords per schema doc; no Azimuth/Tilt on openings
-            _cartesian(org, s0, pl_["sill"])
-            _cartesian(org, s1, pl_["sill"])
-            _cartesian(org, s1, pl_["sill"] + pl_["height"])
-            _cartesian(org, s0, pl_["sill"] + pl_["height"])
-            # absolute 3-D outline too, for importers that read only
-            # PlanarGeometry (#627); wound like the host wall (outward)
-            ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
-            z0, z1 = pl_["sill"], pl_["sill"] + pl_["height"]
-            opg = _el(op, "PlanarGeometry")
-            opl = _el(opg, "PolyLoop")
-            for sv, zv in ((s0, z0), (s1, z0), (s1, z1), (s0, z1)):
-                _cartesian(opl, bl[0] + sv * ux, bl[1] + sv * uy, zv)
+            _el(su, "Name", f"Wall {i + 1}" if one else f"Wall {i + 1}{chr(97 + k)}")
+            _el(su, "AdjacentSpaceId", spaceIdRef=psp.sid)
+            rg = _el(su, "RectangularGeometry")
+            _el(rg, "Azimuth", _fmt(az))
+            _el(rg, "Tilt", "90")
+            _cartesian(rg, qbl[0], qbl[1], 0.0)
+            _cartesian(rg, qbr[0], qbr[1], 0.0)
+            _cartesian(rg, qbr[0], qbr[1], h)
+            _cartesian(rg, qbl[0], qbl[1], h)
+            top = [(q0[0], q0[1], h), (q1[0], q1[1], h)]
+            if sloped:
+                # the true outline runs up to the roof, peaked under a gable
+                top, _unc = wall_top(q0, q1, roofs, h)
+            # PlanarGeometry on every wall: importers such as OpenStudio read
+            # only the PolyLoop and drop a wall that has RectangularGeometry
+            # alone (#627). Under a sloped roof the loop is the true outline.
+            wpg = _el(su, "PlanarGeometry")
+            wpl = _el(wpg, "PolyLoop")
+            for x, y, z in [(q0[0], q0[1], 0.0), (q1[0], q1[1], 0.0)] + list(reversed(top)):
+                _cartesian(wpl, x, y, z)
+            # openings whose middle falls on this piece (local coords from
+            # the piece's bottom-left)
+            last = k == len(parts) - 1
+            for pl_ in placements:
+                mid = (pl_["s0"] + pl_["s1"]) / 2.0
+                if not (t0 <= mid < t1 or (last and mid == t1)):
+                    continue
+                u = pl_["unit"]
+                s0, s1 = pl_["s0"] - t0, pl_["s1"] - t0
+                if not bl_is_p0:
+                    # mirror into the bottom-left frame (BL == q1 here)
+                    s0, s1 = Lp - s1, Lp - s0
+                open_count += 1
+                op = _el(
+                    su,
+                    "Opening",
+                    id=f"op-{open_count:04d}",
+                    openingType=_opening_type(u.category),
+                )
+                _el(op, "Name", f"{u.tag} ({u.category})")
+                org = _el(op, "RectangularGeometry")
+                # 2-D local coords per schema doc; no Azimuth/Tilt on openings
+                _cartesian(org, s0, pl_["sill"])
+                _cartesian(org, s1, pl_["sill"])
+                _cartesian(org, s1, pl_["sill"] + pl_["height"])
+                _cartesian(org, s0, pl_["sill"] + pl_["height"])
+                # absolute 3-D outline too, for importers that read only
+                # PlanarGeometry (#627); wound like the host wall (outward)
+                vx, vy = (qbr[0] - qbl[0]) / Lp, (qbr[1] - qbl[1]) / Lp
+                z0, z1 = pl_["sill"], pl_["sill"] + pl_["height"]
+                opg = _el(op, "PlanarGeometry")
+                opl = _el(opg, "PolyLoop")
+                for sv, zv in ((s0, z0), (s1, z0), (s1, z1), (s0, z1)):
+                    _cartesian(opl, qbl[0] + sv * vx, qbl[1] + sv * vy, zv)
 
     if n_split:
         placement_notes.append(f"{n_split} wall(s) split at grade from the site terrain")
+    if n_space_split:
+        placement_notes.append(f"{n_space_split} wall(s) split between the spaces they enclose")
     sky_units = [u for u in model.openings if u.category == "skylight"]
     if sloped:
         surf_count, open_count, sky_placed = _write_sloped_roofs(
             campus, model, roofs, sky_units, surf_count, open_count, placement_notes
         )
     else:
-        # roof (outward +z): CCW from above
-        surf_count += 1
-        su = _el(
-            campus, "Surface", id="roof-001", surfaceType="Roof", constructionIdRef="const-roof"
+        # roof (outward +z): CCW from above. One roof per space when the
+        # spaces tile the footprint (#765), else the whole roof on the
+        # largest space as before.
+        roof_parts = (
+            [(sp.sid, _ensure_ccw(list(sp.polygon_m))) for sp in model.spaces]
+            if per_space
+            else [(max(model.spaces, key=lambda s: s.area_m2).sid, list(model.ring_m))]
         )
-        _el(su, "Name", "Roof")
-        _el(su, "AdjacentSpaceId", spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
-        pg = _el(su, "PlanarGeometry")
-        pl = _el(pg, "PolyLoop")
-        for x, y in model.ring_m:
-            _cartesian(pl, x, y, h)
-        # skylights on the roof (roadmap item 3). Flat roof, so absolute 3-D
-        # coordinates at z = h; CCW from above keeps the outward normal +z.
         sky_placed, sky_notes = _place_skylights_on_roof(
             sky_units, model.ring_m, regions={sp.sid: sp.polygon_m for sp in model.spaces}
         )
+        roof_els = []
+        for k, (sid, ring) in enumerate(roof_parts):
+            surf_count += 1
+            rid = f"roof-{k + 1:03d}"
+            su = _el(campus, "Surface", id=rid, surfaceType="Roof", constructionIdRef="const-roof")
+            _el(su, "Name", "Roof" if len(roof_parts) == 1 else f"Roof ({sid})")
+            _el(su, "AdjacentSpaceId", spaceIdRef=sid)
+            pg = _el(su, "PlanarGeometry")
+            pl = _el(pg, "PolyLoop")
+            for x, y in ring:
+                _cartesian(pl, x, y, h)
+            roof_els.append((rid, su, ring))
+        # skylights on the roof (roadmap item 3). Flat roof, so absolute 3-D
+        # coordinates at z = h; CCW from above keeps the outward normal +z.
+        # Each goes on the roof piece under its middle.
         for n in sky_notes:
             placement_notes.append(f"roof-001: {n}")
         for pl_ in sky_placed:
             u = pl_["unit"]
+            rect = pl_["rect"]
+            cx = sum(x for x, _ in rect) / len(rect)
+            cy = sum(y for _, y in rect) / len(rect)
+            host = roof_els[0][1]
+            for _rid, rsu, ring in roof_els:
+                if _pip((cx, cy), ring):
+                    host = rsu
+                    break
             open_count += 1
             op = _el(
-                su,
+                host,
                 "Opening",
                 id=f"op-{open_count:04d}",
                 openingType=_opening_type(u.category),
@@ -442,20 +513,52 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             _el(op, "Name", f"{u.tag} ({u.category})")
             opg = _el(op, "PlanarGeometry")
             opl = _el(opg, "PolyLoop")
-            for x, y in pl_["rect"]:
+            for x, y in rect:
                 _cartesian(opl, x, y, h)
 
-    # ground floor (outward -z): clockwise from above
-    surf_count += 1
-    su = _el(
-        campus, "Surface", id="floor-001", surfaceType="SlabOnGrade", constructionIdRef="const-slab"
+    # ground floor (outward -z): clockwise from above; per space as the roof
+    floor_parts = (
+        [(sp.sid, _ensure_ccw(list(sp.polygon_m))) for sp in model.spaces]
+        if per_space
+        else [(max(model.spaces, key=lambda s: s.area_m2).sid, list(model.ring_m))]
     )
-    _el(su, "Name", "Ground Floor")
-    _el(su, "AdjacentSpaceId", spaceIdRef=max(model.spaces, key=lambda s: s.area_m2).sid)
-    pg = _el(su, "PlanarGeometry")
-    pl = _el(pg, "PolyLoop")
-    for x, y in reversed(model.ring_m):
-        _cartesian(pl, x, y, 0.0)
+    for k, (sid, ring) in enumerate(floor_parts):
+        surf_count += 1
+        su = _el(
+            campus,
+            "Surface",
+            id=f"floor-{k + 1:03d}",
+            surfaceType="SlabOnGrade",
+            constructionIdRef="const-slab",
+        )
+        _el(su, "Name", "Ground Floor" if len(floor_parts) == 1 else f"Ground Floor ({sid})")
+        _el(su, "AdjacentSpaceId", spaceIdRef=sid)
+        pg = _el(su, "PlanarGeometry")
+        pl = _el(pg, "PolyLoop")
+        for x, y in reversed(ring):
+            _cartesian(pl, x, y, 0.0)
+
+    # interior walls (#765): every boundary two spaces share, not already an
+    # air wall; both spaces adjacent, normal from the first into the second
+    for k, (a, b, q0, q1) in enumerate(int_walls):
+        surf_count += 1
+        su = _el(
+            campus,
+            "Surface",
+            id=f"intwall-{k + 1:03d}",
+            surfaceType="InteriorWall",
+            constructionIdRef="const-intwall",
+        )
+        _el(su, "Name", f"Interior wall {a.sid} / {b.sid}")
+        _el(su, "AdjacentSpaceId", spaceIdRef=a.sid)
+        _el(su, "AdjacentSpaceId", spaceIdRef=b.sid)
+        top = [(q0[0], q0[1], h), (q1[0], q1[1], h)]
+        if sloped:
+            top, _unc = wall_top(q0, q1, roofs, h)
+        pg = _el(su, "PlanarGeometry")
+        pl = _el(pg, "PolyLoop")
+        for x, y, z in [(q0[0], q0[1], 0.0), (q1[0], q1[1], 0.0)] + list(reversed(top)):
+            _cartesian(pl, x, y, z)
 
     # air walls (#638): one vertical surface per shared edge between pieces
     # of a split room, both pieces adjacent; PlanarGeometry only (importers
@@ -524,7 +627,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             if air_walls
             else ""
         )
-        + "Interior partitions omitted (v1 gap). "
+        + (f"Interior walls: {len(int_walls)} on boundaries spaces share. " if int_walls else "")
         + (" ".join(model.notes) + " " if model.notes else "")
         + (
             "Placement notes: " + "; ".join(placement_notes)
