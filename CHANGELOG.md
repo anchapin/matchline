@@ -7,6 +7,8 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- CI: a browser-level test drives the review page in headless Chromium and
+  replays its exported decisions with `matchline review --apply` (#802).
 - Review: an edit on an `opening_unsized` item adds the opening the pipeline left
   out, from a schedule tag or typed sizes, checked against the drawn gap before
   anything changes; revert, confirm or reject remove it (#798).
