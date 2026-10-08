@@ -669,6 +669,7 @@ def attach_merged_windows(
                 f"window {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m matches no wall segment",
                 conf,
                 prov,
+                target={"kind": "window_detection", "id": m.id},
             )
             continue
         sp = space_of_num[seg["room_number"]]
@@ -703,6 +704,7 @@ def attach_merged_windows(
                 f"confidence {conf:.2f}",
                 conf,
                 prov,
+                target={"kind": "opening", "id": f"{facade}-{m.id}", "field": "space_id"},
             )
     return attached, unlinked
 

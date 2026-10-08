@@ -79,6 +79,7 @@ def test_closet_without_located_door_is_kept_and_flagged():
     assert res.merged == [] and "L1-103" in m.spaces
     assert res.kept[0].reason.startswith("no door")
     assert [i.kind for i in m.review_queue] == ["space_merge"]
+    assert m.review_queue[0].target["kind"] == "space"  # #796
 
 
 def test_door_at_corner_of_two_rooms_is_ambiguous():

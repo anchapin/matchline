@@ -107,6 +107,7 @@ def _link_mech(bldg, model: BuildingModel, spaces: list, report: LinkReport) -> 
                     f"diffuser {d_['id']} falls in no space",
                     0.4,
                     ref.provenance,
+                    target={"kind": "diffuser", "id": d_["id"]},
                 )
                 continue
             report.diffusers_assigned += 1
@@ -122,7 +123,11 @@ def _link_mech(bldg, model: BuildingModel, spaces: list, report: LinkReport) -> 
             sid = s_space[s_["id"]]
             if sid is None:
                 model.flag_for_review(
-                    "sensor_assignment", f"sensor {s_['id']} falls in no space", 0.4, ref.provenance
+                    "sensor_assignment",
+                    f"sensor {s_['id']} falls in no space",
+                    0.4,
+                    ref.provenance,
+                    target={"kind": "sensor", "id": s_["id"]},
                 )
                 continue
             report.sensors_assigned += 1

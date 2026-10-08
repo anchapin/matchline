@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 import types
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
+from typing import Any, Dict, List, Literal, Optional, Union, get_args, get_origin, get_type_hints
 
 from datasets_adapter import ScheduleEntry
 
@@ -643,6 +643,11 @@ class ReviewItem:
         acknowledged: True when a human has explicitly acknowledged this item
             (distinct from resolution — acknowledgment indicates the human
             has seen the item even if no action was taken).
+        target: The entity the item is about (#796): ``kind`` (``"opening"``,
+            ``"space"``, ``"wall"``, ``"fixture"``, ...), ``id``, and for an
+            item a review edit can apply to, the model ``field`` it corrects.
+            ``original`` is filled in the first time a review edit changes the
+            field, so revert restores it. Empty for items flagged before #796.
 
     Raises:
         ValueError: If ``needs_review`` is False but ``confidence >= 1.0``.
@@ -688,6 +693,7 @@ class ReviewItem:
     resolution: str = ""  # "accept" | "drop" | "reassign" — set by triage
     needs_review: bool = True  # True = awaiting human review; False = reviewed
     acknowledged: bool = False  # True = human explicitly acknowledged this item
+    target: Dict[str, Any] = field(default_factory=dict)  # #796: entity the item is about
 
     def __post_init__(self):
         if not self.needs_review and self.confidence >= 1.0:
@@ -928,6 +934,7 @@ class BuildingModel:
         description: str,
         confidence: float,
         provenance: Provenance,
+        target: Optional[Dict[str, Any]] = None,
     ) -> Optional[ReviewItem]:
         """Append a low-confidence extraction to the review queue.
 
@@ -992,6 +999,9 @@ class BuildingModel:
         provenance:
             The :class:`Provenance` record (sheet, revision, method) that sourced
             this extraction, used for auditability.
+        target:
+            The entity the item is about, ``{"kind", "id"[, "field"]}`` (#796);
+            see :attr:`ReviewItem.target`.
 
         Returns
         -------
@@ -1007,6 +1017,7 @@ class BuildingModel:
             description=description,
             confidence=confidence,
             provenance=provenance,
+            target=dict(target or {}),
         )
         if self.auto_triage if self.auto_triage is not None else ENABLE_AUTO_TRIAGE:
             self._triage_item(item)

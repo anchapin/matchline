@@ -184,3 +184,96 @@ def test_cli_flags_can_change_a_decision_like_the_report():
     assert (m.review_queue[0].status, m.review_queue[0].resolution) == ("rejected", "drop")
     with pytest.raises(ValueError, match="not found"):
         run_review._confirm_item(m, "R9")
+
+
+# -- #796: edits change the model they correct -------------------------------
+
+
+def _with_openings():
+    from building_model import Construction, Space, SpaceOpening
+
+    m = BuildingModel(name="snap796")
+    for sid, num in (("L1-101", "101"), ("L1-102", "102")):
+        m.spaces[sid] = Space(id=sid, level_id="L1", number=num)
+    m.spaces["L1-101"].openings.append(
+        SpaceOpening(id="S-W1", tag="", category="window", width_m=1.2, height_m=1.5,
+                     host_interval_m=[2.4, 3.6], s_center_m=3.0, area_m2=1.8)
+    )  # fmt: skip
+    m.constructions["WIN-A"] = Construction(id="WIN-A", name="window A")
+    prov = Provenance(sheet_id="A-201", revision=1, method="elevation", confidence=0.6)
+    m.flag_for_review("window_room_link", "window W1 -> room 101", 0.6, prov,
+                      target={"kind": "opening", "id": "S-W1", "field": "space_id"})  # fmt: skip
+    m.flag_for_review("space_merge", "closet kept", 0.6, prov,
+                      target={"kind": "space", "id": "L1-102"})  # fmt: skip
+    return m
+
+
+def _op(m):
+    return R._find_opening(m, "S-W1")
+
+
+def _doc0(tpl, *decisions):
+    # decisions against the automatic snapshot taken when the run wrote the page
+    return dict(tpl, decisions=[dict(x, at="2026-10-08T12:00:00+00:00") for x in decisions])
+
+
+def test_edit_room_link_and_width_change_the_model_and_revert_restores():
+    m = _with_openings()
+    tpl = R.template(m, "x")
+    rid = m.review_queue[0].id
+    room = {"id": rid, "action": "edit", "value": "102"}
+    s = R.apply_decisions(m, _doc0(tpl, room))
+    sp, op = _op(m)
+    assert s["edit"] == 1 and sp.id == "L1-102" and not m.spaces["L1-101"].openings
+    R.apply_decisions(m, _doc0(tpl, room, {"id": rid, "action": "edit", "value": "width_m=0.9"}))
+    sp, op = _op(m)
+    assert op.width_m == 0.9 and op.area_m2 == pytest.approx(1.35)
+    assert op.host_interval_m == [2.55, 3.45]
+    notes = [e.note for e in m.revision_log]
+    assert any("space_id 'L1-101' -> 'L1-102'" in n for n in notes)
+    assert any("width_m 1.2 -> 0.9" in n for n in notes)
+    # revert restores the automatic output of the field the item edits
+    R.apply_decisions(m, _doc0(tpl, room, {"id": rid, "action": "revert"}))
+    assert _op(m)[0].id == "L1-101"
+    assert m.review_queue[0].status == "open"
+
+
+def test_bad_edit_value_changes_nothing():
+    m = _with_openings()
+    rid = m.review_queue[0].id
+    before = m.to_json()
+    with pytest.raises(ValueError, match="not a space id or room number"):
+        R.apply_decisions(m, _doc(m, {"id": rid, "action": "edit", "value": "999"}))
+    with pytest.raises(ValueError, match="outside"):
+        R.apply_decisions(m, _doc(m, {"id": rid, "action": "edit", "value": "width_m=-1"}))
+    assert m.to_json() == before
+
+
+def test_edit_without_a_model_field_records_only_and_page_says_so():
+    m = _with_openings()
+    rid = m.review_queue[1].id
+    before = [sp.openings[:] for sp in m.spaces.values()]
+    R.apply_decisions(m, _doc(m, {"id": rid, "action": "edit", "value": "merge into 101"}))
+    assert [sp.openings for sp in m.spaces.values()] == before
+    assert m.review_queue[1].status == "confirmed"
+    page = R.render_html(m, R.template(m, "x"))
+    assert '"field": "space_id"' in page and '"field": ""' in page
+
+
+def test_cli_confirm_after_an_edit_restores_the_automatic_value_like_the_report():
+    m = _with_openings()
+    rid = m.review_queue[0].id
+    R.apply_decisions(m, _doc(m, {"id": rid, "action": "edit", "value": "L1-102"}))
+    assert _op(m)[0].id == "L1-102"
+    run_review._confirm_item(m, rid)
+    assert _op(m)[0].id == "L1-101" and m.review_queue[0].status == "confirmed"
+
+
+def test_target_survives_json_and_old_models_load():
+    m = _with_openings()
+    back = BuildingModel.from_json(m.to_json())
+    assert back.review_queue[0].target == {"kind": "opening", "id": "S-W1", "field": "space_id"}
+    d = json.loads(m.to_json())
+    for it in d["model"]["review_queue"]:
+        it.pop("target")
+    assert BuildingModel.from_dict(d).review_queue[0].target == {}

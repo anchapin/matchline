@@ -337,6 +337,7 @@ def build_set_model(
                     ReviewItem(
                         id=f"rq-{sid}",
                         kind="space_no_geometry",
+                        target={"kind": "space", "id": sid},
                         description=f"{sid}: {'; '.join(room['reasons'])}",
                         confidence=0.6,
                         provenance=prov,
@@ -465,6 +466,7 @@ def _schedule_construction(constructions, cat, tags, cands, sheet_id, review, oi
             ReviewItem(
                 id=f"rq-{oid}-thermal",
                 kind="opening_thermal_ambiguous",
+                target={"kind": "opening", "id": oid, "field": "construction_id"},
                 description=(
                     f"{oid}: scheduled {'/'.join(tags)} match by width but state different "
                     "U/SHGC/VT; no stated construction used"
@@ -568,6 +570,7 @@ def _plan_openings(
                 ReviewItem(
                     id=f"rq-{oid}",
                     kind="opening_unsized",
+                    target={"kind": "wall", "id": wall.id},
                     description=(
                         f"{oid}: {width:.2f} m gap in {wall.facade} wall {wall.id}; {why}; "
                         "not modelled"
