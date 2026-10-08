@@ -252,3 +252,33 @@ def test_set_window_reaches_the_gbxml(tmp_path):
     run_pipeline.main(_args(_set(tmp_path, pages), out))
     xml = (out / "stage_06_bem" / "set.xml").read_text()
     assert xml.count('openingType="FixedWindow"') == 1
+
+
+def test_single_sheet_image_fails_loudly_and_points_to_the_set(tmp_path, capsys):
+    """--image on one raster sheet has no walls or rooms: a StageError naming the
+    --set route, after stage 1 has written its takeoff (#741)."""
+    from PIL import Image
+
+    img = tmp_path / "sheet_01.png"
+    Image.new("L", (200, 100), 255).save(img)
+    dets = tmp_path / "detections.json"
+    dets.write_text(
+        json.dumps(
+            {
+                "image": "sheet_01.png",
+                "width": 200,
+                "height": 100,
+                "preds": [{"cls": 0, "conf": 0.9, "x0": 10.0, "y0": 10.0, "x1": 30.0, "y1": 40.0}],
+            }
+        )
+    )
+    out = tmp_path / "out"
+    args = _args(None, out)
+    args.image, args.detections, args.schedule_csv = img, dets, None
+    with pytest.raises(SystemExit) as ei:
+        run_pipeline.main(args)
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert "[Stage 2: build_model]" in err and "no walls or rooms" in err
+    assert "hint: Run the PDF drawing set instead: matchline run --set" in err
+    assert json.loads((out / "stage_01_building.json").read_text())["n_detections"] == 1

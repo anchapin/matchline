@@ -327,7 +327,7 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 
-def _stage_1_generate(args, out_dir: Path):
+def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
     """Stage 1: Generate building or load real-sheet detections.
 
     Returns:
@@ -390,11 +390,17 @@ def _stage_1_generate(args, out_dir: Path):
                 "n_scheduled": len(schedule),
             },
         )
-        raise NotImplementedError(
-            "Stage 2 (build_model) for real sheets requires an architectural "
-            "plan sheet and the link step. For real-sheet processing, run "
-            "the full pipeline: matchline run --image <sheet> --detections <preds.json> "
-            "with a linked building model instead of this simplified path."
+        # A single raster sheet gives symbols and a takeoff (written above) but no
+        # walls or rooms: raster wall finding is not built, so there is nothing to
+        # put the symbols in. Fail loudly with the route that does build a model.
+        raise StageError(
+            "Stage 2: build_model",
+            2,
+            f"a single sheet image gives symbols and a takeoff ({len(dets)} detections, "
+            f"{len(schedule)} scheduled tags, in stage_01_building.json) but no walls or "
+            "rooms, so no building model can be built from it",
+            hint="Run the PDF drawing set instead: matchline run --set drawings.pdf --out out/ "
+            "(walls and rooms come from vector floor plans; see docs/real_set.md).",
         )
     elif args.aec_bench:
         samples, takeoff_result = load_aec_bench(args.aec_bench)
@@ -570,7 +576,7 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 1: generate building or load real-sheet detections ----------
         try:
-            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir)
+            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
         except StageError:
             raise
         except Exception as e:
@@ -660,7 +666,11 @@ def main(args, config: dict | None = None) -> None:
                 hint="Check BEM export dependencies and output directory permissions. "
                 "Ensure write_gbxml and write_ifc4 can write to the output directory.",
             ) from e
-    except StageError:
+    except StageError as e:
+        # the stage name, the reason and the recovery hint, so a failed run says why
+        print(f"ERROR {e}", file=sys.stderr)
+        if e.hint:
+            print(f"  hint: {e.hint}", file=sys.stderr)
         sys.exit(1)
 
 
