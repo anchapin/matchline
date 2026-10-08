@@ -1004,6 +1004,7 @@ def _attach_skylights_to_spaces(model):
                     area_m2=round(w * h, 4) if w and h else None,
                     provenance=bo.provenance,
                     plan_center_m=list(bo.plan_center_m),
+                    construction_id=_opening_construction_id(model, bo),
                 )
             )
 
@@ -1255,6 +1256,7 @@ def _attach_openings_to_spaces(model):
                     provenance=prov,
                     needs_review=ambiguous or prov is None or prov.confidence < REVIEW_CONFIDENCE,
                     adjacent_space_id=sides[1].id if len(sides) > 1 else None,
+                    construction_id=_opening_construction_id(model, bo),
                 )
             )
 
@@ -2163,6 +2165,108 @@ def _wall_construction(model, u, provenance, source="pset"):
             name=name,
             u_value_w_m2k=round(u, 6),
             provenance=provenance,
+        )
+    return cid
+
+
+def _ratio(v):
+    """A 0..1 ratio from a property value, or None."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and 0.0 < v <= 1.0 else None
+
+
+def _opening_thermal(fill):
+    """(u, shgc, vt, reference, note) stated on an IfcWindow/IfcDoor (#787).
+
+    U from Pset_WindowCommon (windows, skylights) or Pset_DoorCommon (doors)
+    ThermalTransmittance, read as written in W/m2K like walls; SHGC and VT from
+    Pset_DoorWindowGlazingType, windows only. Type psets apply and the
+    occurrence overrides them. Values that are non-numeric, non-positive, or
+    (SHGC, VT) above 1 are ignored, never coerced.
+    """
+    none = (None, None, None, "", "")
+    if fill is None:
+        return none
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(fill) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return none
+    is_window = fill.is_a("IfcWindow")
+    common = psets.get("Pset_WindowCommon" if is_window else "Pset_DoorCommon") or {}
+    try:
+        u = float(common.get("ThermalTransmittance"))
+    except (TypeError, ValueError):
+        u = None
+    if u is not None and not (u > 0 and math.isfinite(u)):
+        u = None
+    shgc = vt = None
+    if is_window:
+        glz = psets.get("Pset_DoorWindowGlazingType") or {}
+        shgc = _ratio(glz.get("SolarHeatGainTransmittance"))
+        vt = _ratio(glz.get("VisibleLightTransmittance"))
+    ref = str(common.get("Reference") or "") if u is not None else ""
+    if u is None:
+        return none
+    parts = [f"U {u:g} W/m2K"]
+    if shgc is not None:
+        parts.append(f"SHGC {shgc:g}")
+    if vt is not None:
+        parts.append(f"VT {vt:g}")
+    note = (
+        "stated "
+        + ", ".join(parts)
+        + " ("
+        + ("Pset_WindowCommon" if is_window else "Pset_DoorCommon")
+    )
+    note += ", Pset_DoorWindowGlazingType)" if (shgc is not None or vt is not None) else ")"
+    if ref:
+        note += f"; Reference {ref!r}"
+    return u, shgc, vt, ref, note
+
+
+def _opening_construction_id(model, bo):
+    """Construction id for an opening with a stated U, else "" (#787).
+
+    One construction per distinct (category, U, SHGC, VT); the id comes from the
+    values, not the pset Reference, so a re-imported Table 5.5 default
+    ("t55-window") never collides with or relabels the library's own row.
+    """
+    u = getattr(bo, "u_value_w_m2k", None)
+    if u is None:
+        return ""
+    shgc, vt = bo.shgc, bo.vt
+    cid = f"IFC-{bo.category.upper()}-U{u:.4f}"
+    if shgc is not None:
+        cid += f"-S{shgc:.4f}"
+    if vt is not None:
+        cid += f"-V{vt:.4f}"
+    if cid not in model.constructions:
+        name = f"IFC {bo.category}, ThermalTransmittance {u:.4f} W/m2K"
+        if shgc is not None:
+            name += f", SHGC {shgc:g}"
+        if vt is not None:
+            name += f", VT {vt:g}"
+        note = f"stated on the IFC {bo.category}; first opening carrying it: GlobalId={bo.id}"
+        if bo.thermal_reference:
+            note += f"; Reference {bo.thermal_reference!r}"
+        model.constructions[cid] = Construction(
+            id=cid,
+            name=name,
+            u_value_w_m2k=round(u, 6),
+            provenance=Provenance(
+                sheet_id="ifc",
+                revision=0,
+                method="ifc_import:tier0:opening_u",
+                confidence=0.9,
+                note=note,
+            ),
+            shgc=shgc,
+            vt=vt,
         )
     return cid
 
@@ -3526,6 +3630,9 @@ def _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=""):
     )
     if tag:
         p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
+    tu, tshgc, tvt, tref, tnote = _opening_thermal(fill)
+    if tnote:
+        p.note += f"; {tnote}"
     return BimOpening(
         id=ogid,
         category="skylight",
@@ -3536,6 +3643,10 @@ def _read_roof_opening(opening, fill, sheet, revision, scale, host_gid=""):
         fill_global_id=fgid,
         provenance=p,
         plan_center_m=[round(cx, 4), round(cy, 4)],
+        u_value_w_m2k=tu,
+        shgc=tshgc,
+        vt=tvt,
+        thermal_reference=tref,
     )
 
 
@@ -3733,6 +3844,9 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
     if tag:
         # tag itself is a convention-dependent parse of the fill Name
         p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
+    tu, tshgc, tvt, tref, tnote = _opening_thermal(fill)
+    if tnote:
+        p.note += f"; {tnote}"
     op_type = leaves = hinge = glaze = glazed = None
     if category == "door":
         op_type, leaves, hinge, glaze, dnote = _door_semantics(fill)
@@ -3757,4 +3871,8 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         hinge_side=hinge,
         glazing_area_fraction=_r4(glaze),
         glazed_area_m2=_r4(glazed),
+        u_value_w_m2k=tu,
+        shgc=tshgc,
+        vt=tvt,
+        thermal_reference=tref,
     )

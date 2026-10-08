@@ -116,7 +116,17 @@ id), and for windows and skylights `Pset_DoorWindowGlazingType` with
 `SolarHeatGainTransmittance` and `VisibleLightTransmittance` when known.
 Openings with no construction get none of these, so those files are unchanged.
 
+IFC import reads those values back (#787). An IfcWindow (skylights included)
+with `Pset_WindowCommon.ThermalTransmittance`, or an IfcDoor with
+`Pset_DoorCommon.ThermalTransmittance`, gets a stated construction
+(`ifc_import:tier0:opening_u`, confidence 0.9), with SHGC and VT from
+`Pset_DoorWindowGlazingType` when present. Type psets apply and the occurrence
+overrides them. The id comes from the values (`IFC-WINDOW-U2.0442-S0.3800-V0.4180`),
+not the pset `Reference`, so a re-imported Table 5.5 default stays a stated
+value and never relabels the library's own `t55-*` rows; the Reference is kept
+in the provenance note. Non-positive U and SHGC or VT outside 0..1 are ignored.
+Table 5.5 then fills only the openings that still have no construction.
+
 ## Not yet
 
-Reading opening U, SHGC and VT back from IFC on import, heated slabs, interior
-(non-perimeter) slab edges, wall-type tags read off PDF legends, and Appendix A assemblies.
+Heated slabs, interior (non-perimeter) slab edges, wall-type tags read off PDF legends, and Appendix A assemblies.
