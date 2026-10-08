@@ -179,8 +179,27 @@ Sill lines across a gap close the gap, so that window is one `window`
 opening, not an unclassified gap. A plain gap with nothing drawn in it stays
 unclassified. `stats.windows` counts them. In a set, a window restricts the
 schedule width match to window rows, the mirror of the door-swing rule, and
-the provenance note records the glazing line. A window flush with a corner
-on both sides (a full-length storefront) is not found by this rule.
+the provenance note records the glazing line.
+
+### Storefront and curtain wall (#793)
+
+The return rule above misses glazing that runs the whole length of its wall
+(storefront, curtain wall between columns, a glazed wall corner to corner),
+and the width cap misses glazing wider than `WIDE_OPENING_M`. Either kind
+still counts when mullions break it up: at least `MULLION_MIN` (2) ticks
+cross the wall inside the glazed run. A tick is a stroked segment
+perpendicular to the wall, within 50% of the wall thickness long, centred on
+the wall line; ticks closer than the return margin to each other or to the
+ends of the run count once, so a frame, a corner or a return is not a
+mullion. These openings carry `source: "glazing_mullions"` and
+`window_confidence` 0.6 (`STOREFRONT_CONFIDENCE`), below a punched window's
+0.75, and keep the whole glazed run as their width.
+
+A middle line along the whole wall with fewer than two ticks is still a
+cavity or insulation line and the wall stays opaque. Not covered yet:
+storefront drawn as a thin wall band of its own between opaque walls, a
+scheduled storefront tag placed on the wall, and PDF layer names; door jambs
+inside a full-length glazing line would read as ticks.
 
 ## Opening tags (#793)
 

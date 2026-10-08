@@ -56,6 +56,9 @@ SWING_TOL = 0.20  # door swing radius match, fraction of the leaf width (#743)
 DOOR_CONFIDENCE = {"single": 0.85, "double": 0.8}
 WINDOW_CONFIDENCE = 0.75  # glazing line inside a wall run (#743)
 WINDOW_RETURN_M = 0.30  # wall must run on past the glazing at least this far on one side
+STOREFRONT_CONFIDENCE = 0.6  # full-length glazing broken by mullion ticks (#793)
+MULLION_MIN = 2  # ticks across the wall inside the glazed run
+MULLION_T_TOL = 0.5  # tick length within +-50% of the wall thickness
 TAG_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,3}[A-Z]?$")  # W1, D-12, SF1, SF-1A (#793)
 TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
 
@@ -176,7 +179,32 @@ def _classify_door(arcs, a: Pt, b: Pt, t: float) -> Optional[Tuple[str, List[Pt]
     return None
 
 
-def _glazing_windows(bands, walls, k: float, tol: float) -> List[Tuple["Wall", Pt, Pt]]:
+def _mullions(segs, ls, th: float, t: float, s0: float, s1: float, gap: float, atol: float) -> int:
+    """Ticks across a wall between ``s0`` and ``s1`` along it (#793).
+
+    A tick is a stroked segment perpendicular to the wall, about one wall
+    thickness long, centred on the wall line. Ticks closer than ``gap`` to
+    each other or to the ends of the run count once: a frame or a corner is
+    not a mullion.
+    """
+    pos: List[float] = []
+    for g in segs:
+        if not _angle_close((g.theta + math.pi / 2) % math.pi, th, atol):
+            continue
+        if abs(g.length - t) > MULLION_T_TOL * t:
+            continue
+        mid = Point((g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2)
+        if ls.distance(mid) > 0.25 * t:
+            continue
+        s = ls.project(mid)
+        if s0 + gap <= s <= s1 - gap and all(abs(s - q) >= gap for q in pos):
+            pos.append(s)
+    return len(pos)
+
+
+def _glazing_windows(
+    bands, walls, k: float, tol: float, segs=()
+) -> List[Tuple["Wall", Pt, Pt, str]]:
     """Windows drawn as a glazing line inside a wall (#743).
 
     ``_merge_glazing`` folds the two half-thickness bands either side of a
@@ -186,16 +214,21 @@ def _glazing_windows(bands, walls, k: float, tol: float) -> List[Tuple["Wall", P
     (or two wall thicknesses) on at least one side: a middle line along the
     whole wall is a cavity or insulation line, not glazing. Overlapping
     candidates on one wall are one window.
+
+    Full-length glazing (storefront, curtain wall) is the exception (#793):
+    a middle line along the whole wall counts when at least ``MULLION_MIN``
+    mullion ticks cross the wall inside it, at any width. Cavity and
+    insulation lines are not broken by ticks. These come out with source
+    ``glazing_mullions``; the others ``glazing_line``.
     """
     atol = math.radians(ANGLE_TOL_DEG)
-    out: List[Tuple[Wall, Pt, Pt]] = []
+    out: List[Tuple[Wall, Pt, Pt, str]] = []
     spans: Dict[str, List[Tuple[float, float]]] = {}
     for g in bands:
         if not g.glazed:
             continue
         ga, gb = _endpoints(g.theta, g.rho, g.u0, g.u1)
-        if math.dist(ga, gb) > WIDE_OPENING_M * k:
-            continue
+        wide = math.dist(ga, gb) > WIDE_OPENING_M * k
         mid = Point((ga[0] + gb[0]) / 2, (ga[1] + gb[1]) / 2)
         for w in walls:
             L = math.dist(w.a, w.b)
@@ -209,12 +242,17 @@ def _glazing_windows(bands, walls, k: float, tol: float) -> List[Tuple["Wall", P
                 continue
             s0, s1 = sorted((ls.project(Point(ga)), ls.project(Point(gb))))
             margin = max(2 * w.t, WINDOW_RETURN_M * k)
-            if s0 < margin and L - s1 < margin:
-                break  # runs the whole wall
+            source = "glazing_line"
+            if wide or (s0 < margin and L - s1 < margin):
+                # runs the whole wall, or wider than a window: storefront only
+                # when mullions break it up, else a cavity or insulation line
+                if _mullions(segs, ls, th, w.t, s0, s1, margin, atol) < MULLION_MIN:
+                    break
+                source = "glazing_mullions"
             if any(min(s1, b1) - max(s0, b0) > 0.5 * (s1 - s0) for b0, b1 in spans.get(w.id, [])):
                 break
             spans.setdefault(w.id, []).append((s0, s1))
-            out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0]))
+            out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0], source))
             break
     return out
 
@@ -981,8 +1019,8 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 door_confidence=DOOR_CONFIDENCE[swing],
             )
             doors += 1
-    windows = _glazing_windows(bands, walls, k, tol)
-    for w, a, b in windows:
+    windows = _glazing_windows(bands, walls, k, tol, segs)
+    for w, a, b, src in windows:
         openings.append(
             {
                 "walls": [w.id],
@@ -990,8 +1028,10 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "b_m": to_m(b),
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
                 "kind": "window",
-                "source": "glazing_line",
-                "window_confidence": WINDOW_CONFIDENCE,
+                "source": src,
+                "window_confidence": (
+                    STOREFRONT_CONFIDENCE if src == "glazing_mullions" else WINDOW_CONFIDENCE
+                ),
             }
         )
     tagged = _attach_tags(openings, spans, to_m)
