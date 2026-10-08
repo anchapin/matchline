@@ -160,3 +160,24 @@ door rows, so a door and a window of the same scheduled width no longer tie;
 the provenance note records the swing. A swing with no scheduled door of that
 width goes to review as `opening_unsized`. This is a vector rule with no
 trained weights, so it ships under any release.
+
+## Windows from glazing lines (#743)
+
+A window drawn as a glazing line (or sill lines) inside a wall leaves two
+half-thickness bands sharing that line; `_merge_glazing` folds them back
+into the wall, and each folded band is a window candidate. It becomes an
+opening with `kind: "window"`, `source: "glazing_line"` and
+`window_confidence` 0.75 when it:
+
+- lies along one wall and is no wider than `WIDE_OPENING_M`;
+- leaves the wall running on past it by `WINDOW_RETURN_M` (0.30 m) or two
+  wall thicknesses, whichever is more, on at least one side. A middle line
+  the length of the wall is a cavity or insulation line, not glazing;
+- does not overlap a window already found on that wall by more than half.
+
+Sill lines across a gap close the gap, so that window is one `window`
+opening, not an unclassified gap. A plain gap with nothing drawn in it stays
+unclassified. `stats.windows` counts them. In a set, a window restricts the
+schedule width match to window rows, the mirror of the door-swing rule, and
+the provenance note records the glazing line. A window flush with a corner
+on both sides (a full-length storefront) is not found by this rule.
