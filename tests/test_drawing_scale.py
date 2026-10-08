@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 

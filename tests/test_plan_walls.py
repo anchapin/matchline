@@ -13,7 +13,7 @@ import pytest
 from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, curve, line, text, write_pdf  # noqa: E402
 

@@ -14,6 +14,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from building_model import BuildingModel, Space, Zone
+from construction_library import CATEGORIES, classify, climate_zone_number
+from construction_library_data import CONSTRUCTION_LIBRARY
 
 from .types import CheckResult
 
@@ -21,98 +23,11 @@ if TYPE_CHECKING:
     from validate import _Ctx
 
 # ---------------------------------------------------------------------------
-# ASHRAE 90.1-2019 Table 5.5.4 — Maximum Assembly U-Factor (Btu/h·ft²·°F)
-# Climate zones: 1A, 1B, 2A, 2B, 3A, 3B, 3C, 4A, 4B, 4C, 5A, 5B, 5C, 6A, 6B, 7, 8
-# Building types: Residential, Office, Retail, School, Hotel, etc.
+# ASHRAE 90.1-2019 Tables 5.5-0 to 5.5-8: envelope maximums by climate zone.
+# The limits come from construction_library_data.py (#747), generated from
+# openstudio-standards v0.8.6; there is no second hand-typed table here (#763).
+# A climate zone is never assumed: with none on the model the checks skip.
 # ---------------------------------------------------------------------------
-
-# Table 5.5.4 — Mass Walls
-# Key: (building_type, climate_zone) -> max_u (Btu/h·ft²·°F)
-_WALL_U_MAX_BTU: dict[tuple[str, str], float] = {
-    # Warm climates (1-3): no insulation required for mass walls
-    ("*", "1A"): 0.58,
-    ("*", "1B"): 0.58,
-    ("*", "2A"): 0.58,
-    ("*", "2B"): 0.58,
-    ("*", "3A"): 0.58,
-    ("*", "3B"): 0.58,
-    ("*", "3C"): 0.58,
-    # Temperate (4-5)
-    ("*", "4A"): 0.40,
-    ("*", "4B"): 0.40,
-    ("*", "4C"): 0.40,
-    ("*", "5A"): 0.40,
-    ("*", "5B"): 0.40,
-    ("*", "5C"): 0.40,
-    # Cold (6-8)
-    ("*", "6A"): 0.35,
-    ("*", "6B"): 0.35,
-    ("*", "7"): 0.35,
-    ("*", "8"): 0.35,
-}
-
-# Table 5.5.4 — Roofs (continuous insulation path)
-# climate_zone -> max_u (Btu/h·ft²·°F)
-_ROOF_U_MAX_BTU: dict[str, float] = {
-    "1A": 0.360,
-    "1B": 0.360,
-    "2A": 0.360,
-    "2B": 0.360,
-    "3A": 0.360,
-    "3B": 0.360,
-    "3C": 0.360,
-    "4A": 0.282,
-    "4B": 0.282,
-    "4C": 0.282,
-    "5A": 0.282,
-    "5B": 0.282,
-    "5C": 0.282,
-    "6A": 0.248,
-    "6B": 0.248,
-    "7": 0.248,
-    "8": 0.248,
-}
-
-# Table 5.5.4 — Windows (vertical glazing, fenestration)
-_WINDOW_U_MAX_BTU: dict[str, float] = {
-    "1A": 1.22,
-    "1B": 1.22,
-    "2A": 1.22,
-    "2B": 1.22,
-    "3A": 0.55,
-    "3B": 0.55,
-    "3C": 0.55,
-    "4A": 0.40,
-    "4B": 0.40,
-    "4C": 0.40,
-    "5A": 0.40,
-    "5B": 0.40,
-    "5C": 0.40,
-    "6A": 0.35,
-    "6B": 0.35,
-    "7": 0.35,
-    "8": 0.35,
-}
-
-_WINDOW_SHGC_MAX: dict[str, float] = {
-    "1A": 0.25,
-    "1B": 0.25,
-    "2A": 0.25,
-    "2B": 0.25,
-    "3A": 0.25,
-    "3B": 0.25,
-    "3C": 0.60,
-    "4A": 0.40,
-    "4B": 0.40,
-    "4C": 0.60,
-    "5A": 0.40,
-    "5B": 0.40,
-    "5C": 0.60,
-    "6A": 0.40,
-    "6B": 0.40,
-    "7": 0.40,
-    "8": 0.40,
-}
 
 # Table 9.5.1 — Lighting Power Density (W/ft²) maximums
 _LPD_MAX_WFT2: dict[str, float] = {
@@ -167,18 +82,86 @@ _HVAC_HEATING_COP_MIN: dict[tuple[str, str], float] = {
     ("*", "*"): 3.2,
 }
 
-# Conversion: W/m²·K -> Btu/h·ft²·°F
-_W_PER_M2K_TO_BTU = 0.17611
+U_SI_PER_IP = 5.678263  # 1 Btu/h-ft2-F = 5.678263 W/m2-K
 
 
-def _resolve_wall_u(building_type: str, climate_zone: str) -> float:
-    key = (building_type, climate_zone)
-    if key in _WALL_U_MAX_BTU:
-        return _WALL_U_MAX_BTU[key]
-    wildcard = ("*", climate_zone)
-    if wildcard in _WALL_U_MAX_BTU:
-        return _WALL_U_MAX_BTU[wildcard]
-    return 0.40  # conservative fallback
+def _zone(model) -> tuple[str, str, str]:
+    """(zone number, category, skip reason); the reason is "" when usable."""
+    cz = (getattr(model, "climate_zone", "") or "").strip()
+    if not cz:
+        return "", "", "no climate zone on the model (--climate-zone); none is assumed"
+    try:
+        n = climate_zone_number(cz)
+    except ValueError as e:
+        return "", "", str(e)
+    cat = getattr(model, "building_category", "") or "Nonresidential"
+    if cat not in CATEGORIES:
+        return "", "", f"unknown building category {cat!r}"
+    return n, cat, ""
+
+
+def _limit(cat: str, n: str, surface: str, ctype: str, key: str = "u_ip"):
+    row = CONSTRUCTION_LIBRARY.get((cat, n, surface, ctype))
+    return None if row is None else row[key]
+
+
+def _loosest(cat: str, n: str, surface: str, types=None, key: str = "u_ip"):
+    """Largest limit over the surface's classes: a value above it fails any class."""
+    vals = [
+        (r[key], k[3])
+        for k, r in CONSTRUCTION_LIBRARY.items()
+        if k[0] == cat
+        and k[1] == n
+        and k[2] == surface
+        and r[key] is not None
+        and (types is None or k[3] in types)
+    ]
+    return max(vals) if vals else (None, None)
+
+
+def _construction_class(model, cid: str, surface: str):
+    c = (getattr(model, "constructions", None) or {}).get(cid) if cid else None
+    if c is None:
+        return None, None
+    ctype, _ = classify(f"{cid} {c.name}", surface)
+    u = c.u_value_w_m2k / U_SI_PER_IP if c.u_value_w_m2k else None
+    return ctype, u
+
+
+def _judge(check_id, title, items, cat, n, surface, unit="Btu/h·ft²·°F", key="u_ip", types=None):
+    """items: (id, value, class or None). Known class -> its own limit; unknown
+    class -> the loosest class limit, which catches certain failures only, so a
+    pass there is reported as unconfirmed (warn), never as compliant."""
+    violations, unconfirmed, ids = [], [], []
+    loose, loose_cls = _loosest(cat, n, surface, types, key)
+    for iid, val, ctype in items:
+        ids.append(iid)
+        lim = _limit(cat, n, surface, ctype, key) if ctype else None
+        if lim is None:
+            if loose is None:
+                continue
+            if val > loose + 1e-9:
+                violations.append(
+                    f"{iid}: {val:.3f} > {loose:.3f} {unit} (class unknown; fails even "
+                    f"the loosest class, {loose_cls})"
+                )
+            else:
+                unconfirmed.append(iid)
+        elif val > lim + 1e-9:
+            violations.append(f"{iid} ({ctype}): {val:.3f} > {lim:.3f} {unit}")
+    if violations:
+        return CheckResult(check_id, title, "error", "; ".join(violations), entities=ids)
+    if unconfirmed:
+        return CheckResult(
+            check_id,
+            title,
+            "warn",
+            f"{len(unconfirmed)} item(s) have no construction class, so compliance is not "
+            f"confirmed (below the loosest limit {loose:.3f} {unit}): "
+            + ", ".join(unconfirmed[:10]),
+            entities=ids,
+        )
+    return CheckResult(check_id, title, "pass", f"All {len(ids)} comply", entities=ids)
 
 
 # ---------------------------------------------------------------------------
@@ -187,170 +170,108 @@ def _resolve_wall_u(building_type: str, climate_zone: str) -> float:
 
 
 def _check_wall_u_factor(ctx: _Ctx) -> CheckResult:
-    """ASHRAE 90.1-2019 Table 5.5.4 — Mass wall assembly U-factor.
+    """ASHRAE 90.1-2019 Table 5.5-N: exterior wall assembly U-factor.
 
-    Requires EnvelopeWall.u_factor (Btu/h·ft²·°F) on the model.
-    Skips walls that do not have u_factor set.
+    U comes from ``EnvelopeWall.u_factor`` (Btu/h·ft²·°F) when set, else from
+    the wall's construction (W/m²·K). The limit is the one for the wall's own
+    construction class (#747 classification).
     """
+    cid_ = "ashrae_wall_u_factor"
     model: BuildingModel = ctx.model
-    climate_zone = getattr(model, "climate_zone", "5A")
-    building_type = getattr(model, "building_type", "other")
-
-    u_max = _resolve_wall_u(building_type, climate_zone)
-    violations: list[str] = []
-    entity_ids: list[str] = []
-
+    n, cat, why = _zone(model)
+    title = f"ASHRAE 90.1-2019 Table 5.5-{n or 'N'}: Wall U-factor"
+    if why:
+        return CheckResult(cid_, title, "skip", why)
+    items = []
     for wall in getattr(model, "envelope", []):
-        u_actual = getattr(wall, "u_factor", None)
-        if u_actual is None:
-            continue
-        entity_ids.append(wall.id)
-        if u_actual > u_max:
-            violations.append(f"{wall.id}: {u_actual:.3f} > {u_max:.3f} Btu/h·ft²·°F")
-
-    if not entity_ids:
-        return CheckResult(
-            "ashrae_wall_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Wall U-factor",
-            "skip",
-            "No walls with u_factor set on model",
-        )
-
-    if violations:
-        return CheckResult(
-            "ashrae_wall_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Wall U-factor",
-            "error",
-            f"Wall U-factor exceeds maximum: {'; '.join(violations)}",
-            entities=entity_ids,
-            expected=u_max,
-        )
-    return CheckResult(
-        "ashrae_wall_u_factor",
-        "ASHRAE 90.1-2019 Table 5.5.4 — Wall U-factor",
-        "pass",
-        f"All {len(entity_ids)} walls comply (max {u_max:.3f} Btu/h·ft²·°F)",
-        entities=entity_ids,
-    )
+        cid = getattr(wall, "construction_id", "") or ""
+        ctype, u_con = _construction_class(model, cid, "ExteriorWall")
+        u = getattr(wall, "u_factor", None)
+        u = u if u is not None else u_con
+        if u is not None:
+            items.append((wall.id, u, ctype))
+    if not items:
+        return CheckResult(cid_, title, "skip", "No walls with a U-factor on the model")
+    return _judge(cid_, title, items, cat, n, "ExteriorWall")
 
 
 def _check_roof_u_factor(ctx: _Ctx) -> CheckResult:
-    """ASHRAE 90.1-2019 Table 5.5.4 — Roof assembly U-factor.
+    """ASHRAE 90.1-2019 Table 5.5-N: roof assembly U-factor.
 
-    Requires model.roof_u_factor or model.roofs[i].u_factor.
+    U from ``model.roof_u_factor`` or ``model.roofs[i].u_factor`` (Btu/h·ft²·°F),
+    else from ``roof_construction_id``. The class comes from the roof
+    construction, or ``roofs[i].construction_type``.
     """
+    cid_ = "ashrae_roof_u_factor"
     model: BuildingModel = ctx.model
-    climate_zone = getattr(model, "climate_zone", "5A")
+    n, cat, why = _zone(model)
+    title = f"ASHRAE 90.1-2019 Table 5.5-{n or 'N'}: Roof U-factor"
+    if why:
+        return CheckResult(cid_, title, "skip", why)
+    rid = getattr(model, "roof_construction_id", "") or ""
+    ctype, u_con = _construction_class(model, rid, "ExteriorRoof")
+    items = []
+    u = getattr(model, "roof_u_factor", None)
+    if u is not None:
+        items.append((rid or "roof", u, ctype))
+    for roof in getattr(model, "roofs", None) or []:
+        ru = getattr(roof, "u_factor", None)
+        if ru is not None:
+            items.append((getattr(roof, "id", "?"), ru, getattr(roof, "construction_type", None)))
+    if not items and u_con is not None:
+        items.append((rid, u_con, ctype))
+    if not items:
+        return CheckResult(cid_, title, "skip", "No roof U-factor on the model")
+    return _judge(cid_, title, items, cat, n, "ExteriorRoof")
 
-    u_max = _ROOF_U_MAX_BTU.get(climate_zone, 0.282)
 
-    u_actual = getattr(model, "roof_u_factor", None)
-    if u_actual is not None:
-        if u_actual > u_max:
-            return CheckResult(
-                "ashrae_roof_u_factor",
-                "ASHRAE 90.1-2019 Table 5.5.4 — Roof U-factor",
-                "error",
-                f"Roof u_factor={u_actual:.3f} > max={u_max:.3f} Btu/h·ft²·°F",
-                expected=u_max,
-                actual=u_actual,
-            )
-        return CheckResult(
-            "ashrae_roof_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Roof U-factor",
-            "pass",
-            f"Roof complies (max {u_max:.3f} Btu/h·ft²·°F)",
-        )
-
-    roofs = getattr(model, "roofs", [])
-    if not roofs:
-        return CheckResult(
-            "ashrae_roof_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Roof U-factor",
-            "skip",
-            "No roof_u_factor or roofs list on model",
-        )
-
-    violations, entity_ids = [], []
-    for roof in roofs:
-        u = getattr(roof, "u_factor", None)
-        if u is None:
-            continue
-        rid = getattr(roof, "id", "?")
-        entity_ids.append(rid)
-        if u > u_max:
-            violations.append(f"{rid}: {u:.3f} > {u_max:.3f}")
-
-    if violations:
-        return CheckResult(
-            "ashrae_roof_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Roof U-factor",
-            "error",
-            f"Roof U-factor exceeds maximum: {'; '.join(violations)}",
-            entities=entity_ids,
-            expected=u_max,
-        )
-    return CheckResult(
-        "ashrae_roof_u_factor",
-        "ASHRAE 90.1-2019 Table 5.5.4 — Roof U-factor",
-        "pass",
-        f"All {len(entity_ids)} roofs comply (max {u_max:.3f} Btu/h·ft²·°F)",
-        entities=entity_ids,
-    )
+def _window_class(win):
+    t = getattr(win, "construction_type", None)
+    if t in ("Fixed", "Operable"):
+        return t
+    op = getattr(win, "operable", None)
+    return None if op is None else ("Operable" if op else "Fixed")
 
 
 def _check_window_u_factor(ctx: _Ctx) -> CheckResult:
-    """ASHRAE 90.1-2019 Table 5.5.4 — Window U-factor and SHGC.
+    """ASHRAE 90.1-2019 Table 5.5-N: vertical fenestration U-factor and SHGC.
 
-    Requires model.windows list with u_factor and shgc attributes.
+    Requires ``model.windows`` with ``u_factor`` / ``shgc``; ``operable`` or
+    ``construction_type`` picks the Fixed or Operable row.
     """
+    cid_ = "ashrae_window_u_factor"
     model: BuildingModel = ctx.model
-    climate_zone = getattr(model, "climate_zone", "5A")
-
-    u_max = _WINDOW_U_MAX_BTU.get(climate_zone, 0.40)
-    shgc_max = _WINDOW_SHGC_MAX.get(climate_zone, 0.40)
-
-    windows = getattr(model, "windows", [])
+    n, cat, why = _zone(model)
+    title = f"ASHRAE 90.1-2019 Table 5.5-{n or 'N'}: Window U-factor & SHGC"
+    if why:
+        return CheckResult(cid_, title, "skip", why)
+    windows = getattr(model, "windows", None) or []
     if not windows:
-        return CheckResult(
-            "ashrae_window_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Window U-factor & SHGC",
-            "skip",
-            "No windows list found on model",
-        )
-
-    u_violations, shgc_violations, entity_ids = [], [], []
-    for win in windows:
-        u = getattr(win, "u_factor", None)
-        shgc = getattr(win, "shgc", None)
-        wid = getattr(win, "id", "?")
-        entity_ids.append(wid)
-        if u is not None and u > u_max:
-            u_violations.append(f"{wid}: U={u:.3f} > {u_max:.3f}")
-        if shgc is not None and shgc > shgc_max:
-            shgc_violations.append(f"{wid}: SHGC={shgc:.2f} > {shgc_max:.2f}")
-
-    if u_violations or shgc_violations:
-        msg_parts = []
-        if u_violations:
-            msg_parts.append(f"U-factor: {'; '.join(u_violations)}")
-        if shgc_violations:
-            msg_parts.append(f"SHGC: {'; '.join(shgc_violations)}")
-        return CheckResult(
-            "ashrae_window_u_factor",
-            "ASHRAE 90.1-2019 Table 5.5.4 — Window U-factor & SHGC",
-            "error",
-            "Window violations: " + "; ".join(msg_parts),
-            entities=entity_ids,
-            expected=u_max,
-        )
-    return CheckResult(
-        "ashrae_window_u_factor",
-        "ASHRAE 90.1-2019 Table 5.5.4 — Window U-factor & SHGC",
-        "pass",
-        f"All {len(windows)} windows comply (max U={u_max:.3f}, SHGC={shgc_max:.2f})",
-        entities=entity_ids,
-    )
+        return CheckResult(cid_, title, "skip", "No windows list found on model")
+    kinds = ("Fixed", "Operable")
+    u_items = [
+        (getattr(w, "id", "?"), w.u_factor, _window_class(w))
+        for w in windows
+        if getattr(w, "u_factor", None) is not None
+    ]
+    s_items = [
+        (getattr(w, "id", "?"), w.shgc, _window_class(w))
+        for w in windows
+        if getattr(w, "shgc", None) is not None
+    ]
+    ru = _judge(cid_, title, u_items, cat, n, "ExteriorWindow", types=kinds)
+    rs = _judge(cid_, title, s_items, cat, n, "ExteriorWindow", unit="", key="shgc", types=kinds)
+    rank = {"error": 2, "warn": 1, "pass": 0}
+    sev = max(ru.severity, rs.severity, key=lambda v: rank.get(v, 0))
+    ids = sorted({getattr(w, "id", "?") for w in windows})
+    if sev == "pass":
+        return CheckResult(cid_, title, "pass", f"All {len(windows)} windows comply", entities=ids)
+    parts = []
+    if ru.severity != "pass":
+        parts.append(f"U-factor: {ru.message}")
+    if rs.severity != "pass":
+        parts.append(f"SHGC: {rs.message}")
+    return CheckResult(cid_, title, sev, "Window " + "; ".join(parts), entities=ids)
 
 
 def _check_lighting_power_density(ctx: _Ctx) -> CheckResult:
