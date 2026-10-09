@@ -61,7 +61,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Loop per-commit to catch empty commits bundled with real ones
             EMPTY_COMMITS=""
-            for SHA in $(git log --format=%H "$COMPARE_REF..$HEAD_LOCAL_REF"); do
+            for SHA in $(git log --no-merges --format=%H "$COMPARE_REF..$HEAD_LOCAL_REF"); do
               if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
                 echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
                 EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
@@ -78,7 +78,7 @@ jobs:
           else
             # Loop per-commit for push events
             EMPTY_COMMITS=""
-            for SHA in $(git log --format=%H "$COMPARE_REF..${{ github.ref }}"); do
+            for SHA in $(git log --no-merges --format=%H "$COMPARE_REF..${{ github.ref }}"); do
               if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
                 echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
                 EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
