@@ -220,6 +220,21 @@ mullion. These openings carry `source: "glazing_mullions"` and
 A middle line along the whole wall with fewer than two ticks is still a
 cavity or insulation line and the wall stays opaque.
 
+A door drawn inside storefront glazing with no gap in the wall has two jamb
+ticks that look exactly like mullions. Two neighbouring ticks at most
+`MAX_DOOR_M` (2.5 m) apart with a door swing between them (the same swing
+test as a door gap, single or double, see Door swings) are taken as the
+door's jambs. They do not count toward `MULLION_MIN`, so a cavity line with
+a door in it is no longer a storefront. Ticks with no swing between them are
+still mullions.
+
+When the run is still a window (other mullions, or a glazing layer), it keeps
+its whole length and lists each door inside it under `doors_in_glazing`
+(jamb points and width). The window is not split, because a storefront's
+schedule width may or may not include its door and the schedule tag match
+downstream sizes the window from the schedule. Taking the door out of the
+glass, and adding it as a door, is not done yet.
+
 ### CAD layers (#793)
 
 When the PDF keeps its CAD layers (optional content groups), ingestion

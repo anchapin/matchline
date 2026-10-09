@@ -64,6 +64,7 @@ TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
 THIN_BAND_RATIO = 0.6  # a wall this thin next to the opaque walls either side may be glazing
 THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed bay
 THIN_FILL_SHARE = 0.8  # a thin wall covering this much of a gap in a thick run stops the run
+MAX_DOOR_M = 2.5  # widest door pair whose jambs sit inside storefront glazing (#793)
 LAYER_GLAZING_CONFIDENCE = 0.7  # full-length glazing line on a glazing CAD layer (#793)
 # CAD layer (PDF optional content group) names, NCS/AIA style and common variants (#793)
 GLAZING_LAYER_RE = re.compile(r"GLAZ|STORE-?FRONT|STORFRNT|CURTAIN|CURT-?WALL|CWALL|WINDOW|WIND\b")
@@ -188,8 +189,10 @@ def _classify_door(arcs, a: Pt, b: Pt, t: float) -> Optional[Tuple[str, List[Pt]
     return None
 
 
-def _mullions(segs, ls, th: float, t: float, s0: float, s1: float, gap: float, atol: float) -> int:
-    """Ticks across a wall between ``s0`` and ``s1`` along it (#793).
+def _mullion_pos(
+    segs, ls, th: float, t: float, s0: float, s1: float, gap: float, atol: float
+) -> List[float]:
+    """Positions along the wall of ticks across it between ``s0`` and ``s1`` (#793).
 
     A tick is a stroked segment perpendicular to the wall, about one wall
     thickness long, centred on the wall line. Ticks closer than ``gap`` to
@@ -208,7 +211,31 @@ def _mullions(segs, ls, th: float, t: float, s0: float, s1: float, gap: float, a
         s = ls.project(mid)
         if s0 + gap <= s <= s1 - gap and all(abs(s - q) >= gap for q in pos):
             pos.append(s)
-    return len(pos)
+    return sorted(pos)
+
+
+def _mullions(segs, ls, th: float, t: float, s0: float, s1: float, gap: float, atol: float) -> int:
+    """Number of ticks across a wall between ``s0`` and ``s1`` (see ``_mullion_pos``)."""
+    return len(_mullion_pos(segs, ls, th, t, s0, s1, gap, atol))
+
+
+def _door_jambs(arcs, ls, pos: List[float], t: float, max_w: float) -> List[Tuple[float, float]]:
+    """Pairs of ticks that are a door's jambs (#793): two neighbouring ticks
+    at most ``max_w`` apart with a door swing drawn between them. A door in a
+    storefront drawn without a gap in the wall has jambs that look exactly
+    like mullions; they bound the door, they do not break up glass."""
+    out: List[Tuple[float, float]] = []
+    i = 0
+    while i < len(pos) - 1:
+        p, q = pos[i], pos[i + 1]
+        if q - p <= max_w and _classify_door(
+            arcs, ls.interpolate(p).coords[0], ls.interpolate(q).coords[0], t
+        ):
+            out.append((p, q))
+            i += 2
+            continue
+        i += 1
+    return out
 
 
 def _layer_kind(name: Optional[str]) -> Optional[str]:
@@ -245,8 +272,8 @@ def _band_layer(band, segs) -> Optional[str]:
 
 
 def _glazing_windows(
-    bands, walls, k: float, tol: float, segs=()
-) -> List[Tuple["Wall", Pt, Pt, str]]:
+    bands, walls, k: float, tol: float, segs=(), arcs=()
+) -> List[Tuple["Wall", Pt, Pt, str, List[Tuple[Pt, Pt]]]]:
     """Windows drawn as a glazing line inside a wall (#743).
 
     ``_merge_glazing`` folds the two half-thickness bands either side of a
@@ -267,9 +294,15 @@ def _glazing_windows(
     face line on a glazing layer (A-GLAZ, storefront, curtain wall) is a window
     at any length, source ``glazing_layer``; a middle line on a pattern or
     insulation layer (A-WALL-PATT) is never one, ticks or not.
+
+    A door drawn inside full-length glazing with no gap in the wall has two
+    jamb ticks with its swing between them (#793). Those ticks are not
+    mullions. The window still spans the whole glazed run (a storefront's
+    schedule width may or may not include its door, so the tag match decides
+    downstream) and lists the doors inside it, each as its two jamb points.
     """
     atol = math.radians(ANGLE_TOL_DEG)
-    out: List[Tuple[Wall, Pt, Pt, str]] = []
+    out: List[Tuple[Wall, Pt, Pt, str, List[Tuple[Pt, Pt]]]] = []
     spans: Dict[str, List[Tuple[float, float]]] = {}
     for g in bands:
         if not g.glazed:
@@ -293,20 +326,35 @@ def _glazing_windows(
             s0, s1 = sorted((ls.project(Point(ga)), ls.project(Point(gb))))
             margin = max(2 * w.t, WINDOW_RETURN_M * k)
             source = "glazing_line"
+            doors: List[Tuple[float, float]] = []
             if wide or (s0 < margin and L - s1 < margin):
                 # runs the whole wall, or wider than a window: storefront only
                 # when its layer says glazing or mullions break it up, else a
                 # cavity or insulation line
+                pos = _mullion_pos(segs, ls, th, w.t, s0, s1, margin, atol)
+                doors = _door_jambs(arcs, ls, pos, w.t, MAX_DOOR_M * k)
+                jambs = {s for d in doors for s in d}
                 if lay == "glazing":
                     source = "glazing_layer"
-                elif _mullions(segs, ls, th, w.t, s0, s1, margin, atol) < MULLION_MIN:
+                elif len([s for s in pos if s not in jambs]) < MULLION_MIN:
                     break
                 else:
                     source = "glazing_mullions"
             if any(min(s1, b1) - max(s0, b0) > 0.5 * (s1 - s0) for b0, b1 in spans.get(w.id, [])):
                 break
             spans.setdefault(w.id, []).append((s0, s1))
-            out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0], source))
+            out.append(
+                (
+                    w,
+                    ls.interpolate(s0).coords[0],
+                    ls.interpolate(s1).coords[0],
+                    source,
+                    [
+                        (ls.interpolate(d0).coords[0], ls.interpolate(d1).coords[0])
+                        for d0, d1 in doors
+                    ],
+                )
+            )
             break
     return out
 
@@ -1260,22 +1308,31 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 door_confidence=DOOR_CONFIDENCE[swing],
             )
             doors += 1
-    windows = _glazing_windows(bands, walls, k, tol, segs)
-    for w, a, b, src in windows:
-        openings.append(
-            {
-                "walls": [w.id],
-                "a_m": to_m(a),
-                "b_m": to_m(b),
-                "width_m": round(math.dist(a, b) * m_per_pt, 3),
-                "kind": "window",
-                "source": src,
-                "window_confidence": {
-                    "glazing_mullions": STOREFRONT_CONFIDENCE,
-                    "glazing_layer": LAYER_GLAZING_CONFIDENCE,
-                }.get(src, WINDOW_CONFIDENCE),
-            }
-        )
+    windows = _glazing_windows(bands, walls, k, tol, segs, arcs)
+    for w, a, b, src, in_glass in windows:
+        op = {
+            "walls": [w.id],
+            "a_m": to_m(a),
+            "b_m": to_m(b),
+            "width_m": round(math.dist(a, b) * m_per_pt, 3),
+            "kind": "window",
+            "source": src,
+            "window_confidence": {
+                "glazing_mullions": STOREFRONT_CONFIDENCE,
+                "glazing_layer": LAYER_GLAZING_CONFIDENCE,
+            }.get(src, WINDOW_CONFIDENCE),
+        }
+        if in_glass:
+            # a door drawn inside the glazing (#793): its width is in the run
+            op["doors_in_glazing"] = [
+                {
+                    "a_m": to_m(da),
+                    "b_m": to_m(db),
+                    "width_m": round(math.dist(da, db) * m_per_pt, 3),
+                }
+                for da, db in in_glass
+            ]
+        openings.append(op)
     thin = set(_thin_bands(walls, openings, tol, THIN_BAND_MIN_M * k))
     # a thin band whose faces are on a glazing CAD layer is glass, not a
     # question (#793): a window over the whole band instead of maybe_glazing

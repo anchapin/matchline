@@ -504,6 +504,62 @@ def test_wide_glazing_without_mullions_is_still_not_a_window(tmp_path):
     assert op["source"] == "glazing_mullions" and op["width_m"] == pytest.approx(6.0, abs=0.05)
 
 
+# ---- door jambs inside full-length glazing are not mullions (#793) --------
+
+# a 0.9 m door in the south wall drawn without a gap: jamb ticks at x=4.55
+# and x=5.45, hinged on the first jamb, the swing closing on the second
+_JAMBS = [4.55, 5.45]
+_SWING = _door_symbol((4.55, 0), (4.55, 0.9), (5.45, 0))
+
+
+def test_door_jambs_in_a_cavity_line_are_not_mullions(tmp_path):
+    body = _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks(_JAMBS) + _SWING
+    res, _ = _read(tmp_path, body)
+    assert not _windows(res)  # was a false 9.7 m storefront
+
+
+def test_storefront_window_keeps_its_run_and_lists_the_door(tmp_path):
+    body = _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([2, *_JAMBS, 8]) + _SWING
+    res, _ = _read(tmp_path, body)
+    (op,) = _windows(res)
+    # the whole run, as before: whether the schedule width includes the door
+    # is for the tag match downstream to decide
+    assert op["source"] == "glazing_mullions" and op["width_m"] == pytest.approx(9.7, abs=0.05)
+    (door,) = op["doors_in_glazing"]
+    assert door["width_m"] == pytest.approx(0.9, abs=0.03)
+    x0 = OX * M_PER_PT  # sheet offset in metres
+    xs = sorted((door["a_m"][0] - x0, door["b_m"][0] - x0))
+    assert xs == [pytest.approx(4.55, abs=0.03), pytest.approx(5.45, abs=0.03)]
+
+
+def test_double_door_jambs_in_a_storefront_are_one_door(tmp_path):
+    pair = _door_symbol((4.2, 0), (4.2, 0.8), (5.0, 0)) + _door_symbol(
+        (5.8, 0), (5.8, 0.8), (5.0, 0)
+    )
+    jambs = _mullion_ticks([4.2, 5.8])
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + jambs + pair)
+    assert not _windows(res)  # a cavity line with a pair of doors is not glass
+    (tmp_path / "s").mkdir()
+    body = _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([2, 8]) + jambs + pair
+    res, _ = _read(tmp_path / "s", body)
+    (op,) = _windows(res)
+    (door,) = op["doors_in_glazing"]
+    assert door["width_m"] == pytest.approx(1.6, abs=0.03)
+
+
+def test_jamb_like_ticks_without_a_swing_are_still_mullions(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks(_JAMBS))
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_mullions"
+
+
+def test_door_jambs_on_a_glazing_layer_are_listed_on_the_window(tmp_path):
+    body = _outline(_mass(SHELL)) + oc(0, _glazing(0, 10)) + _mullion_ticks(_JAMBS) + _SWING
+    res = _read_layers(tmp_path, body, ["A-GLAZ"])
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_layer" and len(op["doors_in_glazing"]) == 1
+
+
 # ---- CAD layers decide full-length glazing when the PDF keeps them (#793) --
 
 
