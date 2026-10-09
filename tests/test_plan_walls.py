@@ -182,6 +182,35 @@ def test_two_numbers_in_one_face_go_to_review(tmp_path):
     assert room.needs_review and "101, 102" in room.reasons[0]
 
 
+def test_level_wing_numbers_count_as_room_numbers(tmp_path):
+    a, b = _pt(2, 3), _pt(7, 3)
+    labels = text(*a, "OFFICE 1A04", 8) + text(*b, "CORRIDOR 1AC5", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + labels)
+    (room,) = res.rooms
+    assert room.needs_review and "1A04, 1AC5" in room.reasons[0]
+
+
+def test_one_level_wing_number_is_not_a_review(tmp_path):
+    labels = text(*_pt(4, 3), "TRICARE OFFICE 1A04", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + labels)
+    (room,) = res.rooms
+    assert not room.needs_review
+
+
+@pytest.mark.parametrize(
+    "txt, want",
+    [
+        ("OFFICE 101", {"101"}),
+        ("STAIR 1BS2", {"1BS2"}),
+        ("CORRIDOR 1DC8 CLEAN U. 1D37", {"1DC8", "1D37"}),
+        ("ROOM B12", {"B12"}),
+        ("LOBBY", set()),
+    ],
+)
+def test_room_number_pattern(txt, want):
+    assert set(W._ROOM_NO.findall(txt)) == want
+
+
 def test_no_scale_refuses(tmp_path):
     pdf = write_pdf(
         tmp_path / "p.pdf", [PageSpec(width=PAGE_W, height=PAGE_H, content=_outline(_mass(SHELL)))]
