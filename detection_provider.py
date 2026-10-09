@@ -9,6 +9,8 @@ which backend ran. Which provider runs is a config value, not code:
     {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger path>"}
     {"provider": "door_swing"}
     {"provider": "vector_glazing"}
+    {"provider": "combined", "providers": [{"provider": "door_swing"},
+                                           {"provider": "vector_glazing"}]}
     {"provider": "none"}
 
 ``door_swing`` finds door swings (leaf plus quarter arc) by rule
@@ -300,6 +302,57 @@ def window_detections(
     return out
 
 
+class CombinedProvider(DetectionProvider):
+    """Several providers on one set, their detections joined per sheet.
+
+    ``{"provider": "combined", "providers": [{"provider": "door_swing"},
+    {"provider": "vector_glazing"}]}`` reports doors and windows together.
+    It needs whatever any part needs (a scale, the walls), and the set reader
+    hands it everything a part asks for. It is evaluation only when any part
+    is, so a release refuses it then.
+    """
+
+    name = "combined"
+
+    def __init__(self, parts: List[DetectionProvider]):
+        self.parts = list(parts)
+        self.needs_scale = any(getattr(p, "needs_scale", False) for p in self.parts)
+        self.needs_walls = any(getattr(p, "needs_walls", False) for p in self.parts)
+        # a part that needs neither still runs on a sheet with no scale; the
+        # scale-needing parts then get no px_per_m and report nothing there
+        self.runs_without_scale = any(
+            not (getattr(p, "needs_scale", False) or getattr(p, "needs_walls", False))
+            for p in self.parts
+        )
+        self.artifact = " + ".join(p.info.artifact or p.info.provider for p in self.parts)
+        classes = []
+        for p in self.parts:
+            if p.info.license_class not in classes:
+                classes.append(p.info.license_class)
+        self.info = ProviderInfo(
+            self.name,
+            self.artifact,
+            " + ".join(classes),
+            any(p.info.eval_only for p in self.parts),
+        )
+
+    def has(self, image_path) -> bool:
+        return any(not hasattr(p, "has") or p.has(image_path) for p in self.parts)
+
+    def detect(self, image_path, sheet_id, plan: Optional[dict] = None, px_per_m=None):
+        out: List[Detection] = []
+        for p in self.parts:
+            if hasattr(p, "has") and not p.has(image_path):
+                continue
+            kw = {}
+            if getattr(p, "needs_walls", False):
+                kw["plan"] = plan
+            if getattr(p, "needs_scale", False):
+                kw["px_per_m"] = px_per_m
+            out.extend(p.detect(image_path, sheet_id, **kw))
+        return out
+
+
 PROVIDERS: Dict[str, type] = {
     "door_swing": DoorSwingProvider,
     "none": NoneProvider,
@@ -323,9 +376,12 @@ def provider_from_config(
         cfg = json.loads(Path(cfg).read_text())
     cfg = dict(cfg)
     name = cfg.pop("provider", None)
+    if name == "combined":
+        return _combined_from_config(cfg, release)
     if name not in PROVIDERS:
         raise ProviderConfigError(
-            f"detector provider {name!r} is not one of {', '.join(sorted(PROVIDERS))}"
+            f"detector provider {name!r} is not one of "
+            f"{', '.join(sorted([*PROVIDERS, 'combined']))}"
         )
     missing = [k for k in _REQUIRED.get(name, ()) if not cfg.get(k)]
     if missing:
@@ -339,7 +395,30 @@ def provider_from_config(
     return prov
 
 
+def _combined_from_config(cfg: dict, release: bool) -> CombinedProvider:
+    parts = cfg.pop("providers", None)
+    if cfg:
+        raise ProviderConfigError(
+            f"detector provider 'combined': unknown keys {', '.join(sorted(cfg))}"
+        )
+    if not isinstance(parts, list) or not parts:
+        raise ProviderConfigError("detector provider 'combined' needs a non-empty providers list")
+    built = []
+    for part in parts:
+        if not isinstance(part, dict):
+            raise ProviderConfigError(
+                "detector provider 'combined': each part is a provider config"
+            )
+        if part.get("provider") in ("combined", "none"):
+            raise ProviderConfigError(
+                f"detector provider 'combined' cannot hold {part.get('provider')!r}"
+            )
+        built.append(provider_from_config(part, release=release))
+    return CombinedProvider(built)
+
+
 __all__ = [
+    "CombinedProvider",
     "DetectionProvider",
     "DoorSwingProvider",
     "VectorGlazingProvider",

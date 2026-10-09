@@ -12,7 +12,7 @@ This document describes the automated gates that run on every PR and push.
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (2577), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (2582), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**

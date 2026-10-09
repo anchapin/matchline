@@ -202,3 +202,95 @@ def test_vector_glazing_reports_windows_only_and_nothing_without_walls():
     assert d.bbox == pytest.approx((580.0, 780.0, 820.0, 820.0))
     assert dp.VectorGlazingProvider().detect("x.png", "s") == []
     assert dp.window_detections({"openings": walls["openings"]}, 500.0, 2.0, "s") == []
+
+
+def test_combined_provider_runs_doors_and_windows_together(tmp_path):
+    import plan_walls as W
+
+    parts = [{"provider": "door_swing"}, {"provider": "vector_glazing"}]
+    p = dp.provider_from_config({"provider": "combined", "providers": parts}, release=True)
+    assert isinstance(p, dp.CombinedProvider)
+    assert p.needs_scale and p.needs_walls
+    assert (p.info.provider, p.info.license_class, p.info.eval_only) == (
+        "combined", "permissive", False,
+    )  # fmt: skip
+    assert p.info.artifact == "door_detect.py + plan_walls.py"
+    sheet, (cx, cy), m_per_pt, png = _glazing_sheet(tmp_path)
+    walls = W.extract_walls(sheet, m_per_pt).to_dict()
+    plan = {"walls": walls, "height_pt": sheet.height_pt, "px_per_pt": sheet.px_per_pt}
+    ppm = sheet.px_per_pt / m_per_pt
+    dets = p.detect(png, "s", plan=plan, px_per_m=ppm)
+    wins = [d for d in dets if d.label == "window"]
+    assert len(wins) == 1
+    x0, y0, x1, y1 = wins[0].bbox
+    assert abs((x0 + x1) / 2 - cx) <= 2 and abs((y0 + y1) / 2 - cy) <= 2
+    # the same window as the glazing provider alone, and nothing it doesn't see
+    alone = dp.VectorGlazingProvider().detect(png, "s", plan=plan)
+    assert [d.bbox for d in wins] == [d.bbox for d in alone]
+    assert all(d.label in ("door", "window") for d in dets)
+
+
+def test_combined_provider_hands_each_part_only_what_it_asks_for():
+    seen = []
+
+    class Doors(dp.DoorSwingProvider):
+        def detect(self, image_path, sheet_id, px_per_m=None):
+            seen.append(("doors", px_per_m))
+            return [
+                dp.Detection(label="door", tag="", score=0.9, bbox=(0, 0, 1, 1), source=sheet_id)
+            ]
+
+    class Glass(dp.VectorGlazingProvider):
+        def detect(self, image_path, sheet_id, plan=None):
+            seen.append(("glass", plan))
+            return []
+
+    c = dp.CombinedProvider([Doors(), Glass()])
+    out = c.detect("x.png", "s", plan={"walls": {}}, px_per_m=40.0)
+    assert seen == [("doors", 40.0), ("glass", {"walls": {}})]
+    assert [d.label for d in out] == ["door"]
+
+
+def test_combined_config_is_checked_and_release_refuses_an_eval_only_part(tmp_path):
+    for bad, msg in (
+        ({"provider": "combined"}, "non-empty providers"),
+        ({"provider": "combined", "providers": []}, "non-empty providers"),
+        (
+            {"provider": "combined", "providers": [{"provider": "combined", "providers": []}]},
+            "cannot hold",
+        ),
+        ({"provider": "combined", "providers": [{"provider": "none"}]}, "cannot hold"),
+        ({"provider": "combined", "providers": ["door_swing"]}, "each part"),
+        (
+            {"provider": "combined", "providers": [{"provider": "door_swing"}], "x": 1},
+            "unknown keys",
+        ),
+        ({"provider": "combined", "providers": [{"provider": "kreo"}]}, "not one of"),
+    ):
+        with pytest.raises(dp.ProviderConfigError, match=msg):
+            dp.provider_from_config(bad)
+    mixed = {
+        "provider": "combined",
+        "providers": [{"provider": "door_swing"}, {"provider": "yolo_sahi", "weights": YOLO_RUN}],
+    }
+    with pytest.raises(dp.ProviderLicenseError, match="noncommercial"):
+        dp.provider_from_config(mixed, release=True)
+    c = dp.provider_from_config(mixed)
+    assert c.info.eval_only and c.info.license_class == "permissive + noncommercial"
+    assert "evaluation only" in c.info.note()
+
+
+def test_combined_runs_a_part_that_needs_no_scale_where_the_others_find_nothing(tmp_path):
+    d = _preds(tmp_path, "sheet_001", [{"cls": 0, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4}])
+    c = dp.provider_from_config(
+        {"provider": "combined", "providers": [{"provider": "precomputed", "dir": str(d)},
+                                                {"provider": "door_swing"}]}
+    )  # fmt: skip
+    assert c.runs_without_scale and c.needs_scale
+    both = dp.provider_from_config(
+        {"provider": "combined", "providers": [{"provider": "door_swing"}, {"provider": "vector_glazing"}]}  # noqa: E501
+    )  # fmt: skip
+    assert not both.runs_without_scale
+    # no scale: door_swing reports nothing, the precomputed part still does
+    out = c.detect(d / "sheet_001.png", "s", plan=None, px_per_m=None)
+    assert [x.label for x in out] == ["door"]

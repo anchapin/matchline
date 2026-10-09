@@ -248,28 +248,24 @@ def build_set_model(
                     getattr(provider, "needs_scale", False)
                     or getattr(provider, "needs_walls", False)
                 )
+                or getattr(provider, "runs_without_scale", False)
                 or (scales.get(f) or {}).get("m_per_pt")
             )
         ):
             sid = f"{Path(str(pdf)).name}:{f}"
+            kw = {}
             if getattr(provider, "needs_walls", False):
                 # windows from the wall reader's vector glazing (#743)
                 sj = json.loads((sheets_dir / f).read_text())
-                detections[f] = provider.detect(
-                    png,
-                    sid,
-                    plan={
-                        "walls": walls.get(f) or {},
-                        "height_pt": float(sj["height_pt"]),
-                        "px_per_pt": float(sj.get("px_per_pt") or dpi / 72.0),
-                    },
-                )
-            elif getattr(provider, "needs_scale", False):
+                kw["plan"] = {
+                    "walls": walls.get(f) or {},
+                    "height_pt": float(sj["height_pt"]),
+                    "px_per_pt": float(sj.get("px_per_pt") or dpi / 72.0),
+                }
+            if getattr(provider, "needs_scale", False) and (scales.get(f) or {}).get("m_per_pt"):
                 # rendered px per metre: (dpi / 72 px per pt) / (m per pt)
-                ppm = dpi / 72.0 / scales[f]["m_per_pt"]
-                detections[f] = provider.detect(png, sid, px_per_m=ppm)
-            else:
-                detections[f] = provider.detect(png, sid)
+                kw["px_per_m"] = dpi / 72.0 / scales[f]["m_per_pt"]
+            detections[f] = provider.detect(png, sid, **kw)
             ran = True
         if f not in plan_files:
             st.mark("symbols", "skipped", "not a floor plan for takeoff")
