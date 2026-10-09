@@ -532,7 +532,7 @@ def build_set_model(
             [sp for sp in spaces.values() if sp.level_id == first], centers, review, report,
             plan_end, sheets_dir,
         )  # fmt: skip
-    _place_equipment(
+    zones = _place_equipment(
         plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
         review, report,
     )  # fmt: skip
@@ -550,7 +550,7 @@ def build_set_model(
         name=Path(pdf).stem,
         levels=levels,
         spaces=spaces,
-        zones={},
+        zones=zones,
         envelope=envelope,
         bim_elements=[],
         schedules=sched_entries,
@@ -768,13 +768,18 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
 
 
 def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
-                     equipment, review, report) -> None:  # fmt: skip
+                     equipment, review, report) -> dict:  # fmt: skip
     """Put each scheduled mechanical tag in the room the mechanical plan shows
     it in (#746). Writes ``level_id``, ``space_id`` and ``located`` onto the
-    equipment records; anything that cannot be placed goes to review."""
+    equipment records; anything that cannot be placed goes to review.
+
+    Returns the HVAC zones: one per placed terminal unit (VAV or fan coil),
+    serving the room it sits in. Rooms it also serves through ductwork are not
+    known without duct tracing, so the zone says so and stays at the
+    placement's confidence."""
     if not equipment:
-        return
-    from building_model import Provenance, ReviewItem
+        return {}
+    from building_model import ComponentRef, Provenance, ReviewItem, Zone
     from grid_detect import detect_grids
     from mech_tags import find_tags, register, room_of, to_canonical
 
@@ -832,6 +837,7 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
                 }
             )  # fmt: skip
     placed = 0
+    zones: dict = {}
     for e in equipment:
         locs = found.get(e["tag"], [])
         if not locs:
@@ -843,6 +849,8 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
         if len(rooms) == 1 and locs[0]["space_id"]:
             e["level_id"], e["space_id"] = locs[0]["level_id"], locs[0]["space_id"]
             placed += 1
+            if e.get("kind") in TERMINAL_KINDS:
+                _terminal_zone(e, locs, conf, spaces, zones, ComponentRef, Provenance, Zone)
             continue
         where = ", ".join(f"{x['sheet']} {x['space_id'] or 'no room'}" for x in locs)
         review.append(
@@ -862,7 +870,36 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
     report.notes.append(
         f"mechanical equipment: {placed} of {len(known)} scheduled tag(s) placed in a room"
         + (f"; not on any mechanical plan: {', '.join(missing)}" if missing else "")
+        + (f"; {len(zones)} HVAC zone(s), one per placed terminal unit" if zones else "")
     )
+    return zones
+
+
+TERMINAL_KINDS = ("vav", "fcu")  # equipment that defines an HVAC zone
+
+
+def _terminal_zone(e, locs, conf, spaces, zones, ComponentRef, Provenance, Zone) -> None:
+    """One zone for a placed terminal unit, serving the room it sits in."""
+    loc, sid = locs[0], e["space_id"]
+    prov = Provenance(
+        loc["sheet"], 0, "mech_plan_tag", conf, tuple(loc["bbox_pt"]),
+        note=(
+            f"{e['tag']} scheduled on {e['sheet']} ({e['schedule']}); serves the room it is "
+            "tagged in; other rooms on its ductwork need duct tracing"
+        ),
+    )  # fmt: skip
+    ref = ComponentRef(
+        id=e["tag"], type=e["kind"], x_m=loc["at_m"][0], y_m=loc["at_m"][1], tag=e["tag"],
+        provenance=prov,
+    )  # fmt: skip
+    zid = f"{e['level_id']}-Z-{e['tag']}"
+    zones[zid] = Zone(
+        id=zid, level_id=e["level_id"], space_ids=[sid], terminal_unit=ref, provenance=prov
+    )
+    sp = spaces[sid]
+    sp.hvac.zone_ids.append(zid)
+    sp.hvac.terminal_units.append(ref)
+    e["zone_id"] = zid
 
 
 def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
