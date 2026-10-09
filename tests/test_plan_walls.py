@@ -707,3 +707,12 @@ def test_thin_fill_rules():
     # perpendicular partition ending in the gap
     assert not W._thin_fill([_w(1, (5.0, 0.0), (5.0, 3.0), 0.12)], a, b, t, 0.01)
     assert not W._thin_fill([], a, a, t, 0.01)
+
+
+def test_one_metre_bay_is_a_frame_not_a_flagged_band(tmp_path):
+    # the band covers gap - t (0.7 of 1.0 m), under THIN_FILL_SHARE: the thick
+    # run carries through and nothing is flagged, as for any band under
+    # THIN_BAND_MIN_M
+    res, _ = _read(tmp_path, _outline(_mass(_thin_bay(4.5, 5.5))))
+    assert res.stats["maybe_glazing"] == 0
+    assert _areas(res) == [60.0]
