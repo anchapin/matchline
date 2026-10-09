@@ -941,6 +941,60 @@ def _join_free_ends(
     return joins, corners
 
 
+def _ends_to_openings(
+    walls: List[Tuple[Pt, Pt]],
+    ts: List[float],
+    others: List[Tuple[Pt, Pt]],
+    opens: List[Tuple[Pt, Pt, float]],
+    tol: float,
+) -> List[Tuple[Pt, Pt]]:
+    """Carry a free wall end onto an opening line it stops just short of (#740).
+
+    A partition between two doors meets the line of the bridged openings, not
+    a drawn wall, so ``_snap`` (which runs before any opening exists) leaves
+    its end a few centimetres short and the two rooms read as one face. A free
+    end gets a short join to the opening line ahead of it when that line
+    crosses its own within the same reach ``_snap`` uses for walls.
+    """
+    if not walls or not opens:
+        return []
+    every = [LineString(p) for p in walls + others] + [LineString((a, b)) for a, b, _t in opens]
+    tree = STRtree(every)
+    olines = [LineString((a, b)) for a, b, _t in opens]
+    otree = STRtree(olines)
+    t_big = max(ts + [t for *_x, t in opens])
+    joins: List[Tuple[Pt, Pt]] = []
+    for i, (a, b) in enumerate(walls):
+        L = math.dist(a, b)
+        if L <= tol:
+            continue
+        for p, q0 in ((a, b), (b, a)):
+            pt = Point(p)
+            if any(
+                int(j) != i and every[int(j)].distance(pt) <= tol
+                for j in tree.query(pt.buffer(tol))
+            ):
+                continue  # already meets something
+            ux, uy = (p[0] - q0[0]) / L, (p[1] - q0[1]) / L
+            best = None
+            for j in otree.query(pt.buffer(0.75 * t_big + tol)):
+                (oa, ob, ot) = opens[int(j)]
+                reach = 0.75 * max(ts[i], ot) + tol
+                hit = _line_x(p, (p[0] + ux, p[1] + uy), oa, ob)
+                if hit is None:
+                    continue
+                x, t1, t2 = hit
+                Lo = math.dist(oa, ob)
+                cross = abs((ob[0] - oa[0]) * uy - (ob[1] - oa[1]) * ux) / max(Lo, 1e-9)
+                if cross < 0.5 or not (0 < t1 <= reach) or not (0 <= t2 <= 1):
+                    continue  # parallel, behind the end, too far, or past the opening
+                if best is None or t1 < best[0]:
+                    best = (t1, x)
+            if best:
+                joins.append((p, best[1]))
+    return joins
+
+
 def _node_lines(pairs: List[Tuple[Pt, Pt]], tol: float) -> List[LineString]:
     """Make wall ends that meet share exact coordinates.
 
@@ -1226,7 +1280,14 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                     "b_m": to_m(b),
                 }
             )
-    lines = _node_lines(base + [(a, b) for *_x, a, b in keep], tol)
+    carry = _ends_to_openings(
+        [(w.a, w.b) for w in pair_walls],
+        [w.t for w in pair_walls],
+        joins + [(a, b) for *_x, a, b in near + keep],
+        [(br.a, br.b, br.t) for br in bridges],
+        tol,
+    )
+    lines = _node_lines(base + [(a, b) for *_x, a, b in keep] + carry, tol)
     noded = unary_union(lines)
     faces, _cuts, dangles, _invalid = polygonize_full(noded)
     for dg in getattr(dangles, "geoms", []):

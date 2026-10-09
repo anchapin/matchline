@@ -913,3 +913,30 @@ def test_one_metre_bay_is_a_frame_not_a_flagged_band(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(_thin_bay(4.5, 5.5))))
     assert res.stats["maybe_glazing"] == 0
     assert _areas(res) == [60.0]
+
+
+# ---- #740: a partition ending on a door opening, not on a wall --------------
+
+SHELL_6X10 = [((0, 0), (6, 0), T_EXT), ((6, 0), (6, 10), T_EXT), ((6, 10), (0, 10), T_EXT),
+              ((0, 10), (0, 0), T_EXT)]  # fmt: skip
+CORRIDOR_WALL = [((0, 4), (6, 4), T_INT)]
+# the corridor wall stops at 4.1 m: a 1.9 m opening to the east wall, bridged beside the corner
+CORRIDOR_DOORS = ((4.975, 4), (1, 0), 1.75, 0.08)
+
+
+def test_partition_ending_on_a_door_opening_splits_the_rooms(tmp_path):
+    # a partition between two doors meets the opening line, not a drawn wall: the
+    # Clinic soiled-utility / clean-supply pair (#740). Its end stops 0.08 m short.
+    walls = SHELL_6X10 + CORRIDOR_WALL + [((5, 0), (5, 4), T_INT)]
+    res, _ = _read(tmp_path, _outline(_mass(walls, [CORRIDOR_DOORS])))
+    assert _areas(res) == [4.0, 20.0, 36.0]
+    assert [o for o in res.openings if o.get("beside_corner")]
+    assert not [r for r in res.review if r["kind"] == "unclosed_wall"]
+
+
+def test_partition_stopping_well_short_of_a_door_opening_stays_open(tmp_path):
+    # 0.5 m short is past a wall thickness of reach: an open end, not a junction
+    walls = SHELL_6X10 + CORRIDOR_WALL + [((5, 0), (5, 3.5), T_INT)]
+    res, _ = _read(tmp_path, _outline(_mass(walls, [CORRIDOR_DOORS])))
+    assert _areas(res) == [24.0, 36.0]
+    assert [r for r in res.review if r["kind"] == "unclosed_wall"]
