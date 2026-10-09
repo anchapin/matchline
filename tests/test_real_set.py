@@ -799,7 +799,7 @@ def test_grid_bubble_labels_are_not_fixtures():
 _SF_DOOR_ROWS = [("D1", "3'-0\"", "7'-0\"", "AL")]
 
 
-def _storefront_door_set(tmp_path, win_rows, door_rows=None):
+def _storefront_door_set(tmp_path, win_rows, door_rows=None, tag=None):
     from test_pdf_schedules import door_schedule
     from test_plan_walls import _door_symbol, _glazing, _mullion_ticks
 
@@ -807,6 +807,8 @@ def _storefront_door_set(tmp_path, win_rows, door_rows=None):
     body = _outline(_mass(SHELL)) + text(*a, "LOBBY", 8) + text(a[0], a[1] - 10, "101", 8)
     body += _glazing(0, 10) + _mullion_ticks([2, 4.55, 5.45, 8])
     body += _door_symbol((4.55, 0), (4.55, 0.9), (5.45, 0))
+    if tag:
+        body += text(*_pt(3, -0.6), tag, 8)
     pages = [
         _tb("A-101", "FIRST FLOOR PLAN") + text(100, 48, SCALE_NOTE, 8) + body,
         _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(win_rows),
@@ -851,3 +853,15 @@ def test_unscheduled_door_in_a_storefront_goes_to_review(tmp_path):
         0.9, abs=0.03
     )
     assert rep.levels[0]["openings"]["unsized"] == 1
+
+
+def test_storefront_tag_names_the_glass_row_less_its_door(tmp_path):
+    # by width SF-1 and SF-2 disagree on height; the SF-1 tag on the plan settles it
+    rows = [("SF-1", "28'-10\"", "8'-0\"", "FIXED"), ("SF-2", "28'-10\"", "9'-0\"", "FIXED")]
+    model, _rep, ops = _storefront_door_set(tmp_path, rows, _SF_DOOR_ROWS, tag="SF-1")
+    assert [(o.category, o.tag) for o in ops] == [("window", "SF-1"), ("door", "D1")]
+    glass = ops[0]
+    assert glass.provenance.method == "plan_gap_tag"
+    assert glass.provenance.confidence == pytest.approx(0.80)  # 0.85 less 0.05: doors taken out
+    assert "confidence lowered" in glass.provenance.note
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]

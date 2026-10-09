@@ -1427,7 +1427,8 @@ def _plan_openings(
             sheet_id=sheet_id,
             revision=0,
             method="plan_gap_tag" if row is not None else "plan_gap_schedule_width",
-            confidence=0.85 if row is not None else 0.8 if len(tags) == 1 else 0.7,
+            confidence=(0.85 if row is not None else 0.8 if len(tags) == 1 else 0.7)
+            - (0.05 if less_doors else 0.0),
             note=(
                 (
                     f"plan gap {float(op['width_m']):.3f} m tagged {tag} on the plan "
@@ -1445,7 +1446,8 @@ def _plan_openings(
                 )
                 + (
                     f"; scheduled {width:.3f} m is the glass less the "
-                    f"{len(in_glass)} door{'s' if len(in_glass) > 1 else ''} drawn in it"
+                    f"{len(in_glass)} door{'s' if len(in_glass) > 1 else ''} drawn in it "
+                    "(matched after taking the doors out, confidence lowered)"
                     if less_doors
                     else f"; includes the {len(in_glass)} door"
                     f"{'s' if len(in_glass) > 1 else ''} drawn in it"
@@ -1533,7 +1535,7 @@ def _glass_door(
         if e["category"] == "door" and abs(e["width_m"] - dw) <= WIDTH_TOL_M
     ]
     heights = {round(e["height_m"], 3) for _t, e in cands}
-    if len(heights) != 1 or sp is None:
+    if len(heights) != 1:
         counts["unsized"] += 1
         why = (
             "no scheduled door is this wide"
@@ -1541,8 +1543,6 @@ def _glass_door(
             else "scheduled doors of this width disagree on height ("
             + ", ".join(t for t, _e in cands)
             + ")"
-            if len(heights) != 1
-            else "its wall has no room"
         )
         review.append(
             ReviewItem(
@@ -1554,7 +1554,7 @@ def _glass_door(
                     "field": "opening",
                     "gap": {
                         "opening_id": oid,
-                        "space_id": wall.space_id if sp is not None else "",
+                        "space_id": wall.space_id,
                         "facade": wall.facade,
                         "s_center_m": round(ds, 4),
                         "width_m": round(dw, 4),
