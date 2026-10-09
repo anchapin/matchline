@@ -119,6 +119,12 @@ farther. Two rules now close them:
 - A free end whose wall, carried on along its own line, crosses another wall
   within `MAX_OPENING_M` is a door beside a corner. It becomes an opening with
   `"beside_corner": true`.
+- A short band lying inside a longer wall's band along its whole length (a
+  chase or bump drawn against the wall, read as a second, thicker line pair)
+  is dropped once collinear gaps are carried through junctions. The walls that
+  met it then join the real wall's centreline. On Clinic this split LOUNGE
+  from M. TOILET (First Floor): wall-bounded matched 107 -> 109, extra 26 ->
+  25, wall length error 2.6% -> 2.1% (#740).
 - After every opening is bridged, a free end that stops short of an opening
   line crossing its own (a partition between two doors meets the doors'
   line, not a drawn wall) joins it when the line is within the same reach
