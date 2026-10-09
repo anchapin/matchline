@@ -89,6 +89,22 @@ DIFFUSER_TIGHT_NCC = 0.95
 TIGHT_CONFIRM_NCC = 0.70
 TIGHT_CONFIRM_R_PX = 6
 TIGHT_CONFIRM_BAND_PX = 8
+# Quarter turns of the tight template tried by the tight passes and the
+# confirm gate (#745). A grille's one diagonal runs the other way after a
+# quarter turn, and on the Clinic ablation that alone dropped grilles from
+# 206/206 to 115/206 (proposals and WiSARD were unaffected; the 0-turn tight
+# template no longer matched). The diffuser X looks the same turned, so it
+# keeps one template. A half turn maps both glyphs onto themselves.
+TIGHT_TURNS = {"grille": (0, 1)}
+
+
+def _tight_templates(cls: str) -> list:
+    """The stub-less, margin-free template of ``cls`` at each quarter turn in
+    ``TIGHT_TURNS`` (just the template itself for other classes)."""
+    from synth.mech import render_template
+
+    t = render_template(cls, margin_px=0, stubs=False)
+    return [np.rot90(t, k) if k else t for k in TIGHT_TURNS.get(cls, (0,))]
 
 
 def _tight_masks(tmpl: np.ndarray, band_px: float) -> list:
@@ -136,11 +152,9 @@ def _local_ncc(
 
 
 def _tight_confirm_score(gray: np.ndarray, cls: str, cx: float, cy: float) -> float:
-    from synth.mech import render_template
-
-    t = render_template(cls, margin_px=0, stubs=False)
     return max(
         _local_ncc(gray, t, cx, cy, TIGHT_CONFIRM_R_PX, m)
+        for t in _tight_templates(cls)
         for m in _tight_masks(t, TIGHT_CONFIRM_BAND_PX)
     )
 
@@ -276,11 +290,12 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
     ):
         if thresh is None:
             continue
-        from synth.mech import render_template
-
-        tt = render_template(cls, margin_px=0, stubs=False)
-        th, tw = tt.shape
-        for y, x, s in ncc_locate(gray, tt, thresh=thresh):
+        hits = []
+        for tt in _tight_templates(cls):
+            th, tw = tt.shape
+            hits += [(y, x, s, th, tw) for y, x, s in ncc_locate(gray, tt, thresh=thresh)]
+        hits.sort(key=lambda h: -h[2])  # the best turn at a spot goes first
+        for y, x, s, th, tw in hits:
             cx, cy = x + tw / 2, y + th / 2
             near = [d for d in out if math.hypot(d["cx"] - cx, d["cy"] - cy) <= ASSOC_PX]
             if not near:
