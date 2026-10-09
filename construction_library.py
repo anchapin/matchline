@@ -518,8 +518,8 @@ def _slab_geometry(model, lowest: bool = True):
     cover at most ``COURTYARD_MAX_COVERED_ABOVE`` of it (open to the sky):
     its edge is exposed and its area is not slab. Any other hole (an
     unmodelled room or shaft) stays slab and its edge is not exposed, which is
-    what the exported footprint (holes dropped) already assumes. ``detail`` lists wings, courtyards and holes for the
-    report.
+    what the exported footprint (holes dropped) already assumes. ``detail``
+    lists wings, courtyards and holes for the report.
     """
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
