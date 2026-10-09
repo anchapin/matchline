@@ -731,10 +731,10 @@ def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
     assert "M-001, M-601" in rq.description
 
 
-def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False):
+def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False, east=True, tags=()):
     """A mechanical plan drawn in a second symbol style with its own legend:
     two diffusers in the west room (x < 4 m), one diffuser and a thermostat in
-    the east room."""
+    the east room (none with ``east=False``). ``tags``: (text, (x, y) m)."""
     from test_hvac_legend_templates import circle, damper, xbox
 
     x, y = 1100, 1000
@@ -742,8 +742,12 @@ def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False):
     leg += xbox(x, y - 54) + text(x + 40, y - 50, "SUPPLY AIR DIFFUSER", 8)
     leg += circle(x + 7, y - 72) + text(x + 40, y - 75, "THERMOSTAT", 8)
     leg += damper(x, y - 102) + text(x + 40, y - 100, "MANUAL VOLUME DAMPER", 8)
-    plan = "".join(xbox(px - 7, py - 7) for px, py in (_pt(2, 2), _pt(2, 4.5), _pt(7, 2)))
-    plan += circle(*_pt(7, 4.5))
+    at = [(2, 2), (2, 4.5)] + ([(7, 2)] if east else [])
+    plan = "".join(xbox(px - 7, py - 7) for px, py in (_pt(*a) for a in at))
+    if east:
+        plan += circle(*_pt(7, 4.5))
+    for tag, a in tags:
+        plan += text(*_pt(*a), tag, 8)
     if outside:  # a diffuser drawn beyond the building shell
         px, py = _pt(13, 3)
         plan += xbox(px - 7, py - 7)
@@ -782,6 +786,72 @@ def test_a_legend_symbol_in_no_room_is_counted_apart(tmp_path):
     assert lg["symbol_hits"] == {"diffuser": 4, "sensor": 1}
     assert lg["symbols_by_room"][""] == {"diffuser": 1}
     assert any("in rooms: 4 of 5" in n for n in report.notes)
+
+
+def _legend_zone_set(tmp_path, tags, east=True, second_sheet=False):
+    from test_pdf_schedules import vav_schedule
+
+    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page(east=east, tags=tags)]
+    if second_sheet:  # the same plan again, as a return-air sheet of the level
+        pages.append(_legend_mech_page("M-102", east=east))
+    pages.append(_tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+
+
+def test_legend_diffusers_go_on_the_zone_serving_their_room(tmp_path):
+    """#744: symbols found from the sheet's own legend reach the HVAC model,
+    on the one zone whose terminal unit is tagged in the same room."""
+    from shapely.geometry import Point, Polygon
+
+    from validate import _Ctx
+    from validate.invariants import _check_hvac_zone_coverage
+
+    model, report = _legend_zone_set(tmp_path, [("VAV-1", (1.5, 3.2))])
+    assert list(model.zones) == ["L1-Z-VAV-1"]
+    z = model.zones["L1-Z-VAV-1"]
+    (sid,) = z.space_ids
+    assert [d.type for d in z.diffusers] == ["diffuser", "diffuser"]
+    assert [d.id for d in model.spaces[sid].hvac.diffusers] == [d.id for d in z.diffusers]
+    assert all(d.provenance.method == "legend_symbol" for d in z.diffusers)
+    assert all(d.provenance.confidence <= 0.6 for d in z.diffusers)  # registration caps it
+    room = Polygon(model.spaces[sid].polygon_m)
+    assert all(room.contains(Point(d.x_m, d.y_m)) for d in z.diffusers)
+    # the east room has a diffuser and a thermostat but no zone: not attached
+    east = [sp for k, sp in model.spaces.items() if k != sid and sp.level_id == "L1"]
+    assert all(not sp.hvac.diffusers and not sp.hvac.sensors for sp in east)
+    assert any(
+        "legend symbols on zones: 2 supply diffuser(s), 0 grille(s), 0 sensor(s); "
+        "2 in rooms no zone serves" in n
+        for n in report.notes
+    )
+    assert not [r for r in model.review_queue if r.kind == "zone_no_diffuser"]
+    r = _check_hvac_zone_coverage(_Ctx(model=model))
+    assert r.severity == "pass", r.message
+
+
+def test_a_legend_thermostat_goes_on_its_zone_as_a_sensor(tmp_path):
+    model, _r = _legend_zone_set(tmp_path, [("VAV-1", (1.5, 3.2)), ("VAV-2", (6.5, 3.2))])
+    z = model.zones["L1-Z-VAV-2"]
+    assert [d.type for d in z.diffusers] == ["diffuser"]
+    assert [s.type for s in z.sensors] == ["sensor"]
+    assert len({d.id for zz in model.zones.values() for d in zz.diffusers + zz.sensors}) == 4
+
+
+def test_a_zone_with_no_legend_diffuser_in_its_room_goes_to_review(tmp_path):
+    model, report = _legend_zone_set(
+        tmp_path, [("VAV-1", (1.5, 3.2)), ("VAV-2", (6.5, 3.2))], east=False
+    )
+    assert not model.zones["L1-Z-VAV-2"].diffusers
+    (rq,) = [r for r in model.review_queue if r.kind == "zone_no_diffuser"]
+    assert rq.target == {"kind": "zone", "id": "L1-Z-VAV-2"}
+    assert "VAV-2 is tagged in" in rq.description and rq.needs_review
+    assert any("1 zone(s) with no supply diffuser found" in n for n in report.notes)
+
+
+def test_a_legend_symbol_on_a_second_sheet_of_the_level_is_not_counted_twice(tmp_path):
+    model, report = _legend_zone_set(tmp_path, [("VAV-1", (1.5, 3.2))], second_sheet=True)
+    assert len(model.zones["L1-Z-VAV-1"].diffusers) == 2
+    assert any("2 repeated on another sheet" in n for n in report.notes)
 
 
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
