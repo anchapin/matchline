@@ -9,7 +9,8 @@ turns known schedule kinds into records:
 * door / window  -> ``ScheduleEntry`` (tag, width_m, height_m), the same shape
   the takeoff join already uses
 * lighting       -> ``ScheduleEntry`` with ``watts`` per fixture
-* mechanical     -> equipment dicts (tag, kind, cfm_max, cfm_min, cfm, neck_size)
+* mechanical     -> equipment dicts (tag, kind, cfm_max, cfm_min, cfm, neck_size,
+                    airflow_unit)
 
 Rules:
 
@@ -837,8 +838,9 @@ def _records(sched: PdfSchedule, tagc: int) -> None:
                 if rx.search(sched.title.upper()) or rx.search(tag):
                     kind = k
                     break
-            mx = _col(H, r"MAX(IMUM)?\.?\s*(CFM|AIRFLOW)", r"(CFM|AIRFLOW)\s*MAX")
-            mn = _col(H, r"MIN(IMUM)?\.?\s*(CFM|AIRFLOW)", r"(CFM|AIRFLOW)\s*MIN")
+            flow = r"(CFM|AIRFLOW|L\s*/\s*S|LPS)"
+            mx = _col(H, rf"MAX(IMUM)?\.?\s*{flow}", rf"{flow}\s*MAX")
+            mn = _col(H, rf"MIN(IMUM)?\.?\s*{flow}", rf"{flow}\s*MIN")
             cf = _col(H, r"\bCFM\b", r"AIRFLOW", r"\bL/S\b")
             nk = _col(H, r"\bNECK\b", r"\bINLET\b", r"\bSIZE\b")
             rec = {
@@ -848,10 +850,31 @@ def _records(sched: PdfSchedule, tagc: int) -> None:
                 "cfm_min": _number(vals[mn]) if mn is not None else None,
                 "cfm": _number(vals[cf]) if cf is not None and cf not in (mx, mn) else None,
                 "neck_size": vals[nk] if nk is not None else "",
+                "airflow_unit": _airflow_unit([H[i] for i in (mx, mn, cf) if i is not None]),
                 "description": desc,
                 "values": dict(zip(H, vals)),
             }
             sched.equipment.append(rec)
+
+
+def _airflow_unit(headers) -> str:
+    """Units of a mechanical schedule's airflow columns: "cfm", "l/s" or "".
+
+    Read from the airflow column headers only (``MAX CFM``, ``MIN L/S``); a
+    bare ``AIRFLOW`` header states no unit and gives "", so the numbers are
+    kept on the record but nothing downstream converts them (#746). One table
+    does not mix units across its airflow columns, so a bare ``AIRFLOW``
+    column beside a ``MAX CFM`` one is read as CFM; two columns stating
+    different units give "".
+    """
+    units = set()
+    for h in headers:
+        u = str(h).upper()
+        if re.search(r"\bL\s*/\s*S\b|\bLPS\b", u):
+            units.add("l/s")
+        elif re.search(r"\bCFM\b", u):
+            units.add("cfm")
+    return units.pop() if len(units) == 1 else ""
 
 
 # ------------------------------------------------------------------ public API

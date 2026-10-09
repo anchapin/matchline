@@ -382,6 +382,10 @@ class Zone:
     diffusers: List[ComponentRef] = field(default_factory=list)
     sensors: List[ComponentRef] = field(default_factory=list)
     duct_length_m: Optional[float] = None
+    # design supply airflow of the zone's terminal unit from its schedule row
+    # (#746), m3/s; None when the schedule gives no airflow or no units
+    design_airflow_max_m3s: Optional[float] = None
+    design_airflow_min_m3s: Optional[float] = None
     provenance: Provenance | None = None
     history: List[Provenance] = field(default_factory=list)
 

@@ -1091,13 +1091,45 @@ def _terminal_zone(e, locs, conf, spaces, zones, ComponentRef, Provenance, Zone)
         provenance=prov,
     )  # fmt: skip
     zid = f"{e['level_id']}-Z-{e['tag']}"
+    mx, mn, why = _zone_airflow(e)
+    prov.note += f"; {why}"
     zones[zid] = Zone(
-        id=zid, level_id=e["level_id"], space_ids=[sid], terminal_unit=ref, provenance=prov
-    )
+        id=zid, level_id=e["level_id"], space_ids=[sid], terminal_unit=ref, provenance=prov,
+        design_airflow_max_m3s=mx, design_airflow_min_m3s=mn,
+    )  # fmt: skip
     sp = spaces[sid]
     sp.hvac.zone_ids.append(zid)
     sp.hvac.terminal_units.append(ref)
     e["zone_id"] = zid
+
+
+# airflow unit -> m3/s (1 cfm = 0.3048**3 / 60 m3/s; 1 L/s = 0.001 m3/s)
+AIRFLOW_M3S = {"cfm": 0.3048**3 / 60.0, "l/s": 0.001}
+
+
+def _zone_airflow(e):
+    """(max m3/s, min m3/s, note) for a terminal unit's schedule row (#746).
+
+    Max is the row's MAX airflow, or its single airflow column when the unit
+    has only one (a fan coil); min is its MIN airflow. Nothing is converted
+    when the airflow headers state no unit (``AIRFLOW`` alone).
+    """
+    hi = e.get("cfm_max") if e.get("cfm_max") is not None else e.get("cfm")
+    lo = e.get("cfm_min")
+    if hi is None and lo is None:
+        return None, None, "no airflow on its schedule row"
+    if hi is not None and hi <= 0:
+        return None, None, "schedule row max airflow is not positive, not used"
+    k = AIRFLOW_M3S.get(e.get("airflow_unit") or "")
+    if k is None:
+        return None, None, "airflow on its schedule row states no unit, not used"
+    mx = round(hi * k, 6) if hi is not None else None
+    mn = round(lo * k, 6) if lo is not None else None
+    if mx is not None and mn is not None and mn > mx:
+        return None, None, "schedule row min airflow exceeds max, not used"
+    unit = e["airflow_unit"].upper() if e["airflow_unit"] == "l/s" else "CFM"
+    parts = [f"{lbl} {v:g} {unit}" for lbl, v in (("max", hi), ("min", lo)) if v is not None]
+    return mx, mn, "design airflow " + ", ".join(parts) + " from its schedule row"
 
 
 def _ground_level_spaces(model):

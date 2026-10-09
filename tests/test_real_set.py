@@ -666,6 +666,35 @@ def test_placed_terminal_unit_defines_a_zone_on_its_room(tmp_path):
     assert any("1 HVAC zone(s), one per placed terminal unit" in n for n in report.notes)
 
 
+def test_zone_carries_its_terminal_units_scheduled_airflow(tmp_path):
+    model, _ = _mech_set(tmp_path, [("VAV-1", (1.5, 2))])
+    z = model.zones["L1-Z-VAV-1"]
+    # VAV-1 is scheduled MAX CFM 1,200 / MIN CFM 360
+    assert z.design_airflow_max_m3s == pytest.approx(1200 * 0.3048**3 / 60, abs=1e-6)
+    assert z.design_airflow_min_m3s == pytest.approx(360 * 0.3048**3 / 60, abs=1e-6)
+    assert "design airflow max 1200 CFM, min 360 CFM" in z.provenance.note
+    back = type(model).from_json(model.to_json()).zones["L1-Z-VAV-1"]
+    assert back.design_airflow_max_m3s == z.design_airflow_max_m3s
+
+
+@pytest.mark.parametrize(
+    "row, expect, note",
+    [
+        ({"cfm": 400.0, "airflow_unit": "cfm"}, (0.188779, None), "max 400 CFM"),
+        ({"cfm_max": 300.0, "cfm_min": 90.0, "airflow_unit": "l/s"}, (0.3, 0.09), "300 L/S"),
+        ({"cfm_max": 300.0, "airflow_unit": ""}, (None, None), "states no unit"),
+        ({"cfm_max": 100.0, "cfm_min": 300.0, "airflow_unit": "cfm"}, (None, None), "exceeds"),
+        ({"neck_size": '8"'}, (None, None), "no airflow"),
+        ({"cfm_max": 0.0, "cfm_min": 0.0, "airflow_unit": "cfm"}, (None, None), "not positive"),
+    ],
+)
+def test_zone_airflow_from_a_schedule_row(row, expect, note):
+    mx, mn, why = real_set._zone_airflow(row)
+    for got, want in ((mx, expect[0]), (mn, expect[1])):
+        assert got is None if want is None else got == pytest.approx(want, abs=1e-6)
+    assert note in why
+
+
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
     from validate import _Ctx
     from validate.invariants import _check_hvac_zone_coverage
