@@ -4,12 +4,15 @@ The Clinic IFC itself is held out; these use small meshes and shapely shapes.
 """
 
 import numpy as np
+import pytest
 from shapely.geometry import Polygon, box
 
 from plan_walls import compare_rooms, extract_walls
 from scripts.validate_clinic_walls import (
     M_PER_PT,
     cut_polygons,
+    glazing_line,
+    match_windows,
     section,
     sheet_for,
     wall_bounded_truth,
@@ -67,3 +70,47 @@ def test_spaces_join_across_an_edge_no_wall_stands_on():
     from shapely.geometry import Polygon
 
     assert abs(Polygon(out[1][1]).area - 16.0) < 1e-6
+
+
+# ---- window openings drawn as glass lines (#743) ----------------------------
+
+
+def _shell_with_window(ox=1000.0, oy=2000.0):
+    """A 10 x 6 m room in 0.2 m walls with a 2 m window opening in the south wall."""
+    outer = box(ox - 0.2, oy - 0.2, ox + 10.2, oy + 6.2)
+    inner = box(ox, oy, ox + 10.0, oy + 6.0)
+    opening = box(ox + 4.0, oy - 0.2, ox + 6.0, oy)  # wall-deep, window-wide
+    walls = [outer.difference(inner).difference(opening)]
+    ring = list(inner.exterior.coords)[:-1]
+    return walls, ring, opening
+
+
+def test_glass_line_runs_along_the_wall_through_the_opening():
+    walls, _r, opening = _shell_with_window(0.0, 0.0)
+    a, b = glazing_line(opening)
+    assert sorted([a[0], b[0]]) == pytest.approx([4.0, 6.0])
+    assert a[1] == pytest.approx(-0.1) and b[1] == pytest.approx(-0.1)
+    # a window narrower than its wall is deep still runs along the wall
+    from shapely.geometry import box as bx
+    from shapely.ops import unary_union
+
+    deep = [bx(0.0, 0.0, 4.0, 0.5).difference(bx(1.0, 0.0, 1.3, 0.5))]
+    a, b = glazing_line(bx(1.0, 0.0, 1.3, 0.5), unary_union(deep))
+    assert sorted([a[0], b[0]]) == pytest.approx([1.0, 1.3])
+    assert a[1] == pytest.approx(0.25) and b[1] == pytest.approx(0.25)
+
+
+def test_window_drawn_from_the_ifc_reads_back_as_one_window_detection():
+    from detection_provider import window_detections
+
+    walls, ring, opening = _shell_with_window()
+    sheet, off = sheet_for(walls, [("101", "OFFICE", ring)], glazing=[opening])
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows([opening], dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 1, "pred": 1, "recall": 1.0, "precision": 1.0}
+    # without the glass line the gap is a plain opening and no window is found
+    bare, off = sheet_for(walls, [("101", "OFFICE", ring)])
+    res = extract_walls(bare, M_PER_PT).to_dict()
+    dets = window_detections(res, bare["height_pt"], 1.0, "s")
+    assert match_windows([opening], dets, bare["height_pt"], 1.0, off)["recall"] == 0.0
