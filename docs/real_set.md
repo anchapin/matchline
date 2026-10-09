@@ -202,9 +202,22 @@ registers to its level's architectural plan (the same registration that
 places equipment tags), each hit is also put in the room it falls in:
 `symbols_by_room` maps space id -> class -> count, with `""` for a hit in no
 single room, and the note says how many landed in rooms. A sheet that does
-not register (no scale, no matching level) gets `{}`. The room counts are
-not yet joined to HVAC zones or checked against scheduled tags. `hvac_trace.merge_legend_detections`
-is the merge rule for when they are: legend hits replace the built-in
+not register (no scale, no matching level) gets `{}`.
+
+A placed supply diffuser or grille goes on the space (`hvac.diffusers`) and on
+its HVAC zone, and a thermostat on `hvac.sensors` and the zone's `sensors`, as
+a `ComponentRef` with method `legend_symbol` (confidence the legend's 0.7
+capped by the registration's), but only when exactly one zone serves the room.
+Which of several zones feeds a diffuser needs duct tracing, and a terminal in
+a room no zone serves would be an orphan in the model, so those stay counted
+in `symbols_by_room` only. A symbol within 0.3 m of one already on the room
+(the same plan drawn again as a return-air sheet) is not added twice. On a
+level whose mechanical plan was read this way, a zone that gets no supply
+diffuser goes to review as `zone_no_diffuser`: its terminal unit is tagged in
+a room where no diffuser symbol was found. One note gives the totals. Diffuser
+schedules carry types, not per-room quantities, so there is no scheduled count
+to check them against yet. `hvac_trace.merge_legend_detections`
+is the merge rule for the built-in detector: legend hits replace the built-in
 templates for every class the legend draws, the built-ins stay as the
 fallback for classes it does not, and a built-in hit on top of a legend hit is
 dropped.

@@ -24,6 +24,7 @@ mechanical sheet without detections, schedules) are reported as such.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -538,7 +539,9 @@ def build_set_model(
         plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
         review, report,
     )  # fmt: skip
-    _mech_legends(files, status, sheets_dir, review, report, scales, plan_of_level, lid_of, spaces)
+    _mech_legends(
+        files, status, sheets_dir, review, report, scales, plan_of_level, lid_of, spaces, zones
+    )
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
         sched_entries, review, report,
@@ -819,7 +822,7 @@ def _legend_hit_rooms(f, sheet, sheet_id, st, per_legend, scales, sheets_dir, pl
                              lid_of or {})  # fmt: skip
     if reg is None or reg[7] is None:
         return empty
-    lid, arch, _asid, mm, ma, dx, dy, _how, _conf, _why = reg
+    lid, arch, _asid, mm, ma, dx, dy, _how, conf, _why = reg
     rooms = [sp for sp in spaces.values() if sp.level_id == lid]
     out: List[Dict[str, Dict[str, int]]] = []
     for dets in per_legend:
@@ -827,15 +830,121 @@ def _legend_hit_rooms(f, sheet, sheet_id, st, per_legend, scales, sheets_dir, pl
         for d in dets:
             at = to_canonical(d["bbox_pt"], mm, dx, dy, float(arch["height_pt"]), ma)
             sid = room_of(at, rooms) or ""
-            d["space_id"] = sid
+            d["space_id"], d["level_id"], d["at_m"], d["reg_confidence"] = sid, lid, list(at), conf
             cell = by_room.setdefault(sid, {})
             cell[d["label"]] = cell.get(d["label"], 0) + 1
         out.append(by_room)
     return out
 
 
+# a legend symbol within this of one already on the room is the same symbol
+# drawn on a second sheet of the level (a supply plan and a return plan)
+LEGEND_DEDUP_M = 0.3
+# what a legend symbol becomes on the model, by detector class
+LEGEND_REF_FIELD = {"diffuser": "diffusers", "grille": "diffusers", "sensor": "sensors"}
+
+
+def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> None:
+    """Put legend symbols placed in a room on that room's HVAC zone (#744).
+
+    A diffuser, grille or thermostat goes on the space (``hvac.diffusers`` /
+    ``hvac.sensors``) and on its zone only when exactly one zone serves the
+    room: which of several zones feeds a diffuser needs duct tracing, and a
+    terminal on a room no zone serves would be an orphan. Those stay counted
+    in ``symbols_by_room`` only. ``diff_rooms`` collects every room a supply
+    diffuser landed in, assigned or not."""
+    from building_model import ComponentRef, Provenance
+
+    for d in dets:
+        fld = LEGEND_REF_FIELD.get(d["label"])
+        sid = d.get("space_id")
+        if not fld or not sid or sid not in spaces:
+            continue
+        if d["label"] == "diffuser":
+            diff_rooms.add(sid)
+        sp = spaces[sid]
+        zids = [z for z in sp.hvac.zone_ids if z in zones and sid in zones[z].space_ids]
+        if len(zids) != 1:
+            stats["no_zone" if not zids else "many_zones"] += 1
+            continue
+        x, y = d["at_m"]
+        held = getattr(sp.hvac, fld)
+        near = [
+            r
+            for r in held
+            if r.type == d["label"] and math.hypot(r.x_m - x, r.y_m - y) <= LEGEND_DEDUP_M
+        ]
+        if near:
+            same = any(r.provenance and r.provenance.sheet_id == sheet_id for r in near)
+            stats["twice" if same else "repeated"] += 1
+            continue
+        stats["n"] += 1
+        rc = d.get("reg_confidence")
+        conf = conf_cap if rc is None else min(conf_cap, rc)
+        ref = ComponentRef(
+            id=f"{sheet_id}-{d['label'][0].upper()}{stats['n']}", type=d["label"],
+            x_m=float(x), y_m=float(y),
+            provenance=Provenance(
+                sheet_id, 0, "legend_symbol", conf, tuple(d["bbox_pt"]),
+                note=(
+                    f"{d['label']} drawn as the sheet's own legend symbol, found by template "
+                    f"match and placed in {sid}; the one zone serving that room"
+                ),
+            ),
+        )  # fmt: skip
+        held.append(ref)
+        getattr(zones[zids[0]], fld).append(ref)
+        stats[d["label"]] += 1
+
+
+def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None:
+    """Note what legend symbols reached zones, and send a zone on a level where
+    legend supply diffusers were found but none in the zone's rooms to review
+    (#744): its terminal unit is tagged in a room where none was found. A zone
+    whose room got a diffuser held back because several zones serve it is not
+    flagged; the symbol was found, only its zone is open."""
+    from building_model import Provenance, ReviewItem
+
+    bare = sorted(
+        zid
+        for zid, z in zones.items()
+        if z.level_id in levels
+        and not any(d.type == "diffuser" for d in z.diffusers)
+        and not diff_rooms.intersection(z.space_ids)
+    )
+    report.notes.append(
+        f"legend symbols on zones: {stats['diffuser']} supply diffuser(s), "
+        f"{stats['grille']} grille(s), {stats['sensor']} sensor(s)"
+        + (f"; {stats['no_zone']} in rooms no zone serves" if stats["no_zone"] else "")
+        + (f"; {stats['many_zones']} in rooms several zones serve" if stats["many_zones"] else "")
+        + (f"; {stats['repeated']} repeated on another sheet" if stats["repeated"] else "")
+        + (f"; {stats['twice']} found twice on one sheet" if stats["twice"] else "")
+        + (f"; {len(bare)} zone(s) with no supply diffuser found" if bare else "")
+    )
+    for zid in bare:
+        z = zones[zid]
+        tu = z.terminal_unit
+        review.append(
+            ReviewItem(
+                id=f"rq-zone-nodiff-{zid}",
+                kind="zone_no_diffuser",
+                target={"kind": "zone", "id": zid},
+                description=(
+                    f"{zid}: {tu.tag if tu else 'terminal unit'} is tagged in "
+                    f"{', '.join(z.space_ids)} but no supply diffuser symbol was found there; "
+                    "check the room, or the diffusers it feeds through ductwork elsewhere"
+                ),
+                confidence=0.5,
+                provenance=Provenance(
+                    tu.provenance.sheet_id if tu and tu.provenance else "", 0, "legend_symbol", 0.5
+                ),
+                needs_review=True,
+            )
+        )
+
+
 def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_of_level=None,
-                  lid_of=None, spaces=None) -> None:  # fmt: skip
+                  lid_of=None, spaces=None, zones=None) -> None:  # fmt: skip
     """Read the symbol legend on every vector mechanical sheet (#744).
 
     Each legend row's description is mapped to an HVAC detector class from its
@@ -853,6 +962,12 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
     # a set often repeats its legend on every mechanical plan: one review item
     # per distinct set of unmapped rows, naming every sheet it is on
     unmapped: Dict[tuple, List[tuple]] = {}
+    ref_stats: Dict[str, int] = {
+        "n": 0, "diffuser": 0, "grille": 0, "sensor": 0, "no_zone": 0, "many_zones": 0,
+        "repeated": 0, "twice": 0,
+    }  # fmt: skip
+    zoned_levels: set = set()
+    diff_rooms: set = set()
     for f in files:
         st = status[f]
         if _discipline(st) != "mechanical" or st.stages["ingest"]["kind"] == "raster_only":
@@ -865,6 +980,15 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
             f, sheet, sheet_id, st, per_legend, scales, sheets_dir, plan_of_level, lid_of, spaces
         )
         for leg, dets, by_room in zip(legends, per_legend, rooms_of):
+            if zones and spaces and by_room:
+                _legend_refs(sheet_id, dets, spaces, zones, CONFIDENCE, ref_stats, diff_rooms)
+                # only a level where a supply diffuser or grille was matched can
+                # say a zone has none; a thermostat-only legend says nothing
+                zoned_levels.update(
+                    d["level_id"]
+                    for d in dets
+                    if d.get("level_id") and d["label"] in ("diffuser", "grille")
+                )
             hits: Dict[str, int] = {}
             for d in dets:
                 hits[d["label"]] = hits.get(d["label"], 0) + 1
@@ -903,6 +1027,8 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
             if leg.unmapped:
                 key = tuple(r.description for r in leg.unmapped)
                 unmapped.setdefault(key, []).append((sheet_id, leg))
+    if zoned_levels:
+        _legend_zone_check(zones, zoned_levels, ref_stats, diff_rooms, review, report)
     for k, (names, seen) in enumerate(unmapped.items()):
         sheet_id, leg = seen[0]
         sheets = ", ".join(dict.fromkeys(sid for sid, _ in seen))
