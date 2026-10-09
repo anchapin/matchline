@@ -7,7 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
-- Clinic validation: `scripts/validate_clinic_walls.py --doors` draws each IfcDoor opening as a leaf-and-arc swing on a 50 px/m image of the cut walls and scores `door_detect` against the IFC doors (recall, precision; `--png-dir` saves the sheets). Plumbing only: we choose how the swing is drawn (#743).
+- Clinic validation: `scripts/validate_clinic_walls.py --doors` draws each IfcDoor opening as a leaf-and-arc swing on a 50 px/m image of the cut walls and scores `door_detect` against the IFC doors (recall, precision; `--png-dir` saves the sheets). An opening wider than one leaf is drawn as a pair of leaves. Plumbing only: we choose how the swing is drawn (#743).
 - HVAC detection: the tight grille passes and the confirm gate also try the return grille drawn as a box of parallel blades with no diagonal (`hvac_trace.TEMPLATE_STYLES`, glyph `synth.mech._ALT_GLYPH_FN`), so a grille in that common drafting style is found and kept as a grille. Diffusers keep one style (#745).
 - HVAC detection: diffuser and grille templates are also tried at 0.87x and 1.15x (`hvac_trace.TEMPLATE_SCALES`) for proposals, the tight relabel passes and the confirm gate, so a terminal drawn up to 15% smaller or larger than ours is still found (#745).
 - HVAC detection: the stub-less grille template used to relabel and confirm grilles is now also tried at a quarter turn, so a grille whose diagonal runs the other way is kept as a grille instead of being dropped or left labeled diffuser. The diffuser X looks the same turned and keeps one template (`hvac_trace.TIGHT_TURNS`, #745).

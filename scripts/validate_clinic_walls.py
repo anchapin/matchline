@@ -470,16 +470,31 @@ def door_sheet(wall_polys, door_polys, px_per_m=DOOR_PPM, margin_m=DOOR_MARGIN_M
             if best is None or hit < best[0]:
                 best = (hit, hinge, tip, jamb, r)
         _, hinge, tip, jamb, r = best
-        (hx, hy), (tx, ty), (jx, jy) = to_px(*hinge), to_px(*tip), to_px(*jamb)
-        rp = r * px_per_m
-        d.line([hx, hy, tx, ty], fill=0, width=3)
-        # PIL angles run clockwise from +x in image space; sweep tip -> jamb the short way
-        a0 = np.degrees(np.arctan2(ty - hy, tx - hx))
-        a1 = np.degrees(np.arctan2(jy - hy, jx - hx))
-        if (a1 - a0) % 360 > 180:
-            a0, a1 = a1, a0
-        d.arc([hx - rp, hy - rp, hx + rp, hy + rp], start=a0, end=a1, fill=0, width=2)
+        for lh, lt, lj in _leaves(hinge, tip, jamb, r):
+            (hx, hy), (tx, ty), (jx, jy) = to_px(*lh), to_px(*lt), to_px(*lj)
+            rp = float(np.hypot(jx - hx, jy - hy))
+            d.line([hx, hy, tx, ty], fill=0, width=3)
+            # PIL angles run clockwise from +x in image space; sweep tip -> jamb the short way
+            a0 = np.degrees(np.arctan2(ty - hy, tx - hx))
+            a1 = np.degrees(np.arctan2(jy - hy, jx - hx))
+            if (a1 - a0) % 360 > 180:
+                a0, a1 = a1, a0
+            d.arc([hx - rp, hy - rp, hx + rp, hy + rp], start=a0, end=a1, fill=0, width=2)
     return np.asarray(img), to_px
+
+
+def _leaves(hinge, tip, jamb, r):
+    """One leaf, or a pair meeting in the middle when the opening is wider
+    than a single leaf ``door_detect`` reads (``MAX_WIDTH_M``): a plan draws a
+    double door as two leaves, one hung from each jamb, swinging to one face."""
+    from door_detect import MAX_WIDTH_M
+
+    if r <= MAX_WIDTH_M:
+        return [(hinge, tip, jamb)]
+    h, t, j = (np.asarray(p, dtype=float) for p in (hinge, tip, jamb))
+    n = (t - h) / 2  # half-width leaf, square to the wall
+    mid = (h + j) / 2
+    return [(tuple(h), tuple(h + n), tuple(mid)), (tuple(j), tuple(j + n), tuple(mid))]
 
 
 def match_doors(truth_polys, dets, to_px, px_per_m=DOOR_PPM, pad_m=DOOR_MATCH_PAD_M):

@@ -230,3 +230,15 @@ def test_the_swing_goes_to_the_face_with_no_wall_in_the_way():
     (y_px,) = [d["hinge_px"][1] for d in dets]
     assert dets[0]["bbox_px"][3] > to_px(3.0, 2.1)[1] + 0.5 * DOOR_PPM  # reaches south
     assert y_px == pytest.approx(to_px(3.0, 2.1)[1], abs=3)
+
+
+def test_a_double_door_is_drawn_as_two_leaves_and_reads_back_as_found():
+    from door_detect import detect_door_swings
+
+    t = 0.2
+    walls = [box(0, 0, 2.0, t), box(3.8, 0, 8, t), box(0, 0, t, 4), box(8 - t, 0, 8, 4)]
+    door = box(2.0, 0, 3.8, t)  # 1.8 m, wider than one leaf door_detect reads
+    img, to_px = door_sheet(walls, [door])
+    dets = detect_door_swings(img, DOOR_PPM)
+    assert match_doors([door], dets, to_px)["recall"] == 1.0
+    assert sorted(round(d["width_px"] / DOOR_PPM, 1) for d in dets) == [0.9, 0.9]

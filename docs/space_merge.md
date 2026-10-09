@@ -106,13 +106,14 @@ Measured on the Clinic (plumbing only, nothing tuned on it):
 
 | Storey | IFC doors | Detections | Recall | Precision |
 |---|---|---|---|---|
-| First Floor | 148 | 134 | 0.912 | 1.000 |
-| Second Floor | 96 | 85 | 0.875 | 0.988 |
+| First Floor | 148 | 137 | 0.932 | 1.000 |
+| Second Floor | 96 | 89 | 0.896 | 0.989 |
 
-Of the 25 misses, 6 are double doors (1.73 to 1.83 m) that the script draws
-as one leaf, wider than the detector's `MAX_WIDTH_M`; 4 are openings only
-0.03 to 0.12 m wide at the cut, which are not door-sized gaps; 15 are
-ordinary 0.86 to 0.92 m doors still to be looked at one by one.
+An opening wider than one leaf (`MAX_WIDTH_M`) is drawn as a pair of leaves
+meeting in the middle, as a plan draws a double door. Of the 20 misses, one
+is a 1.73 m double door; 4 are openings only 0.03 to 0.12 m wide at the cut,
+which are not door-sized gaps; 15 are ordinary 0.86 to 0.92 m doors still to
+be looked at one by one.
 
 ## IFC models (#574)
 
