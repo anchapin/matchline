@@ -109,6 +109,13 @@ TIGHT_TURNS = {"grille": (0, 1)}
 # wall linework on the clean Clinic sheets (8 false grilles, plus a false
 # diffuser via the tight relabel), while diffuser-only scales stayed at 0 fp.
 TEMPLATE_SCALES = {"diffuser": (1.0, 0.87, 1.15)}
+# Drafting styles the tight passes and the confirm gate try (#745): 0 is
+# matchline's own glyph, 1 the class's other common convention
+# (synth.mech._ALT_GLYPH_FN). A return grille is often drawn as a box of
+# parallel blades with no diagonal; on the Clinic ablation that style alone
+# dropped grilles from 206/206 to 107/206. The diffuser's four-arrow style
+# cost 7 of 234, so diffusers keep one style.
+TEMPLATE_STYLES = {"grille": (0, 1)}
 
 
 def template_bank(tmpl: np.ndarray, scales=(1.0,)) -> list:
@@ -129,14 +136,18 @@ def template_bank(tmpl: np.ndarray, scales=(1.0,)) -> list:
 
 
 def _tight_templates(cls: str) -> list:
-    """The stub-less, margin-free template of ``cls`` at each quarter turn in
-    ``TIGHT_TURNS`` and each scale in ``TEMPLATE_SCALES`` (just the template
-    itself for other classes)."""
+    """The stub-less, margin-free template of ``cls`` in each drafting style in
+    ``TEMPLATE_STYLES``, at each quarter turn in ``TIGHT_TURNS`` and each scale
+    in ``TEMPLATE_SCALES`` (just the template itself for other classes)."""
     from synth.mech import render_template
 
-    t = render_template(cls, margin_px=0, stubs=False)
-    turned = [np.rot90(t, k) if k else t for k in TIGHT_TURNS.get(cls, (0,))]
-    return [b for tt in turned for b in template_bank(tt, TEMPLATE_SCALES.get(cls, (1.0,)))]
+    out = []
+    for st in TEMPLATE_STYLES.get(cls, (0,)):
+        t = render_template(cls, margin_px=0, stubs=False, style=st)
+        for k in TIGHT_TURNS.get(cls, (0,)):
+            tt = np.rot90(t, k) if k else t
+            out += template_bank(tt, TEMPLATE_SCALES.get(cls, (1.0,)))
+    return out
 
 
 def _tight_masks(tmpl: np.ndarray, band_px: float) -> list:
