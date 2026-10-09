@@ -23,6 +23,12 @@ the IFC nor the cache is committed.
 Usage:
     python scripts/clinic_sheet_data.py Clinic_HVAC.ifc clinic.json
     python scripts/validate_clinic_hvac_detection.py clinic.json [--png-dir out/]
+    python scripts/validate_clinic_hvac_detection.py clinic.json --vary 1  # #745
+
+``--vary SEED`` redraws the terminals the way a different firm or a scan would
+(scale, weight, rotation, an alternative glyph per class, duct and text ink over
+the symbol, scan noise, JPEG, a small raster shift). The detector and its
+thresholds are unchanged, and nothing is tuned on the varied Clinic numbers.
 """
 
 from __future__ import annotations
@@ -72,12 +78,145 @@ def frame_for(storey):
     return SheetFrame(min(xs), max(xs), min(ys), max(ys), PX_PER_M, MARGIN_M)
 
 
-def render_storey(storey, frame=None):
+# --- symbol variation (#745) -------------------------------------------------
+# A clean render draws every terminal with the exact glyph the NCC templates are
+# cut from, so a true terminal scores NCC 1.00. ``render_storey(..., vary=seed)``
+# draws them the way another firm's or a scanned sheet would. These ranges are
+# fixed up front from the issue, never tuned on Clinic results.
+VARY_SCALE = (0.85, 1.15)  # glyph scale, +-15%
+VARY_LW = (2, 4)  # outline weight, px (clean: 3)
+VARY_TILT_DEG = 5.0  # small rotation on top of a random multiple of 90 deg
+VARY_SKEW = 0.06  # horizontal shear, fraction of height
+VARY_ALT_STYLE = 0.5  # share of terminals drawn in the class's other style
+VARY_NO_KNOCKOUT = 0.5  # share drawn without the white box: duct ink runs through
+VARY_TEXT_OVER = 0.3  # share with a tag label overlapping the symbol
+VARY_JPEG_Q = (55, 80)
+VARY_SHIFT_PX = 2  # raster misregistration, px each axis (0.04 m)
+VARIED_STYLES = {"diffuser": 2, "grille": 2}  # classes with an alternative glyph
+_TAG_TEXT = {"diffuser": "SD-1", "grille": "RG-1", "sensor": "T-1"}
+
+
+def _draw_diffuser_arrows(d, cx, cy, lw=3):
+    """Supply diffuser as a square with four-way throw arrows (no X)."""
+    from synth.mech import DIF_S, PX_PER_M
+
+    s = DIF_S * PX_PER_M
+    h, a = s / 2, s / 7
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    for ux, uy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        tx, ty = cx + ux * (h - 5), cy + uy * (h - 5)
+        d.line([cx + ux * a * 0.6, cy + uy * a * 0.6, tx, ty], fill=0, width=2)
+        px, py = -uy, ux  # perpendicular
+        d.polygon(
+            [
+                (tx, ty),
+                (tx - ux * a + px * a / 2, ty - uy * a + py * a / 2),
+                (tx - ux * a - px * a / 2, ty - uy * a - py * a / 2),
+            ],
+            fill=0,
+        )
+
+
+def _draw_grille_hatched(d, cx, cy, lw=3):
+    """Return grille as a square with dense parallel blade lines (no diagonal)."""
+    from synth.mech import GRI_S, PX_PER_M
+
+    s = GRI_S * PX_PER_M
+    h = s / 2
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    n = 5
+    for i in range(1, n + 1):
+        y = cy - h + i * s / (n + 1)
+        d.line([cx - h + 2, y, cx + h - 2, y], fill=0, width=1)
+
+
+def varied_glyph(cls, style=0, scale=1.0, lw=3, angle_deg=0.0, skew=0.0):
+    """One terminal symbol on its own white patch (L image), centred.
+
+    ``style`` 0 is matchline's own glyph; 1 is the class's alternative style
+    (``VARIED_STYLES``). The patch is drawn at nominal size, then scaled,
+    sheared and rotated about its centre.
+    """
+    from PIL import Image, ImageDraw
+
+    from synth.mech import _GLYPH_EXT, _GLYPH_FN, PX_PER_M
+
+    alt = {"diffuser": _draw_diffuser_arrows, "grille": _draw_grille_hatched}
+    fn = alt[cls] if style == 1 and cls in alt else _GLYPH_FN[cls]
+    side = int(math.ceil(max(_GLYPH_EXT[cls]) * PX_PER_M * 1.8)) + 8
+    side += side % 2
+    patch = Image.new("L", (side, side), 255)
+    fn(ImageDraw.Draw(patch), side / 2, side / 2, lw=lw)
+    if scale != 1.0:
+        n = max(2, int(round(side * scale)))
+        n += n % 2
+        patch = patch.resize((n, n), Image.BILINEAR)
+    if skew:
+        w, h = patch.size
+        patch = patch.transform(
+            (w, h), Image.AFFINE, (1, skew, -skew * h / 2, 0, 1, 0), Image.BILINEAR, fillcolor=255
+        )
+    if angle_deg:
+        patch = patch.rotate(angle_deg, resample=Image.BILINEAR, fillcolor=255)
+    return patch
+
+
+def _paste_min(img, patch, cx, cy):
+    """Darken ``img`` with ``patch`` centred at (cx, cy), clipped to the sheet."""
+    import numpy as np
+    from PIL import Image
+
+    W, H = img.size
+    w, h = patch.size
+    x0, y0 = int(round(cx - w / 2)), int(round(cy - h / 2))
+    ax0, ay0, ax1, ay1 = max(0, x0), max(0, y0), min(W, x0 + w), min(H, y0 + h)
+    if ax0 >= ax1 or ay0 >= ay1:
+        return
+    box = (ax0, ay0, ax1, ay1)
+    a = np.asarray(img.crop(box))
+    b = np.asarray(patch.crop((ax0 - x0, ay0 - y0, ax1 - x0, ay1 - y0)))
+    img.paste(Image.fromarray(np.minimum(a, b)), box)
+
+
+def _degrade_sheet(img, rng):
+    """Scan degradation: blur + noise (detector/degrade.py), JPEG, misregistration."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    det = str(ROOT / "detector")
+    if det not in sys.path:
+        sys.path.insert(0, det)
+    from degrade import degrade
+
+    img = degrade(img, "scan_noise", seed=int(rng.integers(2**31 - 1))).convert("L")
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=int(rng.integers(VARY_JPEG_Q[0], VARY_JPEG_Q[1] + 1)))
+    img = Image.open(io.BytesIO(buf.getvalue())).convert("L")
+    dx, dy = (int(v) for v in rng.integers(-VARY_SHIFT_PX, VARY_SHIFT_PX + 1, size=2))
+    a = np.full((img.size[1], img.size[0]), 255, np.uint8)
+    src = np.asarray(img)
+    H, W = src.shape
+    a[max(0, dy) : H + min(0, dy), max(0, dx) : W + min(0, dx)] = src[
+        max(0, -dy) : H + min(0, -dy), max(0, -dx) : W + min(0, -dx)
+    ]
+    return Image.fromarray(a), (dx, dy)
+
+
+def render_storey(storey, frame=None, vary=None):
     """Mechanical plan sheet for one storey, in the synthetic sheets' style.
 
     Walls are 3 px room outlines with a room label (as ``render_mech_sheet``),
     ducts are filled plan footprints, and terminals are drawn last over a white
     box, the way a symbol occludes the duct it sits on in a real plan.
+
+    ``vary`` (an int seed) turns on symbol variation (#745): per terminal a
+    random scale, line weight, skew, 90-degree turn plus small tilt, sometimes
+    the class's alternative glyph, sometimes no white knockout and a tag label
+    over the symbol; then the sheet gets scan noise, JPEG and a 0-2 px shift.
+    The same seed always gives the same pixels. ``None`` is the clean render,
+    unchanged.
     """
     from PIL import Image, ImageDraw
 
@@ -94,11 +233,46 @@ def render_storey(storey, frame=None):
         d.text((min(p[0] for p in pts) + 8, min(p[1] for p in pts) + 6), label, fill=0, font=f)
     for hull in storey["ducts"]:
         d.polygon([frame.to_px(x, y) for x, y in hull], fill=0)
+    if vary is None:
+        for t in storey["terminals"]:
+            cx, cy = frame.to_px(t["x"], t["y"])
+            w, h = (e * frame.p for e in _GLYPH_EXT[t["cls"]])
+            d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=255)
+            _GLYPH_FN[t["cls"]](d, cx, cy)
+        return img, frame
+
+    import numpy as np
+
+    rng = np.random.default_rng(vary)
+    ft = _font(15)
     for t in storey["terminals"]:
+        cls = t["cls"]
+        # draw every random number in a fixed order so a seed is stable
+        u = rng.random(4)
+        scale = float(rng.uniform(*VARY_SCALE))
+        lw = int(rng.integers(VARY_LW[0], VARY_LW[1] + 1))
+        angle = 90.0 * int(rng.integers(4)) + float(rng.uniform(-VARY_TILT_DEG, VARY_TILT_DEG))
+        skew = float(rng.uniform(-VARY_SKEW, VARY_SKEW))
+        tdx, tdy = rng.uniform(-0.5, 0.5, size=2)
+        style = 1 if cls in VARIED_STYLES and u[0] < VARY_ALT_STYLE else 0
         cx, cy = frame.to_px(t["x"], t["y"])
-        w, h = (e * frame.p for e in _GLYPH_EXT[t["cls"]])
-        d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=255)
-        _GLYPH_FN[t["cls"]](d, cx, cy)
+        w, h = (e * frame.p * scale for e in _GLYPH_EXT[cls])
+        if u[1] >= VARY_NO_KNOCKOUT:
+            d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=255)
+        _paste_min(img, varied_glyph(cls, style, scale, lw, angle, skew), cx, cy)
+        if u[2] < VARY_TEXT_OVER:
+            # tag label straddling the symbol's lower edge
+            d.text(
+                (cx + tdx * w - 15, cy + h / 2 - 8 + tdy * 6),
+                _TAG_TEXT.get(cls, "X-1"),
+                fill=0,
+                font=ft,
+            )
+    img, shift = _degrade_sheet(img, rng)
+    import copy
+
+    frame = copy.copy(frame)  # never record this render's shift on the caller's frame
+    frame.shift_px = shift
     return img, frame
 
 
@@ -230,20 +404,22 @@ def build_detector():
     return clf, {c: render_template(c) for c in MECH_CLASSES}
 
 
-def run(data, png_dir=None):
+def run(data, png_dir=None, vary=None):
     import numpy as np
 
     from hvac_trace import detect_components
 
     clf, templates = build_detector()
     results = {}
-    for name, storey in sorted(data.items()):
+    for i, (name, storey) in enumerate(sorted(data.items())):
         if not storey["terminals"]:
             continue
-        img, frame = render_storey(storey)
+        seed = None if vary is None else vary * 1000 + i
+        img, frame = render_storey(storey, vary=seed)
         if png_dir:
             Path(png_dir).mkdir(parents=True, exist_ok=True)
-            img.save(Path(png_dir) / f"clinic_{name.replace(' ', '_')}.png")
+            tag = "" if vary is None else f"_vary{vary}"
+            img.save(Path(png_dir) / f"clinic_{name.replace(' ', '_')}{tag}.png")
         gray = np.asarray(img).astype(np.float64)
         raw = detect_components(gray, templates, clf)
         dets = []
@@ -253,6 +429,9 @@ def run(data, png_dir=None):
         results[name] = score_storey(storey, dets)
         results[name]["stages"] = stage_check(gray, frame, storey, clf, templates)
         results[name]["sheet_px"] = list(frame.size)
+        if vary is not None:
+            results[name]["vary_seed"] = seed
+            results[name]["shift_px"] = list(frame.shift_px)
     return results
 
 
@@ -261,8 +440,14 @@ def main(argv=None):
     ap.add_argument("cache", help="JSON from scripts/clinic_sheet_data.py")
     ap.add_argument("--png-dir", help="also save the rendered sheets here")
     ap.add_argument("--out", help="write the results JSON here")
+    ap.add_argument(
+        "--vary",
+        type=int,
+        metavar="SEED",
+        help="draw terminals with seeded symbol variation and scan degradation (#745)",
+    )
     a = ap.parse_args(argv)
-    res = run(json.loads(Path(a.cache).read_text()), a.png_dir)
+    res = run(json.loads(Path(a.cache).read_text()), a.png_dir, a.vary)
     for name, r in res.items():
         parts = []
         for c, v in r["det"].items():
