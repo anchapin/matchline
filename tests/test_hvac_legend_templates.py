@@ -226,5 +226,14 @@ def test_two_legends_on_one_sheet_each_count_their_own_symbols(tmp_path):
     legends = read_legend(sheet)
     assert sorted(lg.title for lg in legends) == ["HVAC SYMBOL LEGEND", "SYMBOLS"]
     hits = real_set._legend_symbol_hits(sheet, legends, tmp_path / "out")
-    by_title = {lg.title: h for lg, h in zip(legends, hits)}
-    assert by_title == {"HVAC SYMBOL LEGEND": {"diffuser": 3, "sensor": 2}, "SYMBOLS": {}}
+    by_title = {lg.title: sorted(d["label"] for d in dets) for lg, dets in zip(legends, hits)}
+    assert by_title == {
+        "HVAC SYMBOL LEGEND": ["diffuser", "diffuser", "diffuser", "sensor", "sensor"],
+        "SYMBOLS": [],
+    }
+    # each hit carries its box in sheet points (y down), centred on the symbol
+    k = sheet["px_per_pt"]
+    for d in hits[[lg.title for lg in legends].index("HVAC SYMBOL LEGEND")]:
+        x0, y0, x1, y1 = d["bbox_pt"]
+        assert (x0 + x1) / 2 == pytest.approx(d["cx"] / k, abs=0.01)
+        assert (y0 + y1) / 2 == pytest.approx(d["cy"] / k, abs=0.01)
