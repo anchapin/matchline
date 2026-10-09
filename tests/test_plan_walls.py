@@ -520,6 +520,20 @@ def test_cavity_line_past_reveal_returns_is_not_a_window(tmp_path):
     assert not _windows(res)
 
 
+def test_middle_line_continues_only_end_to_end_on_the_same_line():
+    g = W.Band(0.0, 10.0, 0.0, 50.0, 5.0, "line_pair", (), True)
+
+    def other(u0, u1, rho=10.0, glazed=True):
+        return W.Band(0.0, rho, u0, u1, 5.0, "line_pair", (), glazed)
+
+    assert W._middle_line_continues(g, [g, other(52, 90)], 1.0)  # carries on: cavity
+    assert W._middle_line_continues(g, [g, other(-40, -3)], 1.0)
+    assert not W._middle_line_continues(g, [g], 1.0)  # lone band: glazing
+    assert not W._middle_line_continues(g, [g, other(70, 90)], 1.0)  # too far
+    assert not W._middle_line_continues(g, [g, other(52, 90, rho=14.0)], 1.0)  # other line
+    assert not W._middle_line_continues(g, [g, other(52, 90, glazed=False)], 1.0)
+
+
 def _mullion_ticks(xs, y=0.0, t=T_EXT):
     out = ""
     for x in xs:
