@@ -176,3 +176,63 @@ def read_legend(sheet: dict) -> List[Legend]:
         if leg.rows:
             out.append(leg)
     return out
+
+
+# --- one-shot templates from the legend's own symbols ---------------------
+
+# white margin kept around a symbol when it is cut as a template (sheet pt)
+TEMPLATE_PAD_PT = 2.0
+# a template with fewer ink pixels than this is a speck, not a symbol
+MIN_TEMPLATE_INK_PX = 12
+INK_LEVEL = 128
+
+
+@dataclass
+class LegendTemplate:
+    cls: str
+    description: str
+    image: "object"  # numpy array, grayscale, the sheet raster's own pixels
+    symbol_bbox_px: List[float]  # where it was cut (the legend row itself)
+
+
+def legend_templates(gray, legends: List[Legend], px_per_pt: float) -> List[LegendTemplate]:
+    """Cut each mapped legend row's symbol out of the sheet raster as a
+    one-shot template for ``hvac_trace.detect_legend_symbols``.
+
+    ``gray`` is the sheet's own raster (``pdf_ingest`` ``raster_file``, y down)
+    and ``px_per_pt`` its scale, so the template is the firm's symbol at the
+    size the sheet draws it. Unmapped rows and specks are skipped."""
+    import numpy as np
+
+    out: List[LegendTemplate] = []
+    H, W = gray.shape
+    pad = TEMPLATE_PAD_PT
+    for leg in legends:
+        for r in leg.rows:
+            if r.cls is None or len(r.symbol_bbox_pt) != 4:
+                continue
+            x0, y0, x1, y1 = r.symbol_bbox_pt
+            c0 = max(int(np.floor((x0 - pad) * px_per_pt)), 0)
+            r0 = max(int(np.floor((y0 - pad) * px_per_pt)), 0)
+            c1 = min(int(np.ceil((x1 + pad) * px_per_pt)), W)
+            r1 = min(int(np.ceil((y1 + pad) * px_per_pt)), H)
+            if c1 - c0 < 3 or r1 - r0 < 3:
+                continue
+            img = np.asarray(gray[r0:r1, c0:c1], dtype=np.float64)
+            if int((img < INK_LEVEL).sum()) < MIN_TEMPLATE_INK_PX:
+                continue
+            out.append(LegendTemplate(r.cls, r.description, img, [c0, r0, c1, r1]))
+    return out
+
+
+def symbol_boxes_px(legends: List[Legend], px_per_pt: float) -> List[List[float]]:
+    """Every legend row's symbol box in raster px (mapped or not, margin
+    included): a hit there is the legend, not equipment."""
+    pad = TEMPLATE_PAD_PT
+    return [
+        [(r.symbol_bbox_pt[0] - pad) * px_per_pt, (r.symbol_bbox_pt[1] - pad) * px_per_pt,
+         (r.symbol_bbox_pt[2] + pad) * px_per_pt, (r.symbol_bbox_pt[3] + pad) * px_per_pt]
+        for leg in legends
+        for r in leg.rows
+        if len(r.symbol_bbox_pt) == 4
+    ]  # fmt: skip

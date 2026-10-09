@@ -775,12 +775,39 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     return reads, bbox
 
 
+def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> List[Dict[str, int]]:
+    """Per legend, count each mapped symbol on its own sheet's raster (#744):
+    the row's drawn symbol is cut as a one-shot template and matched by NCC
+    (``hvac_trace.detect_legend_symbols``); no hit counts inside any legend
+    symbol box on the sheet. Empty dicts without a raster."""
+    raster, k = sheet.get("raster_file"), sheet.get("px_per_pt")
+    if not legends or not raster or not k or not (sheets_dir / raster).exists():
+        return [{} for _ in legends]
+    import numpy as np
+    from PIL import Image
+
+    from hvac_legend import legend_templates, symbol_boxes_px
+    from hvac_trace import detect_legend_symbols
+
+    gray = np.asarray(Image.open(sheets_dir / raster).convert("L"), dtype=np.float64)
+    boxes = symbol_boxes_px(legends, float(k))
+    out: List[Dict[str, int]] = []
+    for leg in legends:
+        hits: Dict[str, int] = {}
+        tmpls = legend_templates(gray, [leg], float(k))
+        for d in detect_legend_symbols(gray, tmpls, exclude_px=boxes):
+            hits[d["label"]] = hits.get(d["label"], 0) + 1
+        out.append(hits)
+    return out
+
+
 def _mech_legends(files, status, sheets_dir, review, report) -> None:
     """Read the symbol legend on every vector mechanical sheet (#744).
 
     Each legend row's description is mapped to an HVAC detector class from its
     words only (``hvac_legend.classify``); the rows go on the report under
-    ``hvac_legends`` with the symbol's box for the template slice. Rows whose
+    ``hvac_legends`` with the symbol's box and, when the sheet has a raster,
+    how many times each mapped symbol appears on it. Rows whose
     description names no class go to one review item per legend.
     """
     from building_model import Provenance, ReviewItem
@@ -794,7 +821,9 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
         if _discipline(st) != "mechanical" or st.stages["ingest"]["kind"] == "raster_only":
             continue
         sheet_id = st.number or f
-        for leg in read_legend(json.loads((sheets_dir / f).read_text())):
+        sheet = json.loads((sheets_dir / f).read_text())
+        legends = read_legend(sheet)
+        for leg, hits in zip(legends, _legend_symbol_hits(sheet, legends, sheets_dir)):
             report.hvac_legends.append(
                 {
                     "sheet": sheet_id,
@@ -805,6 +834,7 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
                          "symbol_bbox_pt": r.symbol_bbox_pt}
                         for r in leg.rows
                     ],
+                    "symbol_hits": hits,
                 }
             )  # fmt: skip
             mapped = sorted({r.cls for r in leg.rows if r.cls})
@@ -812,7 +842,13 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
                 f"{sheet_id}: {leg.title} with {len(leg.rows)} symbol row(s), "
                 f"{len(leg.rows) - len(leg.unmapped)} naming an HVAC class"
                 + (f" ({', '.join(mapped)})" if mapped else "")
-                + "; legend symbols are not yet used for detection"
+                + (
+                    "; legend symbols found on the sheet: "
+                    + ", ".join(f"{c} {n}" for c, n in sorted(hits.items()))
+                    + " (counts only, not yet joined to zones)"
+                    if hits
+                    else "; no sheet raster or no legend symbol found on the sheet"
+                )
             )
             if leg.unmapped:
                 key = tuple(r.description for r in leg.unmapped)

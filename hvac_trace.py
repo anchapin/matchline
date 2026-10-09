@@ -170,9 +170,10 @@ def ncc_locate(gray: np.ndarray, tmpl: np.ndarray, thresh: float = NCC_THRESH):
     ii2 = np.zeros((H + 1, W + 1))
     ii2[1:, 1:] = gray**2
     ii2 = ii2.cumsum(0).cumsum(1)
-    ys, xs = np.mgrid[0 : H - th + 1, 0 : W - tw + 1]
-    s1 = ii[ys + th, xs + tw] - ii[ys, xs + tw] - ii[ys + th, xs] + ii[ys, xs]
-    s2 = ii2[ys + th, xs + tw] - ii2[ys, xs + tw] - ii2[ys + th, xs] + ii2[ys, xs]
+    # window sums from the integral images by slicing (no full-size index
+    # arrays: set runs pass whole-sheet rasters, #744)
+    s1 = ii[th:, tw:] - ii[:-th, tw:] - ii[th:, :-tw] + ii[:-th, :-tw]
+    s2 = ii2[th:, tw:] - ii2[:-th, tw:] - ii2[th:, :-tw] + ii2[:-th, :-tw]
     n = th * tw
     denom = np.sqrt(np.maximum(s2 - s1**2 / n, 1e-9) * tss)
     ncc = xc / denom
@@ -314,6 +315,73 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
     if len(ahus) > 1:
         best = max(ahus, key=lambda d: d["ncc"])
         out = [d for d in out if d["label"] != "ahu"] + [best]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 1b. Templates from the sheet's own symbol legend (#744)
+# ---------------------------------------------------------------------------
+
+# A legend template is the firm's own symbol cut from the same raster, so a
+# true match is near-exact; this is well above what a lookalike scores.
+LEGEND_NCC_ACCEPT = 0.80
+
+
+def detect_legend_symbols(gray: np.ndarray, templates: list, exclude_px=()) -> list:
+    """Find each legend template (``hvac_legend.legend_templates``) on its
+    own sheet by NCC alone. ``exclude_px`` adds boxes (raster px) where no
+    hit counts, such as every legend symbol, mapped or not
+    (``hvac_legend.symbol_boxes_px``).
+
+    No WiSARD pass: the classifier is trained on matchline's built-in glyphs
+    and would call another firm's symbol background. The class comes from the
+    legend row's description, and the legend's own symbol (the place the
+    template was cut, or any other legend symbol on the sheet) is not a
+    detection. Overlapping hits keep the best score across all templates."""
+    legend_boxes = [t.symbol_bbox_px for t in templates] + [list(b) for b in exclude_px]
+    hits = []
+    for t in templates:
+        th, tw = t.image.shape
+        for y, x, s in ncc_locate(gray, t.image, thresh=LEGEND_NCC_ACCEPT):
+            cx, cy = x + tw / 2, y + th / 2
+            if any(c0 <= cx <= c1 and r0 <= cy <= r1 for c0, r0, c1, r1 in legend_boxes):
+                continue
+            hits.append(
+                {
+                    "label": t.cls,
+                    "cx": cx,
+                    "cy": cy,
+                    "w": tw,
+                    "h": th,
+                    "ncc_cls": t.cls,
+                    "ncc": round(s, 3),
+                    "margin": 0.0,
+                    "template": "legend",
+                    "legend_row": t.description,
+                }
+            )
+    hits.sort(key=lambda d: -d["ncc"])
+    kept = []
+    for d in hits:
+        md = max(d["w"], d["h"])
+        if all(math.hypot(d["cx"] - k["cx"], d["cy"] - k["cy"]) >= md for k in kept):
+            kept.append(d)
+    return kept
+
+
+def merge_legend_detections(builtin: list, legend: list, legend_classes) -> list:
+    """Legend-template hits replace the built-in templates for every class
+    the sheet's legend draws; classes it does not draw keep the built-in
+    detections as the fallback. A built-in hit on top of a legend hit (the
+    built-in grille firing on the firm's diffuser) is dropped."""
+    covered = set(legend_classes)
+    out = list(legend)
+    for d in builtin:
+        if d["label"] in covered:
+            continue
+        if any(math.hypot(d["cx"] - q["cx"], d["cy"] - q["cy"]) <= ASSOC_PX for q in legend):
+            continue
+        out.append(dict(d, template=d.get("template", "builtin")))
     return out
 
 

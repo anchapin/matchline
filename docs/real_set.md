@@ -185,6 +185,21 @@ it goes to review), AHU / RTU -> ahu, return / exhaust / transfer grille,
 register or diffuser -> grille, any other diffuser -> diffuser. Anything else,
 including a "SUPPLY GRILLE" (outlet or grille is not settled by the words),
 keeps no class and goes to an `hvac_legend_unmapped` review item (confidence
-0.7); a legend repeated on several sheets gives one item naming every sheet. The report lists every legend under `hvac_legends` with each row's
-symbol box (sheet points, y down); cutting those boxes as templates for the
-`hvac_trace` cascade is the next slice.
+0.7); a legend repeated on several sheets gives one item naming every sheet.
+The report lists every legend under `hvac_legends` with each row's symbol box
+(sheet points, y down).
+
+When the sheet has a raster, each mapped row's symbol is cut out of that
+raster (`hvac_legend.legend_templates`, 2 pt of margin; a template with fewer
+than 12 ink pixels is skipped) and matched across the same sheet by NCC alone
+(`hvac_trace.detect_legend_symbols`, accept 0.80). There is no WiSARD pass,
+because the classifier is trained on matchline's own glyphs and would call
+another firm's symbol background; the class comes from the row's words, and
+no hit counts inside any legend symbol box on the sheet (mapped or not). Each
+legend entry gets its own `symbol_hits` (class -> count, from that legend's
+templates only) and the sheet note gives the counts. These are counts only:
+they are not yet joined to zones or rooms. `hvac_trace.merge_legend_detections`
+is the merge rule for when they are: legend hits replace the built-in
+templates for every class the legend draws, the built-ins stay as the
+fallback for classes it does not, and a built-in hit on top of a legend hit is
+dropped.
