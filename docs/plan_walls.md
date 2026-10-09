@@ -227,6 +227,17 @@ along at least half the band's length. A wall at least as thick as the band (a
 thickened pier or lined wall beside a real window) cannot lie inside it and
 never counts. Walls and rooms are not changed; only the window call is.
 
+A thinner wall lying flush against the band's face counts too (#879). A lining
+built a gap away from a wall's inside face, with a return at one end, makes a
+stretch closed on three sides; when the wall and lining stop at the same point
+(a corner or a cross wall) the stretch is closed at both ends, and wall plus gap
+fold into one glazed band whose far face is the lining's face. The lining then
+sits just outside the band rather than inside it. Real glazing cannot have a
+wall standing against it, so a thinner parallel wall within `tol` of either band
+face, along at least half the band's length, also rejects the candidate. A
+lining that runs on past the wall's end, or a wall that runs on past the
+lining's free end, never made a window-sized closed stretch and is unchanged.
+
 Clinic windows drawn from the IFC (`scripts/validate_clinic_walls.py
 --windows`, plumbing only: we choose how the glass is drawn):
 

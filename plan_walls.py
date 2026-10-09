@@ -375,7 +375,10 @@ def _wall_inside_band(g, w, walls, atol: float, tol: float) -> bool:
     glazing, folding wall, gap and box wall into one thick band. A real
     window's band is its own wall: no other parallel wall lies inside it.
     So a candidate whose band holds another, thinner wall, off its centre
-    line and along at least half its length, is not a window. A wall at least
+    line and along at least half its length, is not a window. The same goes
+    for a thinner wall lying flush against the band's face (#879): a lining
+    built a gap away from the wall closes that gap into a band, and real
+    glazing can't have a wall standing against it. A wall at least
     as thick as the band (a thickened pier or lined wall beside the window)
     cannot lie inside it and never counts. Walls are not changed.
     """
@@ -392,8 +395,8 @@ def _wall_inside_band(g, w, walls, atol: float, tol: float) -> bool:
         off = abs((_dot(o.a, n) + _dot(o.b, n)) / 2 - g.rho)
         if off <= max(tol, 0.25 * w.t):
             continue  # on the band's own line: a collinear wall piece
-        if off - 0.5 * o.t >= 0.5 * g.t:
-            continue  # outside the band
+        if off - 0.5 * o.t > 0.5 * g.t + tol:
+            continue  # clear of the band; one flush against its face blocks it (#879)
         u0, u1 = sorted((_dot(o.a, d), _dot(o.b, d)))
         if min(u1, g.u1) - max(u0, g.u0) < 0.5 * span:
             continue
