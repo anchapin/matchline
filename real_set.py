@@ -538,7 +538,7 @@ def build_set_model(
         plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
         review, report,
     )  # fmt: skip
-    _mech_legends(files, status, sheets_dir, review, report)
+    _mech_legends(files, status, sheets_dir, review, report, scales, plan_of_level, lid_of, spaces)
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
         sched_entries, review, report,
@@ -775,14 +775,15 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     return reads, bbox
 
 
-def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> List[Dict[str, int]]:
+def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> List[List[dict]]:
     """Per legend, count each mapped symbol on its own sheet's raster (#744):
     the row's drawn symbol is cut as a one-shot template and matched by NCC
     (``hvac_trace.detect_legend_symbols``); no hit counts inside any legend
-    symbol box on the sheet. Empty dicts without a raster."""
+    symbol box on the sheet. Each hit carries ``bbox_pt`` (sheet points, y
+    down). Empty lists without a raster."""
     raster, k = sheet.get("raster_file"), sheet.get("px_per_pt")
     if not legends or not raster or not k or not (sheets_dir / raster).exists():
-        return [{} for _ in legends]
+        return [[] for _ in legends]
     import numpy as np
     from PIL import Image
 
@@ -791,24 +792,60 @@ def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> List[Dict[str
 
     gray = np.asarray(Image.open(sheets_dir / raster).convert("L"), dtype=np.float64)
     boxes = symbol_boxes_px(legends, float(k))
-    out: List[Dict[str, int]] = []
+    k = float(k)
+    out: List[List[dict]] = []
     for leg in legends:
-        hits: Dict[str, int] = {}
-        tmpls = legend_templates(gray, [leg], float(k))
-        for d in detect_legend_symbols(gray, tmpls, exclude_px=boxes):
-            hits[d["label"]] = hits.get(d["label"], 0) + 1
-        out.append(hits)
+        dets = detect_legend_symbols(gray, legend_templates(gray, [leg], k), exclude_px=boxes)
+        for d in dets:
+            d["bbox_pt"] = [
+                round((d["cx"] - d["w"] / 2) / k, 2), round((d["cy"] - d["h"] / 2) / k, 2),
+                round((d["cx"] + d["w"] / 2) / k, 2), round((d["cy"] + d["h"] / 2) / k, 2),
+            ]  # fmt: skip
+        out.append(dets)
     return out
 
 
-def _mech_legends(files, status, sheets_dir, review, report) -> None:
+def _legend_hit_rooms(f, sheet, sheet_id, st, per_legend, scales, sheets_dir, plan_of_level,
+                      lid_of, spaces) -> List[Dict[str, Dict[str, int]]]:  # fmt: skip
+    """Per legend, its symbol hits counted by the room they fall in (#744),
+    through the same registration that places equipment tags (``""`` = in no
+    single room). Empty dicts when the sheet does not register."""
+    empty: List[Dict[str, Dict[str, int]]] = [{} for _ in per_legend]
+    if not any(per_legend) or not plan_of_level or spaces is None:
+        return empty
+    from mech_tags import room_of, to_canonical
+
+    reg = _mech_registration(f, sheet, sheet_id, st, scales or {}, sheets_dir, plan_of_level,
+                             lid_of or {})  # fmt: skip
+    if reg is None or reg[7] is None:
+        return empty
+    lid, arch, _asid, mm, ma, dx, dy, _how, _conf, _why = reg
+    rooms = [sp for sp in spaces.values() if sp.level_id == lid]
+    out: List[Dict[str, Dict[str, int]]] = []
+    for dets in per_legend:
+        by_room: Dict[str, Dict[str, int]] = {}
+        for d in dets:
+            at = to_canonical(d["bbox_pt"], mm, dx, dy, float(arch["height_pt"]), ma)
+            sid = room_of(at, rooms) or ""
+            d["space_id"] = sid
+            cell = by_room.setdefault(sid, {})
+            cell[d["label"]] = cell.get(d["label"], 0) + 1
+        out.append(by_room)
+    return out
+
+
+def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_of_level=None,
+                  lid_of=None, spaces=None) -> None:  # fmt: skip
     """Read the symbol legend on every vector mechanical sheet (#744).
 
     Each legend row's description is mapped to an HVAC detector class from its
     words only (``hvac_legend.classify``); the rows go on the report under
     ``hvac_legends`` with the symbol's box and, when the sheet has a raster,
-    how many times each mapped symbol appears on it. Rows whose
-    description names no class go to one review item per legend.
+    how many times each mapped symbol appears on it. When the sheet
+    registers to its level's architectural plan, each hit is also put in the
+    room it falls in (``symbols_by_room``: space id -> class -> count; a hit in
+    no single room counts under ``""``). Rows whose description names no class
+    go to one review item per legend.
     """
     from building_model import Provenance, ReviewItem
     from hvac_legend import CONFIDENCE, read_legend
@@ -823,7 +860,14 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
         sheet_id = st.number or f
         sheet = json.loads((sheets_dir / f).read_text())
         legends = read_legend(sheet)
-        for leg, hits in zip(legends, _legend_symbol_hits(sheet, legends, sheets_dir)):
+        per_legend = _legend_symbol_hits(sheet, legends, sheets_dir)
+        rooms_of = _legend_hit_rooms(
+            f, sheet, sheet_id, st, per_legend, scales, sheets_dir, plan_of_level, lid_of, spaces
+        )
+        for leg, dets, by_room in zip(legends, per_legend, rooms_of):
+            hits: Dict[str, int] = {}
+            for d in dets:
+                hits[d["label"]] = hits.get(d["label"], 0) + 1
             report.hvac_legends.append(
                 {
                     "sheet": sheet_id,
@@ -835,6 +879,7 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
                         for r in leg.rows
                     ],
                     "symbol_hits": hits,
+                    "symbols_by_room": by_room,
                 }
             )  # fmt: skip
             mapped = sorted({r.cls for r in leg.rows if r.cls})
@@ -845,7 +890,12 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
                 + (
                     "; legend symbols found on the sheet: "
                     + ", ".join(f"{c} {n}" for c, n in sorted(hits.items()))
-                    + " (counts only, not yet joined to zones)"
+                    + (
+                        f"; in rooms: {sum(sum(v.values()) for r, v in by_room.items() if r)}"
+                        f" of {len(dets)}"
+                        if by_room
+                        else "; not placed in rooms (sheet not registered to a plan)"
+                    )
                     if hits
                     else "; no sheet raster or no legend symbol found on the sheet"
                 )
@@ -872,6 +922,29 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
         )
 
 
+def _mech_registration(f, sheet, sheet_id, st, scales, sheets_dir, plan_of_level, lid_of):
+    """Register a mechanical plan to its level's architectural plan (#746):
+    ``(lid, arch, asid, m_mech, m_arch, dx, dy, how, conf, why)``, ``how`` None
+    when the sheets do not register; None when the sheet has no level with an
+    architectural plan."""
+    from grid_detect import detect_grids
+    from mech_tags import register
+
+    lid = lid_of.get(st.level) if st.level else None
+    if lid is None or lid not in plan_of_level:
+        return None
+    af, asid, _li = plan_of_level[lid]
+    arch = json.loads((sheets_dir / af).read_text())
+    mm = (scales.get(f) or {}).get("m_per_pt")
+    ma = (scales.get(af) or {}).get("m_per_pt")
+    try:
+        mg, ag = detect_grids(sheet, sheet_id), detect_grids(arch, asid)
+    except Exception:  # noqa: BLE001 - a grid failure falls back to the frame
+        mg = ag = None
+    dx, dy, how, conf, why = register(sheet, arch, mm, ma, mg, ag)
+    return lid, arch, asid, mm, ma, dx, dy, how, conf, why
+
+
 def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
                      equipment, review, report) -> dict:  # fmt: skip
     """Put each scheduled mechanical tag in the room the mechanical plan shows
@@ -885,8 +958,7 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
     if not equipment:
         return {}
     from building_model import ComponentRef, Provenance, ReviewItem, Zone
-    from grid_detect import detect_grids
-    from mech_tags import find_tags, register, room_of, to_canonical
+    from mech_tags import find_tags, room_of, to_canonical
 
     known = {e["tag"] for e in equipment}
     found: Dict[str, List[dict]] = {}
@@ -899,22 +971,14 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
         hits = find_tags(sheet, known)
         if not hits:
             continue
-        lid = lid_of.get(st.level) if st.level else None
-        if lid is None or lid not in plan_of_level:
+        reg = _mech_registration(f, sheet, sheet_id, st, scales, sheets_dir, plan_of_level, lid_of)
+        if reg is None:
             report.notes.append(
                 f"{sheet_id}: {len(hits)} scheduled equipment tag(s) on a mechanical plan "
                 "with no matching architectural level; not placed"
             )
             continue
-        af, asid, _li = plan_of_level[lid]
-        arch = json.loads((sheets_dir / af).read_text())
-        mm = (scales.get(f) or {}).get("m_per_pt")
-        ma = (scales.get(af) or {}).get("m_per_pt")
-        try:
-            mg, ag = detect_grids(sheet, sheet_id), detect_grids(arch, asid)
-        except Exception:  # noqa: BLE001 - a grid failure falls back to the frame
-            mg = ag = None
-        dx, dy, how, conf, why = register(sheet, arch, mm, ma, mg, ag)
+        lid, arch, asid, mm, ma, dx, dy, how, conf, why = reg
         if how is None:
             report.notes.append(f"{sheet_id}: not registered to {asid} ({why}); tags not placed")
             review.append(

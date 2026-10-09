@@ -197,8 +197,13 @@ because the classifier is trained on matchline's own glyphs and would call
 another firm's symbol background; the class comes from the row's words, and
 no hit counts inside any legend symbol box on the sheet (mapped or not). Each
 legend entry gets its own `symbol_hits` (class -> count, from that legend's
-templates only) and the sheet note gives the counts. These are counts only:
-they are not yet joined to zones or rooms. `hvac_trace.merge_legend_detections`
+templates only) and the sheet note gives the counts. When the mechanical plan
+registers to its level's architectural plan (the same registration that
+places equipment tags), each hit is also put in the room it falls in:
+`symbols_by_room` maps space id -> class -> count, with `""` for a hit in no
+single room, and the note says how many landed in rooms. A sheet that does
+not register (no scale, no matching level) gets `{}`. The room counts are
+not yet joined to HVAC zones or checked against scheduled tags. `hvac_trace.merge_legend_detections`
 is the merge rule for when they are: legend hits replace the built-in
 templates for every class the legend draws, the built-ins stay as the
 fallback for classes it does not, and a built-in hit on top of a legend hit is

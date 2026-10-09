@@ -731,9 +731,10 @@ def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
     assert "M-001, M-601" in rq.description
 
 
-def test_legend_symbols_are_counted_on_their_own_sheet(tmp_path):
-    """A firm's own symbols (not matchline's glyphs) are found on the sheet by
-    cutting the legend row's symbol as a template (#744)."""
+def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False):
+    """A mechanical plan drawn in a second symbol style with its own legend:
+    two diffusers in the west room (x < 4 m), one diffuser and a thermostat in
+    the east room."""
     from test_hvac_legend_templates import circle, damper, xbox
 
     x, y = 1100, 1000
@@ -741,16 +742,46 @@ def test_legend_symbols_are_counted_on_their_own_sheet(tmp_path):
     leg += xbox(x, y - 54) + text(x + 40, y - 50, "SUPPLY AIR DIFFUSER", 8)
     leg += circle(x + 7, y - 72) + text(x + 40, y - 75, "THERMOSTAT", 8)
     leg += damper(x, y - 102) + text(x + 40, y - 100, "MANUAL VOLUME DAMPER", 8)
-    plan = "".join(xbox(px, py) for px, py in [(200, 700), (400, 500), (700, 300)])
-    plan += circle(300, 400)
-    pages = [
-        _arch("A-101", "FIRST FLOOR PLAN", 1),
-        _tb("M-101", "FIRST FLOOR MECHANICAL PLAN") + leg + plan,
-    ]
+    plan = "".join(xbox(px - 7, py - 7) for px, py in (_pt(2, 2), _pt(2, 4.5), _pt(7, 2)))
+    plan += circle(*_pt(7, 4.5))
+    if outside:  # a diffuser drawn beyond the building shell
+        px, py = _pt(13, 3)
+        plan += xbox(px - 7, py - 7)
+    body = _tb(number, "FIRST FLOOR MECHANICAL PLAN") + leg + plan
+    return body + (text(100, 48, scale, 8) if scale else "")
+
+
+def test_legend_symbols_are_counted_on_their_own_sheet(tmp_path):
+    """A firm's own symbols (not matchline's glyphs) are found on the sheet by
+    cutting the legend row's symbol as a template (#744)."""
+    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page(scale=None)]
     _model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
     (lg,) = report.to_dict()["hvac_legends"]
     assert lg["symbol_hits"] == {"diffuser": 3, "sensor": 1}
-    assert any("diffuser 3, sensor 1 (counts only" in n for n in report.notes)
+    # no scale on the mechanical plan: it cannot register, so no rooms
+    assert lg["symbols_by_room"] == {}
+    assert any("diffuser 3, sensor 1; not placed in rooms" in n for n in report.notes)
+
+
+def test_legend_symbols_land_in_the_rooms_they_are_drawn_in(tmp_path):
+    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page()]
+    model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    (lg,) = report.to_dict()["hvac_legends"]
+    by_room = lg["symbols_by_room"]
+    assert "" not in by_room
+    west = min(model.spaces.values(), key=lambda sp: min(x for x, _ in sp.polygon_m)).id
+    (east,) = [sid for sid in by_room if sid != west]
+    assert by_room == {west: {"diffuser": 2}, east: {"diffuser": 1, "sensor": 1}}
+    assert any("in rooms: 4 of 4" in n for n in report.notes)
+
+
+def test_a_legend_symbol_in_no_room_is_counted_apart(tmp_path):
+    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page(outside=True)]
+    _model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    (lg,) = report.to_dict()["hvac_legends"]
+    assert lg["symbol_hits"] == {"diffuser": 4, "sensor": 1}
+    assert lg["symbols_by_room"][""] == {"diffuser": 1}
+    assert any("in rooms: 4 of 5" in n for n in report.notes)
 
 
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
