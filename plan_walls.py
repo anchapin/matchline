@@ -923,6 +923,7 @@ def _join_free_ends(
     tol: float,
     max_open: float = 0.0,
     max_door: Optional[float] = None,
+    fallback: Optional[list] = None,
 ) -> Tuple[List[Tuple[Pt, Pt]], List[Tuple[int, int, Pt, Pt]]]:
     """Close wall ends that touch nothing (#740).
 
@@ -943,7 +944,9 @@ def _join_free_ends(
     just short of the ray (it ends at the near face of the corner it turns
     at) counts when the ray passes within the snap reach of its end, but only
     for a door-width gap (``max_door``): a wider gap there is more likely an
-    open edge than a doorway.
+    open edge than a doorway. When ``fallback`` is a list, those corners go
+    there instead of into ``corner_openings``, for the caller to keep only
+    between two labelled rooms.
     """
     if not pairs:
         return [], []
@@ -1007,6 +1010,9 @@ def _join_free_ends(
                     door = max_open if max_door is None else max_door
                     if d <= door and (hit_ext is None or d < hit_ext[0]):
                         hit_ext = cand
+            if hit is None and hit_ext is not None and fallback is not None:
+                fallback.append((i, hit_ext[1], p, hit_ext[2]))
+                continue
             hit = hit or hit_ext
             if hit:
                 corners.append((i, hit[1], p, hit[2]))
@@ -1309,16 +1315,35 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         tol,
         WIDE_OPENING_M * k,
         MAX_OPENING_M * k + tol,
+        fallback := [],
     )
     spans = [(_get(t, "text"), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
     near, far = [], []
     for c in corners:
         (far if math.dist(c[2], c[3]) > MAX_OPENING_M * k + tol else near).append(c)
+    # a corner found only by reaching past a crossing wall's end is a door where it
+    # parts two labelled rooms, and otherwise more likely an open edge (#740)
+    far += fallback
     base = pairs + joins + [(a, b) for _i, _j, a, b in near]
+
     # a wall that stops more than a door width short of the wall ahead closes with an air
     # wall only where it then parts two labelled rooms: an open counter or half wall
     # between named spaces. Elsewhere it is an open area and stays one room.
-    faces = polygonize_full(unary_union(_node_lines(base + [(a, b) for *_x, a, b in far], tol)))[0]
+    def t_of(i: int) -> float:
+        return pair_walls[i].t if i < len(pair_walls) else bridges[i - len(pair_walls)].t
+
+    # a partition stopping just short of a candidate edge closes on it as it would
+    # on a bridged opening, so the faces either side are judged as they would end up
+    far_carry = _ends_to_openings(
+        [(w.a, w.b) for w in pair_walls],
+        [w.t for w in pair_walls],
+        joins + [(a, b) for *_x, a, b in near],
+        [(br.a, br.b, br.t) for br in bridges] + [(a, b, t_of(i)) for i, _j, a, b in near + far],
+        tol,
+    )
+    faces = polygonize_full(
+        unary_union(_node_lines(base + [(a, b) for *_x, a, b in far] + far_carry, tol))
+    )[0]
     keep = []
     for c in far:
         edge = LineString([c[2], c[3]])
@@ -1330,7 +1355,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         if len(sides) == 2 and all(_label_for(f, spans)[0] for f in sides):
             keep.append(c)
     for i, j, a, b in near + keep:
-        t = pair_walls[i].t if i < len(pair_walls) else bridges[i - len(pair_walls)].t
+        t = t_of(i)
         wide = math.dist(a, b) > MAX_OPENING_M * k + tol
         bridges.append(Bridge(a, b, t, (pair_ids[i][0], pair_ids[j][0])))
         openings.append(

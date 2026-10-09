@@ -985,13 +985,27 @@ def test_chase_against_a_wall_does_not_shift_the_rooms_it_bounds(tmp_path):
     assert not [r for r in res.review if r["kind"] == "unclosed_wall"]
 
 
-def test_door_beside_a_corner_whose_crossing_wall_stops_at_the_face(tmp_path):
-    # the crossing wall's centreline ends at the partition's near face, so the ray
-    # down the partition passes just beyond its end; no other wall within reach
+def _stops_at_face_walls():
     shell = [((0, 0), (10, 0), T_EXT), ((10, 0), (10, 12), T_EXT), ((10, 12), (0, 12), T_EXT),
              ((0, 12), (0, 0), T_EXT)]  # fmt: skip
-    walls = shell + [((4, 12), (4, 7), T_INT), ((0, 6), (3.92, 6), T_INT)]
-    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    return shell + [((4, 12), (4, 7), T_INT), ((0, 6), (3.92, 6), T_INT)]
+
+
+def test_door_beside_a_corner_whose_crossing_wall_stops_at_the_face(tmp_path):
+    # the crossing wall's centreline ends at the partition's near face, so the ray
+    # down the partition passes just beyond its end; no other wall within reach.
+    # Between two labelled rooms that is a door and the room closes (#740).
+    labels = text(*_pt(1.5, 9), "OFFICE 101", 8) + text(*_pt(7, 9), "WAITING 102", 8)
+    res, _ = _read(tmp_path, _outline(_mass(_stops_at_face_walls())) + labels)
     assert _areas(res) == [24.0, 96.0]
     corner = [o for o in res.openings if o.get("beside_corner")]
     assert len(corner) == 1 and corner[0]["width_m"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_door_beside_a_corner_past_a_wall_end_stays_open_without_labels(tmp_path):
+    # the same reach past the wall end with no labelled room on one side is more
+    # likely an open edge: it stays one room and goes to review
+    labels = text(*_pt(1.5, 9), "OFFICE 101", 8)
+    res, _ = _read(tmp_path, _outline(_mass(_stops_at_face_walls())) + labels)
+    assert _areas(res) == [120.0]
+    assert not [o for o in res.openings if o.get("beside_corner")]
