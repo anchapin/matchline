@@ -537,3 +537,18 @@ def test_text_that_is_not_a_tag_or_far_from_walls_is_ignored(tmp_path):
     body = text(*_pt(5, -0.6), "OFFICE", 8) + text(*_pt(5, 3.0), "SF-1", 8)
     res, _ = _read(tmp_path, _outline(_mass(SHELL)) + body)
     assert not res.wall_tags
+
+
+def test_opening_keeps_every_tag_nearest_first():
+    import plan_walls as PW
+
+    ops = [{"a_m": (0.0, 0.0), "b_m": (1.2, 0.0)}, {"a_m": (5.0, 0.0), "b_m": (6.0, 0.0)}]
+    spans = [
+        ("W3", (0.5, -1.0, 0.7, -1.0)),
+        ("EW1", (0.6, -0.4, 0.8, -0.4)),
+        ("D1", (5.5, 0.3, 5.6, 0.3)),
+    ]
+    assert PW._attach_tags(ops, spans, lambda p: p) == 2
+    assert ops[0]["tag_text"] == "EW1"
+    assert [t["tag"] for t in ops[0]["tags_near"]] == ["EW1", "W3"]
+    assert [t["tag"] for t in ops[1]["tags_near"]] == ["D1"]

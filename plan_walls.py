@@ -262,23 +262,28 @@ def _attach_tags(openings: List[dict], spans, to_m) -> int:
 
     A span reads as a tag when it looks like one (``TAG_RE``: W1, D-12,
     SF-1). Each tag goes to the single nearest opening within
-    ``TAG_RADIUS_M``; an opening keeps the nearest tag. Whether the tag is
-    really scheduled is for the caller to check.
+    ``TAG_RADIUS_M``. An opening's ``tag_text`` is its nearest tag, and
+    ``tags_near`` lists every tag it got, nearest first, because a wall-type
+    mark can sit closer than the door/window mark (#829). Which tag is really
+    scheduled is for the caller to check.
     """
     lines = [LineString([o["a_m"], o["b_m"]]) for o in openings]
-    best: Dict[int, Tuple[float, str]] = {}
+    got: Dict[int, List[Tuple[float, str]]] = {}
     for text, (x0, y0, x1, y1) in spans:
         t = str(text).strip().upper()
         if not TAG_RE.match(t) or not lines:
             continue
         c = Point(to_m(((x0 + x1) / 2, (y0 + y1) / 2)))
         d, i = min((ln.distance(c), i) for i, ln in enumerate(lines))
-        if d <= TAG_RADIUS_M and (i not in best or d < best[i][0]):
-            best[i] = (d, t)
-    for i, (d, t) in best.items():
+        if d <= TAG_RADIUS_M:
+            got.setdefault(i, []).append((d, t))
+    for i, tags in got.items():
+        tags.sort()
+        d, t = tags[0]
         openings[i]["tag_text"] = t
         openings[i]["tag_dist_m"] = round(d, 3)
-    return len(best)
+        openings[i]["tags_near"] = [{"tag": t, "dist_m": round(d, 3)} for d, t in tags]
+    return len(got)
 
 
 def _wall_tags(walls: List[dict], openings: List[dict], spans, to_m) -> List[dict]:
