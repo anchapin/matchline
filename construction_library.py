@@ -418,15 +418,111 @@ def _default_openings(model, s: "LibrarySummary", climate_zone: str, category: s
 F_IP_TO_SI = 1.730735
 
 
-def _slab_geometry(model, lowest: bool = True):
-    """(area_m2, exposed_perimeter_m, level_id) of the ground-floor footprint.
+# Slab parts smaller than this are drawing noise (slivers between rooms), not a
+# wing on grade; they are listed in the report, not counted.
+MIN_SLAB_PART_M2 = 1.0
+# A hole in the ground footprint is an open-air courtyard when exterior walls
+# run along at least this share of its edge (#747). Otherwise it is an
+# unmodelled room or shaft: still slab, and its edge is not exposed.
+COURTYARD_WALL_SHARE = 0.5
+# exterior wall centreline within this distance of the hole edge (m), and
+# within this angle of it (degrees), counts as running along it
+_COURTYARD_TOL_M = 0.6
+_COURTYARD_ANGLE_DEG = 10.0
+# a courtyard is open to the sky: spaces on higher levels may cover at most
+# this share of it (balconies, a bridge); more means floor above a missing room
+COURTYARD_MAX_COVERED_ABOVE = 0.10
 
-    The footprint is the same union the exporters write as the SlabOnGrade
-    surface (``footprint_from_regions``: holes dropped, largest part of
-    disjoint wings), taken over the spaces on the lowest level. None when the
-    model has no space polygons.
+
+def _slab_level_walls(model, level_ids: set) -> list:
+    """Exterior wall centrelines ``[(p0, p1)]`` on the slab's level.
+
+    IFC and drawing-set envelope ids are level-prefixed (``<level>-EW1``,
+    ``<level>-E1``); when any wall carries a known level prefix, only walls on
+    ``level_ids`` count, so an upper-floor wall over a ground-floor hole edge
+    is not evidence. Unprefixed envelopes (a single-level model) use every
+    wall.
     """
-    from geometry_simplify import footprint_from_regions
+    known = {lv.id for lv in (getattr(model, "levels", None) or [])}
+    rows = [
+        w
+        for w in (getattr(model, "envelope", None) or [])
+        if len(w.from_m or []) >= 2 and len(w.to_m or []) >= 2 and w.from_m[:2] != w.to_m[:2]
+    ]
+
+    def level_of(w):
+        for lid in known:
+            if str(w.id).startswith(f"{lid}-"):
+                return lid
+        return None
+
+    if any(level_of(w) for w in rows):
+        rows = [w for w in rows if level_of(w) in level_ids]
+    return [(tuple(w.from_m[:2]), tuple(w.to_m[:2])) for w in rows]
+
+
+def _wall_cover(ring, walls) -> float:
+    """Length of ``ring`` (a closed shapely ring) that exterior walls run along.
+
+    A wall runs along an edge when its centreline is within
+    ``_COURTYARD_TOL_M`` of the edge and within ``_COURTYARD_ANGLE_DEG`` of
+    parallel; only the stretch of the edge the wall projects onto counts, and
+    overlapping walls are counted once.
+    """
+    import math
+
+    from shapely.geometry import LineString, Point
+
+    total = 0.0
+    coords = list(ring.coords)
+    for a, b in zip(coords, coords[1:]):
+        edge = LineString([a, b])
+        if edge.length <= 0:
+            continue
+        ea = math.atan2(b[1] - a[1], b[0] - a[0])
+        spans = []
+        for p0, p1 in walls:
+            wa = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+            d = abs((wa - ea + math.pi / 2) % math.pi - math.pi / 2)
+            if math.degrees(d) > _COURTYARD_ANGLE_DEG:
+                continue
+            if LineString([p0, p1]).distance(edge) > _COURTYARD_TOL_M:
+                continue
+            s0, s1 = sorted((edge.project(Point(p0)), edge.project(Point(p1))))
+            if s1 > s0:
+                spans.append((s0, s1))
+        spans.sort()
+        cur0 = cur1 = None
+        for s0, s1 in spans:
+            if cur1 is None or s0 > cur1:
+                if cur1 is not None:
+                    total += cur1 - cur0
+                cur0, cur1 = s0, s1
+            else:
+                cur1 = max(cur1, s1)
+        if cur1 is not None:
+            total += cur1 - cur0
+    return total
+
+
+def _slab_geometry(model, lowest: bool = True):
+    """Slab on grade geometry of the ground (or, ``lowest=False``, top) level.
+
+    Returns ``(area_m2, exposed_perimeter_m, level_id, detail)`` or None when
+    the model has no space polygons. The slab is the union of the level's
+    space polygons, every part of it (#747): a separate wing is slab on grade
+    too, so its area and its whole edge count; parts under
+    ``MIN_SLAB_PART_M2`` are slivers and are only listed. A hole in the union
+    is an open-air courtyard when exterior walls on this level run along at
+    least ``COURTYARD_WALL_SHARE`` of its edge and spaces on higher levels
+    cover at most ``COURTYARD_MAX_COVERED_ABOVE`` of it (open to the sky):
+    its edge is exposed and its area is not slab. Any other hole (an
+    unmodelled room or shaft) stays slab and its edge is not exposed, which is
+    what the exported footprint (holes dropped) already assumes. ``detail``
+    lists wings, courtyards and holes for the report.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
 
     spaces = [sp for sp in (model.spaces or {}).values() if len(sp.polygon_m or []) >= 3]
     if not spaces:
@@ -435,18 +531,66 @@ def _slab_geometry(model, lowest: bool = True):
     pick = min if lowest else max
     low = pick(elev.get(sp.level_id, 0.0) for sp in spaces)
     ground = [sp for sp in spaces if abs(elev.get(sp.level_id, 0.0) - low) < 1e-6]
-    ring = footprint_from_regions([sp.polygon_m for sp in ground])
-    if len(ring) < 3:
+    polys = []
+    for sp in ground:
+        g = Polygon([tuple(v[:2]) for v in sp.polygon_m])
+        if not g.is_valid:
+            g = g.buffer(0)
+        if not g.is_empty and g.area > 0:
+            polys.append(g)
+    if not polys:
         return None
+    merged = unary_union(polys)
+    parts = list(merged.geoms) if hasattr(merged, "geoms") else [merged]
+    parts = [g for g in parts if g.geom_type == "Polygon" and g.area > 0]
+    walls = _slab_level_walls(model, {sp.level_id for sp in ground})
+    # spaces on higher levels: a courtyard is open to the sky, so a hole with
+    # floor above it is a missing room, not a courtyard
+    above = []
+    for sp in spaces:
+        if elev.get(sp.level_id, 0.0) > low + 1e-6:
+            g = Polygon([tuple(v[:2]) for v in sp.polygon_m])
+            if not g.is_valid:
+                g = g.buffer(0)
+            if not g.is_empty and g.area > 0:
+                above.append(g)
+    above_union = unary_union(above) if above else None
+    detail = {"wings": 0, "slivers": [], "courtyards": [], "holes_not_exposed": []}
     area = perim = 0.0
-    for i, (x0, y0) in enumerate(ring):
-        x1, y1 = ring[(i + 1) % len(ring)]
-        area += x0 * y1 - x1 * y0
-        perim += ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
-    area = abs(area) / 2.0
+    for g in sorted(parts, key=lambda q: -q.area):
+        if g.area < MIN_SLAB_PART_M2:
+            detail["slivers"].append(round(g.area, 4))
+            continue
+        detail["wings"] += 1
+        area += Polygon(g.exterior).area
+        perim += g.exterior.length
+        for hole in g.interiors:
+            h_area = Polygon(hole).area
+            h_len = hole.length
+            cover = _wall_cover(hole, walls) if walls else 0.0
+            covered_above = 0.0
+            if above_union is not None and h_area > 0:
+                covered_above = Polygon(hole).intersection(above_union).area / h_area
+            rec = {
+                "area_m2": round(h_area, 4),
+                "perimeter_m": round(h_len, 4),
+                "wall_cover_m": round(cover, 4),
+            }
+            if covered_above > 0:
+                rec["covered_above_share"] = round(covered_above, 4)
+            if (
+                h_len > 0
+                and cover / h_len >= COURTYARD_WALL_SHARE
+                and covered_above <= COURTYARD_MAX_COVERED_ABOVE
+            ):
+                area -= h_area
+                perim += h_len
+                detail["courtyards"].append(rec)
+            else:
+                detail["holes_not_exposed"].append(rec)
     if area <= 0 or perim <= 0:
         return None
-    return area, perim, ground[0].level_id
+    return area, perim, ground[0].level_id, detail
 
 
 # 90.1-2019 Section 3.2, heated slab: "slab-on-grade floor construction in
@@ -503,8 +647,9 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     gbXML carries a U-value, not
     an F-factor, so the slab gets the U that loses the same heat:
     U = F x exposed perimeter / slab area (F-factor definition, heat loss per
-    unit length of exposed edge per degree indoor-outdoor). The perimeter and
-    area are the footprint the exporters write.
+    unit length of exposed edge per degree indoor-outdoor). Perimeter and area
+    are the whole ground slab: every wing, open-air courtyard edges included
+    (``_slab_geometry``).
     """
     from building_model import Construction
 
@@ -520,7 +665,7 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     if geo is None:
         s.unmatched[cid] = "slab: no ground-floor space polygons for perimeter and area"
         return
-    area, perim, level_id = geo
+    area, perim, level_id, detail = geo
     f_si = row.f_ip * F_IP_TO_SI
     u = round(f_si * perim / area, 6)
     why = (
@@ -528,7 +673,8 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
         + (f"heated slab ({heated_by}); " if heated_by else "")
         + f"Table 5.5 {label} slab F-factor "
         f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
-        f"{perim:.2f} m / slab area {area:.2f} m2 (footprint of level {level_id})"
+        f"{perim:.2f} m / slab area {area:.2f} m2 (ground slab of level {level_id}: "
+        f"{detail['wings']} wing(s), {len(detail['courtyards'])} courtyard(s))"
     )
     prov = Provenance(
         sheet_id="",
@@ -562,6 +708,10 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
         "area_m2": round(area, 4),
         "u_si": u,
         "why": why,
+        "wings": detail["wings"],
+        "courtyards": detail["courtyards"],
+        "holes_not_exposed": detail["holes_not_exposed"],
+        "slivers_m2": detail["slivers"],
     }
     if heated_by:
         s.defaulted[cid]["heated_by"] = heated_by
@@ -636,8 +786,8 @@ def baseline_envelope(model, climate_zone: str, category: str) -> dict:
 
     Recorded for the baseline model; it does not change the proposed model.
     Glazing picks its band from the model's own window-to-wall and
-    skylight-to-roof ratios. The slab also gets the effective U the
-    exporters would carry (F x exposed perimeter / area).
+    skylight-to-roof ratios. The slab also gets its effective U on the
+    model's ground slab (F x exposed perimeter / area, ``_slab_geometry``).
     """
     wwr, srr = _glazing_ratios(model)
     out: dict = {
@@ -676,7 +826,7 @@ def baseline_envelope(model, climate_zone: str, category: str) -> dict:
         if name == "slab" and row["f_ip"] is not None:
             geo = _slab_geometry(model)
             if geo is not None:
-                area, perim, _ = geo
+                area, perim, _, _ = geo
                 info["u_si_effective"] = round(row["f_ip"] * F_IP_TO_SI * perim / area, 6)
         out["surfaces"][name] = info
     return out

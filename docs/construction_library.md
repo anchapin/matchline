@@ -54,11 +54,37 @@ blanket unlabeled default: same U, a named source.
 Slab on grade (#747): an unset ground slab gets `t55-slab`, the Table 5.5
 unheated-slab F-factor for the category and zone,
 converted to SI (1 Btu/h-ft-F = 1.730735 W/m-K) and carried as an effective U:
-F x exposed perimeter / slab area. Area and perimeter come from the footprint
-of the lowest level's spaces; every slab edge counts as exposed. A stated slab
-U is never replaced. A lowest level with no space polygons is reported, not
-filled. The F-factor, perimeter, area and resulting U are written to
-`stage_03b_constructions.json` under `defaulted`.
+F x exposed perimeter / slab area. The slab is the union of the lowest
+level's space polygons. A stated slab U is never replaced. A lowest level with
+no space polygons is reported, not filled. The F-factor, perimeter, area and
+resulting U are written to `stage_03b_constructions.json` under `defaulted`.
+
+Which slab edges are exposed (#747):
+
+- Every wing counts. A ground floor in two disjoint parts is two slabs on
+  grade; both areas and both outer edges count (before, only the largest part
+  did). Parts under 1 m2 are slivers between rooms: listed under
+  `slivers_m2`, not counted.
+- The outer edge of each part is exposed.
+- A hole in the slab is an open-air courtyard when exterior walls on the
+  slab's level (`BuildingModel.envelope`; level-prefixed ids like
+  `L1-EW3` are filtered to that level, unprefixed ones all count) run along
+  at least half of its edge: centreline within 0.6 m of the edge (half a
+  wall's thickness off the room face) and within 10 degrees of parallel,
+  overlapping walls counted once. It must also be open to the sky: spaces on
+  higher levels may cover at most 10% of it (a balcony), since IFC calls a
+  wall between a room and a room with no IfcSpace exterior, and a walled hole
+  with floor above is a missing room. Its edge is then exposed and its area
+  is not slab. Each one is listed under `courtyards` with its area, perimeter
+  and the wall length found along it.
+- Any other hole is an unmodelled room, shaft or gap: its area stays slab and
+  its edge is not exposed, as before. It is listed under `holes_not_exposed`
+  so a modeller can see it. IFC imports carry every exterior wall, courtyard
+  walls included; a drawing-set run's envelope comes from the outer footprint
+  only, so its holes stay slab.
+
+The Appendix G baseline slab (`baseline.surfaces.slab.u_si_effective`) and
+the skylight-to-roof ratio use the same slab geometry.
 
 Heated slab (#747): when a drawing-set run finds a radiant floor or in-slab
 heating row on a mechanical schedule (description, schedule title or any cell
@@ -165,5 +191,9 @@ than its door/window mark no longer takes the mark's place (#829).
 
 ## Not yet
 
-Interior (non-perimeter) slab edges, partial heated-slab extents, and Appendix A
-assemblies.
+Partial heated-slab extents, slab edges against unconditioned or
+below-grade space on the same level, and Appendix A assemblies. A
+single-storey IFC model with a missing IfcSpace bounded by walls can still
+read as a courtyard. Non-per-space gbXML writes the slab as the footprint ring
+(courtyards filled, largest wing only), so the exported slab area can differ
+from the slab the effective U is computed on.
