@@ -84,9 +84,25 @@ In a set run that sheet's `schedules` stage is `failed` and a `fixture_schedule`
 review item names the table. A tag scheduled on two sheets with different values
 keeps the first and goes to review.
 
+## Mechanical equipment in rooms
+
+On `matchline run --set`, each scheduled mechanical tag (`VAV-1`) written on a
+mechanical floor plan is placed in the room that contains it (`mech_tags.py`).
+The mechanical sheet is registered to the architectural plan of the same level
+by the shared column grid (confidence 0.85; offsets must agree within 0.15 m,
+at least one line each way), else by the same page size and scale
+(confidence 0.6, noted as `frame:` on the record). A sheet that registers
+neither way gets a `mech_plan_unregistered` review item and its tags are not
+placed.
+
+Placed records in the report's `schedules.equipment` gain `level_id`,
+`space_id` and `located` (plan sheet, tag bbox in sheet points, position in
+model metres, registration, confidence). A tag in no room is
+`equipment_outside_rooms`; a tag in two rooms is `equipment_ambiguous`; both
+get no room. A note lists scheduled tags no mechanical plan shows.
+
 ## Not done yet
 
-Joining mechanical rows onto HVAC zones needs detected tags on the plans (#743),
-and plan openings are matched to door and window rows by width only (see
-`docs/real_set.md`) until tags are read off the plans. Unruled (whitespace-aligned) tables and scanned
-schedules are not read.
+The placed equipment is not yet written onto HVAC zones (the set model has no
+zones yet), and tags are read from text only, not tied to detected symbols.
+Unruled (whitespace-aligned) tables and scanned schedules are not read.

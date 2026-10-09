@@ -593,3 +593,60 @@ def test_wall_type_tag_alone_by_a_window_still_types_the_wall(tmp_path):
     assert all(not s.openings for s in model.spaces.values())
     assert [r for r in model.review_queue if r.kind == "opening_unsized"]
     assert [w.construction_id for w in model.envelope if w.construction_id] == ["LEG-EW1"]
+
+
+# ---- #746: scheduled mechanical tags placed in rooms from the mech plans ----
+
+
+def _mech_tagged(number, title, tags, scale=SCALE_NOTE):
+    body = _tb(number, title) + text(100, 48, scale, 8)
+    for tag, at in tags:
+        body += text(*_pt(*at), tag, 8)
+    return body
+
+
+def _mech_set(tmp_path, m101_tags, scale=SCALE_NOTE):
+    from test_pdf_schedules import vav_schedule
+
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _mech_tagged("M-101", "FIRST FLOOR MECHANICAL PLAN", m101_tags, scale),
+        _tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000),
+    ]
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+
+
+def test_mech_tags_land_in_the_rooms_the_plan_shows(tmp_path):
+    model, report = _mech_set(
+        tmp_path, [("VAV-1", (1.5, 2)), ("VAV-2 800 CFM", (6.5, 2)), ("VAV-3", (14, 2))]
+    )
+    eq = {e["tag"]: e for e in report.to_dict()["schedules"]["equipment"]}
+    assert eq["VAV-1"]["space_id"] == "L1-101" and eq["VAV-1"]["level_id"] == "L1"
+    assert eq["VAV-2"]["space_id"] == "L1-102"
+    loc = eq["VAV-1"]["located"][0]
+    assert loc["sheet"] == "M-101" and loc["registration"].startswith("frame:")
+    assert loc["confidence"] == pytest.approx(0.6)
+    # VAV-3 is tagged outside the building: found, but in no room
+    assert "space_id" not in eq["VAV-3"]
+    rq = [r for r in model.review_queue if r.id == "rq-equip-VAV-3"]
+    assert rq and rq[0].kind == "equipment_outside_rooms"
+    assert any("2 of 3 scheduled tag(s) placed" in n for n in report.notes)
+
+
+def test_mech_tag_in_two_rooms_is_ambiguous(tmp_path):
+    model, report = _mech_set(tmp_path, [("VAV-1", (1.5, 2)), ("VAV-1", (6.5, 2))])
+    eq = {e["tag"]: e for e in report.to_dict()["schedules"]["equipment"]}
+    assert "space_id" not in eq["VAV-1"] and len(eq["VAV-1"]["located"]) == 2
+    assert [r.kind for r in model.review_queue if r.id == "rq-equip-VAV-1"] == [
+        "equipment_ambiguous"
+    ]
+    assert any("not on any mechanical plan: VAV-2, VAV-3" in n for n in report.notes)
+
+
+def test_mech_plan_at_another_scale_without_a_grid_is_not_placed(tmp_path):
+    model, report = _mech_set(tmp_path, [("VAV-1", (1.5, 2))], scale='SCALE: 1/4" = 1\'-0"')
+    eq = {e["tag"]: e for e in report.to_dict()["schedules"]["equipment"]}
+    assert "located" not in eq["VAV-1"]
+    assert [r.kind for r in model.review_queue if r.id == "rq-mechreg-M-101"] == [
+        "mech_plan_unregistered"
+    ]
