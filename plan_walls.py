@@ -224,10 +224,19 @@ def _layer_kind(name: Optional[str]) -> Optional[str]:
 
 
 def _band_layer(band, segs) -> Optional[str]:
-    """What the layers of a glazed band's face lines say (#793): glazing when
-    any face line is on a glazing layer, pattern when one is on a pattern or
-    insulation layer and none on glazing, else None (no layer evidence)."""
-    kinds = {_layer_kind(segs[i].layer) for i in band.segs if i < len(segs)}
+    """What the layer of a glazed band's middle line says (#793): glazing,
+    pattern or None (no layer evidence). Only the line inside the wall is
+    judged; the wall's own face lines (often on A-WALL, sometimes on a hatch
+    layer) say nothing about whether the middle line is glass."""
+    _d, n = _frame(band.theta)
+    kinds = set()
+    for i in band.segs:
+        if i >= len(segs):
+            continue
+        sg = segs[i]
+        off = (_dot(sg.a, n) + _dot(sg.b, n)) / 2 - band.rho
+        if abs(off) < 0.4 * band.t:  # inside the wall, not one of its faces
+            kinds.add(_layer_kind(sg.layer))
     if "glazing" in kinds:
         return "glazing"
     if "pattern" in kinds:

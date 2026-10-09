@@ -555,6 +555,17 @@ def test_unrelated_layers_leave_the_geometry_rules_in_charge(tmp_path):
     assert op["source"] == "glazing_line"
 
 
+def test_wall_faces_on_a_layer_do_not_judge_the_middle_line(tmp_path):
+    # wall outline on a hatch layer, plain punched window line: still a window
+    content = oc(0, _outline(_mass(SHELL))) + _glazing(6, 8)
+    (op,) = _windows(_read_layers(tmp_path, content, ["A-WALL-PATT"]))
+    assert op["source"] == "glazing_line"
+    # wall outline on a glazing layer, full-length middle line on no layer: no evidence
+    (tmp_path / "g").mkdir()
+    content = oc(0, _outline(_mass(SHELL))) + _glazing(0, 10)
+    assert not _windows(_read_layers(tmp_path / "g", content, ["A-GLAZ"]))
+
+
 def test_door_and_window_on_one_plan(tmp_path):
     mass = _mass(SHELL + PARTITION, [DOOR])
     sym = _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45))

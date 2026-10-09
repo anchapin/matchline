@@ -236,7 +236,9 @@ layer names (`layers`). Layers then decide before the geometry rules:
 - Any other layer name (`A-WALL`, `0`) gives no evidence and the return,
   width and mullion rules above apply as before.
 
-`stats["layers"]` lists the layer names on the plan's wall-face segments.
+Only the middle line inside the wall is judged, not the wall's own face
+lines. `stats["layers"]` lists the layer names on all the plan's stroked
+segments.
 A thin wall band on a glazing layer is still only flagged `maybe_glazing`;
 promoting it to a window is a follow-up.
 
