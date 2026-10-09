@@ -147,8 +147,8 @@ carrying two different wall types goes to review as `wall_type_ambiguous` and
 gets neither.
 
 Limits: one-row descriptions only (a description wrapped onto a second line
-is read from its first line); a wall-type tag closer to an opening than that
-opening's door/window tag can take its place as the opening's tag.
+is read from its first line, #828). A wall-type tag closer to an opening
+than its door/window mark no longer takes the mark's place (#829).
 
 ## Not yet
 

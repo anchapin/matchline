@@ -218,4 +218,7 @@ line would read as ticks.
 Text that reads like a schedule tag (letters then digits, e.g. `W3`, `D-12`, `SF-1`;
 room numbers and names do not match) within 1.5 m of an opening's midpoint is attached
 as `tag_text` with `tag_dist_m`; the nearest opening wins when two are in range.
-`stats.tagged` counts them. The set pipeline uses the tag to pick the schedule row.
+Every tag an opening gets is listed in `tags_near`, nearest first (#829), since a
+wall-type mark can sit closer than the window's own mark. `stats.tagged` counts tagged
+openings. The set pipeline picks the schedule row from the nearest tag that is in the
+door/window schedule, and any legend wall type among the tags still types the wall.

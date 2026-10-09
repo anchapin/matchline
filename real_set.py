@@ -927,8 +927,10 @@ def _plan_openings(
             # a door swing or a glazing line on the plan rules out same-width
             # rows of the other category (#743)
             cands = [(t, e) for t, e in cands if e["category"] == drawn]
-        # a scheduled tag written next to the gap names its row (#793)
-        tag = op.get("tag_text") or ""
+        # a scheduled tag written next to the gap names its row (#793); the
+        # nearest scheduled one wins over a nearer wall-type mark (#829)
+        near = [t["tag"] for t in op.get("tags_near") or []] or [op.get("tag_text") or ""]
+        tag = next((t for t in near if t in dict(sized)), near[0])
         row = dict(sized).get(tag)
         tag_why = ""
         if row is not None:
@@ -1073,8 +1075,8 @@ def _wall_type_legend(files, status, sheets_dir, sched):
 def _assign_wall_types(lid, plan, env_walls, legend, constructions, review, sheet_id) -> int:
     """Envelope walls tagged with a legend wall type get its construction (#747).
 
-    A tag sits on a plan wall (``wall_tags``, or an opening's ``tag_text`` that
-    is not a door/window mark); the tag's foot on that wall maps to the
+    A tag sits on a plan wall (``wall_tags``, or any of an opening's
+    ``tags_near`` that is not a door/window mark); the tag's foot on that wall maps to the
     envelope wall within ``EXTERIOR_TOL_M`` of it. The construction is the legend
     description with no U: the cited library fills it from Table 5.5. One
     envelope wall tagged with two different types goes to review and gets
@@ -1091,8 +1093,9 @@ def _assign_wall_types(lid, plan, env_walls, legend, constructions, review, shee
         for t in plan.get("wall_tags", [])
     ]
     hits += [
-        (o.get("tag_text") or "", (o.get("walls") or [None])[0], o.get("a_m"))
+        (t, (o.get("walls") or [None])[0], o.get("a_m"))
         for o in plan.get("openings", [])
+        for t in ([x["tag"] for x in o.get("tags_near") or []] or [o.get("tag_text") or ""])
     ]
     lines = [(w, LineString([w.from_m, w.to_m])) for w in env_walls]
     tags_on: Dict[str, set] = {}

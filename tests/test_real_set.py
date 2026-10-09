@@ -562,3 +562,34 @@ def test_legend_disagreeing_with_itself_goes_to_review(tmp_path):
     (rq,) = [r for r in model.review_queue if r.kind == "wall_type_conflict"]
     assert "W1" in rq.description
     assert not any(w.construction_id for w in model.envelope)
+
+
+# ---- #829: a nearer wall-type mark does not take a window's schedule tag ----
+
+
+def _window_and_wall_type(tmp_path, tags):
+    page = _arch_win("A-101", "FIRST FLOOR PLAN", 1)
+    for tag, at in tags:
+        page += text(*_pt(*at), tag, 8)
+    leg = _tb("A-501", "WALL TYPES") + text(100, 800, "EW1", 10) + text(160, 800, CMU, 10)
+    sched = _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(ROWS_4FT)
+    return real_set.build_set_model(_set(tmp_path, [page, leg, sched]), tmp_path / "out")
+
+
+def test_scheduled_mark_wins_over_a_nearer_wall_type_tag(tmp_path):
+    # EW1 (a wall type) sits 0.4 m off the gap, W3 (the window) 1.0 m off
+    model, _rep = _window_and_wall_type(tmp_path, [("EW1", (7.3, -0.4)), ("W3", (6.7, -1.0))])
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    assert op.tag == "W3" and op.provenance.method == "plan_gap_tag"
+    assert op.height_m == pytest.approx(84 * 0.0254, abs=1e-3)
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+    (w,) = [w for w in model.envelope if w.construction_id]
+    assert w.construction_id == "LEG-EW1" and w.facade == "south"
+
+
+def test_wall_type_tag_alone_by_a_window_still_types_the_wall(tmp_path):
+    model, _rep = _window_and_wall_type(tmp_path, [("EW1", (7.3, -0.4))])
+    # no scheduled mark: W1 and W3 are both 4'-0" and disagree, so unsized
+    assert all(not s.openings for s in model.spaces.values())
+    assert [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert [w.construction_id for w in model.envelope if w.construction_id] == ["LEG-EW1"]
