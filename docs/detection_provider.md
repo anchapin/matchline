@@ -66,13 +66,17 @@ weights): they work through this interface for evaluation, never for a release.
   permissive and a release may use it. The set reader hands it each plan's
   walls result, sheet height and rendered px per pt. Metres from `plan_walls`
   are y-up from the sheet's bottom edge, and the image is y-down.
+  A storefront run with a door drawn inside it (`doors_in_glazing`, #793) gives
+  one window box per piece of glass either side of the door, not one box over
+  the door too: the door is not glass, and `door_swing` reports it. Glass
+  narrower than 0.10 m beside a door is a frame and is dropped. Each piece
+  keeps the run's tag.
 
 ## Not yet
 
 A trained door/window backend whose training data and weights may ship (the
-`door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
-to plan openings and mechanical tags, and taking storefront doors out of a
-`vector_glazing` window box when doors and windows run together (#793).
+`door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, and joining detections
+to plan openings and mechanical tags.
 
 ## Doors and windows together
 
