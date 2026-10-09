@@ -127,6 +127,26 @@ def _thin_leaf(ink: np.ndarray, y: int, x0: int, x1: int, max_leaf: int) -> bool
     return float(np.median(up + down)) <= max_leaf - 1
 
 
+def _face_leaf(ink: np.ndarray, y: int, x0: int, x1: int, p: _P) -> bool:
+    """Row y is the arc-side face of a wall band the open leaf lies on.
+
+    A door hung beside a wall that meets its hinge jamb opens flat against
+    that wall, so the drafted leaf merges into the wall's face: the ink is
+    thick on the side away from the arc and (almost) nothing hangs below the
+    face toward it. The arc, jamb and clear-opening checks still have to pass.
+    """
+    a, b = x0 + (x1 - x0) // 4, x1 - (x1 - x0) // 4
+    if b <= a:
+        return False
+    h = ink.shape[0]
+    lo, hi = max(0, y - p.max_wall), min(h, y + p.max_leaf + 1)
+    col = ink[lo:hi, a:b]
+    k = y - lo
+    up = np.cumprod(col[k::-1], axis=0).sum(axis=0)  # includes row y
+    down = np.cumprod(col[k + 1 :], axis=0).sum(axis=0)
+    return float(np.median(up)) >= p.max_leaf and float(np.median(down)) <= p.max_leaf // 2
+
+
 def _band_at(ink: np.ndarray, y: int, x: int, p: _P):
     """(centre, start, end) of a wall crossing row y near x, else None.
 
@@ -204,16 +224,22 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
         runs = _row_runs(ink[y])
         for s, e in runs:
             length = e - s
-            if length < p.rmin or length > p.rmax + 2 * p.slack:
+            if length < p.rmin:
                 continue
+            # a run longer than any leaf can only be a leaf on a wall face
+            face_only = length > p.rmax + 2 * p.slack
             # cheap first pass: some radius from near the run start must fit
             if _arc_coverage(fat, s, y, radii).max(initial=0.0) < MIN_ARC_COVERAGE - 0.2:
                 hx_try = min(s + p.slack, e - 1 - p.rmin)
                 if _arc_coverage(fat, hx_try, y, radii).max(initial=0.0) < MIN_ARC_COVERAGE - 0.2:
                     continue
-            if not _thin_leaf(ink, y, s, e, p.max_leaf):
+            leaf_end = min(e, s + p.rmax + 2 * p.slack)
+            on_face = face_only or not _thin_leaf(ink, y, s, e, p.max_leaf)
+            if on_face and not _face_leaf(ink, y, s, leaf_end, p):
                 continue
-            behind = _wall_at(ink, y - p.probe, -p.probe, s, p)
+            # a leaf on a wall face: the row behind it runs through that wall,
+            # so only the jamb wall past the opening places the hinge
+            behind = None if on_face else _wall_at(ink, y - p.probe, -p.probe, s, p)
             best = None
             for r in radii.tolist():
                 past = _wall_at(ink, y + r + p.probe, p.probe, s, p)
