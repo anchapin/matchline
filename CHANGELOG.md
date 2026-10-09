@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Plan walls: a small box (a pipe or column enclosure) on a wall's inside face, drawn as a narrow chase and a box wall beyond it, no longer reads as a window in that wall. Two bands sharing a face line are not folded into one glazed wall when a third band lies past the far face of either (`_stacked_beyond`). Fixes the extra first-floor Clinic window detection (#743).
 - HVAC detection: the tight grille passes and the confirm gate also try the return grille drawn as a box of parallel blades with no diagonal (`hvac_trace.TEMPLATE_STYLES`, glyph `synth.mech._ALT_GLYPH_FN`), so a grille in that common drafting style is found and kept as a grille. Diffusers keep one style (#745).
 - HVAC detection: diffuser and grille templates are also tried at 0.87x and 1.15x (`hvac_trace.TEMPLATE_SCALES`) for proposals, the tight relabel passes and the confirm gate, so a terminal drawn up to 15% smaller or larger than ours is still found (#745).
 - HVAC detection: the stub-less grille template used to relabel and confirm grilles is now also tried at a quarter turn, so a grille whose diagonal runs the other way is kept as a grille instead of being dropped or left labeled diffuser. The diffuser X looks the same turned and keeps one template (`hvac_trace.TIGHT_TURNS`, #745).

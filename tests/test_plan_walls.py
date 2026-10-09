@@ -520,6 +520,50 @@ def test_cavity_line_past_reveal_returns_is_not_a_window(tmp_path):
     assert not _windows(res)
 
 
+def _box_on_face(x0, x1, gap=0.175, t=0.168):
+    """A small box (a pipe or column enclosure) on the south wall's inside
+    face: a wall ``gap`` off the face and a return at each end (#743)."""
+    y0 = T_EXT / 2
+    yc = y0 + gap + t / 2
+    return [
+        ((x0, yc), (x1, yc), t),
+        ((x0 - t / 2, y0), (x0 - t / 2, y0 + gap + t), t),
+        ((x1 + t / 2, y0), (x1 + t / 2, y0 + gap + t), t),
+    ]
+
+
+def test_box_enclosure_on_a_wall_face_is_not_a_window(tmp_path):
+    # Clinic first floor: the wall, the narrow chase behind the box and the
+    # box's own wall are three bands in a row, not a wall split by glazing
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + _box_on_face(3, 5))))
+    assert not _windows(res)
+
+
+def test_window_beside_a_box_enclosure_is_still_a_window(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + _box_on_face(2, 4))) + _glazing(6, 7))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_stacked_beyond_needs_a_band_past_the_far_face():
+    # three bands in a row on face lines 0..3 (y = 0, 3, 5, 7)
+    a = W.Band(0.0, 1.5, 0.0, 20.0, 3.0, "line_pair", (0, 1))
+    b = W.Band(0.0, 4.0, 0.0, 20.0, 2.0, "line_pair", (1, 2))
+    c = W.Band(0.0, 6.0, 0.0, 20.0, 2.0, "line_pair", (2, 3))
+    by_seg = {0: [0], 1: [0, 1], 2: [1, 2], 3: [2]}
+    assert W._stacked_beyond(b, a, [a, b, c], by_seg)  # c lies past b's far face
+    assert not W._stacked_beyond(a, b, [a, b, c], by_seg)  # nothing past a
+    # the whole wall on the same two face lines as a window's halves overlaps
+    # them across the thickness: not a band beyond
+    whole = W.Band(0.0, 2.5, 0.0, 20.0, 5.0, "line_pair", (0, 2))
+    by_seg = {0: [0, 2], 1: [0, 1], 2: [1, 2]}
+    assert not W._stacked_beyond(b, a, [a, b, whole], by_seg)
+    # a short band past the far face does not count
+    short = W.Band(0.0, 6.0, 0.0, 5.0, 2.0, "line_pair", (2, 3))
+    by_seg = {0: [0], 1: [0, 1], 2: [1, 2], 3: [2]}
+    assert not W._stacked_beyond(b, a, [a, b, short], by_seg)
+
+
 def test_middle_line_continues_only_end_to_end_on_the_same_line():
     g = W.Band(0.0, 10.0, 0.0, 50.0, 5.0, "line_pair", (), True)
 

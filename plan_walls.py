@@ -788,6 +788,8 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
             if len(idx) != 2:
                 continue
             a, b = bands[idx[0]], bands[idx[1]]
+            if _stacked_beyond(a, b, bands, by_seg) or _stacked_beyond(b, a, bands, by_seg):
+                continue
             rb, b0, b1 = _in_frame(b, a.theta)
             tol = 0.1 * min(a.t, b.t)
             # a reveal return meeting one face inside the opening cuts that
@@ -811,6 +813,29 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
             changed = True
             break
     return bands
+
+
+def _stacked_beyond(x: Band, y: Band, bands: List[Band], by_seg) -> bool:
+    """A third band lies past ``x``'s far face, on the side away from ``y``
+    (#743): a wall, a narrow chase and a box or lining beyond it, three bands
+    in a row. Those are three things, not one wall split by its glazing line.
+    The wall band on the same two face lines as a window's halves overlaps
+    them across the thickness, so it never counts."""
+    shared = set(x.segs) & set(y.segs)
+    rx = x.rho
+    ry, _, _ = _in_frame(y, x.theta)
+    away = 1.0 if rx > ry else -1.0
+    for f in set(x.segs) - shared:
+        for ci in by_seg.get(f, []):
+            c = bands[ci]
+            if c is x or c is y:
+                continue
+            rc, c0, c1 = _in_frame(c, x.theta)
+            if (rc - rx) * away <= (x.t + c.t) / 2 - 0.1 * min(x.t, c.t):
+                continue  # not beyond the far face
+            if min(x.u1, c1) - max(x.u0, c0) > 0.5 * (x.u1 - x.u0):
+                return True
+    return False
 
 
 def _band_from_rect(a: Pt, b: Pt, t: float) -> Band:
