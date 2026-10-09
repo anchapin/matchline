@@ -216,6 +216,29 @@ unclassified. `stats.windows` counts them. In a set, a window restricts the
 schedule width match to window rows, the mirror of the door-swing rule, and
 the provenance note records the glazing line.
 
+A candidate is dropped when its glazed band holds another wall (#868). A
+small enclosure built against a wall's inside face (a box, a chase, a pier
+lining) leaves a face line between the two walls, and `_merge_glazing` reads
+that line as glazing and folds wall, gap and enclosure wall into one thick
+band. A real window's band is its own wall. So `_wall_inside_band` rejects the
+candidate when another parallel wall that is thinner than the band lies inside
+it, off the band's centre line by more than `max(tol, 0.25 * wall thickness)`,
+along at least half the band's length. A wall at least as thick as the band (a
+thickened pier or lined wall beside a real window) cannot lie inside it and
+never counts. Walls and rooms are not changed; only the window call is.
+
+Clinic windows drawn from the IFC (`scripts/validate_clinic_walls.py
+--windows`, plumbing only: we choose how the glass is drawn):
+
+| Floor | Truth | Before #868 | After #868 |
+| --- | --- | --- | --- |
+| First | 22 | 23 found, recall 1.0, precision 0.957 | 22 found, recall 1.0, precision 1.0 |
+| Second | 36 | 37 found, recall 1.0, precision 0.973 | 36 found, recall 1.0, precision 1.0 |
+
+The two extras were a 2.29 x 0.27 m box enclosure on the first floor and a
+1.15 x 0.58 m pier with a lining and a partition on the second. Clinic walls
+and rooms are identical before and after.
+
 ### Storefront and curtain wall (#793)
 
 The return rule above misses glazing that runs the whole length of its wall
