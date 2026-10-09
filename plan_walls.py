@@ -398,9 +398,33 @@ def _wall_inside_band(g, w, walls, atol: float, tol: float) -> bool:
         if off - 0.5 * o.t > 0.5 * g.t + tol:
             continue  # clear of the band; one flush against its face blocks it (#879)
         u0, u1 = sorted((_dot(o.a, d), _dot(o.b, d)))
-        if min(u1, g.u1) - max(u0, g.u0) >= 0.5 * span:
-            return True
+        if min(u1, g.u1) - max(u0, g.u0) < 0.5 * span:
+            continue
+        if _split_by_glass_line(g, w, o, n, tol):
+            continue  # the band is just ``w`` and ``o`` meeting on its glass line
+        return True
     return False
+
+
+def _split_by_glass_line(g, w, o, n, tol: float) -> bool:
+    """``w`` and ``o`` together are band ``g``, meeting on its middle line (#877).
+
+    A window through an asymmetric double-leaf wall can have its glass line
+    drawn exactly on one leaf's cavity face. That face line then runs along
+    the whole wall, so the wall comes out as two walls meeting on it (the
+    inner leaf, and the outer leaf with the cavity folded in), and the
+    opening's band is both of them. Neither is an enclosure inside the band:
+    they sit on opposite sides of its middle line, meet there, and their
+    thicknesses add up to the band's. A box or lining against a wall always
+    leaves a gap, so it never fills the band this way.
+    """
+    cw = (_dot(w.a, n) + _dot(w.b, n)) / 2 - g.rho
+    co = (_dot(o.a, n) + _dot(o.b, n)) / 2 - g.rho
+    if cw * co >= 0:
+        return False  # same side of the middle line
+    if abs(abs(cw) - 0.5 * w.t) > tol or abs(abs(co) - 0.5 * o.t) > tol:
+        return False  # one of them does not reach the middle line
+    return abs(w.t + o.t - g.t) <= tol
 
 
 def _middle_line_continues(g, bands, tol: float) -> bool:
