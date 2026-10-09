@@ -287,13 +287,14 @@ def _wall_tags(walls: List[dict], openings: List[dict], spans, to_m) -> List[dic
     A full-length storefront or curtain wall is often drawn as a plain wall
     band with its schedule tag (SF-1) beside it. A tag-like span that is not
     within ``TAG_RADIUS_M`` of any opening, but is within it of a wall with no
-    opening, is kept against that wall. Whether the tag is scheduled, and
+    opening, is kept against that wall; every such tag is kept, since one wall
+    can carry a storefront tag and a wall-type tag (#747). Whether the tag is scheduled, and
     whether its width explains the wall, is for the caller to decide.
     """
     op_lines = [LineString([o["a_m"], o["b_m"]]) for o in openings]
     has_op = {wid for o in openings for wid in o.get("walls", [])}
     free = [(w, LineString([w["a_m"], w["b_m"]])) for w in walls if w["id"] not in has_op]
-    best: Dict[str, Tuple[float, str, Tuple[float, float]]] = {}
+    found: List[Tuple[str, float, str, Tuple[float, float]]] = []
     for text, (x0, y0, x1, y1) in spans:
         t = str(text).strip().upper()
         if not TAG_RE.match(t) or not free:
@@ -302,8 +303,8 @@ def _wall_tags(walls: List[dict], openings: List[dict], spans, to_m) -> List[dic
         if any(ln.distance(c) <= TAG_RADIUS_M for ln in op_lines):
             continue  # belongs to an opening (or would have)
         d, w = min(((ln.distance(c), w) for w, ln in free), key=lambda t: t[0])
-        if d <= TAG_RADIUS_M and (w["id"] not in best or d < best[w["id"]][0]):
-            best[w["id"]] = (d, t, (c.x, c.y))
+        if d <= TAG_RADIUS_M:
+            found.append((w["id"], d, t, (c.x, c.y)))
     return [
         {
             "wall": wid,
@@ -311,7 +312,7 @@ def _wall_tags(walls: List[dict], openings: List[dict], spans, to_m) -> List[dic
             "point_m": [round(x, 4), round(y, 4)],
             "tag_dist_m": round(d, 3),
         }
-        for wid, (d, t, (x, y)) in sorted(best.items())
+        for wid, d, t, (x, y) in sorted(found, key=lambda f: (f[0], f[3]))
     ]
 
 
