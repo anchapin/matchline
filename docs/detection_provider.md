@@ -71,8 +71,17 @@ weights): they work through this interface for evaluation, never for a release.
 
 A trained door/window backend whose training data and weights may ship (the
 `door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
-to plan openings and mechanical tags, and running door and window providers
-together on one set (one provider per run today).
+to plan openings and mechanical tags, and taking storefront doors out of a
+`vector_glazing` window box when doors and windows run together (#793).
+
+## Doors and windows together
+
+`{"provider": "combined", "providers": [{"provider": "door_swing"},
+{"provider": "vector_glazing"}]}` runs both on each plan sheet and joins their
+detections. It needs whatever any part needs (a scale, the walls), and the set
+reader hands each part only what it asks for. It is evaluation only when any
+part is, so a release refuses a combined config with an eval-only part. A
+combined config cannot hold `none` or another `combined`.
 
 ## Vector door swings
 

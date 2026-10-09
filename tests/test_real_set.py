@@ -1111,3 +1111,33 @@ def test_a_provider_that_needs_the_scale_gets_it_per_sheet(tmp_path):
     assert rep.detector["provider"] == "door_swing" and not rep.detector["eval_only"]
     by = {s["file"]: s for s in rep.to_dict()["sheets"]}
     assert by["sheet_001.json"]["stages"]["symbols"]["provider"] == "door_swing"
+
+
+def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
+    """#743: door and window providers run together on one set; the set reader
+    hands the combined provider each plan's walls and its px per metre."""
+    import detection_provider as dp
+
+    seen = {}
+
+    class Doors(dp.DoorSwingProvider):
+        def detect(self, image_path, sheet_id, px_per_m=None):
+            seen.setdefault(Path(str(image_path)).name, {})["px_per_m"] = px_per_m
+            return []
+
+    class Glass(dp.VectorGlazingProvider):
+        def detect(self, image_path, sheet_id, plan=None):
+            seen.setdefault(Path(str(image_path)).name, {})["plan"] = plan
+            return []
+
+    pdf = _set(
+        tmp_path, [_arch("A-101", "FIRST FLOOR PLAN", 1), _arch("A-102", "SECOND FLOOR PLAN", 2)]
+    )
+    prov = dp.CombinedProvider([Doors(), Glass()])
+    _model, rep = real_set.build_set_model(pdf, tmp_path / "out", provider=prov, dpi=150)
+    assert sorted(seen) == ["sheet_001.png", "sheet_002.png"]
+    m_per_pt = rep.to_dict()["sheets"][0]["stages"]["scale"]["m_per_pt"]
+    got = seen["sheet_001.png"]
+    assert got["px_per_m"] == pytest.approx(150 / 72 / m_per_pt)
+    assert got["plan"]["walls"]["m_per_pt"] and got["plan"]["px_per_pt"] == pytest.approx(150 / 72)
+    assert rep.detector["provider"] == "combined" and not rep.detector["eval_only"]
