@@ -141,3 +141,64 @@ def test_door_swing_provider_without_a_scale_reports_nothing(tmp_path):
     assert len(fixed.detect(png, "s")) == 1
     with pytest.raises(dp.ProviderConfigError, match="px_per_metre"):
         dp.provider_from_config({"provider": "door_swing", "px_per_metre": 50.0})
+
+
+def _glazing_sheet(tmp_path, dpi=36):
+    """A 10 x 6 m shell with a 2 m glazing line in the south wall (#743)."""
+    import test_plan_walls as T
+    from pdf_fixtures import PageSpec, line, write_pdf
+
+    import pdf_ingest as P
+
+    gx0, gx1 = T._pt(6, 0)[0], T._pt(8, 0)[0]
+    gy = T._pt(0, 0)[1]
+    content = T._outline(T._mass(T.SHELL)) + line(gx0, gy, gx1, gy, 0.3)
+    pdf = write_pdf(
+        tmp_path / "g.pdf", [PageSpec(width=T.PAGE_W, height=T.PAGE_H, content=content)]
+    )
+    sheet = P.ingest_pdf(pdf, out_dir=tmp_path / "o", dpi=dpi).sheets[0]
+    # fixture points are PDF y-up; the rendered sheet is y-down
+    centre = ((gx0 + gx1) / 2 * sheet.px_per_pt, (T.PAGE_H - gy) * sheet.px_per_pt)
+    return sheet, centre, T.M_PER_PT, tmp_path / "o" / sheet.raster_file
+
+
+def test_vector_glazing_provider_may_ship_and_puts_the_window_on_the_glass(tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    import plan_walls as W
+
+    p = dp.provider_from_config({"provider": "vector_glazing"}, release=True)
+    assert isinstance(p, dp.VectorGlazingProvider)
+    assert (p.info.license_class, p.info.eval_only) == ("permissive", False)
+    sheet, (cx, cy), m_per_pt, png = _glazing_sheet(tmp_path)
+    walls = W.extract_walls(sheet, m_per_pt).to_dict()
+    plan = {"walls": walls, "height_pt": sheet.height_pt, "px_per_pt": sheet.px_per_pt}
+    (d,) = p.detect(png, "set.pdf:sheet_001.json", plan=plan)
+    assert d.label == "window" and d.source == "set.pdf:sheet_001.json"
+    assert d.score == pytest.approx(W.WINDOW_CONFIDENCE)
+    x0, y0, x1, y1 = d.bbox
+    assert abs((x0 + x1) / 2 - cx) <= 2 and abs((y0 + y1) / 2 - cy) <= 2
+    # 2 m of glass plus half the 0.30 m wall either side
+    assert x1 - x0 == pytest.approx(2.3 / m_per_pt * sheet.px_per_pt, abs=1)
+    img = np.asarray(Image.open(png))
+    box = img[int(y0) : int(y1) + 1, int(x0) : int(x1) + 1]
+    assert (box < 128).sum() > 0  # the glazing ink is inside the box
+
+
+def test_vector_glazing_reports_windows_only_and_nothing_without_walls():
+    walls = {
+        "m_per_pt": 0.01,
+        "walls": [{"id": "W1", "thickness_m": 0.2}],
+        "openings": [
+            {"walls": ["W1"], "a_m": (1, 1), "b_m": (2, 1), "kind": "door"},
+            {"walls": ["W1"], "a_m": (3, 1), "b_m": (4, 1), "kind": "window",
+             "window_confidence": 0.75, "tag_text": "W-1"},
+        ],
+    }  # fmt: skip
+    (d,) = dp.window_detections(walls, height_pt=500.0, px_per_pt=2.0, source="s")
+    assert (d.label, d.tag, d.score) == ("window", "W-1", 0.75)
+    # x 300..400 pt, y (500 - 100) pt, padded by 0.1 m = 10 pt, all at 2 px per pt
+    assert d.bbox == pytest.approx((580.0, 780.0, 820.0, 820.0))
+    assert dp.VectorGlazingProvider().detect("x.png", "s") == []
+    assert dp.window_detections({"openings": walls["openings"]}, 500.0, 2.0, "s") == []

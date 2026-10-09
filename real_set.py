@@ -248,7 +248,19 @@ def build_set_model(
             )
         ):
             sid = f"{Path(str(pdf)).name}:{f}"
-            if getattr(provider, "needs_scale", False):
+            if getattr(provider, "needs_walls", False):
+                # windows from the wall reader's vector glazing (#743)
+                sj = json.loads((sheets_dir / f).read_text())
+                detections[f] = provider.detect(
+                    png,
+                    sid,
+                    plan={
+                        "walls": walls.get(f) or {},
+                        "height_pt": float(sj["height_pt"]),
+                        "px_per_pt": float(sj.get("px_per_pt") or dpi / 72.0),
+                    },
+                )
+            elif getattr(provider, "needs_scale", False):
                 # rendered px per metre: (dpi / 72 px per pt) / (m per pt)
                 ppm = dpi / 72.0 / scales[f]["m_per_pt"]
                 detections[f] = provider.detect(png, sid, px_per_m=ppm)

@@ -14,6 +14,7 @@ source sheet. The takeoff join reads that shape whatever produced it.
 {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger artifact path>"}
 {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger artifact path>"}
 {"provider": "door_swing"}
+{"provider": "vector_glazing"}
 ```
 
 - `none` (the default when no config is given): no detections; plan sheets report
@@ -55,11 +56,22 @@ Today the only trained door/window weights are the CubiCasa5K YOLO11n runs, whic
 the ledger classes as noncommercial (and copyleft through the YOLO11n starting
 weights): they work through this interface for evaluation, never for a release.
 
+- `vector_glazing`: reports the windows the wall reader (`plan_walls`) already
+  finds in the sheet's vectors: a glazing line drawn inside a wall run, a
+  storefront run, and a band whose faces sit on a glazing CAD layer. Each
+  `kind: "window"` opening becomes a `window` detection whose box spans the
+  opening plus half its wall's thickness either side, in rendered pixels.
+  Its score is the opening's `window_confidence`, and its tag is the tag the
+  wall reader attached, if any. It finds no doors. Rules, not weights, so it is
+  permissive and a release may use it. The set reader hands it each plan's
+  walls result, sheet height and rendered px per pt. Metres from `plan_walls`
+  are y-up from the sheet's bottom edge, and the image is y-down.
+
 ## Not yet
 
 A trained door/window backend whose training data and weights may ship (the
 `door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
-to plan openings and mechanical tags, and a vector-path provider.
+to plan openings and mechanical tags, and running door and window providers\ntogether on one set (one provider per run today).
 
 ## Vector door swings
 
