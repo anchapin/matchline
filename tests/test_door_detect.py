@@ -58,6 +58,52 @@ def test_width_and_label_over_the_swing(width_m):
     assert abs(det["width_px"] - r) <= 3
 
 
+def _face_canvas(*, arc=True, side_m=3.6, thick_px=10):
+    """A door hung beside a cross wall that meets its hinge jamb (#743).
+
+    The open leaf lies on the cross wall's face, so the drafted leaf and the
+    wall merge into one band of ink.
+    """
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 0.9 * PPM
+    d.rectangle([x - 10, 40, x + 10, 360], fill=0)
+    d.rectangle([x - 11, yh, x + 11, yh + r], fill=255)
+    d.rectangle([x + 10, yh - thick_px, x + 10 + side_m * PPM, yh + 1], fill=0)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    if arc:
+        d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize(("side_m", "thick_px"), [(3.6, 10), (0.6, 10), (3.6, 5)])
+def test_leaf_lying_on_a_wall_face(k, flip, side_m, thick_px):
+    img, centre, r = _face_canvas(side_m=side_m, thick_px=thick_px)
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_wall_face_at_a_gap_without_an_arc_is_not_a_door(k):
+    img, centre, _ = _face_canvas(arc=False)
+    img, _ = _orient(img, centre, k, False)
+    assert detect_door_swings(img, PPM) == []
+
+
+def test_wall_corners_without_swings_are_not_doors():
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.rectangle([140, 40, 160, 360], fill=0)
+    d.rectangle([160, 140, 360, 150], fill=0)  # T into the wall
+    d.rectangle([40, 250, 140, 260], fill=0)  # and one from the other side
+    d.rectangle([40, 40, 360, 50], fill=0)  # an L at the top
+    assert detect_door_swings(np.asarray(img), PPM) == []
+
+
 def test_wall_gap_without_a_swing_is_not_a_door():
     img = Image.new("L", (400, 400), 255)
     d = ImageDraw.Draw(img)

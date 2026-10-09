@@ -58,6 +58,13 @@ same radius back to the far jamb, a wall band behind the hinge or past the far
 jamb (seen on two rows with the same centre), and a clear opening between the
 jambs. The hinge is snapped to the wall's centre line; the width is the radius
 whose arc best sits on the ink. All 8 hinge/swing orientations are searched.
+A door hung beside a wall that meets its hinge jamb opens flat against that
+wall, so its drafted leaf merges into the wall's face. The leaf then counts
+when the ink is at least a leaf thick on the side away from the arc and
+(almost) nothing hangs below the face toward it; the hinge is placed from the
+jamb wall past the opening only, since the row behind the leaf runs through
+the side wall. The arc, jamb and clear-opening checks are unchanged, so a wall
+corner or a wall face beside a gap with no arc is still not a door (#743).
 A wall gap with no swing is never treated as a door. The image is searched
 only when the model has a closet, since doors only feed closet merging.
 
@@ -106,14 +113,17 @@ Measured on the Clinic (plumbing only, nothing tuned on it):
 
 | Storey | IFC doors | Detections | Recall | Precision |
 |---|---|---|---|---|
-| First Floor | 148 | 137 | 0.932 | 1.000 |
-| Second Floor | 96 | 89 | 0.896 | 0.989 |
+| First Floor | 148 | 139 | 0.946 | 1.000 |
+| Second Floor | 96 | 91 | 0.917 | 0.989 |
 
 An opening wider than one leaf (`MAX_WIDTH_M`) is drawn as a pair of leaves
-meeting in the middle, as a plan draws a double door. Of the 20 misses, one
-is a 1.73 m double door; 4 are openings only 0.03 to 0.12 m wide at the cut,
-which are not door-sized gaps; 15 are ordinary 0.86 to 0.92 m doors still to
-be looked at one by one.
+meeting in the middle, as a plan draws a double door. Reading the leaf on a
+wall face raised recall from 0.932 and 0.896 with precision unchanged. Of the
+16 misses left, one is a 1.73 m double door; 4 are openings only 0.03 to
+0.12 m wide at the cut, which are not door-sized gaps; 7 are doors in walls
+0.025 m thick at the cut, below `MIN_WALL_M`; the rest have a short pier
+shared with the next door, crossing swings, or a jamb drawn as two thin lines
+with a gap between them.
 
 ## IFC models (#574)
 
