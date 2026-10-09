@@ -220,3 +220,17 @@ Realistic seed 111 room Rand also goes from 0.0 to 1.0; every other seed stays
 1.0 on both sheet types. Detection does not use the skeleton, so detection
 counts and the Clinic results are unchanged. A 9 px disk alone gave the same
 sensor numbers; the union was kept because it can only add duct pixels.
+
+## Symbol variation on the Clinic sheets (#745)
+
+The Clinic sheets above draw every terminal with the exact glyph the NCC templates are cut from, so a true terminal scores NCC 1.00. `--vary SEED` redraws them the way another firm or a scan would: scale 0.85 to 1.15, line weight 2 to 4 px, a quarter turn plus up to 5 degrees tilt and up to 6% shear, half the diffusers and grilles in an alternative style (four-way throw arrows instead of the X; five blade lines instead of the grille diagonal), half without the white knockout so duct ink runs through, 30% with a tag label over the symbol, then scan noise and blur (`detector/degrade.py`), JPEG at quality 55 to 80 and a 0 to 2 px raster shift. The ranges were set from the issue before any run; nothing is tuned on these numbers, and the Clinic data stays out of the repo.
+
+Recall (TP / terminals), false hits, and end-to-end room outcomes, both storeys, detector unchanged:
+
+| Render | Diffuser recall | Grille recall | False hits (diff / grille) | Room correct / wrong / missed |
+|---|---|---|---|---|
+| clean | 234/234 (1.00) | 206/206 (1.00) | 0 / 0 | 437 / 0 / 0 |
+| `--vary 1` | 29/234 (0.12) | 18/206 (0.09) | 0 / 4 | 47 / 0 / 390 |
+| `--vary 2` | 40/234 (0.17) | 16/206 (0.08) | 0 / 2 | 56 / 0 / 381 |
+
+Where they are lost (stage check, seed 1 / seed 2): an NCC proposal of the right class lands on only 71 of 234 diffusers (both seeds) and 63 / 67 of 206 grilles (clean: 234 and 203), while WiSARD at the true position still says the right class for 174/169 diffusers and 151/147 grilles. So the loss is mostly at the template proposal stage: the stub-less built-in templates don't match a rescaled, tilted, alternative-style or noisy symbol. A detection that is made still lands in the right room every time. Any fix (scale/rotation template banks, legend templates from #744) gets validated on synthetic sheets first, with Clinic only measured.
