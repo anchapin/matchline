@@ -168,3 +168,21 @@ wall_height: {L1: 4.5, L2: 3.6}   # or one number for every level
 `--storey-height` beats the config. A level id that is not in the set fails the run
 and names the set's levels; when only some levels default, `rq-storey-height` says
 which keys to add.
+
+## Mechanical symbol legends (#744)
+
+Each vector mechanical sheet is searched for a symbol legend: a text item that
+is the whole title (`SYMBOLS`, `SYMBOL LEGEND`, `HVAC SYMBOL LEGEND`,
+`LEGEND OF SYMBOLS`; a bare `SYMBOL` is a column header) with rows below it,
+within 30 pt left / 450 pt right of the title and 500 pt down, ending at a gap
+of three row pitches. A row is a description line with a drawn symbol (a
+primitive no larger than 80 pt) to its left; a line with no symbol continues
+the row above, or before any row is a header. The description alone sets the
+class (`hvac_legend.classify`): thermostat / space sensor -> sensor, VAV /
+terminal unit -> vav, AHU / RTU -> ahu, return / exhaust / transfer grille,
+register or diffuser -> grille, any other diffuser -> diffuser. Anything else,
+including a "SUPPLY GRILLE" (outlet or grille is not settled by the words),
+keeps no class and goes to an `hvac_legend_unmapped` review item (confidence
+0.7). The report lists every legend under `hvac_legends` with each row's
+symbol box (sheet points, y down); cutting those boxes as templates for the
+`hvac_trace` cascade is the next slice.

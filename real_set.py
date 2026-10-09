@@ -56,6 +56,7 @@ class SetReport:
     schedules: dict = field(default_factory=dict)
     detector: dict = field(default_factory=dict)
     elevations: List[dict] = field(default_factory=list)
+    hvac_legends: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -71,6 +72,7 @@ class SetReport:
             "schedules": self.schedules,
             "detector": self.detector,
             "elevations": self.elevations,
+            "hvac_legends": self.hvac_legends,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -536,6 +538,7 @@ def build_set_model(
         plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
         review, report,
     )  # fmt: skip
+    _mech_legends(files, status, sheets_dir, review, report)
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
         sched_entries, review, report,
@@ -770,6 +773,62 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
                 )
             )
     return reads, bbox
+
+
+def _mech_legends(files, status, sheets_dir, review, report) -> None:
+    """Read the symbol legend on every vector mechanical sheet (#744).
+
+    Each legend row's description is mapped to an HVAC detector class from its
+    words only (``hvac_legend.classify``); the rows go on the report under
+    ``hvac_legends`` with the symbol's box for the template slice. Rows whose
+    description names no class go to one review item per legend.
+    """
+    from building_model import Provenance, ReviewItem
+    from hvac_legend import CONFIDENCE, read_legend
+
+    for f in files:
+        st = status[f]
+        if _discipline(st) != "mechanical" or st.stages["ingest"]["kind"] == "raster_only":
+            continue
+        sheet_id = st.number or f
+        for k, leg in enumerate(read_legend(json.loads((sheets_dir / f).read_text()))):
+            report.hvac_legends.append(
+                {
+                    "sheet": sheet_id,
+                    "title": leg.title,
+                    "bbox_pt": [round(v, 2) for v in leg.bbox_pt],
+                    "rows": [
+                        {"description": r.description, "class": r.cls,
+                         "symbol_bbox_pt": r.symbol_bbox_pt}
+                        for r in leg.rows
+                    ],
+                }
+            )  # fmt: skip
+            mapped = sorted({r.cls for r in leg.rows if r.cls})
+            report.notes.append(
+                f"{sheet_id}: {leg.title} with {len(leg.rows)} symbol row(s), "
+                f"{len(leg.rows) - len(leg.unmapped)} naming an HVAC class"
+                + (f" ({', '.join(mapped)})" if mapped else "")
+                + "; legend symbols are not yet used for detection"
+            )
+            if leg.unmapped:
+                names = "; ".join(r.description for r in leg.unmapped)
+                review.append(
+                    ReviewItem(
+                        id=f"rq-legend-{sheet_id}-{k}",
+                        kind="hvac_legend_unmapped",
+                        description=(
+                            f"{sheet_id} {leg.title}: {len(leg.unmapped)} symbol row(s) name no "
+                            f"HVAC class (supply diffuser, return/exhaust grille, VAV, AHU, "
+                            f"thermostat): {names}"
+                        ),
+                        confidence=CONFIDENCE,
+                        provenance=Provenance(
+                            sheet_id, 0, "pdf_legend", CONFIDENCE, tuple(leg.bbox_pt)
+                        ),
+                        needs_review=True,
+                    )
+                )
 
 
 def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
