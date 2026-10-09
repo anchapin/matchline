@@ -4,12 +4,14 @@ import numpy as np
 import pytest
 
 from scripts.validate_clinic_hvac_detection import (
+    VARY_ASPECTS,
     VARY_SHIFT_PX,
     SheetFrame,
     match,
     render_storey,
     score_storey,
     varied_glyph,
+    vary_aspects,
 )
 
 
@@ -135,3 +137,59 @@ def test_glyph_scale_and_rotation():
     c = flat.shape[0] // 2
     assert turned[c - 6 : c + 6, c].sum() > flat[c - 6 : c + 6, c].sum()
     assert flat[c, c - 6 : c + 6].sum() > turned[c, c - 6 : c + 6].sum()
+
+
+def test_vary_only_with_every_variation_is_the_full_varied_render():
+    a, fa = render_storey(_storey(), vary=7)
+    b, fb = render_storey(_storey(), vary=7, only=VARY_ASPECTS)
+    assert a.tobytes() == b.tobytes() and fa.shift_px == fb.shift_px
+
+
+def test_vary_only_keeps_each_variation_at_its_seeded_value():
+    """A variation drawn alone takes the value it has with all of them on, so
+    the ablation compares like with like (#745)."""
+    _, full = render_storey(_storey(), vary=7)
+    _, shifted = render_storey(_storey(), vary=7, only=["shift"])
+    assert shifted.shift_px == full.shift_px
+    none, fn = render_storey(_storey(), vary=7, only="")
+    assert fn.shift_px == (0, 0)
+    scaled, _ = render_storey(_storey(), vary=7, only="scale")
+    assert scaled.tobytes() != none.tobytes()
+
+
+def test_vary_only_with_nothing_still_draws_every_terminal_in_place():
+    img, fv = render_storey(_storey(), vary=3, only=[])
+    g = np.asarray(img).astype(float)
+    for t in _storey()["terminals"]:
+        cx, cy = (int(round(v)) for v in fv.to_px(t["x"], t["y"]))
+        assert (g[cy - 20 : cy + 21, cx - 20 : cx + 21] < 128).sum() > 60, t["id"]
+
+
+def test_vary_aspects_names():
+    assert vary_aspects(None) == set(VARY_ASPECTS)
+    assert vary_aspects(" scale, text ") == {"scale", "text"}
+    assert vary_aspects("") == set()
+    with pytest.raises(ValueError, match="unknown variation blur"):
+        vary_aspects("scale,blur")
+
+
+def test_vary_only_on_the_command_line_needs_vary(tmp_path):
+    from scripts.validate_clinic_hvac_detection import main
+
+    cache = tmp_path / "c.json"
+    cache.write_text("{}")
+    with pytest.raises(SystemExit):
+        main([str(cache), "--vary-only", "scale"])
+    with pytest.raises(SystemExit):
+        main([str(cache), "--vary", "1", "--vary-only", "blur"])
+
+
+def test_weight_off_draws_each_glyph_at_its_clean_weight():
+    """The thermostat's clean outline is 2 px, the others 3 px: with weight
+    left off a variation-free glyph has the clean ink, not a fixed 3 px."""
+    for cls in ("sensor", "diffuser"):
+        clean = (np.asarray(varied_glyph(cls)) < 128).sum()
+        assert clean == (np.asarray(varied_glyph(cls, lw=2 if cls == "sensor" else 3)) < 128).sum()
+    assert (np.asarray(varied_glyph("sensor")) < 128).sum() < (
+        np.asarray(varied_glyph("sensor", lw=3)) < 128
+    ).sum()
