@@ -79,3 +79,30 @@ def test_validation_script_alt_glyph_is_synth_glyph():
     b = np.asarray(varied_glyph("grille", 0)) < 128
     assert a.sum() > 0 and not np.array_equal(a, b)
     assert M._ALT_GLYPH_FN["grille"] is M._draw_grille_hatched
+
+
+def _stair(n_treads: int = 12, tread_px: int = 14, width_px: int = 60) -> np.ndarray:
+    """A plan stair run: a box with evenly spaced tread lines (no grille)."""
+    from PIL import Image, ImageDraw
+
+    h = n_treads * tread_px
+    im = Image.new("L", (width_px + 8, h + 8), 255)
+    d = ImageDraw.Draw(im)
+    d.rectangle([4, 4, 4 + width_px, 4 + h], outline=0, width=3)
+    for i in range(1, n_treads):
+        d.line([4, 4 + i * tread_px, 4 + width_px, 4 + i * tread_px], fill=0, width=1)
+    return np.asarray(im, dtype=np.float64)
+
+
+@pytest.mark.parametrize("tread_px", [8, 11, 14])
+def test_stair_treads_not_taken_for_hatched_grille(tread_px):
+    # Parallel tread lines in a box are the closest real look-alike.
+    s = _stair(tread_px=tread_px)
+    g = np.full((400, 400), 255.0)
+    g[20 : 20 + s.shape[0], 150 : 150 + s.shape[1]] = s
+    hits = [
+        h
+        for t in H._tight_templates("grille")
+        for h in H.ncc_locate(g, t, thresh=H.GRILLE_TIGHT_NCC)
+    ]
+    assert hits == []
