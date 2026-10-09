@@ -127,6 +127,29 @@ value and never relabels the library's own `t55-*` rows; the Reference is kept
 in the provenance note. Non-positive U and SHGC or VT outside 0..1 are ignored.
 Table 5.5 then fills only the openings that still have no construction.
 
+## Wall-type tags on a drawing set (#747)
+
+A drawing-set run reads the wall-type legend off every vector sheet
+(`wall_types.py`): a tag-shaped span (`W1`, `W-2`, same marks as door and
+window tags) followed on its own text row by a description, or written as one
+span (`W1 - 8" CMU W/ 2" RIGID INSUL`). A row counts only when its words name
+exactly one exterior-wall class; tags in the door/window schedule are never
+wall types. The same tag described as two different classes goes to review as
+`wall_type_conflict` and is not used.
+
+Each legend tag found on a plan wall (beside it, or the nearest mark to one of
+its openings) gives the envelope edge under the tag's foot a `LEG-<tag>`
+construction named by the description, with no U and provenance method
+`wall_type_legend` (confidence 0.8). The library then fills its U from Table
+5.5 for that class once a climate zone is given, so a tagged CMU wall gets the
+Mass row instead of the unlabeled steel-framed default. An envelope edge
+carrying two different wall types goes to review as `wall_type_ambiguous` and
+gets neither.
+
+Limits: one-row descriptions only (a description wrapped onto a second line
+is read from its first line); a wall-type tag closer to an opening than that
+opening's door/window tag can take its place as the opening's tag.
+
 ## Not yet
 
-Heated slabs, interior (non-perimeter) slab edges, wall-type tags read off PDF legends, and Appendix A assemblies.
+Heated slabs, interior (non-perimeter) slab edges, multi-line wall-type legend descriptions, and Appendix A assemblies.

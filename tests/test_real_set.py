@@ -498,3 +498,67 @@ def test_unscheduled_tag_on_a_plain_wall_is_left_alone(tmp_path):
     model, _rep = _tagged_wall(tmp_path, [("W1", "4'-0\"", "5'-0\"", "FIXED")], tag="SF-1")
     assert all(not s.openings for s in model.spaces.values())
     assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+# ---- #747: wall-type tags resolved through the legend ------------------------
+
+CMU = '8" CMU W/ 2" RIGID INSULATION'
+
+
+def _legend_set(tmp_path, tags, legend, sched_rows=None):
+    page = _arch("A-101", "FIRST FLOOR PLAN", 1)
+    for tag, at in tags:
+        page += text(*_pt(*at), tag, 8)
+    leg = _tb("A-501", "WALL TYPES")
+    for k, (tag, desc) in enumerate(legend):
+        leg += text(100, 800 - 30 * k, tag, 10) + text(160, 800 - 30 * k, desc, 10)
+    pages = [page, leg]
+    if sched_rows:
+        pages.append(_tb("A-601", "WINDOW SCHEDULE") + _window_schedule(sched_rows))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+
+
+def test_wall_type_tag_gives_the_envelope_wall_its_legend_construction(tmp_path):
+    from construction_library import apply_construction_library
+
+    model, rep = _legend_set(tmp_path, [("W1", (5, -0.6))], [("W1", CMU)])
+    (w,) = [w for w in model.envelope if w.construction_id]
+    assert w.facade == "south" and w.construction_id == "LEG-W1"
+    c = model.constructions["LEG-W1"]
+    assert c.name == f"W1: {CMU}" and c.u_value_w_m2k is None
+    assert c.provenance.method == "wall_type_legend" and c.provenance.sheet_id == "A-501"
+    assert "Mass" in c.provenance.note
+    assert rep.levels[0]["wall_types"] == 1
+    assert any("wall-type legend: 1 tag(s) W1 (Mass, A-501)" in n for n in rep.notes)
+    s = apply_construction_library(model, "4A")
+    assert s.resolved["LEG-W1"]["construction_type"] == "Mass"
+    assert c.u_value_w_m2k == pytest.approx(s.resolved["LEG-W1"]["u_si"])
+
+
+def test_no_legend_leaves_walls_unassigned(tmp_path):
+    model, rep = _legend_set(tmp_path, [("W1", (5, -0.6))], [])
+    assert not any(w.construction_id for w in model.envelope)
+    assert "wall_types" not in rep.levels[0]
+
+
+def test_scheduled_window_tag_is_not_a_wall_type(tmp_path):
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    model, _rep = _legend_set(tmp_path, [("W1", (5, -0.6))], [("W1", CMU)], rows)
+    assert not any(w.construction_id for w in model.envelope)
+    assert "LEG-W1" not in model.constructions
+
+
+def test_two_wall_types_on_one_wall_go_to_review(tmp_path):
+    legend = [("W1", CMU), ("W2", '6" METAL STUD FRAMING')]
+    model, _rep = _legend_set(tmp_path, [("W1", (5, -0.6)), ("W2", (8, -0.6))], legend)
+    (rq,) = [r for r in model.review_queue if r.kind == "wall_type_ambiguous"]
+    assert "W1, W2" in rq.description and rq.target["kind"] == "wall"
+    assert not any(w.construction_id == "LEG-W1" for w in model.envelope if w.id == rq.target["id"])
+
+
+def test_legend_disagreeing_with_itself_goes_to_review(tmp_path):
+    legend = [("W1", CMU), ("W1", "WOOD STUD FRAMING")]
+    model, _rep = _legend_set(tmp_path, [("W1", (5, -0.6))], legend)
+    (rq,) = [r for r in model.review_queue if r.kind == "wall_type_conflict"]
+    assert "W1" in rq.description
+    assert not any(w.construction_id for w in model.envelope)

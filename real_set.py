@@ -488,6 +488,37 @@ def build_set_model(
             spaces, sched_entries, sheet_id, review, constructions, centers,
             walls[f].get("wall_tags", []), {w["id"]: w for w in walls[f]["walls"]},
         )  # fmt: skip
+    legend, legend_conflicts = _wall_type_legend(files, status, sheets_dir, sched_entries)
+    if legend or legend_conflicts:
+        report.notes.append(
+            f"wall-type legend: {len(legend)} tag(s) "
+            + ", ".join(
+                f"{t} ({v['construction_type']}, {v['sheet_id']})" for t, v in legend.items()
+            )
+            + (f"; {len(legend_conflicts)} disagree" if legend_conflicts else "")
+        )
+    for tag, rows in sorted(legend_conflicts.items()):
+        review.append(
+            ReviewItem(
+                id=f"rq-walltype-{tag}",
+                kind="wall_type_conflict",
+                description=(
+                    f"wall type {tag} is described as different assemblies: "
+                    + "; ".join(f"{r['description']!r} on {r['sheet_id']}" for r in rows)
+                    + "; not used"
+                ),
+                confidence=0.5,
+                provenance=Provenance(rows[0]["sheet_id"], 0, "wall_type_legend", 0.5),
+                needs_review=True,
+            )
+        )
+    for lid, (f, sheet_id, li) in plan_of_level.items():
+        n = _assign_wall_types(
+            lid, walls[f], [w for w in envelope if w.id.startswith(f"{lid}-E")],
+            legend, constructions, review, sheet_id,
+        )  # fmt: skip
+        if legend:
+            report.levels[li]["wall_types"] = n
     if elev_reads:
         first = next(iter(plan_of_level))
         pf, psid, _li = plan_of_level[first]
@@ -1019,6 +1050,107 @@ def _plan_openings(
 # storefront drawn as a plain wall band (#793). The schedule row's width may be
 # the rough opening between the corners, so up to one wall thickness short.
 WALL_TAG_CONFIDENCE = 0.7
+
+
+def _wall_type_legend(files, status, sheets_dir, sched):
+    """Wall-type legend read off every vector sheet (``wall_types``, #747)."""
+    from wall_types import read_legend
+
+    def sheets():
+        for f in files:
+            if status[f].stages["ingest"]["kind"] == "raster_only":
+                continue
+            try:
+                yield status[f].number or f, json.loads((sheets_dir / f).read_text())
+            except (OSError, ValueError, TypeError):
+                continue
+
+    if sheets_dir is None:
+        return {}, {}
+    return read_legend(sheets(), exclude=set(sched or ()))
+
+
+def _assign_wall_types(lid, plan, env_walls, legend, constructions, review, sheet_id) -> int:
+    """Envelope walls tagged with a legend wall type get its construction (#747).
+
+    A tag sits on a plan wall (``wall_tags``, or an opening's ``tag_text`` that
+    is not a door/window mark); the tag's foot on that wall maps to the
+    envelope wall within ``EXTERIOR_TOL_M`` of it. The construction is the legend
+    description with no U: the cited library fills it from Table 5.5. One
+    envelope wall tagged with two different types goes to review and gets
+    neither. Returns the number of envelope walls assigned.
+    """
+    from building_model import Construction, Provenance, ReviewItem
+    from wall_types import LEGEND_CONFIDENCE
+
+    if not legend or not env_walls:
+        return 0
+    by_id = {w["id"]: w for w in plan.get("walls", [])}
+    hits = [
+        (t.get("tag_text") or "", t.get("wall"), t.get("point_m"))
+        for t in plan.get("wall_tags", [])
+    ]
+    hits += [
+        (o.get("tag_text") or "", (o.get("walls") or [None])[0], o.get("a_m"))
+        for o in plan.get("openings", [])
+    ]
+    lines = [(w, LineString([w.from_m, w.to_m])) for w in env_walls]
+    tags_on: Dict[str, set] = {}
+    for tag, wid, at in hits:
+        pw = by_id.get(wid)
+        if tag not in legend or pw is None or not at:
+            continue
+        # the tag's foot on its plan wall decides which envelope edge it names
+        (ax, ay), (bx, by) = pw["a_m"], pw["b_m"]
+        wl = LineString([(ax, -ay), (bx, -by)])  # y-up -> canonical y-down
+        foot = wl.interpolate(wl.project(Point(at[0], -at[1])))
+        env, ls = min(lines, key=lambda t: t[1].distance(foot))
+        if ls.distance(foot) <= EXTERIOR_TOL_M:
+            tags_on.setdefault(env.id, set()).add(tag)
+    n = 0
+    for env, _ls in lines:
+        tags = tags_on.get(env.id)
+        if not tags:
+            continue
+        if len(tags) > 1:
+            review.append(
+                ReviewItem(
+                    id=f"rq-{env.id}-walltype",
+                    kind="wall_type_ambiguous",
+                    target={"kind": "wall", "id": env.id},
+                    description=(
+                        f"{env.id} ({env.facade}) is tagged with wall types "
+                        f"{', '.join(sorted(tags))}; no wall type used"
+                    ),
+                    confidence=0.5,
+                    provenance=Provenance(sheet_id, 0, "wall_type_legend", 0.5),
+                    needs_review=True,
+                )
+            )
+            continue
+        (tag,) = tags
+        row = legend[tag]
+        cid = f"LEG-{tag}"
+        if cid not in constructions:
+            constructions[cid] = Construction(
+                id=cid,
+                name=f"{tag}: {row['description']}",
+                u_value_w_m2k=None,
+                provenance=Provenance(
+                    row["sheet_id"],
+                    0,
+                    "wall_type_legend",
+                    LEGEND_CONFIDENCE,
+                    note=(
+                        f"wall type {tag} on the legend of {row['sheet_id']}: "
+                        f"{row['description']!r} ({row['construction_type']}, {row['why']}); "
+                        "U from the construction library"
+                    ),
+                ),
+            )
+        env.construction_id = cid
+        n += 1
+    return n
 
 
 def _wall_tag_openings(
