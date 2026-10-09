@@ -119,6 +119,13 @@ farther. Two rules now close them:
 - A free end whose wall, carried on along its own line, crosses another wall
   within `MAX_OPENING_M` is a door beside a corner. It becomes an opening with
   `"beside_corner": true`.
+- After every opening is bridged, a free end that stops short of an opening
+  line crossing its own (a partition between two doors meets the doors'
+  line, not a drawn wall) joins it when the line is within the same reach
+  wall ends snap with: 0.75 x the thicker of the two plus tolerance. Ends
+  further away stay free and go to review as `unclosed_wall`. On Clinic this
+  split SOIL. UTL. from CLEAN SUP. & EQUIP. (First Floor) and one corridor
+  (Second Floor): wall-bounded matched 105 -> 107 and 75 -> 76 (#740).
 
 `unclosed_wall` items went 462 -> 261 -> 140 (First Floor) and 225 -> 131 -> 32
 (Second Floor). Before the sliver merge, 97 of the 114 First Floor extra
