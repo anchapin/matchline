@@ -89,6 +89,32 @@ leaf) and uses the annotations for nothing else.
 The AEC-Bench path in `run_pipeline.py` no longer turns wall regions into door
 openings; its doors come only from door regions.
 
+### Clinic doors from the IFC (#743)
+
+`scripts/validate_clinic_walls.py --doors [--png-dir DIR]` measures the
+detector's plumbing on the Clinic's real wall geometry. Each storey's walls
+are cut at 1.2 m and filled as solid bands at 50 px/m; every IfcDoor opening
+is already a gap in them. For each opening the script draws a leaf square to
+the wall from one jamb, as long as the opening is wide, and a quarter arc
+back to the other jamb, swung to the face with less wall in the way
+(`door_sheet`). `detect_door_swings` reads the image, and a door counts as
+found when its opening centre falls inside a detection box grown by 0.2 m
+(`match_doors`). We choose how the swing is drawn, so this says nothing
+about how a real set drafts doors.
+
+Measured on the Clinic (plumbing only, nothing tuned on it):
+
+| Storey | IFC doors | Detections | Recall | Precision |
+|---|---|---|---|---|
+| First Floor | 148 | 137 | 0.932 | 1.000 |
+| Second Floor | 96 | 89 | 0.896 | 0.989 |
+
+An opening wider than one leaf (`MAX_WIDTH_M`) is drawn as a pair of leaves
+meeting in the middle, as a plan draws a double door. Of the 20 misses, one
+is a 1.73 m double door; 4 are openings only 0.03 to 0.12 m wide at the cut,
+which are not door-sized gaps; 15 are ordinary 0.86 to 0.92 m doors still to
+be looked at one by one.
+
 ## IFC models (#574)
 
 IFC spaces are authored, so the importer marks one as a closet or shaft only

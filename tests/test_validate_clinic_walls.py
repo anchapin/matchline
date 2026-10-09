@@ -9,9 +9,13 @@ from shapely.geometry import Polygon, box
 
 from plan_walls import compare_rooms, extract_walls
 from scripts.validate_clinic_walls import (
+    DOOR_PPM,
     M_PER_PT,
     cut_polygons,
+    door_sheet,
+    door_swing,
     glazing_line,
+    match_doors,
     match_windows,
     section,
     sheet_for,
@@ -155,3 +159,86 @@ def test_a_window_near_an_inside_corner_keeps_its_glass_along_the_wall():
     a, b = glazing_line(ops[-1], w)
     assert sorted([a[0], b[0]]) == pytest.approx([20.5, 21.5])
     assert a[1] == pytest.approx(-th / 2)
+
+
+# ---- doors drawn from IFC openings as swings, read back by door_detect (#743) ----
+
+
+def _room_with_doors(t=0.2):
+    """A 10 x 6 m room: a 0.9 m door in the south wall, a 1.0 m door in a partition."""
+    walls = [
+        box(0, 0, 2.5, t),
+        box(3.4, 0, 10, t),
+        box(0, 6 - t, 10, 6),
+        box(0, 0, t, 6),
+        box(10 - t, 0, 10, 6),
+        box(5 - t / 2, t, 5 + t / 2, 2.0),
+        box(5 - t / 2, 3.0, 5 + t / 2, 6 - t),
+    ]
+    doors = [box(2.5, 0, 3.4, t), box(5 - t / 2, 2.0, 5 + t / 2, 3.0)]
+    return walls, doors
+
+
+def test_door_swing_stands_square_to_the_wall_from_a_jamb():
+    from shapely.ops import unary_union
+
+    walls, doors = _room_with_doors()
+    hinge, tip, jamb, r = door_swing(doors[0], unary_union(walls))
+    assert r == pytest.approx(0.9)
+    assert hinge[1] == pytest.approx(0.1) and jamb[1] == pytest.approx(0.1)  # on the centre line
+    assert abs(tip[0] - hinge[0]) == pytest.approx(0.0, abs=1e-9)  # square to the wall
+    assert abs(tip[1] - hinge[1]) == pytest.approx(0.9)
+
+
+def test_doors_drawn_from_the_ifc_read_back_as_door_detections():
+    from door_detect import detect_door_swings
+
+    walls, doors = _room_with_doors()
+    img, to_px = door_sheet(walls, doors)
+    dets = detect_door_swings(img, DOOR_PPM)
+    got = match_doors(doors, dets, to_px)
+    assert got == {"truth": 2, "pred": 2, "recall": 1.0, "precision": 1.0}
+    widths = sorted(d["width_px"] / DOOR_PPM for d in dets)
+    assert widths == pytest.approx([0.9, 1.0], abs=0.08)
+
+
+def test_a_wall_gap_with_no_swing_is_not_a_door():
+    from door_detect import detect_door_swings
+
+    walls, doors = _room_with_doors()
+    img, to_px = door_sheet(walls, [])  # the gaps are there, the swings are not
+    dets = detect_door_swings(img, DOOR_PPM)
+    assert match_doors(doors, dets, to_px) == {
+        "truth": 2,
+        "pred": 0,
+        "recall": 0.0,
+        "precision": None,
+    }
+
+
+def test_the_swing_goes_to_the_face_with_no_wall_in_the_way():
+    from door_detect import detect_door_swings
+
+    t = 0.2
+    # a door in a wall with a parallel wall 0.5 m off its north face: a 0.9 m
+    # leaf swung north would cross it, so the swing is drawn south
+    walls = [box(0, 2, 2.5, 2 + t), box(3.4, 2, 8, 2 + t), box(0, 2.7, 8, 2.7 + t)]
+    door = box(2.5, 2, 3.4, 2 + t)
+    img, to_px = door_sheet(walls, [door])
+    dets = detect_door_swings(img, DOOR_PPM)
+    assert match_doors([door], dets, to_px)["recall"] == 1.0
+    (y_px,) = [d["hinge_px"][1] for d in dets]
+    assert dets[0]["bbox_px"][3] > to_px(3.0, 2.1)[1] + 0.5 * DOOR_PPM  # reaches south
+    assert y_px == pytest.approx(to_px(3.0, 2.1)[1], abs=3)
+
+
+def test_a_double_door_is_drawn_as_two_leaves_and_reads_back_as_found():
+    from door_detect import detect_door_swings
+
+    t = 0.2
+    walls = [box(0, 0, 2.0, t), box(3.8, 0, 8, t), box(0, 0, t, 4), box(8 - t, 0, 8, 4)]
+    door = box(2.0, 0, 3.8, t)  # 1.8 m, wider than one leaf door_detect reads
+    img, to_px = door_sheet(walls, [door])
+    dets = detect_door_swings(img, DOOR_PPM)
+    assert match_doors([door], dets, to_px)["recall"] == 1.0
+    assert sorted(round(d["width_px"] / DOOR_PPM, 1) for d in dets) == [0.9, 0.9]

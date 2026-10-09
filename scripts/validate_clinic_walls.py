@@ -70,9 +70,13 @@ def cut_polygons(segs):
     return list(polygonize(unary_union([LineString(s) for s in segs])))
 
 
-def load(arch_path, with_windows=False):
+def load(arch_path, with_windows=False, with_doors=False):
     """Per storey: (wall cut polygons, truth wall length m, rooms [(number, name, ring)],
-    wall and door/window opening polygons cut at the plan height)."""
+    wall and door/window opening polygons cut at the plan height).
+
+    ``with_windows`` adds the window opening polygons; ``with_doors`` adds the
+    door opening polygons after them (#743).
+    """
     import ifcopenshell
     import ifcopenshell.geom as geom
 
@@ -93,6 +97,7 @@ def load(arch_path, with_windows=False):
     walls = defaultdict(list)
     bound = defaultdict(list)
     windows = defaultdict(list)
+    doors = defaultdict(list)
     wall_len = defaultdict(float)
     for e in f.by_type("IfcWall") + f.by_type("IfcCurtainWall"):
         st = _storey_of(e)
@@ -125,6 +130,8 @@ def load(arch_path, with_windows=False):
         fills = [r.RelatedBuildingElement for r in (o.HasFillings or [])]
         if any(x.is_a("IfcWindow") for x in fills):
             windows[st] += cut
+        elif any(x.is_a("IfcDoor") for x in fills):
+            doors[st] += cut
     rooms = defaultdict(list)
     for sp in f.by_type("IfcSpace"):
         st = _storey_of(sp)
@@ -137,9 +144,12 @@ def load(arch_path, with_windows=False):
         ring = footprint(v[:, :2].tolist(), fc.tolist())
         if len(ring) >= 3:
             rooms[st].append((sp.Name, sp.LongName or "", ring))
+    out = (walls, wall_len, rooms, bound)
     if with_windows:
-        return walls, wall_len, rooms, bound, windows
-    return walls, wall_len, rooms, bound
+        out += (windows,)
+    if with_doors:
+        out += (doors,)
+    return out
 
 
 def glazing_line(poly, walls=None):
@@ -401,13 +411,152 @@ def measure_windows(arch_path):
     return out
 
 
+DOOR_PPM = 50.0  # door_detect's tuned reference scale (px per metre)
+DOOR_MARGIN_M = 2.0
+DOOR_MATCH_PAD_M = 0.2  # a door box grown by this still holds its opening centre
+
+
+def door_swing(poly, walls, side=1):
+    """Hinge, leaf tip and far jamb of the swing drawn for one door opening.
+
+    The opening cut at the plan height is a rectangle as deep as the wall and
+    as wide as the door. The two jambs sit on the wall's centre line at its
+    ends (``glazing_line`` finds that line the same way it does for a window);
+    the leaf stands square to the wall from the first jamb, as long as the
+    opening is wide, and ``side`` (+1 or -1) picks which face it swings to.
+    """
+    a, b = glazing_line(poly, walls)
+    d = np.subtract(b, a)
+    r = float(np.hypot(*d))
+    n = np.array((-d[1], d[0])) / r * side
+    return tuple(a), tuple(np.add(a, n * r)), tuple(b), r
+
+
+def door_sheet(wall_polys, door_polys, px_per_m=DOOR_PPM, margin_m=DOOR_MARGIN_M):
+    """A grayscale plan image with walls as solid bands and each door's swing.
+
+    Door openings are gaps in the cut walls already. Each door gets a leaf
+    and a quarter arc from its tip back to the far jamb, swung to the face
+    with less wall in the way. How the swing is drawn is our choice, so
+    reading it back measures ``door_detect``'s plumbing on real wall
+    geometry, not a real set's drafting. Returns the image and ``to_px``.
+    """
+    from PIL import Image, ImageDraw
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    walls = unary_union(wall_polys)
+    minx, miny, maxx, maxy = unary_union([walls, *door_polys]).bounds
+    w = int(np.ceil((maxx - minx + 2 * margin_m) * px_per_m))
+    h = int(np.ceil((maxy - miny + 2 * margin_m) * px_per_m))
+
+    def to_px(x, y):
+        return ((x - minx + margin_m) * px_per_m, (maxy - y + margin_m) * px_per_m)
+
+    img = Image.new("L", (w, h), 255)
+    d = ImageDraw.Draw(img)
+    for g in getattr(walls, "geoms", [walls]):
+        if g.is_empty:
+            continue
+        d.polygon([to_px(*q) for q in g.exterior.coords], fill=0)
+        for ring in g.interiors:
+            d.polygon([to_px(*q) for q in ring.coords], fill=255)
+    for poly in door_polys:
+        best = None
+        for side in (1, -1):
+            hinge, tip, jamb, r = door_swing(poly, walls, side)
+            sweep = Polygon([hinge, tip, jamb]).buffer(0)
+            hit = sweep.intersection(walls).area if sweep.is_valid else 0.0
+            if best is None or hit < best[0]:
+                best = (hit, hinge, tip, jamb, r)
+        _, hinge, tip, jamb, r = best
+        for lh, lt, lj in _leaves(hinge, tip, jamb, r):
+            (hx, hy), (tx, ty), (jx, jy) = to_px(*lh), to_px(*lt), to_px(*lj)
+            rp = float(np.hypot(jx - hx, jy - hy))
+            d.line([hx, hy, tx, ty], fill=0, width=3)
+            # PIL angles run clockwise from +x in image space; sweep tip -> jamb the short way
+            a0 = np.degrees(np.arctan2(ty - hy, tx - hx))
+            a1 = np.degrees(np.arctan2(jy - hy, jx - hx))
+            if (a1 - a0) % 360 > 180:
+                a0, a1 = a1, a0
+            d.arc([hx - rp, hy - rp, hx + rp, hy + rp], start=a0, end=a1, fill=0, width=2)
+    return np.asarray(img), to_px
+
+
+def _leaves(hinge, tip, jamb, r):
+    """One leaf, or a pair meeting in the middle when the opening is wider
+    than a single leaf ``door_detect`` reads (``MAX_WIDTH_M``): a plan draws a
+    double door as two leaves, one hung from each jamb, swinging to one face."""
+    from door_detect import MAX_WIDTH_M
+
+    if r <= MAX_WIDTH_M:
+        return [(hinge, tip, jamb)]
+    h, t, j = (np.asarray(p, dtype=float) for p in (hinge, tip, jamb))
+    n = (t - h) / 2  # half-width leaf, square to the wall
+    mid = (h + j) / 2
+    return [(tuple(h), tuple(h + n), tuple(mid)), (tuple(j), tuple(j + n), tuple(mid))]
+
+
+def match_doors(truth_polys, dets, to_px, px_per_m=DOOR_PPM, pad_m=DOOR_MATCH_PAD_M):
+    """Door recall and precision of ``door_detect`` hits against IFC door openings.
+
+    A truth door is found when its opening centre falls inside a detection box
+    grown by ``pad_m`` (the centre sits on the box's jamb edge, so pixel
+    rounding alone could push it out); a detection is right when it holds a
+    truth centre.
+    """
+    centres = [to_px(p.centroid.x, p.centroid.y) for p in truth_polys]
+    g = pad_m * px_per_m
+    boxes = [(b[0] - g, b[1] - g, b[2] + g, b[3] + g) for b in (d["bbox_px"] for d in dets)]
+
+    def inside(c, b):
+        return b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3]
+
+    found = sum(any(inside(c, b) for b in boxes) for c in centres)
+    right = sum(any(inside(c, b) for c in centres) for b in boxes)
+    return {
+        "truth": len(centres),
+        "pred": len(boxes),
+        "recall": round(found / len(centres), 4) if centres else None,
+        "precision": round(right / len(boxes), 4) if boxes else None,
+    }
+
+
+def measure_doors(arch_path, png_dir=None):
+    """Doors drawn from the IFC as leaf-and-arc swings, read back by ``door_detect``.
+
+    This measures the detector's plumbing on real wall geometry. We choose how
+    the swing is drawn, so it says nothing about a real set's drafting.
+    """
+    from door_detect import detect_door_swings
+
+    walls, _len, _rooms, _bound, doors = load(arch_path, with_doors=True)
+    out = {}
+    for st in PLAN_STOREYS:
+        img, to_px = door_sheet(walls[st], doors[st])
+        if png_dir:
+            from PIL import Image
+
+            Image.fromarray(img).save(Path(png_dir) / f"doors_{st.replace(' ', '_')}.png")
+        dets = detect_door_swings(img, DOOR_PPM)
+        out[st] = match_doors(doors[st], dets, to_px)
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("ifc", type=Path)
     ap.add_argument("--json", type=Path)
     ap.add_argument("--windows", action="store_true", help="measure windows instead (#743)")
+    ap.add_argument("--doors", action="store_true", help="measure door swings instead (#743)")
+    ap.add_argument("--png-dir", type=Path, help="with --doors, save the door sheets here")
     a = ap.parse_args(argv)
-    out = measure_windows(a.ifc) if a.windows else measure(a.ifc)
+    if a.doors:
+        out = measure_doors(a.ifc, a.png_dir)
+    elif a.windows:
+        out = measure_windows(a.ifc)
+    else:
+        out = measure(a.ifc)
     print(json.dumps(out, indent=2))
     if a.json:
         a.json.write_text(json.dumps(out, indent=2))
