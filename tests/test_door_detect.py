@@ -221,6 +221,30 @@ def _stub_jamb_canvas(*, gap=True):
     return np.asarray(img), (100 + r / 2, 204), r
 
 
+def _hollow_canvas(*, gap_px=21, arc=True, neighbour=False):
+    """A door hung on one face line of a hollow wall (#875).
+
+    The jamb wall is two thin lines with a clear gap between them, wider
+    than two leaves, and the door hinges on the inner line rather than the
+    wall's centre. ``neighbour`` adds a short line just past the far face
+    line, like the next door's leaf in the Clinic first floor.
+    """
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x0, x1, line, yh, r = 150, 150 + gap_px, 3, 200, 44
+    for xx in (x0, x1):
+        d.rectangle([xx, 40, xx + line - 1, yh - r], fill=0)
+        d.rectangle([xx, yh, xx + line - 1, 360], fill=0)
+    d.rectangle([x0, yh - r, x1 + line - 1, yh - r + 1], fill=0)
+    d.rectangle([x0, yh, x1 + line - 1, yh + 1], fill=0)
+    d.line([x0, yh, x0 - r, yh], fill=0, width=2)
+    if arc:
+        d.arc([x0 - r, yh - r, x0 + r, yh + r], start=180, end=270, fill=0, width=2)
+    if neighbour:
+        d.rectangle([x1 + line + 3, yh - 40, x1 + line + 5, yh + 20], fill=0)
+    return np.asarray(img), (x0, yh - r / 2), r
+
+
 @pytest.mark.parametrize("flip", [False, True])
 @pytest.mark.parametrize("k", [0, 1, 2, 3])
 def test_far_jamb_thickened_by_a_crossing_doors_hinge_stub(k, flip):
@@ -236,3 +260,21 @@ def test_stub_jamb_without_a_gap_is_not_a_door():
     img, (cx, cy), _ = _stub_jamb_canvas(gap=False)
     dets = detect_door_swings(img, PPM)
     assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("gap_px,neighbour", [(21, False), (12, False), (21, True)])
+def test_door_hung_on_a_hollow_wall_face(k, flip, gap_px, neighbour):
+    img, centre, r = _hollow_canvas(gap_px=gap_px, neighbour=neighbour)
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("k", [0, 1])
+def test_hollow_wall_gap_without_an_arc_is_not_a_door(k):
+    img, _, _ = _hollow_canvas(arc=False)
+    img, _ = _orient(img, (0, 0), k, False)
+    assert detect_door_swings(img, PPM) == []

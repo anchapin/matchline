@@ -128,8 +128,17 @@ wall face raised recall from 0.932 and 0.896 with precision unchanged. Of the
 16 misses left, one is a 1.73 m double door; 4 are openings only 0.03 to
 0.12 m wide at the cut, which are not door-sized gaps; 7 are doors in walls
 0.025 m thick at the cut, below `MIN_WALL_M`; the rest have a short pier
-shared with the next door, crossing swings, or a jamb drawn as two thin lines
-with a gap between them.
+shared with the next door or crossing swings.
+
+A door hung on one face line of a hollow wall (a jamb drawn as two thin lines
+with a clear gap wider than two leaves) is found too (#875). The hinge is
+normally snapped to the wall's centre, which on a 0.45 m hollow wall sits
+well off the arc's centre, and the ink behind the leaf can be the next door's
+leaf rather than this door's wall. A hollow wall now also offers its two face
+lines as the hinge, tried with that wall alone; the arc, leaf-reach and
+clear-opening checks are unchanged. This took the first floor from 139 to 140
+found (recall 0.946 to 0.953), precision 1.0, second floor unchanged. A hollow
+wall wider than about 0.6 m is still missed.
 
 ## IFC models (#574)
 
