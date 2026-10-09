@@ -182,3 +182,14 @@ def test_vary_only_on_the_command_line_needs_vary(tmp_path):
         main([str(cache), "--vary-only", "scale"])
     with pytest.raises(SystemExit):
         main([str(cache), "--vary", "1", "--vary-only", "blur"])
+
+
+def test_weight_off_draws_each_glyph_at_its_clean_weight():
+    """The thermostat's clean outline is 2 px, the others 3 px: with weight
+    left off a variation-free glyph has the clean ink, not a fixed 3 px."""
+    for cls in ("sensor", "diffuser"):
+        clean = (np.asarray(varied_glyph(cls)) < 128).sum()
+        assert clean == (np.asarray(varied_glyph(cls, lw=2 if cls == "sensor" else 3)) < 128).sum()
+    assert (np.asarray(varied_glyph("sensor")) < 128).sum() < (
+        np.asarray(varied_glyph("sensor", lw=3)) < 128
+    ).sum()

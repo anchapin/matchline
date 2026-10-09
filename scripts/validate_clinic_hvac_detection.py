@@ -153,12 +153,13 @@ def _draw_grille_hatched(d, cx, cy, lw=3):
         d.line([cx - h + 2, y, cx + h - 2, y], fill=0, width=1)
 
 
-def varied_glyph(cls, style=0, scale=1.0, lw=3, angle_deg=0.0, skew=0.0):
+def varied_glyph(cls, style=0, scale=1.0, lw=None, angle_deg=0.0, skew=0.0):
     """One terminal symbol on its own white patch (L image), centred.
 
     ``style`` 0 is matchline's own glyph; 1 is the class's alternative style
-    (``VARIED_STYLES``). The patch is drawn at nominal size, then scaled,
-    sheared and rotated about its centre.
+    (``VARIED_STYLES``). ``lw`` None draws the glyph at its own clean weight.
+    The patch is drawn at nominal size, then scaled, sheared and rotated about
+    its centre.
     """
     from PIL import Image, ImageDraw
 
@@ -169,7 +170,10 @@ def varied_glyph(cls, style=0, scale=1.0, lw=3, angle_deg=0.0, skew=0.0):
     side = int(math.ceil(max(_GLYPH_EXT[cls]) * PX_PER_M * 1.8)) + 8
     side += side % 2
     patch = Image.new("L", (side, side), 255)
-    fn(ImageDraw.Draw(patch), side / 2, side / 2, lw=lw)
+    if lw is None:
+        fn(ImageDraw.Draw(patch), side / 2, side / 2)
+    else:
+        fn(ImageDraw.Draw(patch), side / 2, side / 2, lw=lw)
     if scale != 1.0:
         n = max(2, int(round(side * scale)))
         n += n % 2
@@ -291,7 +295,7 @@ def render_storey(storey, frame=None, vary=None, only=None):
         skew = float(rng.uniform(-VARY_SKEW, VARY_SKEW))
         tdx, tdy = rng.uniform(-0.5, 0.5, size=2)
         scale = scale if "scale" in on else 1.0
-        lw = lw if "weight" in on else 3
+        lw = lw if "weight" in on else None  # the glyph's own clean weight
         angle = (turn if "turn" in on else 0.0) + (tilt if "tilt" in on else 0.0)
         skew = skew if "skew" in on else 0.0
         style = 1 if "style" in on and cls in VARIED_STYLES and u[0] < VARY_ALT_STYLE else 0
@@ -459,7 +463,8 @@ def run(data, png_dir=None, vary=None, only=None):
         if png_dir:
             Path(png_dir).mkdir(parents=True, exist_ok=True)
             tag = "" if vary is None else f"_vary{vary}"
-            tag += "" if only is None else "_only-" + "-".join(sorted(vary_aspects(only)))
+            if only is not None:
+                tag += "_only-" + ("-".join(sorted(vary_aspects(only))) or "none")
             img.save(Path(png_dir) / f"clinic_{name.replace(' ', '_')}{tag}.png")
         gray = np.asarray(img).astype(np.float64)
         raw = detect_components(gray, templates, clf)
