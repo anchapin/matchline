@@ -255,6 +255,23 @@ their window; before, 0.10/0.10 and 0.10/0.15 were missed. On the Clinic set
 walls, rooms and windows are unchanged (first floor 22/22, second 36/36,
 recall and precision 1.0): it has no cavity walls drawn this way.
 
+An asymmetric cavity wall can lose its window another way (#877). When the
+glass line, drawn on the wall's centre, falls on one leaf's cavity face (leaf,
+cavity, leaf 0.10/0.10/0.20 m puts it 0.20 m in, on the inner leaf's face),
+that face line runs along the whole wall. The wall comes out as two walls
+meeting on it, the inner leaf and the outer leaf with the cavity folded in,
+and the opening's band is both of them. The #868 check then saw the other
+wall inside the band and dropped the window. `_split_by_glass_line` now lets
+it through when the two walls sit on opposite sides of the band's middle line,
+both reach it within `tol`, and their thicknesses add up to the band's within
+`tol`. A box or lining against a wall always leaves a gap, so it never fills
+the band this way. Synthetic leaf/cavity/leaf walls 0.10/0.10/0.20,
+0.15/0.10/0.25, 0.05/0.10/0.15 and 0.10/0.10/0.19 m went from missed to found;
+with no glass drawn there is still no window. The #872 cavity cases, the #873
+pier and the #879 lined-stretch probes give the same results as before. On
+the Clinic set walls, rooms and windows are unchanged (first floor 22/22,
+second 36/36, recall and precision 1.0).
+
 ### Storefront and curtain wall (#793)
 
 The return rule above misses glazing that runs the whole length of its wall

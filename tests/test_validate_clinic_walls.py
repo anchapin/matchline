@@ -206,14 +206,18 @@ def test_a_box_against_a_wall_with_no_window_gives_no_window():
     assert len(res["walls"]) == 5
 
 
-def _shell_with_cavity_wall(leaf, cavity):
-    """A shell whose south wall is two leaves with a cavity, a window through both (#872)."""
+def _shell_with_cavity_wall(leaf, cavity, inner=None):
+    """A shell whose south wall is two leaves with a cavity, a window through both (#872).
+
+    ``inner`` is the inner leaf's thickness when it differs from the outer one (#877).
+    """
     th, L = 0.267, 22.0
-    T = 2 * leaf + cavity
+    inner = leaf if inner is None else inner
+    T = leaf + cavity + inner
     rest = box(-th, -th, L + th, 8 + th).difference(box(0, 0, L, 8))
     rest = rest.difference(box(-th, -th, L + th, 0.0))
     op = box(14.0, -T, 15.0, 0.0)
-    leaves = [box(-th, -T, L + th, -T + leaf), box(-th, -leaf, L + th, 0.0)]
+    leaves = [box(-th, -T, L + th, -T + leaf), box(-th, -inner, L + th, 0.0)]
     walls = [rest] + [lf.difference(op) for lf in leaves]
     ring = [(0, 0), (L, 0), (L, 8), (0, 8)]
     return walls, ring, [op]
@@ -229,6 +233,30 @@ def test_window_through_a_double_leaf_wall_is_found(leaf, cavity):
     dets = window_detections(res, sheet["height_pt"], 1.0, "s")
     got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
     assert got == {"truth": 1, "pred": 1, "recall": 1.0, "precision": 1.0}
+
+
+@pytest.mark.parametrize(
+    "leaf,cavity,inner",
+    [(0.10, 0.10, 0.20), (0.15, 0.10, 0.25), (0.05, 0.10, 0.15), (0.10, 0.10, 0.19)],
+)
+def test_window_whose_glass_line_lies_on_a_leaf_face_is_found(leaf, cavity, inner):
+    # the glass line, drawn on the wall's centre, falls on the inner leaf's
+    # cavity face, so the wall splits into two walls meeting on it (#877)
+    from detection_provider import window_detections
+
+    walls, ring, ops = _shell_with_cavity_wall(leaf, cavity, inner)
+    sheet, off = sheet_for(walls, [("101", "OFFICE", ring)], glazing=ops)
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 1, "pred": 1, "recall": 1.0, "precision": 1.0}
+
+
+def test_asymmetric_double_leaf_wall_with_no_glass_is_not_a_window():
+    walls, ring, _ = _shell_with_cavity_wall(0.10, 0.10, 0.20)
+    sheet, _ = sheet_for(walls, [("101", "OFFICE", ring)])  # no glass drawn
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    assert [o for o in res["openings"] if o.get("kind") == "window"] == []
 
 
 def test_double_leaf_wall_with_a_plain_gap_is_not_a_window():
