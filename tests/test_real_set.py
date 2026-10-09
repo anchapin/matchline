@@ -731,6 +731,28 @@ def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
     assert "M-001, M-601" in rq.description
 
 
+def test_legend_symbols_are_counted_on_their_own_sheet(tmp_path):
+    """A firm's own symbols (not matchline's glyphs) are found on the sheet by
+    cutting the legend row's symbol as a template (#744)."""
+    from test_hvac_legend_templates import circle, damper, xbox
+
+    x, y = 1100, 1000
+    leg = text(x, y, "HVAC SYMBOL LEGEND", 12)
+    leg += xbox(x, y - 54) + text(x + 40, y - 50, "SUPPLY AIR DIFFUSER", 8)
+    leg += circle(x + 7, y - 72) + text(x + 40, y - 75, "THERMOSTAT", 8)
+    leg += damper(x, y - 102) + text(x + 40, y - 100, "MANUAL VOLUME DAMPER", 8)
+    plan = "".join(xbox(px, py) for px, py in [(200, 700), (400, 500), (700, 300)])
+    plan += circle(300, 400)
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _tb("M-101", "FIRST FLOOR MECHANICAL PLAN") + leg + plan,
+    ]
+    _model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    (lg,) = report.to_dict()["hvac_legends"]
+    assert lg["symbol_hits"] == {"diffuser": 3, "sensor": 1}
+    assert any("diffuser 3, sensor 1 (counts only" in n for n in report.notes)
+
+
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
     from validate import _Ctx
     from validate.invariants import _check_hvac_zone_coverage

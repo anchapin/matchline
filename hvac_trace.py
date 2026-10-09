@@ -318,6 +318,71 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
 
 
 # ---------------------------------------------------------------------------
+# 1b. Templates from the sheet's own symbol legend (#744)
+# ---------------------------------------------------------------------------
+
+# A legend template is the firm's own symbol cut from the same raster, so a
+# true match is near-exact; this is well above what a lookalike scores.
+LEGEND_NCC_ACCEPT = 0.80
+
+
+def detect_legend_symbols(gray: np.ndarray, templates: list) -> list:
+    """Find each legend template (``hvac_legend.legend_templates``) on its
+    own sheet by NCC alone.
+
+    No WiSARD pass: the classifier is trained on matchline's built-in glyphs
+    and would call another firm's symbol background. The class comes from the
+    legend row's description, and the legend's own symbol (the place the
+    template was cut) is not a detection. Overlapping hits keep the best
+    score across all templates."""
+    hits = []
+    for t in templates:
+        th, tw = t.image.shape
+        c0, r0, c1, r1 = t.symbol_bbox_px
+        for y, x, s in ncc_locate(gray, t.image, thresh=LEGEND_NCC_ACCEPT):
+            cx, cy = x + tw / 2, y + th / 2
+            if c0 <= cx <= c1 and r0 <= cy <= r1:
+                continue
+            hits.append(
+                {
+                    "label": t.cls,
+                    "cx": cx,
+                    "cy": cy,
+                    "w": tw,
+                    "h": th,
+                    "ncc_cls": t.cls,
+                    "ncc": round(s, 3),
+                    "margin": 0.0,
+                    "template": "legend",
+                    "legend_row": t.description,
+                }
+            )
+    hits.sort(key=lambda d: -d["ncc"])
+    kept = []
+    for d in hits:
+        md = max(d["w"], d["h"])
+        if all(math.hypot(d["cx"] - k["cx"], d["cy"] - k["cy"]) >= md for k in kept):
+            kept.append(d)
+    return kept
+
+
+def merge_legend_detections(builtin: list, legend: list, legend_classes) -> list:
+    """Legend-template hits replace the built-in templates for every class
+    the sheet's legend draws; classes it does not draw keep the built-in
+    detections as the fallback. A built-in hit on top of a legend hit (the
+    built-in grille firing on the firm's diffuser) is dropped."""
+    covered = set(legend_classes)
+    out = list(legend)
+    for d in builtin:
+        if d["label"] in covered:
+            continue
+        if any(math.hypot(d["cx"] - q["cx"], d["cy"] - q["cy"]) <= ASSOC_PX for q in legend):
+            continue
+        out.append(dict(d, template=d.get("template", "builtin")))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 2. Duct skeleton graph
 # ---------------------------------------------------------------------------
 
