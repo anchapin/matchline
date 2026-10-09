@@ -239,8 +239,12 @@ layer names (`layers`). Layers then decide before the geometry rules:
 Only the middle line inside the wall is judged, not the wall's own face
 lines. `stats["layers"]` lists the layer names on all the plan's stroked
 segments.
-A thin wall band on a glazing layer is still only flagged `maybe_glazing`;
-promoting it to a window is a follow-up.
+A thin wall band that would be flagged `maybe_glazing` (see the thin band
+rule) is a window over its whole length instead when glazing-layer face lines
+lying along it, within half its thickness of the centreline, cover at least
+80% (`THIN_FILL_SHARE`) of its length and none of those lines is on a pattern
+layer: `source: "glazing_layer_band"`, `window_confidence` 0.7, no
+`maybe_glazing` review item. The band stays a wall, so the room still closes.
 
 A storefront drawn as a plain wall band, with no glazing line at all, can still
 be found from its schedule tag. A tag-like span within `TAG_RADIUS_M` of a wall
