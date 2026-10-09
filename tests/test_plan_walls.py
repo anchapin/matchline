@@ -552,3 +552,38 @@ def test_opening_keeps_every_tag_nearest_first():
     assert ops[0]["tag_text"] == "EW1"
     assert [t["tag"] for t in ops[0]["tags_near"]] == ["EW1", "W3"]
     assert [t["tag"] for t in ops[1]["tags_near"]] == ["D1"]
+
+
+# ---- a wall that stops short of the wall ahead (#740 open plan) ----------
+
+HALF_PARTITION = [((4, 0), (4, 3), T_INT)]  # stops 3 m short of the far wall
+
+
+def test_wall_stopping_short_between_two_labelled_rooms_closes_with_an_air_wall(tmp_path):
+    labels = text(*_pt(2, 3), "OFFICE 101", 8) + text(*_pt(7, 3), "WAITING 102", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + HALF_PARTITION)) + labels)
+    assert _areas(res) == [24.0, 36.0]
+    air = [o for o in res.openings if o.get("air_wall")]
+    assert len(air) == 1 and air[0]["beside_corner"]
+    assert air[0]["width_m"] == pytest.approx(3.0, abs=0.2)
+    assert [i["kind"] for i in res.review if i["kind"] == "air_wall"] == ["air_wall"]
+    assert not [i for i in res.review if i["kind"] == "unclosed_wall"]
+
+
+def test_wall_stopping_short_inside_one_labelled_room_stays_open(tmp_path):
+    # a counter or half wall inside one named space: no second label, no split
+    labels = text(*_pt(7, 3), "WAITING 102", 8)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + HALF_PARTITION)) + labels)
+    assert _areas(res) == [60.0]
+    assert not [o for o in res.openings if o.get("air_wall")]
+    assert any(i["kind"] == "unclosed_wall" for i in res.review)
+
+
+def test_wall_stopping_beyond_the_air_wall_limit_stays_open(tmp_path):
+    # 5 m short of the far wall: wider than WIDE_OPENING_M, so no closure at all
+    shell = [((0, 0), (10, 0), T_EXT), ((10, 0), (10, 8), T_EXT), ((10, 8), (0, 8), T_EXT),
+             ((0, 8), (0, 0), T_EXT)]  # fmt: skip
+    labels = text(*_pt(2, 4), "OFFICE 101", 8) + text(*_pt(7, 4), "WAITING 102", 8)
+    res, _ = _read(tmp_path, _outline(_mass(shell + HALF_PARTITION)) + labels)
+    assert _areas(res) == [80.0]
+    assert not [o for o in res.openings if o.get("air_wall")]
