@@ -70,7 +70,7 @@ def cut_polygons(segs):
     return list(polygonize(unary_union([LineString(s) for s in segs])))
 
 
-def load(arch_path):
+def load(arch_path, with_windows=False):
     """Per storey: (wall cut polygons, truth wall length m, rooms [(number, name, ring)],
     wall and door/window opening polygons cut at the plan height)."""
     import ifcopenshell
@@ -92,6 +92,7 @@ def load(arch_path):
 
     walls = defaultdict(list)
     bound = defaultdict(list)
+    windows = defaultdict(list)
     wall_len = defaultdict(float)
     for e in f.by_type("IfcWall") + f.by_type("IfcCurtainWall"):
         st = _storey_of(e)
@@ -119,7 +120,11 @@ def load(arch_path):
             v, fc = mesh(o)
         except Exception:
             continue
-        bound[st] += cut_polygons(section(v, fc, elev[st] + CUT_M))
+        cut = cut_polygons(section(v, fc, elev[st] + CUT_M))
+        bound[st] += cut
+        fills = [r.RelatedBuildingElement for r in (o.HasFillings or [])]
+        if any(x.is_a("IfcWindow") for x in fills):
+            windows[st] += cut
     rooms = defaultdict(list)
     for sp in f.by_type("IfcSpace"):
         st = _storey_of(sp)
@@ -132,14 +137,67 @@ def load(arch_path):
         ring = footprint(v[:, :2].tolist(), fc.tolist())
         if len(ring) >= 3:
             rooms[st].append((sp.Name, sp.LongName or "", ring))
+    if with_windows:
+        return walls, wall_len, rooms, bound, windows
     return walls, wall_len, rooms, bound
 
 
-def sheet_for(wall_polys, rooms):
-    """A 1:100 vector sheet (pdf_ingest layout) and the metre offset of its frame."""
+def glazing_line(poly, walls=None):
+    """The glass line of one window opening cut at the plan height.
+
+    A window opening cut through a wall is a rectangle as deep as the wall and
+    as wide as the window; a plan draws the glass as one line along the wall
+    through its middle. The direction comes from the longest nearby wall edge when
+    ``walls`` (the cut wall outline) is given, so a window narrower than its
+    wall is deep still runs along the wall; without it, the rectangle's long
+    side is used. Returns the two end points.
+    """
+    c0 = poly.centroid
+    d = None
+    if walls is not None and not walls.is_empty:
+        # the longest wall edge passing near the opening is the wall face; the
+        # short jamb edges right beside it run across the wall
+        mx, my, Mx, My = poly.bounds
+        reach = np.hypot(Mx - mx, My - my) + 0.5
+        best = None
+        for g in getattr(walls, "geoms", [walls]):
+            for ring in [g.exterior, *g.interiors]:
+                q = list(ring.coords)
+                for a, b in zip(q, q[1:]):
+                    v = np.subtract(b, a)
+                    n = np.hypot(*v)
+                    if n < 1e-6:
+                        continue
+                    t = np.clip(np.dot(np.subtract((c0.x, c0.y), a), v) / n**2, 0, 1)
+                    dist = np.hypot(*(np.add(a, t * v) - (c0.x, c0.y)))
+                    if dist <= reach and (best is None or n > best[0]):
+                        best = (n, v / n)
+        if best is not None:
+            d = best[1]
+    if d is None:
+        r = list(poly.minimum_rotated_rectangle.exterior.coords)[:3]
+        e0, e1 = np.subtract(r[1], r[0]), np.subtract(r[2], r[1])
+        v = e0 if np.hypot(*e0) >= np.hypot(*e1) else e1
+        d = v / np.hypot(*v)
+    proj = [float(np.dot(np.subtract(p, (c0.x, c0.y)), d)) for p in poly.exterior.coords]
+    a = (c0.x + min(proj) * d[0], c0.y + min(proj) * d[1])
+    b = (c0.x + max(proj) * d[0], c0.y + max(proj) * d[1])
+    return a, b
+
+
+def sheet_for(wall_polys, rooms, glazing=None):
+    """A 1:100 vector sheet (pdf_ingest layout) and the metre offset of its frame.
+
+    ``glazing`` (window opening polygons cut at the plan height, #743) draws
+    each window's glass as one line along its wall, the way a plan shows it.
+    That is our drawing choice, so reading it back tests the reader's
+    plumbing on real geometry, not how a real set draws glazing.
+    """
     from shapely.ops import unary_union
 
-    u = unary_union(wall_polys).simplify(0.001)
+    bare = unary_union(wall_polys)
+    # a plan draws the wall on through a window, with the glass line in its middle
+    u = unary_union([bare, *(glazing or [])]).simplify(0.001)
     minx, miny, maxx, maxy = u.bounds
     W = (maxx - minx) / M_PER_PT + 2 * MARGIN_PT
     H = (maxy - miny) / M_PER_PT + 2 * MARGIN_PT
@@ -161,6 +219,17 @@ def sheet_for(wall_polys, rooms):
                     "segments": segs,
                 }
             )
+    for poly in glazing or []:
+        a, b = glazing_line(poly, bare)
+        prims.append(
+            {
+                "kind": "line",
+                "stroked": True,
+                "filled": False,
+                "dashed": False,
+                "segments": [["M", [pt(*a)]], ["L", [pt(*b)]]],
+            }
+        )
     text = []
     from shapely.geometry import Polygon
 
@@ -282,12 +351,59 @@ def measure(arch_path):
     return out
 
 
+def match_windows(truth_polys, dets, height_pt, px_per_pt, off):
+    """Window recall and precision of ``dets`` against IFC window openings.
+
+    A truth window is found when its centre, drawn on the sheet, falls inside
+    a window detection box; a detection is right when it holds a truth centre.
+    """
+    ox, oy = off
+    centres = []
+    for p in truth_polys:
+        c = p.centroid
+        x_pt = (c.x - ox) / M_PER_PT
+        y_pt = height_pt - (c.y - oy) / M_PER_PT
+        centres.append((x_pt * px_per_pt, y_pt * px_per_pt))
+    boxes = [d.bbox for d in dets if d.label == "window"]
+
+    def inside(c, b):
+        return b[0] <= c[0] <= b[2] and b[1] <= c[1] <= b[3]
+
+    found = sum(any(inside(c, b) for b in boxes) for c in centres)
+    right = sum(any(inside(c, b) for c in centres) for b in boxes)
+    return {
+        "truth": len(centres),
+        "pred": len(boxes),
+        "recall": round(found / len(centres), 4) if centres else None,
+        "precision": round(right / len(boxes), 4) if boxes else None,
+    }
+
+
+def measure_windows(arch_path):
+    """Windows drawn from the IFC as glass lines, read back by ``vector_glazing``.
+
+    This measures the reader's plumbing on real wall geometry. We choose how
+    the glass is drawn, so it says nothing about a real set's drafting.
+    """
+    from detection_provider import window_detections
+
+    walls, _len, rooms, _bound, windows = load(arch_path, with_windows=True)
+    out = {}
+    for st in PLAN_STOREYS:
+        sheet, off = sheet_for(walls[st], rooms[st], glazing=windows[st])
+        res = extract_walls(sheet, M_PER_PT).to_dict()
+        dets = window_detections(res, sheet["height_pt"], 1.0, st)
+        out[st] = match_windows(windows[st], dets, sheet["height_pt"], 1.0, off)
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("ifc", type=Path)
     ap.add_argument("--json", type=Path)
+    ap.add_argument("--windows", action="store_true", help="measure windows instead (#743)")
     a = ap.parse_args(argv)
-    out = measure(a.ifc)
+    out = measure_windows(a.ifc) if a.windows else measure(a.ifc)
     print(json.dumps(out, indent=2))
     if a.json:
         a.json.write_text(json.dumps(out, indent=2))
