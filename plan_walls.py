@@ -1276,8 +1276,6 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 }.get(src, WINDOW_CONFIDENCE),
             }
         )
-    tagged = _attach_tags(openings, spans, to_m)
-    wall_tags = _wall_tags(wall_out, openings, spans, to_m)
     thin = set(_thin_bands(walls, openings, tol, THIN_BAND_MIN_M * k))
     # a thin band whose faces are on a glazing CAD layer is glass, not a
     # question (#793): a window over the whole band instead of maybe_glazing
@@ -1296,6 +1294,11 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 }
             )
     thin -= layer_bands
+    # tags attach after every opening exists, so a storefront tag beside a
+    # glazing-layer band labels that window instead of becoming a wall tag
+    # that would add the same glass a second time (#793)
+    tagged = _attach_tags(openings, spans, to_m)
+    wall_tags = _wall_tags(wall_out, openings, spans, to_m)
     for wo in wall_out:
         if wo["id"] in thin:
             wo["maybe_glazing"] = True

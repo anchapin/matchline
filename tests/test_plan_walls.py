@@ -603,6 +603,15 @@ def test_thin_band_on_a_glazing_layer_is_a_window(tmp_path):
     assert _areas(res) == [60.0]  # the band still closes the room
 
 
+def test_tag_beside_a_glazing_layer_band_labels_its_window_not_the_wall(tmp_path):
+    glass, rest = _split_outline(_mass(_thin_bay(3, 7)), _band_faces(3, 7))
+    tag = text(*_pt(5, -0.8), "SF-1", 6)
+    res = _read_layers(tmp_path, rest + oc(0, glass) + tag, ["A-GLAZ"])
+    (op,) = _windows(res)
+    assert op.get("tag_text") == "SF-1"
+    assert not res.wall_tags  # not also kept against the band as a wall tag
+
+
 def test_thin_band_on_other_layers_stays_a_question(tmp_path):
     glass, rest = _split_outline(_mass(_thin_bay(3, 7)), _band_faces(3, 7))
     res = _read_layers(tmp_path, rest + oc(0, glass), ["A-WALL"])
