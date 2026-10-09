@@ -210,13 +210,6 @@ opening with `kind: "window"`, `source: "glazing_line"` and
   the length of the wall is a cavity or insulation line, not glazing;
 - does not overlap a window already found on that wall by more than half.
 
-Two bands sharing a face line are not folded when the result would be
-thicker than the wall on its own far face lines (`_fold_too_thick`). A
-window's glazing splits a wall, so its halves (or the three bands of double
-glazing) fold back to that wall's thickness. A wall, a narrow chase and a box
-or lining beyond it (a pipe or column enclosure on a wall's inside face)
-would fold to more, so they stay apart and no window is read there.
-
 Sill lines across a gap close the gap, so that window is one `window`
 opening, not an unclassified gap. A plain gap with nothing drawn in it stays
 unclassified. `stats.windows` counts them. In a set, a window restricts the
