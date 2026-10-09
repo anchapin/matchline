@@ -955,3 +955,31 @@ def test_free_end_carry_skips_parallel_behind_and_past_openings():
         assert W._ends_to_openings(wall, t, [], [op], tol) == []
     # an end that already meets another line is left alone
     assert W._ends_to_openings(wall, t, [((-1, 0), (1, 0))], [ahead], tol) == []
+
+
+# ---- #740: a chase drawn against a wall reads as a second, thicker band -----
+
+
+def test_short_band_inside_a_longer_walls_band_is_dropped():
+    wall = W.Wall("W1", (0, 0), (10, 0), 0.124, "line_pair")
+    chase = W.Wall("W2", (4, 0.06), (4.6, 0.06), 0.248, "line_pair")  # in W1's band
+    off_band = W.Wall("W3", (4, 0.2), (4.6, 0.2), 0.248, "line_pair")  # beside it
+    past_end = W.Wall("W4", (9.6, 0.06), (10.6, 0.06), 0.248, "line_pair")
+    crossing = W.Wall("W5", (5, -0.05), (5, 0.05), 0.124, "line_pair")
+    tol = 0.02
+    kept = W._drop_thickenings([wall, chase, off_band, past_end, crossing], set(), tol)
+    assert [w.id for w in kept] == ["W1", "W3", "W4", "W5"]
+    # a wall bridged across an opening is never dropped
+    assert [w.id for w in W._drop_thickenings([wall, chase], {"W2"}, tol)] == ["W1", "W2"]
+
+
+def test_chase_against_a_wall_does_not_shift_the_rooms_it_bounds(tmp_path):
+    # a 0.25 m chase drawn against a 0.15 m corridor wall, with a partition meeting
+    # it: kept, the partition ends on the chase's centreline and both rooms lose
+    # area to it (17.9 / 17.9 / 24.1 on develop). Dropped, they close on the wall.
+    walls = (
+        SHELL_6X10 + CORRIDOR_WALL + [((2.0, 4.06), (4.0, 4.06), 0.25), ((3, 4), (3, 10), T_INT)]
+    )
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert _areas(res) == [18.0, 18.0, 24.0]
+    assert not [r for r in res.review if r["kind"] == "unclosed_wall"]

@@ -821,6 +821,48 @@ def _runs(bands: List[Band], max_gap: float, tol: float):
     return walls, gaps
 
 
+def _drop_thickenings(walls: List[Wall], keep: set, tol: float) -> List[Wall]:
+    """Drop a short band that overlaps a longer wall's band along its whole length (#740).
+
+    A chase or bump drawn against a wall reads as a second, thicker line pair
+    whose centreline sits inside the wall's band. Kept, it floats a few
+    centimetres off the wall's centreline, so the walls meeting it never reach
+    the real wall and the rooms either side read as one face. Dropped, their
+    ends are free and join the real wall's centreline like any T-junction.
+    It runs after collinear gaps are carried through junctions, so a wall cut
+    where the chase meets it is whole again. Walls bridged across an opening
+    (``keep``) are never dropped.
+    """
+    atol = math.radians(ANGLE_TOL_DEG)
+    out = []
+    for w in walls:
+        Lw = math.dist(w.a, w.b)
+        if w.id in keep or Lw <= tol:
+            out.append(w)
+            continue
+        ang = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0])
+        covered = False
+        for o in walls:
+            Lo = math.dist(o.a, o.b)
+            if o is w or Lo <= Lw:
+                continue
+            if not _angle_close(ang, math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]), atol):
+                continue
+            line = LineString([o.a, o.b])
+            if (
+                line.distance(Point(w.a)) > o.t / 2 + tol
+                or line.distance(Point(w.b)) > o.t / 2 + tol
+            ):
+                continue
+            ua, ub = line.project(Point(w.a)), line.project(Point(w.b))
+            if min(ua, ub) >= tol and max(ua, ub) <= Lo - tol:
+                covered = True
+                break
+        if not covered:
+            out.append(w)
+    return out
+
+
 def _line_x(p: Pt, q: Pt, r: Pt, s: Pt) -> Optional[Tuple[Pt, float, float]]:
     """Intersection of lines pq and rs: point, param along pq, param along rs."""
     d1 = (q[0] - p[0], q[1] - p[1])
@@ -1225,6 +1267,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 }
             )
     walls = [w for w in walls if w.id not in alias]
+    walls = _drop_thickenings(walls, {wid for br in bridges for wid in br.walls}, tol)
 
     pairs = [(w.a, w.b) for w in walls if math.dist(w.a, w.b) > tol] + [
         (br.a, br.b) for br in bridges
