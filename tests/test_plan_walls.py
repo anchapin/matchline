@@ -940,3 +940,18 @@ def test_partition_stopping_well_short_of_a_door_opening_stays_open(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(walls, [CORRIDOR_DOORS])))
     assert _areas(res) == [24.0, 36.0]
     assert [r for r in res.review if r["kind"] == "unclosed_wall"]
+
+
+def test_free_end_carry_skips_parallel_behind_and_past_openings():
+    # a wall end at (0, 0) pointing +y; reach is 0.75 x 0.2 + 0.01 = 0.16
+    wall, t, tol = [((0, -2), (0, 0))], [0.2], 0.01
+    ahead = ((-1, 0.1), (1, 0.1), 0.2)
+    assert W._ends_to_openings(wall, t, [], [ahead], tol) == [((0, 0), (0.0, 0.1))]
+    parallel = ((0.05, 0.05), (0.05, 1.0), 0.2)
+    behind = ((-1, -0.1), (1, -0.1), 0.2)
+    past_end = ((0.2, 0.1), (1, 0.1), 0.2)
+    too_far = ((-1, 0.3), (1, 0.3), 0.2)
+    for op in (parallel, behind, past_end, too_far):
+        assert W._ends_to_openings(wall, t, [], [op], tol) == []
+    # an end that already meets another line is left alone
+    assert W._ends_to_openings(wall, t, [((-1, 0), (1, 0))], [ahead], tol) == []

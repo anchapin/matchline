@@ -17,7 +17,8 @@ Vector path only. Walls come from
 Collinear pieces of the same thickness join across gaps up to
 ``MAX_OPENING_M``: a gap with another wall ending in it is a junction,
 otherwise an opening. Wall ends snap to the centreline of a crossing wall
-within reach, closing L and T junctions.
+within reach, closing L and T junctions; once openings are bridged, a free end
+stopping just short of an opening line it crosses joins that line too.
 
 Nothing is dropped silently: wall ends that connect to nothing, faces too
 small to be rooms, and faces holding two different room numbers go to
