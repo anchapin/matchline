@@ -551,3 +551,144 @@ def test_baseline_zone_3_uses_the_lettered_row_and_no_zone_records_nothing():
     rows4, zk4 = prm_rows("ExteriorWall", "SteelFramed", "4A", "Nonresidential")
     assert zk4 == "4" and rows4[0]["u_ip"] == 0.124
     assert apply_construction_library(_baseline_model(), "").baseline == {}
+
+
+# --- #747: heated slab only under the rooms the schedule says it serves ------
+
+
+def _two_room_slab():
+    m = _slab_model(A=("L1", _rect(0, 0, 10, 20)), B=("L1", _rect(10, 0, 20, 20)))
+    m.spaces["A"].number, m.spaces["B"].number = "101", "102"
+    m.slab_heated_by = "radiant floor / in-slab heating scheduled: RFM-1"
+    return m
+
+
+def test_partly_heated_slab_splits_the_exposed_edge():
+    m = _two_room_slab()
+    m.slab_heated_spaces = ["A"]
+    s = apply_construction_library(m, "5A")
+    fh = lookup("GroundContactFloor", "Heated", "5A").f_ip * 1.730735
+    fu = lookup("GroundContactFloor", "Unheated", "5A").f_ip * 1.730735
+    # 20 x 20 slab, perimeter 80; room A's exposed edge 20 + 10 + 10 = 40
+    want = (fh * 40.0 + fu * 40.0) / 400.0
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
+    d = s.defaulted["t55-slab"]
+    assert d["construction_type"] == "Heated" and d["heated_spaces"] == ["A"]
+    assert d["heated_perimeter_m"] == pytest.approx(40.0)
+    assert d["heated_area_m2"] == pytest.approx(200.0)
+    assert d["f_ip_unheated"] == lookup("GroundContactFloor", "Unheated", "5A").f_ip
+    note = m.constructions["t55-slab"].provenance.note
+    assert "heated rooms (A, 200.00 m2)" in note and "other 40.00 m" in note
+    # less than the whole slab heated, more than none
+    whole = fh * 80.0 / 400.0
+    assert fu * 80.0 / 400.0 < m.constructions["t55-slab"].u_value_w_m2k < whole
+
+
+def test_interior_heated_room_has_no_heated_edge():
+    m = _slab_model(
+        O=(
+            "L1",
+            [
+                [0, 0],
+                [30, 0],
+                [30, 30],
+                [0, 30],
+                [0, 0],
+                [10, 10],
+                [10, 20],
+                [20, 20],
+                [20, 10],
+                [10, 10],
+            ],
+        ),
+        C=("L1", _rect(10, 10, 20, 20)),
+    )
+    m.slab_heated_by = "radiant floor / in-slab heating scheduled: RFM-1"
+    m.slab_heated_spaces = ["C"]
+    s = apply_construction_library(m, "5A")
+    fu = lookup("GroundContactFloor", "Unheated", "5A").f_ip * 1.730735
+    assert s.defaulted["t55-slab"]["heated_perimeter_m"] == pytest.approx(0.0, abs=1e-6)
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(fu * 120.0 / 900.0, rel=1e-4)
+
+
+def test_heated_spaces_off_the_slab_fall_back_to_whole_slab():
+    m = _two_room_slab()
+    m.spaces["U"] = Space(id="U", level_id="L2", name="U", polygon_m=_rect(0, 0, 10, 20))
+    m.slab_heated_spaces = ["U"]
+    s = apply_construction_library(m, "5A")
+    fh = lookup("GroundContactFloor", "Heated", "5A").f_ip * 1.730735
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(fh * 80.0 / 400.0, rel=1e-5)
+    assert "heated_spaces" not in s.defaulted["t55-slab"]
+
+
+def test_heated_slab_rooms_reads_serves_columns_only():
+    from construction_library import heated_slab_rooms
+
+    rf = {"tag": "RFM-1", "description": "RADIANT FLOOR MANIFOLD"}
+    assert heated_slab_rooms([{**rf, "values": {"AREA SERVED": "LOBBY 101, 102A"}}]) == [
+        "101",
+        "102A",
+    ]
+    assert heated_slab_rooms([{**rf, "values": {"ROOM": "103"}}]) == ["103"]
+    # a floor-area column is not a room list; no rooms named -> None
+    assert heated_slab_rooms([{**rf, "values": {"AREA (SF)": "1200"}}]) is None
+    # every heated row must name its rooms
+    rows = [{**rf, "values": {"SERVES": "101"}}, {"tag": "RFM-2", "description": "RADIANT FLOOR"}]
+    assert heated_slab_rooms(rows) is None
+    # rows that are not heated slab are ignored
+    rows = [
+        {**rf, "values": {"SERVES": "101"}},
+        {"tag": "VAV-1", "description": "VAV", "values": {"SERVES": "205"}},
+    ]
+    assert heated_slab_rooms(rows) == ["101"]
+    assert heated_slab_rooms([]) is None and heated_slab_rooms(None) is None
+
+
+def test_set_run_limits_heated_slab_to_served_ground_rooms():
+    from types import SimpleNamespace
+
+    import real_set
+    from building_model import Provenance, ReviewItem
+
+    m = _two_room_slab()
+    m.slab_heated_by = ""
+    review, report = [], SimpleNamespace(notes=[])
+    rows = [
+        {
+            "tag": "RFM-1",
+            "description": "RADIANT FLOOR MANIFOLD",
+            "sheet": "M-601",
+            "values": {"SERVES": "101"},
+        }
+    ]
+    real_set._heated_slab(m, rows, review, report, Provenance, ReviewItem)
+    assert m.slab_heated_spaces == ["A"]
+    (item,) = review
+    assert "only the slab under room(s) 101" in item.description and item.needs_review
+    assert "heated slab rooms: 101" in report.notes
+
+
+def test_set_run_whole_slab_when_a_served_room_is_not_on_the_ground_floor():
+    from types import SimpleNamespace
+
+    import real_set
+    from building_model import Provenance, ReviewItem
+
+    m = _two_room_slab()
+    m.spaces["U"] = Space(
+        id="U", level_id="L2", name="U", number="201", polygon_m=_rect(0, 0, 10, 20)
+    )
+    review, report = [], SimpleNamespace(notes=[])
+    rows = [{"tag": "RFM-1", "description": "RADIANT FLOOR", "values": {"SERVES": "101, 201"}}]
+    real_set._heated_slab(m, rows, review, report, Provenance, ReviewItem)
+    assert m.slab_heated_spaces == []
+    (item,) = review
+    assert (
+        "whole ground slab" in item.description
+        and "201 is not a ground-floor room" in item.description
+    )
+
+
+def test_slab_heated_spaces_round_trips_through_json():
+    m = BuildingModel(name="t", slab_heated_spaces=["L1-101"])
+    assert BuildingModel.from_json(m.to_json()).slab_heated_spaces == ["L1-101"]

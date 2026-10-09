@@ -94,10 +94,18 @@ ceiling rows never count), it sets `BuildingModel.slab_heated_by` to the tags
 and sheets, and `t55-slab` uses the Table 5.5 Heated F-factor instead. That
 follows the 90.1-2019 Section 3.2 definition of a heated slab (heating
 elements, hydronic tubing or hot air in contact with, within or under the
-slab). The drawings rarely show how much of the slab is heated, so the whole
-slab is treated as heated (which can only raise the loss) and a `heated_slab`
-review item asks for the extent. `defaulted["t55-slab"]` carries
-`construction_type: Heated` and `heated_by`. The Appendix G baseline slab is
+slab). When every heated row names the rooms it serves (a SERVES, AREA
+SERVED, ROOM or RM column with room numbers; a plain AREA column is a floor
+area and does not count) and each number is a room on the slab level, only
+those rooms are heated: `BuildingModel.slab_heated_spaces` lists them and the
+slab gets one U from the heated F-factor over the heated rooms' exposed edge
+plus the unheated F-factor over the rest, U = (F_h x P_h + F_u x P_u) / area
+(F-factor is loss per length of exposed edge, so a heated room with no
+exterior edge adds nothing). Otherwise the whole slab is treated as heated
+(which can only raise the loss). Either way a `heated_slab` review item asks
+for the extent. `defaulted["t55-slab"]` carries `construction_type: Heated`
+and `heated_by`, plus `heated_spaces`, `heated_area_m2`,
+`heated_perimeter_m` and `f_ip_unheated` for a partly heated slab. The Appendix G baseline slab is
 always the unheated row (Table G3.1 item 5).
 
 ## Which table feeds what (#781)
