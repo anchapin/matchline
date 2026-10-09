@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Fixed
+- CI: the empty-commit check skips merge commits. `git diff-tree` lists no files for a merge, so every merge of `develop` into a PR branch failed the check; plain commits are still checked.
 - Plan walls: a short lined stretch (a lining a gap off the wall's inside face, closed at both ends by its return and a corner) is no longer called a window; a thinner parallel wall flush against a glazed band's face now rejects the candidate like one inside it (`plan_walls._wall_inside_band`). Synthetic 1.64 m stretch went from a false window to none; Clinic walls, rooms and windows are unchanged (#879).
 - Door detection: a door hung on one face line of a hollow jamb wall (two thin lines with a clear gap wider than two leaves) is now found; the hollow wall also offers its face lines as the hinge, tried with that wall alone, and the arc, leaf-reach and clear-opening checks are unchanged (`door_detect._hinge_options`, `_hollow`). Clinic doors (plumbing only): first floor 139 to 140 of 148, recall 0.946 to 0.953, precision 1.0; second floor unchanged (#875).
 - Plan walls: a window through a double-leaf (cavity) wall whose cavity is as wide as a leaf or wider is now found; the two leaves, flush with the glazed band's faces on both sides, count as the wall running on past it (`plan_walls._collinear_run`). Synthetic 0.10/0.10 and 0.10/0.15 m leaf/cavity walls went from missed to found; Clinic walls, rooms and windows are unchanged (#872).
