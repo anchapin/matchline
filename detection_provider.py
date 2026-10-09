@@ -326,10 +326,13 @@ def _glass_pieces(op: dict) -> List[tuple]:
     def t(p):
         return (p[0] - a[0]) * ux + (p[1] - a[1]) * uy
 
-    cuts = sorted(
-        (max(0.0, min(t(d["a_m"]), t(d["b_m"]))), min(length, max(t(d["a_m"]), t(d["b_m"]))))
-        for d in doors
-    )
+    cuts = []
+    for d in doors:
+        lo, hi = sorted((t(d["a_m"]), t(d["b_m"])))
+        lo, hi = max(0.0, lo), min(length, hi)
+        if hi > lo:  # a door off the run's ends cuts nothing
+            cuts.append((lo, hi))
+    cuts.sort()
     pieces, start = [], 0.0
     for lo, hi in cuts + [(length, length)]:
         if lo - start >= MIN_GLASS_PIECE_M:

@@ -350,3 +350,12 @@ def test_storefront_with_a_door_drawn_in_it_gives_two_window_boxes(tmp_path):
     m = walls["m_per_pt"]
     glass_m = sum((d.bbox[2] - d.bbox[0]) * m for d in dets) - 2 * 0.30  # less the wall pads
     assert glass_m == pytest.approx(op["width_m"] - 0.9, abs=0.1)
+
+
+def test_a_door_off_the_end_of_the_run_cuts_nothing():
+    op = {"a_m": (0, 0), "b_m": (4, 0), "doors_in_glazing": [{"a_m": (5, 0), "b_m": (6, 0)}]}
+    (piece,) = dp._glass_pieces(op)
+    assert piece[0] == pytest.approx((0, 0)) and piece[1] == pytest.approx((4, 0))
+    op["doors_in_glazing"] = [{"a_m": (-2, 0), "b_m": (-1, 0)}]
+    (piece,) = dp._glass_pieces(op)
+    assert piece[1] == pytest.approx((4, 0))
