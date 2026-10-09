@@ -269,6 +269,9 @@ def render_storey(storey, frame=None, vary=None):
                 font=ft,
             )
     img, shift = _degrade_sheet(img, rng)
+    import copy
+
+    frame = copy.copy(frame)  # never record this render's shift on the caller's frame
     frame.shift_px = shift
     return img, frame
 

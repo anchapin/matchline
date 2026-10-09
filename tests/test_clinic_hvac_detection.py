@@ -100,6 +100,9 @@ def test_varied_render_is_seeded_and_deterministic():
     assert a.tobytes() != c.tobytes()
     assert all(abs(v) <= VARY_SHIFT_PX for v in fa.shift_px)
     assert len(np.unique(np.asarray(a))) > 2  # scan noise / JPEG grey levels
+    shared = SheetFrame(-2.0, 12.0, -2.0, 6.0, 50.0, 2.0)
+    _, fs = render_storey(_storey(), frame=shared, vary=7)
+    assert fs is not shared and not hasattr(shared, "shift_px")
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
