@@ -236,6 +236,76 @@ def test_slab_u_reaches_the_exporters():
     assert slab_u_value(m) == pytest.approx(m.constructions["t55-slab"].u_value_w_m2k)
 
 
+
+# --- #747: heated slab from a radiant floor row on a mechanical schedule -------
+
+
+def test_heated_slab_uses_the_table_5_5_heated_row():
+    from construction_library import heated_slab_evidence
+
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)))
+    m.slab_heated_by = heated_slab_evidence(
+        [{"tag": "RFM-1", "description": "RADIANT FLOOR MANIFOLD", "sheet": "M-601"}]
+    )
+    assert m.slab_heated_by == "radiant floor / in-slab heating scheduled: RFM-1 on M-601"
+    s = apply_construction_library(m, "5A")
+    row = lookup("GroundContactFloor", "Heated", "5A")
+    unheated = lookup("GroundContactFloor", "Unheated", "5A")
+    assert row.f_ip is not None and row.f_ip > unheated.f_ip
+    want = row.f_ip * 1.730735 * 80.0 / 400.0
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
+    d = s.defaulted["t55-slab"]
+    assert d["construction_type"] == "Heated" and d["heated_by"] == m.slab_heated_by
+    c = m.constructions["t55-slab"]
+    assert c.name.startswith("Heated slab")
+    assert "GroundContactFloor Heated" in c.provenance.note
+    assert "RFM-1 on M-601" in c.provenance.note
+
+
+def test_unheated_slab_unchanged_without_evidence():
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)))
+    s = apply_construction_library(m, "5A")
+    d = s.defaulted["t55-slab"]
+    assert d["construction_type"] == "Unheated" and "heated_by" not in d
+    assert "Unheated" in m.constructions["t55-slab"].provenance.note
+
+
+@pytest.mark.parametrize(
+    "desc,hit",
+    [
+        ("RADIANT FLOOR HEATING MANIFOLD", True),
+        ("IN-SLAB RADIANT TUBING ZONE", True),
+        ("HYDRONIC UNDERFLOOR HEATING", True),
+        ("HEATED SLAB BOILER LOOP", True),
+        ("SNOW MELT RADIANT SLAB", False),
+        ("RADIANT CEILING PANEL", False),
+        ("VAV BOX WITH HW REHEAT", False),
+        ("RETURN FAN", False),
+    ],
+)
+def test_heated_slab_evidence_words(desc, hit):
+    from construction_library import heated_slab_evidence
+
+    assert bool(heated_slab_evidence([{"tag": "X-1", "description": desc}])) is hit
+
+
+def test_heated_slab_evidence_reads_schedule_title_and_cells():
+    from construction_library import heated_slab_evidence
+
+    rows = [
+        {"tag": "RF-1", "description": "", "schedule": "RADIANT FLOOR SCHEDULE"},
+        {"tag": "B-1", "description": "BOILER", "values": {"SERVES": "IN-FLOOR HEATING"}},
+    ]
+    why = heated_slab_evidence(rows)
+    assert "RF-1" in why and "B-1" in why
+    assert heated_slab_evidence([]) == "" and heated_slab_evidence(None) == ""
+
+
+def test_slab_heated_by_round_trips_through_json():
+    m = BuildingModel(name="t", slab_heated_by="radiant floor / in-slab heating scheduled: R-1")
+    assert BuildingModel.from_json(m.to_json()).slab_heated_by == m.slab_heated_by
+
+
 # --- #781: Appendix G baseline envelope from Table G3.4 (PRM 2019) ------------
 
 

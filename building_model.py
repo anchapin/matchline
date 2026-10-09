@@ -838,6 +838,11 @@ class BuildingModel:
     # Construction.id of the ground slab (IFC import reads a BASESLAB's stated
     # ThermalTransmittance); "" -> generic slab on grade on export
     slab_construction_id: str = ""
+    # Why the ground slab counts as heated (90.1 "heated slab": heating
+    # elements, hydronic tubing or hot air in, on or under the slab), e.g. a
+    # radiant floor row on a mechanical schedule (#747); "" -> no evidence,
+    # and an unset slab gets the unheated-slab F-factor
+    slab_heated_by: str = ""
     # ASHRAE climate zone (e.g. "4A") and 90.1 building category, as given by
     # the user (--climate-zone / --building-category, #747/#763); "" means not
     # given, and nothing downstream assumes one

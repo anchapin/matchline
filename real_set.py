@@ -557,6 +557,7 @@ def build_set_model(
         review_queue=review,
         constructions=constructions,
     )
+    _heated_slab(model, equipment, review, report, Provenance, ReviewItem)
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
@@ -900,6 +901,34 @@ def _terminal_zone(e, locs, conf, spaces, zones, ComponentRef, Provenance, Zone)
     sp.hvac.zone_ids.append(zid)
     sp.hvac.terminal_units.append(ref)
     e["zone_id"] = zid
+
+
+def _heated_slab(model, equipment, review, report, Provenance, ReviewItem) -> None:
+    """A radiant floor / in-slab heating row on a mechanical schedule marks the
+    ground slab heated (#747), so the construction library uses the Table 5.5
+    Heated slab F-factor. The drawings rarely show how much of the slab it
+    covers, so the whole slab is treated as heated and that goes to review."""
+    from construction_library import heated_slab_evidence
+
+    why = heated_slab_evidence(equipment)
+    if not why:
+        return
+    model.slab_heated_by = why
+    report.notes.append(f"heated slab: {why}")
+    sheet = next((e.get("sheet", "") for e in equipment if e.get("sheet")), "")
+    review.append(
+        ReviewItem(
+            id="rq-heated-slab",
+            kind="heated_slab",
+            description=(
+                f"{why}; the whole ground slab gets the Table 5.5 heated-slab F-factor. "
+                "Check how much of the slab is heated"
+            ),
+            confidence=0.6,
+            provenance=Provenance(sheet, 0, "pdf_schedule_heated_slab", 0.6),
+            needs_review=True,
+        )
+    )
 
 
 def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
