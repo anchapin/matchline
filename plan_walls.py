@@ -801,7 +801,7 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
                 continue
             lo = min(a.rho - a.t / 2, rb - b.t / 2)
             hi = max(a.rho + a.t / 2, rb + b.t / 2)
-            if hi - lo > t_max or _fold_too_thick(a, b, hi - lo, bands, by_seg):
+            if hi - lo > t_max:
                 continue
             merged = Band(
                 a.theta, (lo + hi) / 2, min(a.u0, b0), max(a.u1, b1), hi - lo, "line_pair",
@@ -811,23 +811,6 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
             changed = True
             break
     return bands
-
-
-def _fold_too_thick(a: Band, b: Band, t: float, bands: List[Band], by_seg) -> bool:
-    """Folding ``a`` and ``b`` would make a wall thicker than the wall on its
-    own face lines (#743). A window's glazing splits a wall, so its halves
-    fold back to that wall's thickness; a wall, a narrow chase and a box or
-    lining beyond it (a pipe or column enclosure on a wall's inside face)
-    would fold to more. The bands on the two far face lines, other than
-    ``a`` and ``b``, are the wall there; with none there is no evidence."""
-    shared = set(a.segs) & set(b.segs)
-    walls = [
-        bands[ci].t
-        for f in (set(a.segs) | set(b.segs)) - shared
-        for ci in by_seg.get(f, [])
-        if bands[ci] is not a and bands[ci] is not b
-    ]
-    return bool(walls) and t > max(walls) + 0.1 * min(a.t, b.t)
 
 
 def _band_from_rect(a: Pt, b: Pt, t: float) -> Band:
