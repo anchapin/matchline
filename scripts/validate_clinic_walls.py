@@ -147,38 +147,42 @@ def glazing_line(poly, walls=None):
 
     A window opening cut through a wall is a rectangle as deep as the wall and
     as wide as the window; a plan draws the glass as one line along the wall
-    through its middle. The direction comes from the longest nearby wall edge when
-    ``walls`` (the cut wall outline) is given, so a window narrower than its
-    wall is deep still runs along the wall; without it, the rectangle's long
-    side is used. Returns the two end points.
+    through its middle. With ``walls`` (the cut wall outline, opening not
+    filled), the along-wall direction is the side of the rectangle whose two
+    lines the wall faces continue on: the faces run on past the window, while
+    the jamb sides only meet a wall edge as deep as the wall. A partition or
+    corner wall nearby does not lie on either line, so it never decides the
+    direction. Without ``walls`` the rectangle's long side is used.
     """
-    c0 = poly.centroid
-    d = None
+    r = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
+    sides = [np.subtract(r[1], r[0]), np.subtract(r[2], r[1])]
+    pick = 0 if np.hypot(*sides[0]) >= np.hypot(*sides[1]) else 1
     if walls is not None and not walls.is_empty:
-        # the longest wall edge passing near the opening is the wall face; the
-        # short jamb edges right beside it run across the wall
-        mx, my, Mx, My = poly.bounds
-        reach = np.hypot(Mx - mx, My - my) + 0.5
-        best = None
-        for g in getattr(walls, "geoms", [walls]):
-            for ring in [g.exterior, *g.interiors]:
-                q = list(ring.coords)
-                for a, b in zip(q, q[1:]):
-                    v = np.subtract(b, a)
-                    n = np.hypot(*v)
-                    if n < 1e-6:
-                        continue
-                    t = np.clip(np.dot(np.subtract((c0.x, c0.y), a), v) / n**2, 0, 1)
-                    dist = np.hypot(*(np.add(a, t * v) - (c0.x, c0.y)))
-                    if dist <= reach and (best is None or n > best[0]):
-                        best = (n, v / n)
-        if best is not None:
-            d = best[1]
-    if d is None:
-        r = list(poly.minimum_rotated_rectangle.exterior.coords)[:3]
-        e0, e1 = np.subtract(r[1], r[0]), np.subtract(r[2], r[1])
-        v = e0 if np.hypot(*e0) >= np.hypot(*e1) else e1
-        d = v / np.hypot(*v)
+        tol = 0.01
+        score = []
+        for k, v in enumerate(sides):
+            d = v / np.hypot(*v)
+            n = (-d[1], d[0])
+            # the two lines of this side direction through the rectangle
+            offs = sorted({round(float(np.dot(c, n)), 6) for c in r})
+            lines = (offs[0], offs[-1])
+            run = 0.0
+            for g in getattr(walls, "geoms", [walls]):
+                for ring in [g.exterior, *g.interiors]:
+                    q = list(ring.coords)
+                    for a, b in zip(q, q[1:]):
+                        e = np.subtract(b, a)
+                        m = np.hypot(*e)
+                        if m < 1e-6 or abs(np.dot(e / m, n)) > 0.02:
+                            continue
+                        o = (np.dot(a, n) + np.dot(b, n)) / 2
+                        if min(abs(o - x) for x in lines) <= tol:
+                            run += m
+            score.append(run)
+        if score[0] != score[1]:
+            pick = 0 if score[0] > score[1] else 1
+    d = sides[pick] / np.hypot(*sides[pick])
+    c0 = poly.centroid
     proj = [float(np.dot(np.subtract(p, (c0.x, c0.y)), d)) for p in poly.exterior.coords]
     a = (c0.x + min(proj) * d[0], c0.y + min(proj) * d[1])
     b = (c0.x + max(proj) * d[0], c0.y + max(proj) * d[1])

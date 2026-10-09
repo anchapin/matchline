@@ -114,3 +114,44 @@ def test_window_drawn_from_the_ifc_reads_back_as_one_window_detection():
     res = extract_walls(bare, M_PER_PT).to_dict()
     dets = window_detections(res, bare["height_pt"], 1.0, "s")
     assert match_windows([opening], dets, bare["height_pt"], 1.0, off)["recall"] == 0.0
+
+
+def test_a_partition_beside_a_window_does_not_turn_its_glass_line():
+    # partitions meeting the inside face 0.6 m past each window (#743): the
+    # glass still runs along the exterior wall, and every window reads back
+    from shapely.ops import unary_union
+
+    from detection_provider import window_detections
+
+    th, L, pt = 0.267, 22.0, 0.133
+    xs = [3.0, 7.0, 11.0, 15.0]
+    ops = [box(x, -th, x + 1.0, 0.0) for x in xs]
+    w = unary_union(
+        [box(-th, -th, L + th, 8 + th).difference(box(0, 0, L, 8))]
+        + [box(x + 1.6 - pt / 2, 0.0, x + 1.6 + pt / 2, 4.0) for x in xs[:3]]
+    )
+    for o in ops:
+        w = w.difference(o)
+    for o in ops:
+        a, b = glazing_line(o, w)
+        assert a[1] == pytest.approx(-th / 2) and b[1] == pytest.approx(-th / 2)
+        assert sorted([a[0], b[0]]) == pytest.approx([o.bounds[0], o.bounds[2]])
+    ring = [(0, 0), (L, 0), (L, 8), (0, 8)]
+    sheet, off = sheet_for([w], [("101", "OFFICE", ring)], glazing=ops)
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 4, "pred": 4, "recall": 1.0, "precision": 1.0}
+
+
+def test_a_window_near_an_inside_corner_keeps_its_glass_along_the_wall():
+    # the end wall is longer than the window's own faces nearby, but it does
+    # not lie on the window's side lines, so it cannot turn the glass
+    th, L = 0.267, 22.0
+    ops = [box(x, -th, x + 1.0, 0.0) for x in (10.0, 13.5, 17.0, 20.5)]
+    w = box(-th, -th, L + th, 8 + th).difference(box(0, 0, L, 8))
+    for o in ops:
+        w = w.difference(o)
+    a, b = glazing_line(ops[-1], w)
+    assert sorted([a[0], b[0]]) == pytest.approx([20.5, 21.5])
+    assert a[1] == pytest.approx(-th / 2)
