@@ -650,3 +650,27 @@ def test_mech_plan_at_another_scale_without_a_grid_is_not_placed(tmp_path):
     assert [r.kind for r in model.review_queue if r.id == "rq-mechreg-M-101"] == [
         "mech_plan_unregistered"
     ]
+
+
+def test_placed_terminal_unit_defines_a_zone_on_its_room(tmp_path):
+    model, report = _mech_set(tmp_path, [("VAV-1", (1.5, 2)), ("VAV-3", (14, 2))])
+    assert list(model.zones) == ["L1-Z-VAV-1"]
+    z = model.zones["L1-Z-VAV-1"]
+    assert z.space_ids == ["L1-101"] and z.level_id == "L1"
+    assert (z.terminal_unit.tag, z.terminal_unit.type) == ("VAV-1", "vav")
+    assert z.provenance.method == "mech_plan_tag" and "duct tracing" in z.provenance.note
+    sp = model.spaces["L1-101"]
+    assert sp.hvac.zone_ids == ["L1-Z-VAV-1"] and sp.hvac.terminal_units[0].tag == "VAV-1"
+    eq = {e["tag"]: e for e in report.to_dict()["schedules"]["equipment"]}
+    assert eq["VAV-1"]["zone_id"] == "L1-Z-VAV-1" and "zone_id" not in eq["VAV-3"]
+    assert any("1 HVAC zone(s), one per placed terminal unit" in n for n in report.notes)
+
+
+def test_zones_pass_the_hvac_coverage_check(tmp_path):
+    from validate import _Ctx
+    from validate.invariants import _check_hvac_zone_coverage
+
+    model, _r = _mech_set(tmp_path, [("VAV-1", (1.5, 2)), ("VAV-2", (6.5, 2))])
+    assert sorted(model.zones) == ["L1-Z-VAV-1", "L1-Z-VAV-2"]
+    r = _check_hvac_zone_coverage(_Ctx(model=model))
+    assert r.severity == "pass", r.message

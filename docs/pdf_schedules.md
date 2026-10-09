@@ -101,8 +101,15 @@ model metres, registration, confidence). A tag in no room is
 `equipment_outside_rooms`; a tag in two rooms is `equipment_ambiguous`; both
 get no room. A note lists scheduled tags no mechanical plan shows.
 
+Each placed terminal unit (schedule kind `vav` or `fcu`) becomes an HVAC
+zone `<level>-Z-<tag>` serving the room it is tagged in: `Zone.space_ids`,
+`Zone.terminal_unit` (method `mech_plan_tag`, the placement's confidence),
+and the room's `hvac.zone_ids` / `hvac.terminal_units`. The equipment record
+gets `zone_id`. AHUs, fans and air outlets do not make zones.
+
 ## Not done yet
 
-The placed equipment is not yet written onto HVAC zones (the set model has no
-zones yet), and tags are read from text only, not tied to detected symbols.
+A zone holds only the room its terminal unit is tagged in; rooms it serves
+through ductwork need duct tracing. Tags are read from text only, not tied to
+detected symbols.
 Unruled (whitespace-aligned) tables and scanned schedules are not read.
