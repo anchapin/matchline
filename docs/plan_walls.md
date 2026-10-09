@@ -133,6 +133,28 @@ cut `room` review items from 88 to 4 (First Floor) and 58 to 4 (Second
 Floor). Median area error rose about 1.5 points because sliver area is now
 counted in the room next to it.
 
+A wall that stops in the open, more than a door width (`MAX_OPENING_M`) but no
+more than `WIDE_OPENING_M` short of the wall ahead of it, closes with an air wall
+only when the closure then parts two faces that both carry a room label: a
+counter, half wall or open office edge between two named spaces. The opening is
+`beside_corner` with `"air_wall": true` and goes to review as `air_wall`. Inside
+one named space (one label, or none) the wall stays open and the area stays one
+room, with the free end in review as `unclosed_wall`. Closing every such end
+regardless of labels matched 5 more raw spaces but added 16 extra faces on the
+Clinic; the label rule keeps most of the gain:
+
+| Storey | Raw matched | Extra | Wall-bounded matched | Extra | Unclosed ends |
+|---|---|---|---|---|---|
+| First Floor, before | 106 / 154 | 23 | 102 / 126 | 27 | 136 |
+| First Floor, every end closed | 111 / 154 | 34 | 106 / 126 | 39 | 122 |
+| First Floor, labelled rooms only | 108 / 154 | 24 | 105 / 126 | 27 | 128 |
+| Second Floor, before | 83 / 109 | 22 | 75 / 87 | 30 | 29 |
+| Second Floor, every end closed | 87 / 109 | 27 | 76 / 87 | 38 | 14 |
+| Second Floor, labelled rooms only | 85 / 109 | 23 | 75 / 87 | 33 | 18 |
+
+The Second Floor wall-bounded extras rise by 3 because that truth joins spaces
+across edges with no wall, which is exactly where a labelled split lands.
+
 ## Not yet
 
 Casework drawn within a wall thickness of a wall face (a counter front 0.6 m

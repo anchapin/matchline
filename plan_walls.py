@@ -963,10 +963,30 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     pair_walls = [w for w in walls if math.dist(w.a, w.b) > tol]
     pair_ids = [[w.id] for w in pair_walls] + [list(br.walls) for br in bridges]
     joins, corners = _join_free_ends(
-        pairs, [w.t for w in pair_walls] + [br.t for br in bridges], tol, MAX_OPENING_M * k
+        pairs, [w.t for w in pair_walls] + [br.t for br in bridges], tol, WIDE_OPENING_M * k
     )
-    for i, j, a, b in corners:
+    spans = [(_get(t, "text"), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
+    near, far = [], []
+    for c in corners:
+        (far if math.dist(c[2], c[3]) > MAX_OPENING_M * k + tol else near).append(c)
+    base = pairs + joins + [(a, b) for _i, _j, a, b in near]
+    # a wall that stops more than a door width short of the wall ahead closes with an air
+    # wall only where it then parts two labelled rooms: an open counter or half wall
+    # between named spaces. Elsewhere it is an open area and stays one room.
+    faces = polygonize_full(unary_union(_node_lines(base + [(a, b) for *_x, a, b in far], tol)))[0]
+    keep = []
+    for c in far:
+        edge = LineString([c[2], c[3]])
+        sides = [
+            f
+            for f in getattr(faces, "geoms", [])
+            if f.boundary.intersection(edge).length > 0.5 * edge.length
+        ]
+        if len(sides) == 2 and all(_label_for(f, spans)[0] for f in sides):
+            keep.append(c)
+    for i, j, a, b in near + keep:
         t = pair_walls[i].t if i < len(pair_walls) else bridges[i - len(pair_walls)].t
+        wide = math.dist(a, b) > MAX_OPENING_M * k + tol
         bridges.append(Bridge(a, b, t, (pair_ids[i][0], pair_ids[j][0])))
         openings.append(
             {
@@ -975,10 +995,24 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "b_m": to_m(b),
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
                 "beside_corner": True,
+                **({"air_wall": True} if wide else {}),
                 "_ab": (a, b, t),
             }
         )
-    lines = _node_lines(pairs + joins + [(a, b) for _i, _j, a, b in corners], tol)
+        if wide:
+            review.append(
+                {
+                    "kind": "air_wall",
+                    "reason": (
+                        f"wall ends {math.dist(a, b) * m_per_pt:.1f} m short of the wall ahead "
+                        "between two labelled rooms; closed with an air wall, check it is an "
+                        "open edge (counter, half wall) and not a missing wall"
+                    ),
+                    "a_m": to_m(a),
+                    "b_m": to_m(b),
+                }
+            )
+    lines = _node_lines(base + [(a, b) for *_x, a, b in keep], tol)
     noded = unary_union(lines)
     faces, _cuts, dangles, _invalid = polygonize_full(noded)
     for dg in getattr(dangles, "geoms", []):
@@ -999,7 +1033,6 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         ]
         + [LineString([br.a, br.b]).buffer(br.t / 2, cap_style="flat") for br in bridges]
     )
-    spans = [(_get(t, "text"), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
     face_list, merged = _merge_slivers(
         list(getattr(faces, "geoms", [])),
         spans,

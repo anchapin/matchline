@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Plan walls that stop 2.5 to 4.5 m short of the wall ahead close with a reviewed air wall when that parts two labelled rooms (counters, half walls between named spaces); inside one named space they stay open (#740).
 - Each placed VAV or fan-coil tag on a set run becomes an HVAC zone on the room it sits in (#746).
 - Scheduled mechanical equipment tags on the mechanical plans are placed in rooms, registered to the architectural plan by the shared grid or the same sheet frame (#746).
 - Wall-type legend descriptions wrapped onto several lines are read whole; the first line still sets the class when it names one (#828).
