@@ -292,6 +292,69 @@ def test_pier_with_a_lining_is_not_a_window_and_both_real_ones_are_kept():
     assert widths == [1.0, 1.0]
 
 
+def _lined_stretch(*, ext_end=-3.5, lining_end=-3.5, end_wall=True):
+    """The #873 sheet with the lining stopping at ``lining_end`` (#879).
+
+    The 0.054 m lining stands 0.255 m off the exterior wall's inside face with
+    a return at x -5.19. When wall and lining both stop at -3.5 the gap between
+    them is a 1.64 m stretch closed at both ends, which folded with the wall
+    into one 0.522 m glazed band and was called a 1.64 m window.
+    """
+    dx, dy = 12.0, -50.203
+
+    def b(x0, y0, x1, y1):
+        return box(x0 + dx, y0 + dy, x1 + dx, y1 + dy)
+
+    def ring(x0, y0, x1, y1):
+        return [(x0 + dx, y0 + dy), (x1 + dx, y0 + dy), (x1 + dx, y1 + dy), (x0 + dx, y1 + dy)]
+
+    ops = [b(-9.68, 50.203, -8.68, 50.47), b(-6.69, 50.203, -5.69, 50.47)]
+    ext = b(-11.5, 50.203, ext_end, 50.47)
+    for o in ops:
+        ext = ext.difference(o)
+    walls = [
+        ext,
+        b(-11.114, 48.6, -10.99, 50.203),
+        b(-7.68, 48.6, -7.556, 50.203),
+        b(-4.27, 48.6, -4.146, 49.894),
+        b(-7.556, 49.894, -6.931, 49.948),
+        b(-6.985, 49.948, -6.931, 50.203),
+        b(-5.136, 49.894, lining_end, 49.948),  # the lining
+        b(-5.19, 49.894, -5.136, 50.203),  # its return to the wall
+    ]
+    if end_wall:
+        walls.append(b(ext_end, 48.6, ext_end + 0.267, 50.47))
+    walls = [g for w in walls for g in getattr(w, "geoms", [w])]
+    rooms = [
+        ("2A06", "OFFICE", ring(-10.99, 48.6, -7.68, 50.203)),
+        ("2A05", "OFFICE", ring(-7.556, 48.6, -4.27, 50.203)),
+    ]
+    return walls, rooms, ops
+
+
+@pytest.mark.parametrize(
+    "ext_end, lining_end, end_wall",
+    [
+        (-3.5, -3.5, False),  # wall and lining stop together: closed stretch
+        (-3.5, -3.5, True),  # ... at a cross wall
+        (0.113, -3.5, True),  # wall runs on past the lining's free end
+        (0.113, -3.5, False),
+        (0.113, -2.0, True),
+    ],
+)
+def test_a_lined_stretch_is_not_a_window_and_both_real_ones_are_kept(ext_end, lining_end, end_wall):
+    from detection_provider import window_detections
+
+    walls, rooms, ops = _lined_stretch(ext_end=ext_end, lining_end=lining_end, end_wall=end_wall)
+    sheet, off = sheet_for(walls, rooms, glazing=ops)
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 2, "pred": 2, "recall": 1.0, "precision": 1.0}
+    widths = sorted(round(o["width_m"], 2) for o in res["openings"] if o.get("kind") == "window")
+    assert widths == [1.0, 1.0]
+
+
 def _room_with_doors(t=0.2):
     """A 10 x 6 m room: a 0.9 m door in the south wall, a 1.0 m door in a partition."""
     walls = [
