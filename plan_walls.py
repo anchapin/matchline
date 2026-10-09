@@ -63,6 +63,7 @@ TAG_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,3}[A-Z]?$")  # W1, D-12, SF1, SF-1A (#79
 TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
 THIN_BAND_RATIO = 0.6  # a wall this thin next to the opaque walls either side may be glazing
 THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed bay
+THIN_FILL_SHARE = 0.8  # a thin wall covering this much of a gap in a thick run stops the run
 
 Pt = Tuple[float, float]
 
@@ -257,6 +258,33 @@ def _glazing_windows(
             out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0], source))
             break
     return out
+
+
+def _thin_fill(walls: List[Wall], a: Pt, b: Pt, t: float, tol: float) -> bool:
+    """A wall at most ``THIN_BAND_RATIO`` x ``t`` thick lies along the gap
+    a-b (centreline within half ``t``) and covers at least
+    ``THIN_FILL_SHARE`` of it (#793). Without this check a gap up to
+    ``MAX_OPENING_M`` with the thin wall's ends in it reads as a junction and
+    the thick run continues straight through the thin bay."""
+    L = math.dist(a, b)
+    if L <= tol:
+        return False
+    atol = math.radians(ANGLE_TOL_DEG)
+    ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+    th = math.atan2(uy, ux) % math.pi
+    for o in walls:
+        if o.t > THIN_BAND_RATIO * t:
+            continue
+        tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]) % math.pi
+        if not _angle_close(th, tho, atol):
+            continue
+        off = [abs((p[0] - a[0]) * uy - (p[1] - a[1]) * ux) for p in (o.a, o.b)]
+        if max(off) > 0.5 * t + tol:
+            continue
+        s0, s1 = sorted(((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) for p in (o.a, o.b))
+        if min(s1, L) - max(s0, 0.0) >= THIN_FILL_SHARE * L:
+            return True
+    return False
 
 
 def _thin_bands(walls: List[Wall], openings: List[dict], tol: float, min_len: float) -> List[str]:
@@ -968,6 +996,10 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         left, right = resolve(wa), by_id[wb]
         a, b = left.b, right.a
         gap = LineString([a, b])
+        if _thin_fill(walls, a, b, t, tol):
+            # a thinner wall on the same line fills the gap: a glazed bay or a
+            # change of wall type, so the thick run stops at it (#793)
+            continue
         junction = math.dist(a, b) <= tol or any(
             gap.distance(e) <= 0.6 * t and e.distance(Point(a)) > tol and e.distance(Point(b)) > tol
             for e in ends
