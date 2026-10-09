@@ -60,6 +60,20 @@ U is never replaced. A lowest level with no space polygons is reported, not
 filled. The F-factor, perimeter, area and resulting U are written to
 `stage_03b_constructions.json` under `defaulted`.
 
+Heated slab (#747): when a drawing-set run finds a radiant floor or in-slab
+heating row on a mechanical schedule (description, schedule title or any cell
+naming radiant floor/slab, in-slab or in-floor heating, heated slab/floor,
+floor or underfloor heating, slab heating; snow melt, sidewalk, driveway and
+ceiling rows never count), it sets `BuildingModel.slab_heated_by` to the tags
+and sheets, and `t55-slab` uses the Table 5.5 Heated F-factor instead. That
+follows the 90.1-2019 Section 3.2 definition of a heated slab (heating
+elements, hydronic tubing or hot air in contact with, within or under the
+slab). The drawings rarely show how much of the slab is heated, so the whole
+slab is treated as heated (which can only raise the loss) and a `heated_slab`
+review item asks for the extent. `defaulted["t55-slab"]` carries
+`construction_type: Heated` and `heated_by`. The Appendix G baseline slab is
+always the unheated row (Table G3.1 item 5).
+
 ## Which table feeds what (#781)
 
 1. Envelope thermal values stated on the drawings (or in IFC) are used as given.
@@ -151,4 +165,5 @@ than its door/window mark no longer takes the mark's place (#829).
 
 ## Not yet
 
-Heated slabs, interior (non-perimeter) slab edges, and Appendix A assemblies.
+Interior (non-perimeter) slab edges, partial heated-slab extents, and Appendix A
+assemblies.

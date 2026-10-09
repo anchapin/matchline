@@ -69,6 +69,8 @@ _KINDS = [
         re.compile(
             r"\bVAV|\bAIR TERMINAL|\bTERMINAL UNIT|\bAIR HANDL|\bAHU|\bRTU|\bROOFTOP|\bDIFFUSER"
             r"|\bGRILLE|\bREGISTER|\bFAN|\bMECHANICAL|\bEQUIPMENT|\bFCU|\bFAN COIL|\bHEAT PUMP"
+            # radiant floor / in-slab heating schedules (heated slab, #747)
+            r"|\bRADIANT|\bIN-?SLAB|\bIN-?FLOOR|\bFLOOR HEATING|\bHEATED SLAB"
         ),
     ),
 ]

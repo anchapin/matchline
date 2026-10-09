@@ -449,8 +449,56 @@ def _slab_geometry(model, lowest: bool = True):
     return area, perim, ground[0].level_id
 
 
+# 90.1-2019 Section 3.2, heated slab: "slab-on-grade floor construction in
+# which the heating elements, hydronic tubing, or hot-air distribution system
+# is in contact with, or placed within or under, the slab." On a drawing set
+# that shows up as a radiant floor / in-slab heating row on a mechanical
+# schedule. Snow-melt and sidewalk heating are outdoors, and radiant ceiling
+# panels heat the room, not the slab, so neither counts.
+HEATED_SLAB_RX = re.compile(
+    r"\bRADIANT\s+(FLOOR|SLAB)|\bIN[- ]?(FLOOR|SLAB)\s+(RADIANT|HEAT)"
+    r"|\bHEATED\s+(SLAB|FLOOR)|\b(UNDER)?FLOOR\s+HEATING\b|\bSLAB\s+HEATING\b"
+)
+NOT_HEATED_SLAB_RX = re.compile(r"\bSNOW\s*-?\s*MELT|\bSIDEWALK|\bDRIVEWAY|\bCEILING")
+# a radiant slab that only cools is not a heated slab
+_COOLING_RX = re.compile(r"\bCOOLING\b")
+_HEAT_RX = re.compile(r"\bHEAT")
+
+
+def heated_slab_evidence(equipment) -> str:
+    """Scheduled equipment that heats the slab -> one line naming it, or "".
+
+    ``equipment`` is the mechanical-schedule record list from a drawing-set
+    run (``tag``, ``description``, ``schedule``, ``sheet``, ``values``). A
+    row counts when its description, schedule title or any cell names
+    radiant floor / in-slab heating and nothing on it says snow melt,
+    sidewalk, driveway or ceiling. A row that says cooling and never heat
+    is a radiant cooling slab, not a heated one.
+    """
+    hits = []
+    for e in equipment or []:
+        text = " ".join(
+            [str(e.get("description") or ""), str(e.get("schedule") or "")]
+            + [str(v) for v in (e.get("values") or {}).values()]
+        ).upper()
+        if not HEATED_SLAB_RX.search(text) or NOT_HEATED_SLAB_RX.search(text):
+            continue
+        if _COOLING_RX.search(text) and not _HEAT_RX.search(text):
+            continue
+        where = f" on {e['sheet']}" if e.get("sheet") else ""
+        hits.append(f"{e.get('tag', '?')}{where}")
+    if not hits:
+        return ""
+    return "radiant floor / in-slab heating scheduled: " + ", ".join(sorted(set(hits)))
+
+
 def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
-    """Unset slab -> Table 5.5 unheated-slab F-factor as an effective U (#747, #781).
+    """Unset slab -> Table 5.5 slab F-factor as an effective U (#747, #781).
+
+    The slab is Unheated unless ``model.slab_heated_by`` says what heats it,
+    then the Table 5.5 Heated row is used. Heating anywhere in the slab makes
+    the whole slab Heated here (the footprint is one slab), which can only
+    raise the loss; the drawing set run sends that to review.
 
     gbXML carries a U-value, not
     an F-factor, so the slab gets the U that loses the same heat:
@@ -461,9 +509,12 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     from building_model import Construction
 
     cid = DEFAULT_SLAB_ID
-    row = lookup("GroundContactFloor", "Unheated", climate_zone, category)
+    heated_by = (getattr(model, "slab_heated_by", "") or "").strip()
+    ctype = "Heated" if heated_by else "Unheated"
+    label = ctype.lower()
+    row = lookup("GroundContactFloor", ctype, climate_zone, category)
     if row is None or row.f_ip is None:
-        s.unmatched[cid] = f"no Table 5.5 F-factor for {category} unheated slab"
+        s.unmatched[cid] = f"no Table 5.5 F-factor for {category} {label} slab"
         return
     geo = _slab_geometry(model)
     if geo is None:
@@ -473,7 +524,9 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     f_si = row.f_ip * F_IP_TO_SI
     u = round(f_si * perim / area, 6)
     why = (
-        "no slab assembly stated on the drawings; Table 5.5 unheated slab F-factor "
+        "no slab assembly stated on the drawings; "
+        + (f"heated slab ({heated_by}); " if heated_by else "")
+        + f"Table 5.5 {label} slab F-factor "
         f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
         f"{perim:.2f} m / slab area {area:.2f} m2 (footprint of level {level_id})"
     )
@@ -484,20 +537,24 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
         confidence=CONFIDENCE,
         note=(
             f"{SOURCE}, {EDITION} {row.table} ({SOURCE_VERSION}); {row.category} "
-            f"GroundContactFloor Unheated, climate zone {climate_zone}; {cid}: {why}; "
+            f"GroundContactFloor {ctype}, climate zone {climate_zone}; {cid}: {why}; "
             "code maximum, not the drawn assembly"
         ),
     )
     model.constructions[cid] = Construction(
         id=cid,
-        name="Slab on grade, Table 5.5 code maximum (unlabeled)",
+        name=(
+            "Heated slab on grade, Table 5.5 code maximum (unlabeled)"
+            if heated_by
+            else "Slab on grade, Table 5.5 code maximum (unlabeled)"
+        ),
         u_value_w_m2k=u,
         provenance=prov,
     )
     model.slab_construction_id = cid
     s.defaulted[cid] = {
         "surface": "GroundContactFloor",
-        "construction_type": "Unheated",
+        "construction_type": ctype,
         "table": row.table,
         "f_ip": row.f_ip,
         "f_si": round(f_si, 6),
@@ -506,6 +563,8 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
         "u_si": u,
         "why": why,
     }
+    if heated_by:
+        s.defaulted[cid]["heated_by"] = heated_by
 
 
 # Appendix G baseline envelope (#781): 90.1-2019 Table G3.4 (PRM 2019).
