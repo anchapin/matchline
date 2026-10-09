@@ -983,3 +983,15 @@ def test_chase_against_a_wall_does_not_shift_the_rooms_it_bounds(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(walls)))
     assert _areas(res) == [18.0, 18.0, 24.0]
     assert not [r for r in res.review if r["kind"] == "unclosed_wall"]
+
+
+def test_door_beside_a_corner_whose_crossing_wall_stops_at_the_face(tmp_path):
+    # the crossing wall's centreline ends at the partition's near face, so the ray
+    # down the partition passes just beyond its end; no other wall within reach
+    shell = [((0, 0), (10, 0), T_EXT), ((10, 0), (10, 12), T_EXT), ((10, 12), (0, 12), T_EXT),
+             ((0, 12), (0, 0), T_EXT)]  # fmt: skip
+    walls = shell + [((4, 12), (4, 7), T_INT), ((0, 6), (3.92, 6), T_INT)]
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert _areas(res) == [24.0, 96.0]
+    corner = [o for o in res.openings if o.get("beside_corner")]
+    assert len(corner) == 1 and corner[0]["width_m"] == pytest.approx(1.0, abs=0.05)

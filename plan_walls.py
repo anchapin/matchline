@@ -918,7 +918,11 @@ def _snap(walls: List[Wall], tol: float) -> None:
 
 
 def _join_free_ends(
-    pairs: List[Tuple[Pt, Pt]], ts: List[float], tol: float, max_open: float = 0.0
+    pairs: List[Tuple[Pt, Pt]],
+    ts: List[float],
+    tol: float,
+    max_open: float = 0.0,
+    max_door: Optional[float] = None,
 ) -> Tuple[List[Tuple[Pt, Pt]], List[Tuple[int, int, Pt, Pt]]]:
     """Close wall ends that touch nothing (#740).
 
@@ -934,6 +938,12 @@ def _join_free_ends(
     of the opening is a crossing wall, not a collinear one, so the collinear
     gap bridging never sees it. ``corner_openings`` holds
     ``(pair index, crossed pair index, end, crossing point)``.
+
+    A real crossing wins. Failing one, a crossing wall whose centreline stops
+    just short of the ray (it ends at the near face of the corner it turns
+    at) counts when the ray passes within the snap reach of its end, but only
+    for a door-width gap (``max_door``): a wider gap there is more likely an
+    open edge than a doorway.
     """
     if not pairs:
         return [], []
@@ -962,23 +972,42 @@ def _join_free_ends(
                 continue
             ux, uy = (p[0] - q0[0]) / n, (p[1] - q0[1]) / n
             ray = LineString([p, (p[0] + ux * max_open, p[1] + uy * max_open)])
-            hit = None
-            for j in tree.query(ray):
+            # a real crossing wins; failing that, a crossing wall whose centreline
+            # stops half a thickness short of the corner it turns at counts when
+            # the ray passes within the snap reach of its end (#740)
+            hit = hit_ext = None
+            for j in tree.query(ray.buffer(0.75 * t_big + tol)):
                 j = int(j)
                 if j == i:
                     continue
-                x = ray.intersection(lines[j])
-                if x.is_empty or x.geom_type != "Point":
-                    continue
                 (x0, y0), (x1, y1) = lines[j].coords[0], lines[j].coords[-1]
-                cross = abs((x1 - x0) * uy - (y1 - y0) * ux) / max(
-                    math.hypot(x1 - x0, y1 - y0), 1e-9
-                )
+                Lj = math.hypot(x1 - x0, y1 - y0)
+                if Lj <= tol:
+                    continue
+                cross = abs((x1 - x0) * uy - (y1 - y0) * ux) / Lj
                 if cross < 0.5:  # within 30 degrees of parallel: not a crossing wall
                     continue
-                d = pt.distance(x)
-                if d > tol and (hit is None or d < hit[0]):
-                    hit = (d, j, (x.x, x.y))
+                r = 0.75 * max(ts[i], ts[j]) + tol
+                ex, ey = (x1 - x0) / Lj * r, (y1 - y0) / Lj * r
+                for real, seg in (
+                    (True, lines[j]),
+                    (False, LineString([(x0 - ex, y0 - ey), (x1 + ex, y1 + ey)])),
+                ):
+                    x = ray.intersection(seg)
+                    if x.is_empty or x.geom_type != "Point":
+                        continue
+                    d = pt.distance(x)
+                    if d <= tol:
+                        break
+                    cand = (d, j, (x.x, x.y))
+                    if real:
+                        if hit is None or d < hit[0]:
+                            hit = cand
+                        break
+                    door = max_open if max_door is None else max_door
+                    if d <= door and (hit_ext is None or d < hit_ext[0]):
+                        hit_ext = cand
+            hit = hit or hit_ext
             if hit:
                 corners.append((i, hit[1], p, hit[2]))
     return joins, corners
@@ -1275,7 +1304,11 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     pair_walls = [w for w in walls if math.dist(w.a, w.b) > tol]
     pair_ids = [[w.id] for w in pair_walls] + [list(br.walls) for br in bridges]
     joins, corners = _join_free_ends(
-        pairs, [w.t for w in pair_walls] + [br.t for br in bridges], tol, WIDE_OPENING_M * k
+        pairs,
+        [w.t for w in pair_walls] + [br.t for br in bridges],
+        tol,
+        WIDE_OPENING_M * k,
+        MAX_OPENING_M * k + tol,
     )
     spans = [(_get(t, "text"), tuple(_get(t, "bbox"))) for t in _get(sheet, "text")]
     near, far = [], []
