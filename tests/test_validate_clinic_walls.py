@@ -238,6 +238,60 @@ def test_double_leaf_wall_with_a_plain_gap_is_not_a_window():
     assert [o for o in res["openings"] if o.get("kind") == "window"] == []
 
 
+def _pier_with_lining():
+    """Two windows either side of a pier, a 0.054 m lining with a return behind it (#873).
+
+    The Clinic's second floor at IFC (-7.27, 50.2), moved to the origin: a
+    0.267 m exterior wall, a 0.124 m partition meeting it between the
+    windows, and a 0.054 m lining running off along the inside face. Before
+    #868 the lining's face line folded wall, gap and lining into one 0.576 m
+    band beside the pier, which was called a 0.57 m window.
+    """
+    dx, dy = 12.0, -50.203
+
+    def b(x0, y0, x1, y1):
+        return box(x0 + dx, y0 + dy, x1 + dx, y1 + dy)
+
+    def ring(x0, y0, x1, y1):
+        return [(x0 + dx, y0 + dy), (x1 + dx, y0 + dy), (x1 + dx, y1 + dy), (x0 + dx, y1 + dy)]
+
+    ops = [b(-9.68, 50.203, -8.68, 50.47), b(-6.69, 50.203, -5.69, 50.47)]
+    ext = b(-11.5, 50.203, 0.113, 50.47)
+    for o in ops:
+        ext = ext.difference(o)
+    walls = [
+        ext,
+        b(-11.114, 48.6, -10.99, 50.203),
+        b(-7.68, 48.6, -7.556, 50.203),  # partition meeting the wall at the pier
+        b(-4.27, 48.6, -4.146, 49.894),
+        b(-7.556, 49.894, -6.931, 49.948),  # lining
+        b(-6.985, 49.948, -6.931, 50.203),  # its return to the wall
+        b(-5.136, 49.894, 0.113, 49.948),
+        b(-5.19, 49.894, -5.136, 50.203),
+        b(0.113, 48.6, 0.38, 50.47),
+    ]
+    walls = [g for w in walls for g in getattr(w, "geoms", [w])]
+    rooms = [
+        ("2A06", "OFFICE", ring(-10.99, 48.6, -7.68, 50.203)),
+        ("2A05", "OFFICE", ring(-7.556, 48.6, -4.27, 50.203)),
+        ("2A04", "OFFICE", ring(-4.146, 48.6, 0.113, 49.894)),
+    ]
+    return walls, rooms, ops
+
+
+def test_pier_with_a_lining_is_not_a_window_and_both_real_ones_are_kept():
+    from detection_provider import window_detections
+
+    walls, rooms, ops = _pier_with_lining()
+    sheet, off = sheet_for(walls, rooms, glazing=ops)
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 2, "pred": 2, "recall": 1.0, "precision": 1.0}
+    widths = sorted(round(o["width_m"], 2) for o in res["openings"] if o.get("kind") == "window")
+    assert widths == [1.0, 1.0]
+
+
 def _room_with_doors(t=0.2):
     """A 10 x 6 m room: a 0.9 m door in the south wall, a 1.0 m door in a partition."""
     walls = [
