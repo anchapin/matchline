@@ -195,8 +195,9 @@ than 12 ink pixels is skipped) and matched across the same sheet by NCC alone
 (`hvac_trace.detect_legend_symbols`, accept 0.80). There is no WiSARD pass,
 because the classifier is trained on matchline's own glyphs and would call
 another firm's symbol background; the class comes from the row's words, and
-the legend's own symbol is never a hit. Each legend entry gets `symbol_hits`
-(class -> count) and the sheet note gives the counts. These are counts only:
+no hit counts inside any legend symbol box on the sheet (mapped or not). Each
+legend entry gets its own `symbol_hits` (class -> count, from that legend's
+templates only) and the sheet note gives the counts. These are counts only:
 they are not yet joined to zones or rooms. `hvac_trace.merge_legend_detections`
 is the merge rule for when they are: legend hits replace the built-in
 templates for every class the legend draws, the built-ins stay as the

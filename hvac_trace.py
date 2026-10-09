@@ -170,9 +170,10 @@ def ncc_locate(gray: np.ndarray, tmpl: np.ndarray, thresh: float = NCC_THRESH):
     ii2 = np.zeros((H + 1, W + 1))
     ii2[1:, 1:] = gray**2
     ii2 = ii2.cumsum(0).cumsum(1)
-    ys, xs = np.mgrid[0 : H - th + 1, 0 : W - tw + 1]
-    s1 = ii[ys + th, xs + tw] - ii[ys, xs + tw] - ii[ys + th, xs] + ii[ys, xs]
-    s2 = ii2[ys + th, xs + tw] - ii2[ys, xs + tw] - ii2[ys + th, xs] + ii2[ys, xs]
+    # window sums from the integral images by slicing (no full-size index
+    # arrays: set runs pass whole-sheet rasters, #744)
+    s1 = ii[th:, tw:] - ii[:-th, tw:] - ii[th:, :-tw] + ii[:-th, :-tw]
+    s2 = ii2[th:, tw:] - ii2[:-th, tw:] - ii2[th:, :-tw] + ii2[:-th, :-tw]
     n = th * tw
     denom = np.sqrt(np.maximum(s2 - s1**2 / n, 1e-9) * tss)
     ncc = xc / denom
@@ -326,22 +327,24 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
 LEGEND_NCC_ACCEPT = 0.80
 
 
-def detect_legend_symbols(gray: np.ndarray, templates: list) -> list:
+def detect_legend_symbols(gray: np.ndarray, templates: list, exclude_px=()) -> list:
     """Find each legend template (``hvac_legend.legend_templates``) on its
-    own sheet by NCC alone.
+    own sheet by NCC alone. ``exclude_px`` adds boxes (raster px) where no
+    hit counts, such as every legend symbol, mapped or not
+    (``hvac_legend.symbol_boxes_px``).
 
     No WiSARD pass: the classifier is trained on matchline's built-in glyphs
     and would call another firm's symbol background. The class comes from the
     legend row's description, and the legend's own symbol (the place the
-    template was cut) is not a detection. Overlapping hits keep the best
-    score across all templates."""
+    template was cut, or any other legend symbol on the sheet) is not a
+    detection. Overlapping hits keep the best score across all templates."""
+    legend_boxes = [t.symbol_bbox_px for t in templates] + [list(b) for b in exclude_px]
     hits = []
     for t in templates:
         th, tw = t.image.shape
-        c0, r0, c1, r1 = t.symbol_bbox_px
         for y, x, s in ncc_locate(gray, t.image, thresh=LEGEND_NCC_ACCEPT):
             cx, cy = x + tw / 2, y + th / 2
-            if c0 <= cx <= c1 and r0 <= cy <= r1:
+            if any(c0 <= cx <= c1 and r0 <= cy <= r1 for c0, r0, c1, r1 in legend_boxes):
                 continue
             hits.append(
                 {

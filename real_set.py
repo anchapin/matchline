@@ -775,24 +775,30 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     return reads, bbox
 
 
-def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> Dict[str, int]:
-    """Count each mapped legend symbol on its own sheet's raster (#744): the
-    row's drawn symbol is cut as a one-shot template and matched by NCC
-    (``hvac_trace.detect_legend_symbols``). Empty without a raster."""
+def _legend_symbol_hits(sheet: dict, legends: list, sheets_dir) -> List[Dict[str, int]]:
+    """Per legend, count each mapped symbol on its own sheet's raster (#744):
+    the row's drawn symbol is cut as a one-shot template and matched by NCC
+    (``hvac_trace.detect_legend_symbols``); no hit counts inside any legend
+    symbol box on the sheet. Empty dicts without a raster."""
     raster, k = sheet.get("raster_file"), sheet.get("px_per_pt")
     if not legends or not raster or not k or not (sheets_dir / raster).exists():
-        return {}
+        return [{} for _ in legends]
     import numpy as np
     from PIL import Image
 
-    from hvac_legend import legend_templates
+    from hvac_legend import legend_templates, symbol_boxes_px
     from hvac_trace import detect_legend_symbols
 
     gray = np.asarray(Image.open(sheets_dir / raster).convert("L"), dtype=np.float64)
-    hits: Dict[str, int] = {}
-    for d in detect_legend_symbols(gray, legend_templates(gray, legends, float(k))):
-        hits[d["label"]] = hits.get(d["label"], 0) + 1
-    return hits
+    boxes = symbol_boxes_px(legends, float(k))
+    out: List[Dict[str, int]] = []
+    for leg in legends:
+        hits: Dict[str, int] = {}
+        tmpls = legend_templates(gray, [leg], float(k))
+        for d in detect_legend_symbols(gray, tmpls, exclude_px=boxes):
+            hits[d["label"]] = hits.get(d["label"], 0) + 1
+        out.append(hits)
+    return out
 
 
 def _mech_legends(files, status, sheets_dir, review, report) -> None:
@@ -817,8 +823,7 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
         sheet_id = st.number or f
         sheet = json.loads((sheets_dir / f).read_text())
         legends = read_legend(sheet)
-        hits = _legend_symbol_hits(sheet, legends, sheets_dir)
-        for leg in legends:
+        for leg, hits in zip(legends, _legend_symbol_hits(sheet, legends, sheets_dir)):
             report.hvac_legends.append(
                 {
                     "sheet": sheet_id,

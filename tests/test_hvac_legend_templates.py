@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,7 +16,13 @@ sys.path.append(str(Path(__file__).resolve().parent))
 
 from pdf_fixtures import PageSpec, line, rect, text, write_pdf  # noqa: E402
 
-from hvac_legend import Legend, LegendRow, legend_templates, read_legend  # noqa: E402
+from hvac_legend import (  # noqa: E402
+    Legend,
+    LegendRow,
+    legend_templates,
+    read_legend,
+    symbol_boxes_px,
+)
 from hvac_trace import (  # noqa: E402
     ASSOC_PX,
     NCC_PROPOSE,
@@ -175,3 +182,49 @@ def test_merge_keeps_builtin_only_for_classes_the_legend_does_not_draw():
         ("diffuser", "legend"),
         ("vav", "builtin"),
     ]
+
+
+def test_ncc_locate_scores_match_a_direct_computation():
+    rng = np.random.default_rng(7)
+    gray = rng.uniform(0, 255, (40, 50))
+    tmpl = gray[12:18, 20:27].copy()
+    hits = ncc_locate(gray, tmpl, thresh=0.5)
+    assert hits[0][:2] == (12, 20) and hits[0][2] == pytest.approx(1.0, abs=1e-9)
+    # an off-peak window scored by the textbook formula
+    y, x = 3, 5
+    win = gray[y : y + 6, x : x + 7]
+    t, w = tmpl - tmpl.mean(), win - win.mean()
+    want = (t * w).sum() / np.sqrt((t**2).sum() * (w**2).sum())
+    got = ncc_locate(gray, tmpl, thresh=-1.0)
+    assert any((yy, xx) == (y, x) and s == pytest.approx(want, abs=1e-9) for yy, xx, s in got) or (
+        want < max(s for *_, s in got)
+    )
+
+
+def test_another_legend_row_drawn_alike_is_not_a_hit(tmp_path):
+    x, y = 900, 720
+    content = text(x, y, "HVAC SYMBOL LEGEND", 12)
+    content += xbox(x, y - 54) + text(x + 40, y - 50, "SUPPLY AIR DIFFUSER", 8)
+    content += xbox(x, y - 79) + text(x + 40, y - 75, "LINEAR SLOT DIFFUSER", 8)
+    content += "".join(xbox(px, py) for px, py in DIFFUSERS)
+    sheet, gray = _sheet(tmp_path, content)
+    legends = read_legend(sheet)
+    k = sheet["px_per_pt"]
+    dets = detect_legend_symbols(
+        gray, legend_templates(gray, legends, k), symbol_boxes_px(legends, k)
+    )
+    diff, _ = _expected(sheet)
+    assert len(dets) == 3 and _matched(dets, "diffuser", diff, 4 * k) == 3
+
+
+def test_two_legends_on_one_sheet_each_count_their_own_symbols(tmp_path):
+    import real_set
+
+    content = _content() + text(100, 760, "SYMBOLS", 12) + damper(100, 708)
+    content += text(140, 710, "FIRE DAMPER", 8)
+    sheet, _gray = _sheet(tmp_path, content)
+    legends = read_legend(sheet)
+    assert sorted(lg.title for lg in legends) == ["HVAC SYMBOL LEGEND", "SYMBOLS"]
+    hits = real_set._legend_symbol_hits(sheet, legends, tmp_path / "out")
+    by_title = {lg.title: h for lg, h in zip(legends, hits)}
+    assert by_title == {"HVAC SYMBOL LEGEND": {"diffuser": 3, "sensor": 2}, "SYMBOLS": {}}

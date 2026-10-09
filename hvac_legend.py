@@ -223,3 +223,16 @@ def legend_templates(gray, legends: List[Legend], px_per_pt: float) -> List[Lege
                 continue
             out.append(LegendTemplate(r.cls, r.description, img, [c0, r0, c1, r1]))
     return out
+
+
+def symbol_boxes_px(legends: List[Legend], px_per_pt: float) -> List[List[float]]:
+    """Every legend row's symbol box in raster px (mapped or not, margin
+    included): a hit there is the legend, not equipment."""
+    pad = TEMPLATE_PAD_PT
+    return [
+        [(r.symbol_bbox_pt[0] - pad) * px_per_pt, (r.symbol_bbox_pt[1] - pad) * px_per_pt,
+         (r.symbol_bbox_pt[2] + pad) * px_per_pt, (r.symbol_bbox_pt[3] + pad) * px_per_pt]
+        for leg in legends
+        for r in leg.rows
+        if len(r.symbol_bbox_pt) == 4
+    ]  # fmt: skip
