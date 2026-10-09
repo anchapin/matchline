@@ -673,3 +673,37 @@ def test_long_neighbour_at_a_slight_angle_still_meets_the_band():
     left = _w(1, (-300, -dy), (0, 0), 3.0)
     thin, right = _w(2, (0, 0), (40, 0), 1.2), _w(3, (40, 0), (70, 0), 3.0)
     assert W._thin_bands([left, thin, right], [], 0.5, 1.0 * k) == ["W2"]
+
+
+def test_short_thin_bay_stops_the_thick_run(tmp_path):
+    # a 2 m bay is narrower than MAX_OPENING_M: the thick run used to carry
+    # straight through it (one 10 m wall), so the band was never flagged
+    res, _ = _read(tmp_path, _outline(_mass(_thin_bay(4, 6))))
+    (w,) = [w for w in res.walls if w.get("maybe_glazing")]
+    assert w["thickness_m"] == pytest.approx(T_GLZ, abs=0.01)
+    assert w["length_m"] == pytest.approx(1.7, abs=0.05)
+    thick = sorted(
+        round(x["length_m"], 1)
+        for x in res.walls
+        if x["thickness_m"] > 0.2 and abs(x["a_m"][1] - x["b_m"][1]) < 0.01
+    )
+    assert thick.count(4.0) == 2  # the run stops at the bay on both sides
+    assert not _windows(res)
+    assert _areas(res) == [60.0]
+
+
+def test_thin_fill_rules():
+    t = 0.3
+    a, b = (4.0, 0.0), (6.0, 0.0)
+    assert W._thin_fill([_w(1, (4.15, 0.0), (5.85, 0.0), 0.12)], a, b, t, 0.01)
+    # on one face of the thick wall still counts (within half its thickness)
+    assert W._thin_fill([_w(1, (4.0, 0.1), (6.0, 0.1), 0.12)], a, b, t, 0.01)
+    # barely thinner: same wall type, not a thin bay
+    assert not W._thin_fill([_w(1, (4.0, 0.0), (6.0, 0.0), 0.25)], a, b, t, 0.01)
+    # covers too little of the gap
+    assert not W._thin_fill([_w(1, (4.0, 0.0), (5.0, 0.0), 0.12)], a, b, t, 0.01)
+    # parallel but off the wall line
+    assert not W._thin_fill([_w(1, (4.0, 0.5), (6.0, 0.5), 0.12)], a, b, t, 0.01)
+    # perpendicular partition ending in the gap
+    assert not W._thin_fill([_w(1, (5.0, 0.0), (5.0, 3.0), 0.12)], a, b, t, 0.01)
+    assert not W._thin_fill([], a, a, t, 0.01)

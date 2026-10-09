@@ -249,6 +249,15 @@ above.
 A wall that thins for a recess (a panel niche) reads the same way and is
 flagged too; that costs a review item, never a window.
 
+A thin bay narrower than `MAX_OPENING_M` used to vanish: the gap between the
+two thick walls read as a junction (the thin wall's ends sit in it) and the
+thick run carried straight through, one opaque wall over the bay. Now a wall
+at most `THIN_BAND_RATIO` as thick as the run, on its line (within half its
+thickness) and covering at least `THIN_FILL_SHARE` (80%) of the gap, stops the
+run there (`_thin_fill`), so the bay keeps its own wall and the rule above
+flags it. Bays whose band is under `THIN_BAND_MIN_M` still close the room but
+are not flagged.
+
 Not covered yet: a thin bay narrower than `MAX_OPENING_M` is bridged by the
 thicker wall run it interrupts and is not flagged; glazing drawn as two lines
 closer than `WALL_T_MIN_M` never becomes a wall to flag; PDF layer names; door
