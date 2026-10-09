@@ -115,6 +115,9 @@ def model_from_linked_model(
     by write_gbxml and write_ifc4.
     """
     # --- spaces -----------------------------------------------------------
+    from ifc_export import _use_fields
+    from space_use_defaults import lighting_watts
+
     bem_spaces = []
     for i, sp in enumerate(model.spaces.values()):
         # canonical plan frame is y-down; gbXML/IFC want x=east, y=north
@@ -136,6 +139,8 @@ def model_from_linked_model(
                 polygon_m=poly,
                 area_m2=area,
                 volume_m3=area * wall_height_m,
+                lighting_w=lighting_watts(sp),  # fixtures, else LPD x area (#746)
+                **_use_fields(sp),  # loads + schedules, as ifc_export does (#691)
                 wall_u_value_w_m2k=getattr(sp, "wall_u_value_w_m2k", None),
                 provenance=sp.core_provenance,
                 history=list(sp.history),

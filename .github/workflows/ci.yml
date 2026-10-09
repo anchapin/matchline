@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2435  # +3 a thin bay narrower than MAX_OPENING_M stops the thick wall run (#793)
+          EXPECTED_TEST_COUNT=2440  # +5 lighting power per room from fixture tags on the plans (#746)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

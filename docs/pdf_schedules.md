@@ -84,6 +84,28 @@ In a set run that sheet's `schedules` stage is `failed` and a `fixture_schedule`
 review item names the table. A tag scheduled on two sheets with different values
 keeps the first and goes to review.
 
+## Lighting power from fixture tags
+
+On `matchline run --set`, each lighting schedule tag (`A`, `B2`) written on a
+reflected ceiling plan or an electrical floor plan counts as one fixture of
+that type (`real_set._place_fixtures`). The sheet registers to the
+architectural plan of its level the same way mechanical plans do; a sheet
+that does not register gets `lighting_plan_unregistered` and nothing is
+counted. Text inside a column-grid bubble is a grid label, not a fixture.
+When a level has both an RCP and a lighting plan with tags, only the sheet
+with more tags is used, and a note names the other, so fixtures shown on both
+are not counted twice.
+
+Each room gets `Space.lighting.fixtures` (tag, schedule description, position,
+watts, tag bbox), `total_w` (scheduled watts summed) and the LPD, provenance
+`plan_fixture_tags` at confidence 0.5. One tag is counted as one fixture, and
+drawings often tag one fixture of a group, so each lit level gets a
+`lighting_from_tags` review item listing its rooms (it does not block
+export). A fixture type with no watts on the schedule is counted but adds
+nothing (`fixture_no_watts`). The watts reach the gbXML as
+`LightPowerPerArea` and the IFC as `LightingPower`; rooms with no fixture tags
+keep the space-use default.
+
 ## Mechanical equipment in rooms
 
 On `matchline run --set`, each scheduled mechanical tag (`VAV-1`) written on a
