@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- PDF CAD layers: ingestion records each vector path's optional content group (layer) name and each sheet's layer list. On plans, glazing that runs a whole wall counts as a window (`glazing_layer`, confidence 0.7) when it sits on a glazing layer such as `A-GLAZ`, with or without mullion ticks, and a middle line on a pattern or insulation layer such as `A-WALL-PATT` is never a window (#793).
 - Lighting power per room on a drawing set: lighting schedule tags on a reflected ceiling plan or electrical floor plan are counted as fixtures in the room that contains them, giving `Space.lighting` fixtures, watts and LPD (one tag counted as one fixture, so each lit level goes to review); drawing lighting now reaches the gbXML `LightPowerPerArea` on the set path, which it did not before (#746).
 - Plan walls: a thinner wall on the same line filling at least 80% of a gap in a thick wall run stops the run there, so a glazed bay narrower than `MAX_OPENING_M` (2.5 m) is kept as its own wall and flagged `maybe_glazing` instead of being covered by one continuous opaque wall (#793).
 - Heated slab: when the radiant floor rows name the ground-floor rooms they serve, only those rooms' exposed slab edge gets the Table 5.5 heated F-factor and the rest the unheated one (`slab_heated_spaces`); otherwise the whole slab stays heated (#747).

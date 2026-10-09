@@ -64,6 +64,10 @@ TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
 THIN_BAND_RATIO = 0.6  # a wall this thin next to the opaque walls either side may be glazing
 THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed bay
 THIN_FILL_SHARE = 0.8  # a thin wall covering this much of a gap in a thick run stops the run
+LAYER_GLAZING_CONFIDENCE = 0.7  # full-length glazing line on a glazing CAD layer (#793)
+# CAD layer (PDF optional content group) names, NCS/AIA style and common variants (#793)
+GLAZING_LAYER_RE = re.compile(r"GLAZ|STORE-?FRONT|STORFRNT|CURTAIN|CURT-?WALL|CWALL|WINDOW|WIND\b")
+PATTERN_LAYER_RE = re.compile(r"PATT|INSUL|HATCH|BATT")
 
 Pt = Tuple[float, float]
 
@@ -76,6 +80,7 @@ class Seg:
     a: Pt
     b: Pt
     src: int  # primitive index
+    layer: Optional[str] = None  # the primitive's CAD layer, when the PDF keeps them (#793)
 
     @property
     def length(self) -> float:
@@ -96,19 +101,20 @@ def _segments(sheet, skip: set) -> List[Seg]:
     for i, p in enumerate(_get(sheet, "primitives")):
         if i in skip or not _get(p, "stroked") or _get(p, "dashed"):
             continue
+        lay = p.get("layer") if isinstance(p, dict) else getattr(p, "layer", None)
         cur = start = None
         for kind, pts in _get(p, "segments"):
             if kind == "M":
                 cur = start = tuple(pts[0])
             elif kind == "L" and cur is not None:
                 nxt = tuple(pts[0])
-                out.append(Seg(cur, nxt, i))
+                out.append(Seg(cur, nxt, i, lay))
                 cur = nxt
             elif kind == "C" and cur is not None:
                 cur = tuple(pts[-1])  # curves (door swings) are not wall faces
             elif kind == "Z" and cur is not None and start is not None:
                 if cur != start:
-                    out.append(Seg(cur, start, i))
+                    out.append(Seg(cur, start, i, lay))
                 cur = start
     return out
 
@@ -205,6 +211,39 @@ def _mullions(segs, ls, th: float, t: float, s0: float, s1: float, gap: float, a
     return len(pos)
 
 
+def _layer_kind(name: Optional[str]) -> Optional[str]:
+    """``"glazing"``, ``"pattern"`` or None for a CAD layer name (#793)."""
+    if not name:
+        return None
+    u = name.upper()
+    if PATTERN_LAYER_RE.search(u):
+        return "pattern"  # A-GLAZ-PATT is a hatch, not the glass
+    if GLAZING_LAYER_RE.search(u):
+        return "glazing"
+    return None
+
+
+def _band_layer(band, segs) -> Optional[str]:
+    """What the layer of a glazed band's middle line says (#793): glazing,
+    pattern or None (no layer evidence). Only the line inside the wall is
+    judged; the wall's own face lines (often on A-WALL, sometimes on a hatch
+    layer) say nothing about whether the middle line is glass."""
+    _d, n = _frame(band.theta)
+    kinds = set()
+    for i in band.segs:
+        if i >= len(segs):
+            continue
+        sg = segs[i]
+        off = (_dot(sg.a, n) + _dot(sg.b, n)) / 2 - band.rho
+        if abs(off) < 0.4 * band.t:  # inside the wall, not one of its faces
+            kinds.add(_layer_kind(sg.layer))
+    if "glazing" in kinds:
+        return "glazing"
+    if "pattern" in kinds:
+        return "pattern"
+    return None
+
+
 def _glazing_windows(
     bands, walls, k: float, tol: float, segs=()
 ) -> List[Tuple["Wall", Pt, Pt, str]]:
@@ -223,12 +262,20 @@ def _glazing_windows(
     mullion ticks cross the wall inside it, at any width. Cavity and
     insulation lines are not broken by ticks. These come out with source
     ``glazing_mullions``; the others ``glazing_line``.
+
+    When the PDF keeps CAD layers, they decide first (#793): a band with a
+    face line on a glazing layer (A-GLAZ, storefront, curtain wall) is a window
+    at any length, source ``glazing_layer``; a middle line on a pattern or
+    insulation layer (A-WALL-PATT) is never one, ticks or not.
     """
     atol = math.radians(ANGLE_TOL_DEG)
     out: List[Tuple[Wall, Pt, Pt, str]] = []
     spans: Dict[str, List[Tuple[float, float]]] = {}
     for g in bands:
         if not g.glazed:
+            continue
+        lay = _band_layer(g, segs)
+        if lay == "pattern":
             continue
         ga, gb = _endpoints(g.theta, g.rho, g.u0, g.u1)
         wide = math.dist(ga, gb) > WIDE_OPENING_M * k
@@ -248,10 +295,14 @@ def _glazing_windows(
             source = "glazing_line"
             if wide or (s0 < margin and L - s1 < margin):
                 # runs the whole wall, or wider than a window: storefront only
-                # when mullions break it up, else a cavity or insulation line
-                if _mullions(segs, ls, th, w.t, s0, s1, margin, atol) < MULLION_MIN:
+                # when its layer says glazing or mullions break it up, else a
+                # cavity or insulation line
+                if lay == "glazing":
+                    source = "glazing_layer"
+                elif _mullions(segs, ls, th, w.t, s0, s1, margin, atol) < MULLION_MIN:
                     break
-                source = "glazing_mullions"
+                else:
+                    source = "glazing_mullions"
             if any(min(s1, b1) - max(s0, b0) > 0.5 * (s1 - s0) for b0, b1 in spans.get(w.id, [])):
                 break
             spans.setdefault(w.id, []).append((s0, s1))
@@ -1185,9 +1236,10 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
                 "width_m": round(math.dist(a, b) * m_per_pt, 3),
                 "kind": "window",
                 "source": src,
-                "window_confidence": (
-                    STOREFRONT_CONFIDENCE if src == "glazing_mullions" else WINDOW_CONFIDENCE
-                ),
+                "window_confidence": {
+                    "glazing_mullions": STOREFRONT_CONFIDENCE,
+                    "glazing_layer": LAYER_GLAZING_CONFIDENCE,
+                }.get(src, WINDOW_CONFIDENCE),
             }
         )
     tagged = _attach_tags(openings, spans, to_m)
@@ -1216,6 +1268,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "openings": len(openings),
         "doors": doors,
         "windows": len(windows),
+        "layers": sorted({sg.layer for sg in segs if sg.layer}),
         "tagged": tagged,
         "wall_tags": len(wall_tags),
         "maybe_glazing": len(thin),

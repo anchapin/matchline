@@ -13,7 +13,7 @@ from PIL import Image
 
 sys.path.append(str(Path(__file__).parent))
 
-from pdf_fixtures import PageSpec, curve, line, rect, text, write_pdf  # noqa: E402
+from pdf_fixtures import PageSpec, curve, line, oc, rect, text, write_pdf  # noqa: E402
 
 import limits  # noqa: E402
 import pdf_ingest as P  # noqa: E402
@@ -208,3 +208,41 @@ def test_cli_ingest(tmp_path, capsys):
     assert "pages: 2" in out and "raster_only: 1" in out and "vector: 1" in out
     assert "WARNING page 2:" in out
     assert (tmp_path / "o" / "ingest.json").is_file()
+
+
+# ---- CAD layers (PDF optional content groups) on primitives (#793) -------
+
+
+def test_primitives_carry_their_cad_layer(tmp_path):
+    content = (
+        oc(0, line(10, 10, 100, 10))
+        + oc(1, line(10, 50, 100, 50))
+        + line(10, 90, 100, 90)  # not in any layer
+    )
+    spec = PageSpec(width=200, height=200, content=content, layers=["A-GLAZ", "A-WALL-PATT"])
+    res = _ingest(tmp_path, [spec])
+    s = res.sheets[0]
+    assert [p.layer for p in s.primitives] == ["A-GLAZ", "A-WALL-PATT", None]
+    assert s.layers == ["A-GLAZ", "A-WALL-PATT"]
+    assert res.summary()["sheets"][0]["layers"] == ["A-GLAZ", "A-WALL-PATT"]
+    d = P.load_sheet(tmp_path / "out" / "sheet_001.json")
+    assert [p["layer"] for p in d["primitives"]] == ["A-GLAZ", "A-WALL-PATT", None]
+
+
+def test_a_marked_form_gives_its_layer_to_what_it_holds(tmp_path):
+    from pdf_fixtures import FORM_DO
+
+    spec = PageSpec(
+        width=200,
+        height=200,
+        content=oc(0, FORM_DO) + line(10, 90, 100, 90),
+        form=(line(10, 10, 100, 10), (1, 0, 0, 1, 0, 0)),
+        layers=["A-GLAZ"],
+    )
+    s = _ingest(tmp_path, [spec]).sheets[0]
+    assert sorted(p.layer or "" for p in s.primitives) == ["", "A-GLAZ"]
+
+
+def test_sheet_without_layers_lists_none(tmp_path):
+    s = _ingest(tmp_path, [PageSpec(width=200, height=200, content=line(1, 1, 50, 1))]).sheets[0]
+    assert s.layers == [] and s.primitives[0].layer is None

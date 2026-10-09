@@ -16,7 +16,7 @@ from shapely.ops import unary_union
 
 sys.path.append(str(Path(__file__).parent))
 
-from pdf_fixtures import PageSpec, curve, line, text, write_pdf  # noqa: E402
+from pdf_fixtures import PageSpec, curve, line, oc, text, write_pdf  # noqa: E402
 
 import pdf_ingest as P  # noqa: E402
 import plan_walls as W  # noqa: E402
@@ -502,6 +502,68 @@ def test_wide_glazing_without_mullions_is_still_not_a_window(tmp_path):
     res, _ = _read(tmp_path / "m", _outline(_mass(SHELL)) + _glazing(2, 8) + _mullion_ticks([4, 6]))
     (op,) = _windows(res)
     assert op["source"] == "glazing_mullions" and op["width_m"] == pytest.approx(6.0, abs=0.05)
+
+
+# ---- CAD layers decide full-length glazing when the PDF keeps them (#793) --
+
+
+def _read_layers(tmp_path, content, layers):
+    spec = PageSpec(width=PAGE_W, height=PAGE_H, content=content, layers=layers)
+    pdf = write_pdf(tmp_path / "p.pdf", [spec])
+    sheet = P.ingest_pdf(pdf, out_dir=tmp_path / "o", dpi=18).sheets[0]
+    return W.extract_walls(sheet, M_PER_PT)
+
+
+def test_full_length_glazing_on_a_glazing_layer_is_a_window(tmp_path):
+    # storefront the whole south wall, no mullion ticks drawn: the layer says glass
+    res = _read_layers(tmp_path, _outline(_mass(SHELL)) + oc(0, _glazing(0, 10)), ["A-GLAZ"])
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_layer"
+    assert op["window_confidence"] == W.LAYER_GLAZING_CONFIDENCE
+    assert op["width_m"] > W.WIDE_OPENING_M
+    assert res.stats["layers"] == ["A-GLAZ"]
+    assert _areas(res) == [60.0]
+
+
+def test_storefront_layer_names_count_as_glazing():
+    for name in ("A-GLAZ", "A-WALL-GLAZ", "A-STOREFRONT", "A-CURT-WALL", "A-WIND", "Windows"):
+        assert W._layer_kind(name) == "glazing", name
+    for name in ("A-WALL-PATT", "A-GLAZ-PATT", "INSULATION", "A-WALL-HATCH"):
+        assert W._layer_kind(name) == "pattern", name
+    for name in ("A-WALL", "A-DOOR", "0", "", None, "WINDING-STAIR"):
+        assert W._layer_kind(name) is None, name
+
+
+def test_middle_line_on_a_pattern_layer_is_never_a_window(tmp_path):
+    # insulation line with ticks that would otherwise read as mullions
+    content = _outline(_mass(SHELL)) + oc(0, _glazing(0, 10)) + _mullion_ticks([2, 4, 6, 8])
+    res = _read_layers(tmp_path, content, ["A-WALL-PATT"])
+    assert not _windows(res)
+    (tmp_path / "s").mkdir()
+    res = _read_layers(tmp_path / "s", _outline(_mass(SHELL)) + oc(0, _glazing(6, 8)), ["INSUL"])
+    assert not _windows(res)  # short pieces too: the layer says it is not glass
+
+
+def test_unrelated_layers_leave_the_geometry_rules_in_charge(tmp_path):
+    # walls on A-WALL, glazing line on an unnamed layer: no layer evidence
+    content = oc(0, _outline(_mass(SHELL))) + oc(1, _glazing(0, 10))
+    res = _read_layers(tmp_path, content, ["A-WALL", "0"])
+    assert not _windows(res)  # full-length line without ticks stays a cavity line
+    (tmp_path / "w").mkdir()
+    content = oc(0, _outline(_mass(SHELL))) + oc(1, _glazing(6, 8))
+    (op,) = _windows(_read_layers(tmp_path / "w", content, ["A-WALL", "0"]))
+    assert op["source"] == "glazing_line"
+
+
+def test_wall_faces_on_a_layer_do_not_judge_the_middle_line(tmp_path):
+    # wall outline on a hatch layer, plain punched window line: still a window
+    content = oc(0, _outline(_mass(SHELL))) + _glazing(6, 8)
+    (op,) = _windows(_read_layers(tmp_path, content, ["A-WALL-PATT"]))
+    assert op["source"] == "glazing_line"
+    # wall outline on a glazing layer, full-length middle line on no layer: no evidence
+    (tmp_path / "g").mkdir()
+    content = oc(0, _outline(_mass(SHELL))) + _glazing(0, 10)
+    assert not _windows(_read_layers(tmp_path / "g", content, ["A-GLAZ"]))
 
 
 def test_door_and_window_on_one_plan(tmp_path):
