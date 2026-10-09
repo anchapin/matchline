@@ -29,6 +29,9 @@ Usage:
 (scale, weight, rotation, an alternative glyph per class, duct and text ink over
 the symbol, scan noise, JPEG, a small raster shift). The detector and its
 thresholds are unchanged, and nothing is tuned on the varied Clinic numbers.
+``--vary-only scale,text`` (with ``--vary``) draws just the named variations
+with the same seeded values, to find which one costs recall; ``--vary-only ""``
+draws none of them through the varied path.
 """
 
 from __future__ import annotations
@@ -93,6 +96,26 @@ VARY_TEXT_OVER = 0.3  # share with a tag label overlapping the symbol
 VARY_JPEG_Q = (55, 80)
 VARY_SHIFT_PX = 2  # raster misregistration, px each axis (0.04 m)
 VARIED_STYLES = {"diffuser": 2, "grille": 2}  # classes with an alternative glyph
+# each variation ``render_storey(..., only=...)`` can switch on by itself, so the
+# loss can be put down to one of them (#745 ablation)
+VARY_ASPECTS = (
+    "scale", "weight", "turn", "tilt", "skew", "style", "knockout", "text", "scan", "shift",
+)  # fmt: skip
+
+
+def vary_aspects(only):
+    """The set of variations to draw: all of them for ``None``, else the named
+    ones (a comma list or an iterable). An unknown name is an error."""
+    if only is None:
+        return set(VARY_ASPECTS)
+    names = only.split(",") if isinstance(only, str) else list(only)
+    on = {n.strip() for n in names if n.strip()}
+    bad = sorted(on - set(VARY_ASPECTS))
+    if bad:
+        raise ValueError(f"unknown variation {', '.join(bad)}; known: {', '.join(VARY_ASPECTS)}")
+    return on
+
+
 _TAG_TEXT = {"diffuser": "SD-1", "grille": "RG-1", "sensor": "T-1"}
 
 
@@ -178,8 +201,11 @@ def _paste_min(img, patch, cx, cy):
     img.paste(Image.fromarray(np.minimum(a, b)), box)
 
 
-def _degrade_sheet(img, rng):
-    """Scan degradation: blur + noise (detector/degrade.py), JPEG, misregistration."""
+def _degrade_sheet(img, rng, on=None):
+    """Scan degradation: blur + noise (detector/degrade.py), JPEG, misregistration.
+
+    ``on`` holds which of "scan" (noise and JPEG) and "shift" to apply; the
+    random numbers are drawn either way, so a seed gives the same values."""
     import io
 
     import numpy as np
@@ -190,11 +216,17 @@ def _degrade_sheet(img, rng):
         sys.path.insert(0, det)
     from degrade import degrade
 
-    img = degrade(img, "scan_noise", seed=int(rng.integers(2**31 - 1))).convert("L")
-    buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=int(rng.integers(VARY_JPEG_Q[0], VARY_JPEG_Q[1] + 1)))
-    img = Image.open(io.BytesIO(buf.getvalue())).convert("L")
+    on = set(VARY_ASPECTS) if on is None else on
+    noise_seed = int(rng.integers(2**31 - 1))
+    q = int(rng.integers(VARY_JPEG_Q[0], VARY_JPEG_Q[1] + 1))
+    if "scan" in on:
+        img = degrade(img, "scan_noise", seed=noise_seed).convert("L")
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=q)
+        img = Image.open(io.BytesIO(buf.getvalue())).convert("L")
     dx, dy = (int(v) for v in rng.integers(-VARY_SHIFT_PX, VARY_SHIFT_PX + 1, size=2))
+    if "shift" not in on:
+        dx = dy = 0
     a = np.full((img.size[1], img.size[0]), 255, np.uint8)
     src = np.asarray(img)
     H, W = src.shape
@@ -204,7 +236,7 @@ def _degrade_sheet(img, rng):
     return Image.fromarray(a), (dx, dy)
 
 
-def render_storey(storey, frame=None, vary=None):
+def render_storey(storey, frame=None, vary=None, only=None):
     """Mechanical plan sheet for one storey, in the synthetic sheets' style.
 
     Walls are 3 px room outlines with a room label (as ``render_mech_sheet``),
@@ -216,7 +248,9 @@ def render_storey(storey, frame=None, vary=None):
     the class's alternative glyph, sometimes no white knockout and a tag label
     over the symbol; then the sheet gets scan noise, JPEG and a 0-2 px shift.
     The same seed always gives the same pixels. ``None`` is the clean render,
-    unchanged.
+    unchanged. ``only`` (names from ``VARY_ASPECTS``) draws just those
+    variations and leaves the rest as the clean render draws them; each kept
+    variation takes the same random value it gets with all of them on.
     """
     from PIL import Image, ImageDraw
 
@@ -243,6 +277,7 @@ def render_storey(storey, frame=None, vary=None):
 
     import numpy as np
 
+    on = vary_aspects(only)
     rng = np.random.default_rng(vary)
     ft = _font(15)
     for t in storey["terminals"]:
@@ -251,16 +286,21 @@ def render_storey(storey, frame=None, vary=None):
         u = rng.random(4)
         scale = float(rng.uniform(*VARY_SCALE))
         lw = int(rng.integers(VARY_LW[0], VARY_LW[1] + 1))
-        angle = 90.0 * int(rng.integers(4)) + float(rng.uniform(-VARY_TILT_DEG, VARY_TILT_DEG))
+        turn = 90.0 * int(rng.integers(4))
+        tilt = float(rng.uniform(-VARY_TILT_DEG, VARY_TILT_DEG))
         skew = float(rng.uniform(-VARY_SKEW, VARY_SKEW))
         tdx, tdy = rng.uniform(-0.5, 0.5, size=2)
-        style = 1 if cls in VARIED_STYLES and u[0] < VARY_ALT_STYLE else 0
+        scale = scale if "scale" in on else 1.0
+        lw = lw if "weight" in on else 3
+        angle = (turn if "turn" in on else 0.0) + (tilt if "tilt" in on else 0.0)
+        skew = skew if "skew" in on else 0.0
+        style = 1 if "style" in on and cls in VARIED_STYLES and u[0] < VARY_ALT_STYLE else 0
         cx, cy = frame.to_px(t["x"], t["y"])
         w, h = (e * frame.p * scale for e in _GLYPH_EXT[cls])
-        if u[1] >= VARY_NO_KNOCKOUT:
+        if u[1] >= VARY_NO_KNOCKOUT or "knockout" not in on:
             d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=255)
         _paste_min(img, varied_glyph(cls, style, scale, lw, angle, skew), cx, cy)
-        if u[2] < VARY_TEXT_OVER:
+        if u[2] < VARY_TEXT_OVER and "text" in on:
             # tag label straddling the symbol's lower edge
             d.text(
                 (cx + tdx * w - 15, cy + h / 2 - 8 + tdy * 6),
@@ -268,7 +308,7 @@ def render_storey(storey, frame=None, vary=None):
                 fill=0,
                 font=ft,
             )
-    img, shift = _degrade_sheet(img, rng)
+    img, shift = _degrade_sheet(img, rng, on)
     import copy
 
     frame = copy.copy(frame)  # never record this render's shift on the caller's frame
@@ -404,7 +444,7 @@ def build_detector():
     return clf, {c: render_template(c) for c in MECH_CLASSES}
 
 
-def run(data, png_dir=None, vary=None):
+def run(data, png_dir=None, vary=None, only=None):
     import numpy as np
 
     from hvac_trace import detect_components
@@ -415,10 +455,11 @@ def run(data, png_dir=None, vary=None):
         if not storey["terminals"]:
             continue
         seed = None if vary is None else vary * 1000 + i
-        img, frame = render_storey(storey, vary=seed)
+        img, frame = render_storey(storey, vary=seed, only=only)
         if png_dir:
             Path(png_dir).mkdir(parents=True, exist_ok=True)
             tag = "" if vary is None else f"_vary{vary}"
+            tag += "" if only is None else "_only-" + "-".join(sorted(vary_aspects(only)))
             img.save(Path(png_dir) / f"clinic_{name.replace(' ', '_')}{tag}.png")
         gray = np.asarray(img).astype(np.float64)
         raw = detect_components(gray, templates, clf)
@@ -432,6 +473,7 @@ def run(data, png_dir=None, vary=None):
         if vary is not None:
             results[name]["vary_seed"] = seed
             results[name]["shift_px"] = list(frame.shift_px)
+            results[name]["vary_only"] = sorted(vary_aspects(only))
     return results
 
 
@@ -446,8 +488,22 @@ def main(argv=None):
         metavar="SEED",
         help="draw terminals with seeded symbol variation and scan degradation (#745)",
     )
+    ap.add_argument(
+        "--vary-only",
+        metavar="NAMES",
+        help="with --vary, draw only these variations (comma list of "
+        + ", ".join(VARY_ASPECTS)
+        + "; empty for none), to find which one costs recall",
+    )
     a = ap.parse_args(argv)
-    res = run(json.loads(Path(a.cache).read_text()), a.png_dir, a.vary)
+    if a.vary_only is not None:
+        if a.vary is None:
+            ap.error("--vary-only needs --vary SEED")
+        try:
+            vary_aspects(a.vary_only)
+        except ValueError as e:
+            ap.error(str(e))
+    res = run(json.loads(Path(a.cache).read_text()), a.png_dir, a.vary, a.vary_only)
     for name, r in res.items():
         parts = []
         for c, v in r["det"].items():
