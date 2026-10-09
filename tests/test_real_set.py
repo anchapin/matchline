@@ -848,6 +848,17 @@ def test_a_zone_with_no_legend_diffuser_in_its_room_goes_to_review(tmp_path):
     assert any("1 zone(s) with no supply diffuser found" in n for n in report.notes)
 
 
+def test_legend_diffusers_in_a_room_two_zones_serve_stay_unassigned(tmp_path):
+    """Which of two zones feeds a shared room's diffusers needs duct tracing:
+    they are counted, not attached, and neither zone goes to review as having
+    no diffuser, because the symbols were found."""
+    model, report = _legend_zone_set(tmp_path, [("VAV-1", (1.5, 3.2)), ("VAV-2", (2.5, 3.2))])
+    assert sorted(model.zones) == ["L1-Z-VAV-1", "L1-Z-VAV-2"]
+    assert all(not z.diffusers for z in model.zones.values())
+    assert any("2 in rooms several zones serve" in n for n in report.notes)
+    assert not [r for r in model.review_queue if r.kind == "zone_no_diffuser"]
+
+
 def test_a_legend_symbol_on_a_second_sheet_of_the_level_is_not_counted_twice(tmp_path):
     model, report = _legend_zone_set(tmp_path, [("VAV-1", (1.5, 3.2))], second_sheet=True)
     assert len(model.zones["L1-Z-VAV-1"].diffusers) == 2
