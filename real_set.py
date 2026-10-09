@@ -244,7 +244,11 @@ def build_set_model(
             and png.exists()
             and (not hasattr(provider, "has") or provider.has(png))
             and (
-                not getattr(provider, "needs_scale", False) or (scales.get(f) or {}).get("m_per_pt")
+                not (
+                    getattr(provider, "needs_scale", False)
+                    or getattr(provider, "needs_walls", False)
+                )
+                or (scales.get(f) or {}).get("m_per_pt")
             )
         ):
             sid = f"{Path(str(pdf)).name}:{f}"
