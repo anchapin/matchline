@@ -105,7 +105,10 @@ TIGHT_TURNS = {"grille": (0, 1)}
 # Nominal comes first. Other classes keep their one template. A sheet drawn far
 # outside +-15% of our scale (a 1:50 plan) needs the sheet's own legend
 # templates (#744), not more scales here.
-TEMPLATE_SCALES = {"diffuser": (1.0, 0.87, 1.15), "grille": (1.0, 0.87, 1.15)}
+# Grilles keep one template: a scaled grille (a striped box) matched duct and
+# wall linework on the clean Clinic sheets (8 false grilles, plus a false
+# diffuser via the tight relabel), while diffuser-only scales stayed at 0 fp.
+TEMPLATE_SCALES = {"diffuser": (1.0, 0.87, 1.15)}
 
 
 def template_bank(tmpl: np.ndarray, scales=(1.0,)) -> list:

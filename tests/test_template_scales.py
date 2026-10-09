@@ -32,12 +32,25 @@ def test_template_bank_shapes_and_nominal_identity():
     assert bank[2].shape == (round(h * 1.15), round(w * 1.15))
 
 
-@pytest.mark.parametrize("cls", ["diffuser", "grille"])
 @pytest.mark.parametrize("sc", [0.85, 1.15])
-def test_confirm_gate_keeps_rescaled_glyph(cls, sc):
-    t = M.render_template(cls, margin_px=0, stubs=False).astype(np.float64)
+def test_confirm_gate_keeps_rescaled_diffuser(sc):
+    t = M.render_template("diffuser", margin_px=0, stubs=False).astype(np.float64)
     g = _sheet_with(_resized(t, sc))
-    assert H._tight_confirm_score(g, cls, 150, 150) >= H.TIGHT_CONFIRM_NCC
+    assert H._tight_confirm_score(g, "diffuser", 150, 150) >= H.TIGHT_CONFIRM_NCC
+
+
+def test_grille_keeps_one_template_scale():
+    # Scaled grille templates added false grilles on clean Clinic sheets (#854).
+    assert "grille" not in H.TEMPLATE_SCALES
+    assert len(H._tight_templates("grille")) == len(H.TIGHT_TURNS["grille"])
+
+
+def test_rescaled_grille_confirm_falls_back_to_nominal(monkeypatch):
+    # Opting grilles back in still works through the same table.
+    monkeypatch.setattr(H, "TEMPLATE_SCALES", {"grille": (1.0, 0.87, 1.15)})
+    t = M.render_template("grille", margin_px=0, stubs=False).astype(np.float64)
+    g = _sheet_with(_resized(t, 1.15))
+    assert H._tight_confirm_score(g, "grille", 150, 150) >= H.TIGHT_CONFIRM_NCC
 
 
 @pytest.mark.parametrize("sc", [0.85, 1.15])
