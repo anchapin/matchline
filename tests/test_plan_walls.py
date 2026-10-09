@@ -1054,3 +1054,25 @@ def test_chase_against_a_wall_does_not_shift_the_rooms_it_bounds(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(walls)))
     assert _areas(res) == [18.0, 18.0, 24.0]
     assert not [r for r in res.review if r["kind"] == "unclosed_wall"]
+
+
+def _inside_band(other_t, other_off, band_t=12.0):
+    """Glazed band along x (centre y = 0) and one parallel wall beside it (#868)."""
+    g = W.Band(theta=0.0, rho=0.0, u0=0.0, u1=40.0, t=band_t, source="face", glazed=True)
+    w = W.Wall("w", (0.0, 0.0), (40.0, 0.0), 5.0, "face")
+    o = W.Wall("o", (0.0, other_off), (40.0, other_off), other_t, "face")
+    return W._wall_inside_band(g, w, [w, o], atol=0.05, tol=0.5)
+
+
+def test_thinner_wall_inside_glazed_band_is_not_a_window():
+    assert _inside_band(other_t=3.0, other_off=4.0)
+
+
+def test_wall_as_thick_as_the_band_never_lies_inside_it():
+    # a thickened pier or lined wall beside a real window (Clinic SF, #868)
+    assert not _inside_band(other_t=12.0, other_off=3.0)
+    assert not _inside_band(other_t=20.0, other_off=3.0)
+
+
+def test_collinear_wall_piece_is_not_inside_the_band():
+    assert not _inside_band(other_t=3.0, other_off=0.5)

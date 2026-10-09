@@ -325,6 +325,8 @@ def _glazing_windows(
             if ls.distance(mid) > max(tol, 0.5 * w.t):
                 continue
             s0, s1 = sorted((ls.project(Point(ga)), ls.project(Point(gb))))
+            if _wall_inside_band(g, w, walls, atol, tol):
+                break
             margin = max(2 * w.t, WINDOW_RETURN_M * k)
             source = "glazing_line"
             doors: List[Tuple[float, float]] = []
@@ -363,6 +365,39 @@ def _glazing_windows(
             )
             break
     return out
+
+
+def _wall_inside_band(g, w, walls, atol: float, tol: float) -> bool:
+    """Another wall runs alongside ``w`` inside glazed band ``g`` (#868).
+
+    A small enclosure (a box or chase) built against a wall's inside face
+    leaves a face line between the two that ``_merge_glazing`` reads as
+    glazing, folding wall, gap and box wall into one thick band. A real
+    window's band is its own wall: no other parallel wall lies inside it.
+    So a candidate whose band holds another, thinner wall, off its centre
+    line and along at least half its length, is not a window. A wall at least
+    as thick as the band (a thickened pier or lined wall beside the window)
+    cannot lie inside it and never counts. Walls are not changed.
+    """
+    d, n = _frame(g.theta)
+    span = g.u1 - g.u0
+    if span <= 0:
+        return False
+    for o in walls:
+        if o is w or o.t >= g.t:
+            continue  # a wall as thick as the band cannot lie inside it
+        tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]) % math.pi
+        if not _angle_close(tho, g.theta, atol):
+            continue
+        off = abs((_dot(o.a, n) + _dot(o.b, n)) / 2 - g.rho)
+        if off <= max(tol, 0.25 * w.t):
+            continue  # on the band's own line: a collinear wall piece
+        if off - 0.5 * o.t >= 0.5 * g.t:
+            continue  # outside the band
+        u0, u1 = sorted((_dot(o.a, d), _dot(o.b, d)))
+        if min(u1, g.u1) - max(u0, g.u0) >= 0.5 * span:
+            return True
+    return False
 
 
 def _middle_line_continues(g, bands, tol: float) -> bool:

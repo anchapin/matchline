@@ -6,6 +6,9 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Fixed
+- Plan walls: a glazed band that holds another, thinner parallel wall (a box, chase or pier lining built against the wall) is no longer called a window (`plan_walls._wall_inside_band`); walls and rooms are unchanged. Clinic windows (plumbing only): first floor 23 to 22 found, precision 0.957 to 1.0; second floor 37 to 36, precision 0.973 to 1.0; recall stays 1.0 (#868).
+
 ### Added
 - Door detection: a door hung beside a wall that meets its hinge jamb is found when its open leaf is drawn on that wall's face (`door_detect._face_leaf`); the arc, jamb and clear-opening checks are unchanged. Clinic doors (plumbing only): recall 0.932 to 0.946 on the first floor, 0.896 to 0.917 on the second, precision unchanged (#743).
 - Clinic validation: `scripts/validate_clinic_walls.py --doors` draws each IfcDoor opening as a leaf-and-arc swing on a 50 px/m image of the cut walls and scores `door_detect` against the IFC doors (recall, precision; `--png-dir` saves the sheets). An opening wider than one leaf is drawn as a pair of leaves. Plumbing only: we choose how the swing is drawn (#743).

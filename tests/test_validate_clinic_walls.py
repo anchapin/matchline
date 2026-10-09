@@ -164,6 +164,48 @@ def test_a_window_near_an_inside_corner_keeps_its_glass_along_the_wall():
 # ---- doors drawn from IFC openings as swings, read back by door_detect (#743) ----
 
 
+def _shell_with_box(*, window=True, gap=0.175, box_len=2.0):
+    """An exterior wall with a small box enclosure on its inside face (#868).
+
+    A 0.168 m box wall stands ``gap`` off the face with a return at each end,
+    as the Clinic's first floor has; the window, if any, is further along.
+    """
+    th, L, et, x0 = 0.267, 22.0, 0.168, 5.0
+    ops = [box(14.0, -th, 15.0, 0.0)] if window else []
+    shell = box(-th, -th, L + th, 8 + th).difference(box(0, 0, L, 8))
+    for o in ops:
+        shell = shell.difference(o)
+    walls = [
+        shell,
+        box(x0, gap, x0 + box_len, gap + et),
+        box(x0 - et, 0.0, x0, gap + et),
+        box(x0 + box_len, 0.0, x0 + box_len + 0.124, gap + et),
+    ]
+    ring = [(0, 0), (L, 0), (L, 8), (0, 8)]
+    return walls, ring, ops
+
+
+@pytest.mark.parametrize("box_len", [1.0, 2.0])
+def test_a_box_against_the_wall_is_not_a_window_and_the_real_one_is_kept(box_len):
+    from detection_provider import window_detections
+
+    walls, ring, ops = _shell_with_box(box_len=box_len)
+    sheet, off = sheet_for(walls, [("101", "OFFICE", ring)], glazing=ops)
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    dets = window_detections(res, sheet["height_pt"], 1.0, "s")
+    got = match_windows(ops, dets, sheet["height_pt"], 1.0, off)
+    assert got == {"truth": 1, "pred": 1, "recall": 1.0, "precision": 1.0}
+
+
+def test_a_box_against_a_wall_with_no_window_gives_no_window():
+    walls, ring, _ = _shell_with_box(window=False)
+    sheet, _ = sheet_for(walls, [("101", "OFFICE", ring)])
+    res = extract_walls(sheet, M_PER_PT).to_dict()
+    assert [o for o in res["openings"] if o.get("kind") == "window"] == []
+    # the box wall is still extracted: only the window reading changed
+    assert len(res["walls"]) == 5
+
+
 def _room_with_doors(t=0.2):
     """A 10 x 6 m room: a 0.9 m door in the south wall, a 1.0 m door in a partition."""
     walls = [
