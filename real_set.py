@@ -903,27 +903,64 @@ def _terminal_zone(e, locs, conf, spaces, zones, ComponentRef, Provenance, Zone)
     e["zone_id"] = zid
 
 
+def _ground_level_spaces(model):
+    """Spaces with polygons on the lowest level: the slab (``_slab_geometry``)."""
+    spaces = [sp for sp in (model.spaces or {}).values() if len(sp.polygon_m or []) >= 3]
+    if not spaces:
+        return []
+    elev = {lv.id: lv.elevation_z_m for lv in (model.levels or [])}
+    low = min(elev.get(sp.level_id, 0.0) for sp in spaces)
+    return [sp for sp in spaces if abs(elev.get(sp.level_id, 0.0) - low) < 1e-6]
+
+
 def _heated_slab(model, equipment, review, report, Provenance, ReviewItem) -> None:
     """A radiant floor / in-slab heating row on a mechanical schedule marks the
     ground slab heated (#747), so the construction library uses the Table 5.5
-    Heated slab F-factor. The drawings rarely show how much of the slab it
-    covers, so the whole slab is treated as heated and that goes to review."""
-    from construction_library import heated_slab_evidence
+    Heated slab F-factor. When every heated row names the rooms it serves and
+    each is a ground-level room, only those rooms' slab is heated
+    (``model.slab_heated_spaces``); otherwise the whole slab is treated as
+    heated. Either way it goes to review."""
+    from construction_library import heated_slab_evidence, heated_slab_rooms
 
     why = heated_slab_evidence(equipment)
     if not why:
         return
     model.slab_heated_by = why
+    rooms = heated_slab_rooms(equipment) or []
+    ground = _ground_level_spaces(model)
+    by_no = {}
+    for sp in ground:
+        if sp.number:
+            by_no.setdefault(sp.number.upper(), []).append(sp.id)
+    missing = [r for r in rooms if r not in by_no]
+    if rooms and not missing:
+        model.slab_heated_spaces = sorted(i for r in rooms for i in by_no[r])
+        extent = (
+            "only the slab under room(s) "
+            + ", ".join(rooms)
+            + " (the rooms the schedule says it serves) gets the Table 5.5 "
+            "heated-slab F-factor, the rest the unheated one"
+        )
+        report.notes.append(f"heated slab rooms: {', '.join(rooms)}")
+    else:
+        extent = "the whole ground slab gets the Table 5.5 heated-slab F-factor"
+        if missing:
+            extent += (
+                f" (the schedule says it serves {', '.join(rooms)}, but "
+                f"{', '.join(missing)} "
+                + (
+                    "is not a ground-floor room)"
+                    if len(missing) == 1
+                    else "are not ground-floor rooms)"
+                )
+            )
     report.notes.append(f"heated slab: {why}")
     sheet = next((e.get("sheet", "") for e in equipment if e.get("sheet")), "")
     review.append(
         ReviewItem(
             id="rq-heated-slab",
             kind="heated_slab",
-            description=(
-                f"{why}; the whole ground slab gets the Table 5.5 heated-slab F-factor. "
-                "Check how much of the slab is heated"
-            ),
+            description=f"{why}; {extent}. Check how much of the slab is heated",
             confidence=0.6,
             provenance=Provenance(sheet, 0, "pdf_schedule_heated_slab", 0.6),
             needs_review=True,

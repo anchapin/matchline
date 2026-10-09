@@ -519,7 +519,9 @@ def _slab_geometry(model, lowest: bool = True):
     its edge is exposed and its area is not slab. Any other hole (an
     unmodelled room or shaft) stays slab and its edge is not exposed, which is
     what the exported footprint (holes dropped) already assumes. ``detail``
-    lists wings, courtyards and holes for the report.
+    lists wings, courtyards and holes for the report; its private ``_edges``
+    (exposed edge rings) and ``_spaces`` (slab-level spaces by id) are for
+    ``_heated_part`` only and are not JSON, so never copy ``detail`` whole.
     """
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
@@ -556,6 +558,7 @@ def _slab_geometry(model, lowest: bool = True):
                 above.append(g)
     above_union = unary_union(above) if above else None
     detail = {"wings": 0, "slivers": [], "courtyards": [], "holes_not_exposed": []}
+    edges = []  # exposed slab edges, for splitting the perimeter (heated part)
     area = perim = 0.0
     for g in sorted(parts, key=lambda q: -q.area):
         if g.area < MIN_SLAB_PART_M2:
@@ -564,6 +567,7 @@ def _slab_geometry(model, lowest: bool = True):
         detail["wings"] += 1
         area += Polygon(g.exterior).area
         perim += g.exterior.length
+        edges.append(g.exterior)
         for hole in g.interiors:
             h_area = Polygon(hole).area
             h_len = hole.length
@@ -585,12 +589,53 @@ def _slab_geometry(model, lowest: bool = True):
             ):
                 area -= h_area
                 perim += h_len
+                edges.append(hole)
                 detail["courtyards"].append(rec)
             else:
                 detail["holes_not_exposed"].append(rec)
     if area <= 0 or perim <= 0:
         return None
+    detail["_edges"] = edges
+    detail["_spaces"] = {sp.id: sp for sp in ground}
     return area, perim, ground[0].level_id, detail
+
+
+# a heated space's edge counts as heated slab edge within this distance of the
+# slab's exposed edge (space polygons share the slab outline up to rounding)
+HEATED_EDGE_TOL_M = 0.05
+
+
+def _heated_part(detail, space_ids):
+    """(heated slab area m2, heated exposed perimeter m, ids used) for the
+    ground-level spaces in ``space_ids`` (#747). Spaces not on the slab level
+    are ignored; None when none of them is."""
+    from shapely.geometry import MultiLineString, Polygon
+    from shapely.ops import unary_union
+
+    on = [detail["_spaces"][i] for i in space_ids if i in detail["_spaces"]]
+    polys = []
+    for sp in on:
+        g = Polygon([tuple(v[:2]) for v in sp.polygon_m])
+        polys.append(g if g.is_valid else g.buffer(0))
+    if not polys:
+        return None
+    heated = unary_union(polys)
+    rest = []
+    for i, sp in detail["_spaces"].items():
+        if i in space_ids:
+            continue
+        g = Polygon([tuple(v[:2]) for v in sp.polygon_m])
+        rest.append(g if g.is_valid else g.buffer(0))
+    edge = MultiLineString([list(r.coords) for r in detail["_edges"]])
+    perim = edge.length
+    tol = HEATED_EDGE_TOL_M
+    # the tolerance band overshoots by ``tol`` along the edge wherever a heated
+    # room meets an unheated one; measuring both sides the same way and
+    # splitting the difference cancels that overshoot
+    h = edge.intersection(heated.buffer(tol)).length
+    u = edge.intersection(unary_union(rest).buffer(tol)).length if rest else 0.0
+    p_h = max(0.0, min(perim, (h - u + perim) / 2.0)) if rest else min(h, perim)
+    return heated.area, p_h, sorted(sp.id for sp in on)
 
 
 # 90.1-2019 Section 3.2, heated slab: "slab-on-grade floor construction in
@@ -621,13 +666,7 @@ def heated_slab_evidence(equipment) -> str:
     """
     hits = []
     for e in equipment or []:
-        text = " ".join(
-            [str(e.get("description") or ""), str(e.get("schedule") or "")]
-            + [str(v) for v in (e.get("values") or {}).values()]
-        ).upper()
-        if not HEATED_SLAB_RX.search(text) or NOT_HEATED_SLAB_RX.search(text):
-            continue
-        if _COOLING_RX.search(text) and not _HEAT_RX.search(text):
+        if not _is_heated_slab_row(e):
             continue
         where = f" on {e['sheet']}" if e.get("sheet") else ""
         hits.append(f"{e.get('tag', '?')}{where}")
@@ -636,13 +675,53 @@ def heated_slab_evidence(equipment) -> str:
     return "radiant floor / in-slab heating scheduled: " + ", ".join(sorted(set(hits)))
 
 
+# a schedule column naming the rooms a row serves ("SERVES", "AREA SERVED",
+# "ROOMS SERVED", "ROOM"); not "AREA" alone, which is usually a floor area
+_SERVES_COL_RX = re.compile(r"SERV|\bROOMS?\b|\bRM\b")
+_ROOM_NO_RX = re.compile(r"\b[A-Z]?\d{2,4}[A-Z]?\b")
+
+
+def _is_heated_slab_row(e) -> bool:
+    text = " ".join(
+        [str(e.get("description") or ""), str(e.get("schedule") or "")]
+        + [str(v) for v in (e.get("values") or {}).values()]
+    ).upper()
+    if not HEATED_SLAB_RX.search(text) or NOT_HEATED_SLAB_RX.search(text):
+        return False
+    return not (_COOLING_RX.search(text) and not _HEAT_RX.search(text))
+
+
+def heated_slab_rooms(equipment):
+    """Room numbers the heated-slab rows serve (#747), or None.
+
+    Read from a serves / room column on each row ``heated_slab_evidence``
+    counts. None unless every such row names at least one room number, since a
+    row without one may heat any part of the slab.
+    """
+    rows = [e for e in equipment or [] if _is_heated_slab_row(e)]
+    if not rows:
+        return None
+    rooms = set()
+    for e in rows:
+        found = set()
+        for k, v in (e.get("values") or {}).items():
+            if _SERVES_COL_RX.search(str(k).upper()):
+                found |= set(_ROOM_NO_RX.findall(str(v).upper()))
+        if not found:
+            return None
+        rooms |= found
+    return sorted(rooms)
+
+
 def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     """Unset slab -> Table 5.5 slab F-factor as an effective U (#747, #781).
 
     The slab is Unheated unless ``model.slab_heated_by`` says what heats it,
-    then the Table 5.5 Heated row is used. Heating anywhere in the slab makes
-    the whole slab Heated here (the footprint is one slab), which can only
-    raise the loss; the drawing set run sends that to review.
+    then the Table 5.5 Heated row is used. When ``model.slab_heated_spaces``
+    names the rooms the heating serves, only their exposed edge gets the
+    heated F-factor and the rest the unheated one; otherwise the whole slab is
+    Heated, which can only raise the loss, and the drawing set run sends that
+    to review.
 
     gbXML carries a U-value, not
     an F-factor, so the slab gets the U that loses the same heat:
@@ -668,12 +747,37 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     area, perim, level_id, detail = geo
     f_si = row.f_ip * F_IP_TO_SI
     u = round(f_si * perim / area, 6)
+    part = None
+    served = list(getattr(model, "slab_heated_spaces", None) or [])
+    unheated = lookup("GroundContactFloor", "Unheated", climate_zone, category)
+    if heated_by and served and unheated is not None and unheated.f_ip is not None:
+        part = _heated_part(detail, served)
+    if part is not None:
+        # only the served rooms are heated slab: the slab loses F_heated over
+        # the exposed edge of those rooms and F_unheated over the rest
+        # (F-factor is heat loss per length of exposed edge), so one U for the
+        # whole slab = (F_h x P_h + F_u x P_u) / area
+        a_h, p_h, used = part
+        p_h = min(p_h, perim)
+        fu_si = unheated.f_ip * F_IP_TO_SI
+        u = round((f_si * p_h + fu_si * (perim - p_h)) / area, 6)
+        f_text = (
+            f"Table 5.5 heated slab F-factor {row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K over "
+            f"the {p_h:.2f} m of exposed edge of the heated rooms ({', '.join(used)}, "
+            f"{a_h:.2f} m2), unheated {unheated.f_ip} = {fu_si:.4f} W/m-K over the other "
+            f"{perim - p_h:.2f} m; effective U = sum(F x edge) / slab area {area:.2f} m2"
+        )
+    else:
+        f_text = (
+            f"Table 5.5 {label} slab F-factor "
+            f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
+            f"{perim:.2f} m / slab area {area:.2f} m2"
+        )
     why = (
         "no slab assembly stated on the drawings; "
         + (f"heated slab ({heated_by}); " if heated_by else "")
-        + f"Table 5.5 {label} slab F-factor "
-        f"{row.f_ip} Btu/h-ft-F = {f_si:.4f} W/m-K; effective U = F x exposed perimeter "
-        f"{perim:.2f} m / slab area {area:.2f} m2 (ground slab of level {level_id}: "
+        + f_text
+        + f" (ground slab of level {level_id}: "
         f"{detail['wings']} wing(s), {len(detail['courtyards'])} courtyard(s))"
     )
     prov = Provenance(
@@ -715,6 +819,13 @@ def _default_slab(model, s: "LibrarySummary", climate_zone: str, category: str):
     }
     if heated_by:
         s.defaulted[cid]["heated_by"] = heated_by
+    if part is not None:
+        s.defaulted[cid].update(
+            heated_spaces=part[2],
+            heated_area_m2=round(part[0], 4),
+            heated_perimeter_m=round(min(part[1], perim), 4),
+            f_ip_unheated=unheated.f_ip,
+        )
 
 
 # Appendix G baseline envelope (#781): 90.1-2019 Table G3.4 (PRM 2019).

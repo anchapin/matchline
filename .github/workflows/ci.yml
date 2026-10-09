@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2424  # +7 thin wall band between thicker walls may be storefront glazing (#793)
+          EXPECTED_TEST_COUNT=2432  # +8 heated slab limited to the rooms the radiant schedule serves (#747)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

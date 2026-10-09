@@ -843,6 +843,10 @@ class BuildingModel:
     # radiant floor row on a mechanical schedule (#747); "" -> no evidence,
     # and an unset slab gets the unheated-slab F-factor
     slab_heated_by: str = ""
+    # Space ids the heated-slab rows say they serve (#747), when every row
+    # names its rooms and each resolves to a ground-level space; empty with
+    # ``slab_heated_by`` set means the whole slab is treated as heated
+    slab_heated_spaces: List[str] = field(default_factory=list)
     # ASHRAE climate zone (e.g. "4A") and 90.1 building category, as given by
     # the user (--climate-zone / --building-category, #747/#763); "" means not
     # given, and nothing downstream assumes one

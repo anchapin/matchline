@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Heated slab: when the radiant floor rows name the ground-floor rooms they serve, only those rooms' exposed slab edge gets the Table 5.5 heated F-factor and the rest the unheated one (`slab_heated_spaces`); otherwise the whole slab stays heated (#747).
 - Plan walls: a thin wall band between thicker walls on the same line, with no opening or scheduled tag, is flagged `maybe_glazing` and goes to review as possible storefront glazing; the wall stays opaque (#793).
 - Slab-on-grade exposed perimeter counts every ground-floor wing (not only the largest) and the edge of open-air courtyards, a hole in the slab with exterior walls along at least half its edge; other holes stay slab and are listed under `holes_not_exposed` (#747).
 - Schedules drawn as whitespace-aligned text with no cell lines are read (`pdf_unruled_table`, confidence 0.75): columns from the header row, wrapped cells and note rows handled, crossing values and repeated tags flagged unparsed (#746).
