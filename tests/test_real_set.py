@@ -685,6 +685,7 @@ def test_zone_carries_its_terminal_units_scheduled_airflow(tmp_path):
         ({"cfm_max": 300.0, "airflow_unit": ""}, (None, None), "states no unit"),
         ({"cfm_max": 100.0, "cfm_min": 300.0, "airflow_unit": "cfm"}, (None, None), "exceeds"),
         ({"neck_size": '8"'}, (None, None), "no airflow"),
+        ({"cfm_max": 0.0, "cfm_min": 0.0, "airflow_unit": "cfm"}, (None, None), "not positive"),
     ],
 )
 def test_zone_airflow_from_a_schedule_row(row, expect, note):

@@ -862,7 +862,10 @@ def _airflow_unit(headers) -> str:
 
     Read from the airflow column headers only (``MAX CFM``, ``MIN L/S``); a
     bare ``AIRFLOW`` header states no unit and gives "", so the numbers are
-    kept on the record but nothing downstream converts them (#746).
+    kept on the record but nothing downstream converts them (#746). One table
+    does not mix units across its airflow columns, so a bare ``AIRFLOW``
+    column beside a ``MAX CFM`` one is read as CFM; two columns stating
+    different units give "".
     """
     units = set()
     for h in headers:
