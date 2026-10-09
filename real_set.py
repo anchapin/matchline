@@ -1147,7 +1147,12 @@ def _assign_wall_types(lid, plan, env_walls, legend, constructions, review, shee
                     note=(
                         f"wall type {tag} on the legend of {row['sheet_id']}: "
                         f"{row['description']!r} ({row['construction_type']}, {row['why']}); "
-                        "U from the construction library"
+                        + (
+                            f"full legend text {row['full_text']!r}; "
+                            if row.get("full_text") and row["full_text"] != row["description"]
+                            else ""
+                        )
+                        + "U from the construction library"
                     ),
                 ),
             )

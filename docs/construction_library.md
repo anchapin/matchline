@@ -146,10 +146,9 @@ Mass row instead of the unlabeled steel-framed default. An envelope edge
 carrying two different wall types goes to review as `wall_type_ambiguous` and
 gets neither.
 
-Limits: one-row descriptions only (a description wrapped onto a second line
-is read from its first line, #828). A wall-type tag closer to an opening
+Wrapped descriptions (#828): lines under a legend description join it when they start in the description's column (inline tags: indented past the tag), sit within 1.6 line heights of the line above, and nothing shares the line in the tag column. The class comes from the first line when it names one, so a later `MTL STUD FURRING` cannot turn a CMU wall steel-framed; otherwise from the joined text. The full legend text is kept in the provenance note. Tag-shaped words on a wrapped line (`R-19`) are text, not new rows. A wall-type tag closer to an opening
 than its door/window mark no longer takes the mark's place (#829).
 
 ## Not yet
 
-Heated slabs, interior (non-perimeter) slab edges, multi-line wall-type legend descriptions, and Appendix A assemblies.
+Heated slabs, interior (non-perimeter) slab edges, and Appendix A assemblies.
