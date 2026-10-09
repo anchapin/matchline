@@ -102,3 +102,40 @@ def test_set_report_records_the_provider_and_eval_only(tmp_path):
     _, rep0 = real_set.build_set_model(pdf, tmp_path / "out0")
     assert rep0.to_dict()["detector"] == {}
     assert rep0.to_dict()["sheets"][0]["stages"]["symbols"]["status"] == "skipped"
+
+
+def _door_png(tmp_path, ppm=50.0, width_m=0.9):
+    """A 20 px wall with one 0.9 m door (leaf plus quarter arc) at ``ppm``."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, width_m * ppm
+    d.rectangle([x - 10, 40, x + 10, 360], fill=0)
+    d.rectangle([x - 11, yh, x + 11, yh + r], fill=255)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    p = tmp_path / "sheet_001.png"
+    img.save(p)
+    return p, (x, yh + r / 2)
+
+
+def test_door_swing_provider_may_ship_and_finds_the_door(tmp_path):
+    p = dp.provider_from_config({"provider": "door_swing"}, release=True)
+    assert isinstance(p, dp.DoorSwingProvider)
+    assert (p.info.license_class, p.info.eval_only) == ("permissive", False)
+    assert "may ship" in p.info.note()
+    png, (cx, cy) = _door_png(tmp_path)
+    dets = p.detect(png, "set.pdf:sheet_001.json", px_per_m=50.0)
+    assert len(dets) == 1
+    d = dets[0]
+    assert d.label == "door" and d.source == "set.pdf:sheet_001.json"
+    x0, y0, x1, y1 = d.bbox
+    assert x0 - 2 <= cx <= x1 + 2 and y0 - 2 <= cy <= y1 + 2
+
+
+def test_door_swing_provider_without_a_scale_reports_nothing(tmp_path):
+    png, _ = _door_png(tmp_path)
+    assert dp.DoorSwingProvider().detect(png, "s") == []
+    fixed = dp.provider_from_config({"provider": "door_swing", "px_per_m": 50.0})
+    assert len(fixed.detect(png, "s")) == 1

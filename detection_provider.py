@@ -7,7 +7,13 @@ which backend ran. Which provider runs is a config value, not code:
 
     {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger path>"}
     {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger path>"}
+    {"provider": "door_swing"}
     {"provider": "none"}
+
+``door_swing`` finds door swings (leaf plus quarter arc) by rule
+(``door_detect.py``): no training data and no weights, so it may ship. It
+needs the sheet's scale, which the set reader passes per sheet; a fixed
+``px_per_m`` in the config is used when the caller has none.
 
 Every provider names the trained artifact behind it. Its license class comes
 from ``license_ledger.json`` (#751): weights trained on non-commercial or
@@ -169,7 +175,63 @@ class YoloSahiProvider(DetectionProvider):
             os.unlink(f.name)
 
 
+class DoorSwingProvider(DetectionProvider):
+    """Door swings found by rule in the rendered sheet (``door_detect.py``).
+
+    No dataset and no trained weights sit behind it, so its license class is
+    permissive. A door counts only when the leaf, the arc and both jambs are
+    drawn; windows are not found. Without a scale it reports nothing rather
+    than guess a door width.
+    """
+
+    name = "door_swing"
+    needs_scale = True
+
+    def __init__(
+        self,
+        px_per_m: Optional[float] = None,
+        ink_max: Optional[int] = None,
+        min_width_m: Optional[float] = None,
+        max_width_m: Optional[float] = None,
+        **_kw,
+    ):
+        self.artifact = "door_detect.py"
+        self.info = ProviderInfo(self.name, self.artifact, "permissive", False)
+        self.px_per_m = px_per_m
+        self.opts = {
+            k: v
+            for k, v in (
+                ("ink_max", ink_max),
+                ("min_width_m", min_width_m),
+                ("max_width_m", max_width_m),
+            )
+            if v is not None
+        }
+
+    def detect(self, image_path, sheet_id, px_per_m: Optional[float] = None):
+        import numpy as np
+        from PIL import Image
+
+        from door_detect import detect_door_swings
+
+        ppm = px_per_m or self.px_per_m
+        if not ppm:
+            return []
+        gray = np.asarray(Image.open(image_path).convert("L"))
+        return [
+            Detection(
+                label="door",
+                tag="",
+                score=float(d["score"]),
+                bbox=tuple(float(v) for v in d["bbox_px"]),
+                source=sheet_id,
+            )
+            for d in detect_door_swings(gray, float(ppm), **self.opts)
+        ]
+
+
 PROVIDERS: Dict[str, type] = {
+    "door_swing": DoorSwingProvider,
     "none": NoneProvider,
     "precomputed": PrecomputedProvider,
     "yolo_sahi": YoloSahiProvider,
@@ -205,6 +267,7 @@ def provider_from_config(
 
 __all__ = [
     "DetectionProvider",
+    "DoorSwingProvider",
     "NoneProvider",
     "PrecomputedProvider",
     "YoloSahiProvider",
