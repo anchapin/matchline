@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -282,24 +283,63 @@ def window_detections(
     for op in walls.get("openings", []):
         if op.get("kind") != "window":
             continue
-        (ax, ay), (bx, by) = px(op["a_m"]), px(op["b_m"])
         ids = op.get("walls") or []
         pad = max((thick.get(i, 0.0) for i in ids), default=0.0) / 2 / m * px_per_pt
-        out.append(
-            Detection(
-                label="window",
-                tag=str(op.get("tag_text") or ""),
-                score=float(op.get("window_confidence", 0.5)),
-                bbox=(
-                    min(ax, bx) - pad,
-                    min(ay, by) - pad,
-                    max(ax, bx) + pad,
-                    max(ay, by) + pad,
-                ),
-                source=source,
+        for a, b in _glass_pieces(op):
+            (ax, ay), (bx, by) = px(a), px(b)
+            out.append(
+                Detection(
+                    label="window",
+                    tag=str(op.get("tag_text") or ""),
+                    score=float(op.get("window_confidence", 0.5)),
+                    bbox=(
+                        min(ax, bx) - pad,
+                        min(ay, by) - pad,
+                        max(ax, bx) + pad,
+                        max(ay, by) + pad,
+                    ),
+                    source=source,
+                )
             )
-        )
     return out
+
+
+MIN_GLASS_PIECE_M = 0.10  # glass left beside a door narrower than this is a frame, not a window
+
+
+def _glass_pieces(op: dict) -> List[tuple]:
+    """The glass of one window opening, less any doors drawn inside it (#793).
+
+    A storefront run that holds a door is one ``kind: "window"`` opening with
+    the door listed under ``doors_in_glazing``. The door is not glass, and
+    ``door_swing`` reports it on its own, so the window is cut into the pieces
+    of glass either side. Ends are in metres along the run; a piece shorter
+    than ``MIN_GLASS_PIECE_M`` is dropped.
+    """
+    a, b = op["a_m"], op["b_m"]
+    doors = op.get("doors_in_glazing") or []
+    length = math.dist(a, b)
+    if not doors or length <= 0:
+        return [(tuple(a), tuple(b))]
+    ux, uy = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+
+    def t(p):
+        return (p[0] - a[0]) * ux + (p[1] - a[1]) * uy
+
+    cuts = sorted(
+        (max(0.0, min(t(d["a_m"]), t(d["b_m"]))), min(length, max(t(d["a_m"]), t(d["b_m"]))))
+        for d in doors
+    )
+    pieces, start = [], 0.0
+    for lo, hi in cuts + [(length, length)]:
+        if lo - start >= MIN_GLASS_PIECE_M:
+            pieces.append((start, lo))
+        start = max(start, hi)
+
+    def at(s):
+        return (a[0] + ux * s, a[1] + uy * s)
+
+    return [(at(lo), at(hi)) for lo, hi in pieces]
 
 
 class CombinedProvider(DetectionProvider):

@@ -294,3 +294,59 @@ def test_combined_runs_a_part_that_needs_no_scale_where_the_others_find_nothing(
     # no scale: door_swing reports nothing, the precomputed part still does
     out = c.detect(d / "sheet_001.png", "s", plan=None, px_per_m=None)
     assert [x.label for x in out] == ["door"]
+
+
+def test_a_door_in_a_storefront_cuts_the_window_box_into_glass_either_side():
+    walls = {
+        "m_per_pt": 0.01,
+        "walls": [{"id": "W1", "thickness_m": 0.2}],
+        "openings": [
+            {"walls": ["W1"], "a_m": (0, 1), "b_m": (10, 1), "kind": "window",
+             "window_confidence": 0.85, "tag_text": "SF-1",
+             "doors_in_glazing": [{"a_m": (5.45, 1), "b_m": (4.55, 1), "width_m": 0.9}]},
+        ],
+    }  # fmt: skip
+    dets = dp.window_detections(walls, height_pt=500.0, px_per_pt=1.0, source="s")
+    assert [d.tag for d in dets] == ["SF-1", "SF-1"]
+    # x in pt is metres / 0.01; pad 0.1 m = 10 pt either side
+    xs = [(d.bbox[0], d.bbox[2]) for d in dets]
+    assert xs == [pytest.approx((-10, 465)), pytest.approx((535, 1010))]
+    # no door inside: one box over the whole run, as before
+    del walls["openings"][0]["doors_in_glazing"]
+    (whole,) = dp.window_detections(walls, 500.0, 1.0, "s")
+    assert (whole.bbox[0], whole.bbox[2]) == pytest.approx((-10, 1010))
+
+
+def test_glass_pieces_drop_slivers_and_clip_doors_to_the_run():
+    op = {
+        "a_m": (0, 0),
+        "b_m": (0, 4),
+        "doors_in_glazing": [
+            {"a_m": (0, 0.05), "b_m": (0, 1.0)},  # leaves a 5 cm frame
+            {"a_m": (0, 3.5), "b_m": (0, 4.6)},
+        ],
+    }  # runs past the end
+    # fmt: skip
+    pieces = dp._glass_pieces(op)
+    assert len(pieces) == 1
+    (a, b) = pieces[0]
+    assert a == pytest.approx((0, 1.0)) and b == pytest.approx((0, 3.5))
+    op["doors_in_glazing"] = [{"a_m": (0, 0), "b_m": (0, 4)}]
+    assert dp._glass_pieces(op) == []  # all door, no glass
+
+
+def test_storefront_with_a_door_drawn_in_it_gives_two_window_boxes(tmp_path):
+    """End to end on the #793 storefront fixture: 10 m of glazing with mullions
+    at 2 and 8 m and a 0.9 m door between jambs at 4.55 and 5.45 m."""
+    import test_plan_walls as T
+
+    body = T._outline(T._mass(T.SHELL)) + T._glazing(0, 10) + T._mullion_ticks([2, *T._JAMBS, 8])
+    res, _ = T._read(tmp_path, body + T._SWING)
+    walls = res if isinstance(res, dict) else res.to_dict()
+    (op,) = [o for o in walls["openings"] if o.get("kind") == "window"]
+    assert len(op["doors_in_glazing"]) == 1
+    dets = dp.window_detections(walls, height_pt=T.PAGE_H, px_per_pt=1.0, source="s")
+    assert len(dets) == 2
+    m = walls["m_per_pt"]
+    glass_m = sum((d.bbox[2] - d.bbox[0]) * m for d in dets) - 2 * 0.30  # less the wall pads
+    assert glass_m == pytest.approx(op["width_m"] - 0.9, abs=0.1)
