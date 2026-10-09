@@ -31,12 +31,12 @@ def test_turned_grille_differs_from_template():
 
 def test_tight_templates_cover_quarter_turn():
     ts = H._tight_templates("grille")
-    assert len(ts) == 2
+    assert len(ts) == len(H.TIGHT_TURNS["grille"]) * len(H.TEMPLATE_SCALES["grille"])
     assert any(
         np.array_equal(t, np.rot90(M.render_template("grille", margin_px=0, stubs=False)))
         for t in ts
     )
-    assert len(H._tight_templates("diffuser")) == 1
+    assert len(H._tight_templates("diffuser")) == len(H.TEMPLATE_SCALES["diffuser"])
 
 
 def test_confirm_gate_keeps_turned_grille():

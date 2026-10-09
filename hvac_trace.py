@@ -96,15 +96,42 @@ TIGHT_CONFIRM_BAND_PX = 8
 # template no longer matched). The diffuser X looks the same turned, so it
 # keeps one template. A half turn maps both glyphs onto themselves.
 TIGHT_TURNS = {"grille": (0, 1)}
+# Template scales tried for diffuser/grille proposals, the tight passes and the
+# confirm gate (#745). Another firm's or a scanned sheet rarely draws a terminal
+# at exactly our size, and NCC against one fixed-size template falls off fast:
+# on the Clinic ablation a +-15% scale alone dropped diffusers from 234/234 to
+# 135/234 (proposal recall 169/234). The scales are the ends of that +-15%
+# range (1/1.15 and 1.15); in-between sizes sit within ~7% of a template.
+# Nominal comes first. Other classes keep their one template.
+TEMPLATE_SCALES = {"diffuser": (1.0, 0.87, 1.15), "grille": (1.0, 0.87, 1.15)}
+
+
+def template_bank(tmpl: np.ndarray, scales=(1.0,)) -> list:
+    """``tmpl`` resized (bilinear) to each scale, in the order given; scale 1.0
+    returns ``tmpl`` itself."""
+    from PIL import Image
+
+    out = []
+    for sc in scales:
+        if sc == 1.0:
+            out.append(tmpl)
+            continue
+        im = Image.fromarray(np.clip(tmpl, 0, 255).astype(np.uint8))
+        w = max(4, int(round(im.size[0] * sc)))
+        h = max(4, int(round(im.size[1] * sc)))
+        out.append(np.asarray(im.resize((w, h), Image.BILINEAR), dtype=np.float64))
+    return out
 
 
 def _tight_templates(cls: str) -> list:
     """The stub-less, margin-free template of ``cls`` at each quarter turn in
-    ``TIGHT_TURNS`` (just the template itself for other classes)."""
+    ``TIGHT_TURNS`` and each scale in ``TEMPLATE_SCALES`` (just the template
+    itself for other classes)."""
     from synth.mech import render_template
 
     t = render_template(cls, margin_px=0, stubs=False)
-    return [np.rot90(t, k) if k else t for k in TIGHT_TURNS.get(cls, (0,))]
+    turned = [np.rot90(t, k) if k else t for k in TIGHT_TURNS.get(cls, (0,))]
+    return [b for tt in turned for b in template_bank(tt, TEMPLATE_SCALES.get(cls, (1.0,)))]
 
 
 def _tight_masks(tmpl: np.ndarray, band_px: float) -> list:
@@ -231,11 +258,13 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
     Returns list of dicts {label, cx, cy, w, h, ncc_cls, ncc, margin}."""
     proposals = []
     for cls, tmpl in templates.items():
-        th, tw = tmpl.shape
-        for y, x, s in ncc_locate(gray, tmpl, thresh=NCC_PROPOSE[cls]):
-            proposals.append(
-                {"cx": x + tw / 2, "cy": y + th / 2, "w": tw, "h": th, "ncc_cls": cls, "ncc": s}
-            )
+        # each scale proposes on its own; the cross-class NMS below keeps the best
+        for t in template_bank(tmpl, TEMPLATE_SCALES.get(cls, (1.0,))):
+            th, tw = t.shape
+            for y, x, s in ncc_locate(gray, t, thresh=NCC_PROPOSE[cls]):
+                proposals.append(
+                    {"cx": x + tw / 2, "cy": y + th / 2, "w": tw, "h": th, "ncc_cls": cls, "ncc": s}
+                )
     proposals.sort(key=lambda p: -p["ncc"])
     merged = []
     for p in proposals:

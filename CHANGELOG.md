@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- HVAC detection: diffuser and grille templates are also tried at 0.87x and 1.15x (`hvac_trace.TEMPLATE_SCALES`) for proposals, the tight relabel passes and the confirm gate, so a terminal drawn up to 15% smaller or larger than ours is still found (#745).
 - HVAC detection: the stub-less grille template used to relabel and confirm grilles is now also tried at a quarter turn, so a grille whose diagonal runs the other way is kept as a grille instead of being dropped or left labeled diffuser. The diffuser X looks the same turned and keeps one template (`hvac_trace.TIGHT_TURNS`, #745).
 - Set runs: supply diffusers, grilles and thermostats found from a mechanical sheet's own legend now reach the HVAC model. A symbol placed in a room goes on the space (`hvac.diffusers` / `hvac.sensors`) and on its zone when exactly one zone serves that room (method `legend_symbol`); rooms with no zone or several zones keep the counts in `symbols_by_room` only, and a symbol repeated on a second sheet of the level is not added twice. A zone on a level read this way that gets no supply diffuser goes to review as `zone_no_diffuser` (#744).
 - Clinic detection check: `--vary-only NAMES` (with `--vary SEED`) draws only the named variations (scale, weight, turn, tilt, skew, style, knockout, text, scan, shift), each at the value the seed gives it with all of them on, so the recall loss can be put down to one variation at a time (#745).
