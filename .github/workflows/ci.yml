@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2406  # +16 heated slab from a radiant floor schedule row (#747)
+          EXPECTED_TEST_COUNT=2414  # +8 slab exposed perimeter: every wing, open-air courtyards (#747)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

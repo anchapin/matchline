@@ -8,6 +8,7 @@ from building_model import BuildingModel, Construction, EnvelopeWall, Space
 from construction_library import (
     METHOD,
     apply_construction_library,
+    baseline_envelope,
     classify,
     climate_zone_number,
     lookup,
@@ -234,6 +235,117 @@ def test_slab_u_reaches_the_exporters():
     m = _slab_model(G=("L1", _rect(0, 0, 10, 10)))
     apply_construction_library(m, "5A")
     assert slab_u_value(m) == pytest.approx(m.constructions["t55-slab"].u_value_w_m2k)
+
+
+# --- #747: every wing and open-air courtyard edges count as exposed slab edge --
+
+
+def _ring_walls(m, ring, prefix="L1-CW"):
+    n = len(ring)
+    for i in range(n):
+        a, b = ring[i], ring[(i + 1) % n]
+        m.envelope.append(EnvelopeWall(id=f"{prefix}{i}", facade="", from_m=list(a), to_m=list(b)))
+
+
+def _courtyard_model():
+    """30 x 30 slab around a 10 x 10 open court, as four rooms."""
+    return _slab_model(
+        S=("L1", _rect(0, 0, 30, 10)),
+        N=("L1", _rect(0, 20, 30, 30)),
+        W=("L1", _rect(0, 10, 10, 20)),
+        E=("L1", _rect(20, 10, 30, 20)),
+    )
+
+
+def test_courtyard_bounded_by_exterior_walls_is_exposed_edge():
+    m = _courtyard_model()
+    _ring_walls(m, _rect(10, 10, 20, 20))
+    s = apply_construction_library(m, "5A")
+    d = s.defaulted["t55-slab"]
+    # outer 120 m + court 40 m; slab 900 - 100 m2
+    assert d["exposed_perimeter_m"] == pytest.approx(160.0)
+    assert d["area_m2"] == pytest.approx(800.0)
+    assert len(d["courtyards"]) == 1 and d["holes_not_exposed"] == []
+    row = lookup("GroundContactFloor", "Unheated", "5A")
+    want = row.f_ip * 1.730735 * 160.0 / 800.0
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
+    assert "1 courtyard(s)" in m.constructions["t55-slab"].provenance.note
+
+
+def test_hole_without_exterior_walls_stays_slab():
+    """An unmodelled room or shaft: area is slab, edge is not exposed (as before)."""
+    m = _courtyard_model()
+    s = apply_construction_library(m, "5A")
+    d = s.defaulted["t55-slab"]
+    assert d["exposed_perimeter_m"] == pytest.approx(120.0)
+    assert d["area_m2"] == pytest.approx(900.0)
+    assert d["courtyards"] == []
+    assert d["holes_not_exposed"] == [{"area_m2": 100.0, "perimeter_m": 40.0, "wall_cover_m": 0.0}]
+
+
+def test_hole_with_walls_on_under_half_its_edge_stays_slab():
+    m = _courtyard_model()
+    # one 10 m wall on a 40 m edge: 25 %, under the half needed
+    m.envelope.append(EnvelopeWall(id="L1-X", facade="", from_m=[10, 10], to_m=[20, 10]))
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["courtyards"] == [] and d["exposed_perimeter_m"] == pytest.approx(120.0)
+    assert d["holes_not_exposed"][0]["wall_cover_m"] == pytest.approx(10.0)
+
+
+def test_courtyard_walls_off_by_wall_thickness_and_split_still_count():
+    """Centrelines sit half a wall off the room face; split and overlapping runs count once."""
+    m = _courtyard_model()
+    off = 0.1
+    for a, b in (
+        ([10 - off, 10 - off], [15, 10 - off]),
+        ([14, 10 - off], [20 + off, 10 - off]),  # overlaps the first by 1 m
+        ([20 + off, 10], [20 + off, 20]),
+        ([20, 20 + off], [10, 20 + off]),
+    ):
+        m.envelope.append(EnvelopeWall(id=f"L1-W{a}", facade="", from_m=a, to_m=b))
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert len(d["courtyards"]) == 1
+    assert d["courtyards"][0]["wall_cover_m"] == pytest.approx(30.0)
+    assert d["exposed_perimeter_m"] == pytest.approx(160.0)
+
+
+def test_perpendicular_or_distant_walls_do_not_make_a_courtyard():
+    m = _courtyard_model()
+    m.envelope += [
+        # perpendicular stubs touching the court edge
+        EnvelopeWall(id="L1-P1", facade="", from_m=[12, 0], to_m=[12, 10]),
+        EnvelopeWall(id="L1-P2", facade="", from_m=[18, 0], to_m=[18, 10]),
+        # parallel but 5 m away from the court (the outer wall line is 10 m away)
+        EnvelopeWall(id="L1-F", facade="", from_m=[10, 5], to_m=[20, 5]),
+        EnvelopeWall(id="L1-G", facade="", from_m=[10, 25], to_m=[20, 25]),
+    ]
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["courtyards"] == [] and d["holes_not_exposed"][0]["wall_cover_m"] == 0.0
+
+
+def test_every_wing_counts_not_just_the_largest():
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)), B=("L1", _rect(30, 0, 40, 10)))
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["wings"] == 2
+    assert d["area_m2"] == pytest.approx(500.0)
+    assert d["exposed_perimeter_m"] == pytest.approx(120.0)
+
+
+def test_slivers_are_listed_not_counted():
+    m = _slab_model(A=("L1", _rect(0, 0, 20, 20)), B=("L1", _rect(25, 0, 25.5, 1)))
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["wings"] == 1 and d["slivers_m2"] == [0.5]
+    assert d["area_m2"] == pytest.approx(400.0) and d["exposed_perimeter_m"] == pytest.approx(80.0)
+
+
+def test_baseline_slab_uses_the_same_ground_slab():
+    m = _courtyard_model()
+    _ring_walls(m, _rect(10, 10, 20, 20))
+    out = baseline_envelope(m, "5A", "Nonresidential")
+    slab = out["surfaces"]["slab"]
+    assert slab["u_si_effective"] == pytest.approx(
+        slab["f_ip"] * 1.730735 * 160.0 / 800.0, rel=1e-5
+    )
 
 
 # --- #747: heated slab from a radiant floor row on a mechanical schedule -------
