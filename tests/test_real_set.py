@@ -731,7 +731,7 @@ def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
     assert "M-001, M-601" in rq.description
 
 
-def _legend_mech_page(number="M-101", scale=SCALE_NOTE):
+def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False):
     """A mechanical plan drawn in a second symbol style with its own legend:
     two diffusers in the west room (x < 4 m), one diffuser and a thermostat in
     the east room."""
@@ -744,6 +744,9 @@ def _legend_mech_page(number="M-101", scale=SCALE_NOTE):
     leg += damper(x, y - 102) + text(x + 40, y - 100, "MANUAL VOLUME DAMPER", 8)
     plan = "".join(xbox(px - 7, py - 7) for px, py in (_pt(2, 2), _pt(2, 4.5), _pt(7, 2)))
     plan += circle(*_pt(7, 4.5))
+    if outside:  # a diffuser drawn beyond the building shell
+        px, py = _pt(13, 3)
+        plan += xbox(px - 7, py - 7)
     body = _tb(number, "FIRST FLOOR MECHANICAL PLAN") + leg + plan
     return body + (text(100, 48, scale, 8) if scale else "")
 
@@ -770,6 +773,15 @@ def test_legend_symbols_land_in_the_rooms_they_are_drawn_in(tmp_path):
     (east,) = [sid for sid in by_room if sid != west]
     assert by_room == {west: {"diffuser": 2}, east: {"diffuser": 1, "sensor": 1}}
     assert any("in rooms: 4 of 4" in n for n in report.notes)
+
+
+def test_a_legend_symbol_in_no_room_is_counted_apart(tmp_path):
+    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page(outside=True)]
+    _model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    (lg,) = report.to_dict()["hvac_legends"]
+    assert lg["symbol_hits"] == {"diffuser": 4, "sensor": 1}
+    assert lg["symbols_by_room"][""] == {"diffuser": 1}
+    assert any("in rooms: 4 of 5" in n for n in report.notes)
 
 
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
