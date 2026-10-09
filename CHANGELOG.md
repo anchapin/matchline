@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Scheduled mechanical equipment tags on the mechanical plans are placed in rooms, registered to the architectural plan by the shared grid or the same sheet frame (#746).
 - Wall-type legend descriptions wrapped onto several lines are read whole; the first line still sets the class when it names one (#828).
 - Plan openings keep every nearby tag (`tags_near`); the nearest scheduled door/window mark picks the schedule row even when a wall-type tag sits closer, and the wall type still applies to the wall (#829).
 - Drawing-set runs read the wall-type legend (`W1  8" CMU ...`) and give each tagged exterior wall a construction named by it; the library fills its U from Table 5.5 for that class instead of the unlabeled default. Conflicting legends and walls with two types go to review (#747).

@@ -532,6 +532,10 @@ def build_set_model(
             [sp for sp in spaces.values() if sp.level_id == first], centers, review, report,
             plan_end, sheets_dir,
         )  # fmt: skip
+    _place_equipment(
+        plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
+        review, report,
+    )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
         "equipment": equipment,
@@ -761,6 +765,104 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
                 )
             )
     return reads, bbox
+
+
+def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
+                     equipment, review, report) -> None:  # fmt: skip
+    """Put each scheduled mechanical tag in the room the mechanical plan shows
+    it in (#746). Writes ``level_id``, ``space_id`` and ``located`` onto the
+    equipment records; anything that cannot be placed goes to review."""
+    if not equipment:
+        return
+    from building_model import Provenance, ReviewItem
+    from grid_detect import detect_grids
+    from mech_tags import find_tags, register, room_of, to_canonical
+
+    known = {e["tag"] for e in equipment}
+    found: Dict[str, List[dict]] = {}
+    for f in plan_files:
+        st = status[f]
+        if _discipline(st) != "mechanical" or st.stages["ingest"]["kind"] == "raster_only":
+            continue
+        sheet_id = st.number or f
+        sheet = json.loads((sheets_dir / f).read_text())
+        hits = find_tags(sheet, known)
+        if not hits:
+            continue
+        lid = lid_of.get(st.level) if st.level else None
+        if lid is None or lid not in plan_of_level:
+            report.notes.append(
+                f"{sheet_id}: {len(hits)} scheduled equipment tag(s) on a mechanical plan "
+                "with no matching architectural level; not placed"
+            )
+            continue
+        af, asid, _li = plan_of_level[lid]
+        arch = json.loads((sheets_dir / af).read_text())
+        mm = (scales.get(f) or {}).get("m_per_pt")
+        ma = (scales.get(af) or {}).get("m_per_pt")
+        try:
+            mg, ag = detect_grids(sheet, sheet_id), detect_grids(arch, asid)
+        except Exception:  # noqa: BLE001 - a grid failure falls back to the frame
+            mg = ag = None
+        dx, dy, how, conf, why = register(sheet, arch, mm, ma, mg, ag)
+        if how is None:
+            report.notes.append(f"{sheet_id}: not registered to {asid} ({why}); tags not placed")
+            review.append(
+                ReviewItem(
+                    id=f"rq-mechreg-{sheet_id}",
+                    kind="mech_plan_unregistered",
+                    description=(
+                        f"{sheet_id} shows {len(hits)} scheduled equipment tag(s) but does not "
+                        f"register to {asid}: {why}"
+                    ),
+                    confidence=0.5,
+                    provenance=Provenance(sheet_id, 0, "mech_plan_tags", 0.5),
+                    needs_review=True,
+                )
+            )
+            continue
+        rooms = [sp for sp in spaces.values() if sp.level_id == lid]
+        for h in hits:
+            at = to_canonical(h["bbox_pt"], mm, dx, dy, float(arch["height_pt"]), ma)
+            found.setdefault(h["tag"], []).append(
+                {
+                    "sheet": sheet_id, "bbox_pt": h["bbox_pt"], "at_m": list(at),
+                    "level_id": lid, "space_id": room_of(at, rooms),
+                    "registration": f"{how}: {why} (to {asid})", "confidence": conf,
+                }
+            )  # fmt: skip
+    placed = 0
+    for e in equipment:
+        locs = found.get(e["tag"], [])
+        if not locs:
+            continue
+        e["located"] = locs
+        rooms = {(x["level_id"], x["space_id"]) for x in locs}
+        conf = min(x["confidence"] for x in locs)
+        prov = Provenance(locs[0]["sheet"], 0, "mech_plan_tags", conf, tuple(locs[0]["bbox_pt"]))
+        if len(rooms) == 1 and locs[0]["space_id"]:
+            e["level_id"], e["space_id"] = locs[0]["level_id"], locs[0]["space_id"]
+            placed += 1
+            continue
+        where = ", ".join(f"{x['sheet']} {x['space_id'] or 'no room'}" for x in locs)
+        review.append(
+            ReviewItem(
+                id=f"rq-equip-{e['tag']}",
+                kind="equipment_outside_rooms" if len(rooms) == 1 else "equipment_ambiguous",
+                description=(
+                    f"{e['tag']} ({e['schedule']}, {e['sheet']}) is tagged at {where}; "
+                    "no room assigned"
+                ),
+                confidence=conf,
+                provenance=prov,
+                needs_review=True,
+            )
+        )
+    missing = sorted(known - set(found))
+    report.notes.append(
+        f"mechanical equipment: {placed} of {len(known)} scheduled tag(s) placed in a room"
+        + (f"; not on any mechanical plan: {', '.join(missing)}" if missing else "")
+    )
 
 
 def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
