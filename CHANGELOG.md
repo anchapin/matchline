@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Fixed
+- Plan walls: a window through a double-leaf (cavity) wall whose cavity is as wide as a leaf or wider is now found; the two leaves, flush with the glazed band's faces on both sides, count as the wall running on past it (`plan_walls._collinear_run`). Synthetic 0.10/0.10 and 0.10/0.15 m leaf/cavity walls went from missed to found; Clinic walls, rooms and windows are unchanged (#872).
 - Plan walls: a glazed band that holds another, thinner parallel wall (a box, chase or pier lining built against the wall) is no longer called a window (`plan_walls._wall_inside_band`); walls and rooms are unchanged. Clinic windows (plumbing only): first floor 23 to 22 found, precision 0.957 to 1.0; second floor 37 to 36, precision 0.973 to 1.0; recall stays 1.0 (#868).
 
 ### Added

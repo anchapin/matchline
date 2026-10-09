@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2635  # +6 window inside-band rule (#868)
+          EXPECTED_TEST_COUNT=2643  # +8 double-leaf cavity window (#872)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
