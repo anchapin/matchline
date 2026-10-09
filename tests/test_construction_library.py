@@ -236,7 +236,6 @@ def test_slab_u_reaches_the_exporters():
     assert slab_u_value(m) == pytest.approx(m.constructions["t55-slab"].u_value_w_m2k)
 
 
-
 # --- #747: heated slab from a radiant floor row on a mechanical schedule -------
 
 
@@ -281,6 +280,8 @@ def test_unheated_slab_unchanged_without_evidence():
         ("RADIANT CEILING PANEL", False),
         ("VAV BOX WITH HW REHEAT", False),
         ("RETURN FAN", False),
+        ("RADIANT FLOOR COOLING", False),
+        ("RADIANT FLOOR HEATING AND COOLING", True),
     ],
 )
 def test_heated_slab_evidence_words(desc, hit):
@@ -299,6 +300,34 @@ def test_heated_slab_evidence_reads_schedule_title_and_cells():
     why = heated_slab_evidence(rows)
     assert "RF-1" in why and "B-1" in why
     assert heated_slab_evidence([]) == "" and heated_slab_evidence(None) == ""
+
+
+def test_radiant_schedule_titles_are_mechanical():
+    from pdf_schedules import _kind
+
+    assert _kind("RADIANT FLOOR SCHEDULE") == "mechanical"
+    assert _kind("IN-SLAB HEATING MANIFOLD SCHEDULE") == "mechanical"
+    assert _kind("DOOR SCHEDULE") == "door"
+
+
+def test_set_run_marks_the_slab_heated_and_sends_extent_to_review():
+    from types import SimpleNamespace
+
+    import real_set
+    from building_model import Provenance, ReviewItem
+
+    m, review, report = BuildingModel(name="t"), [], SimpleNamespace(notes=[])
+    rows = [{"tag": "RFM-1", "description": "RADIANT FLOOR MANIFOLD", "sheet": "M-601"}]
+    real_set._heated_slab(m, rows, review, report, Provenance, ReviewItem)
+    assert m.slab_heated_by.endswith("RFM-1 on M-601")
+    assert report.notes == [f"heated slab: {m.slab_heated_by}"]
+    (item,) = review
+    assert item.kind == "heated_slab" and item.needs_review
+    assert item.provenance.sheet_id == "M-601"
+    m2, review2, report2 = BuildingModel(name="t"), [], SimpleNamespace(notes=[])
+    vav = [{"tag": "VAV-1", "description": "VAV BOX", "sheet": "M-601"}]
+    real_set._heated_slab(m2, vav, review2, report2, Provenance, ReviewItem)
+    assert m2.slab_heated_by == "" and review2 == [] and report2.notes == []
 
 
 def test_slab_heated_by_round_trips_through_json():

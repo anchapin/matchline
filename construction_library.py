@@ -460,6 +460,9 @@ HEATED_SLAB_RX = re.compile(
     r"|\bHEATED\s+(SLAB|FLOOR)|\b(UNDER)?FLOOR\s+HEATING\b|\bSLAB\s+HEATING\b"
 )
 NOT_HEATED_SLAB_RX = re.compile(r"\bSNOW\s*-?\s*MELT|\bSIDEWALK|\bDRIVEWAY|\bCEILING")
+# a radiant slab that only cools is not a heated slab
+_COOLING_RX = re.compile(r"\bCOOLING\b")
+_HEAT_RX = re.compile(r"\bHEAT")
 
 
 def heated_slab_evidence(equipment) -> str:
@@ -469,7 +472,8 @@ def heated_slab_evidence(equipment) -> str:
     run (``tag``, ``description``, ``schedule``, ``sheet``, ``values``). A
     row counts when its description, schedule title or any cell names
     radiant floor / in-slab heating and nothing on it says snow melt,
-    sidewalk, driveway or ceiling.
+    sidewalk, driveway or ceiling. A row that says cooling and never heat
+    is a radiant cooling slab, not a heated one.
     """
     hits = []
     for e in equipment or []:
@@ -477,9 +481,12 @@ def heated_slab_evidence(equipment) -> str:
             [str(e.get("description") or ""), str(e.get("schedule") or "")]
             + [str(v) for v in (e.get("values") or {}).values()]
         ).upper()
-        if HEATED_SLAB_RX.search(text) and not NOT_HEATED_SLAB_RX.search(text):
-            where = f" on {e['sheet']}" if e.get("sheet") else ""
-            hits.append(f"{e.get('tag', '?')}{where}")
+        if not HEATED_SLAB_RX.search(text) or NOT_HEATED_SLAB_RX.search(text):
+            continue
+        if _COOLING_RX.search(text) and not _HEAT_RX.search(text):
+            continue
+        where = f" on {e['sheet']}" if e.get("sheet") else ""
+        hits.append(f"{e.get('tag', '?')}{where}")
     if not hits:
         return ""
     return "radiant floor / in-slab heating scheduled: " + ", ".join(sorted(set(hits)))
