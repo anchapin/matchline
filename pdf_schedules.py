@@ -41,6 +41,14 @@ from schedule_parse import ScheduleCell, ScheduleRow, ScheduleTable, _cell_prove
 SCHEMA = "matchline.pdf_schedules/1"
 METHOD = "pdf_ruled_table"
 CONFIDENCE = 0.9
+METHOD_UNRULED = "pdf_unruled_table"
+CONFIDENCE_UNRULED = 0.75  # columns come from the header words, not drawn lines
+UNRULED_MIN_COLS = 3  # header columns needed before untitled-looking text counts as a table
+UNRULED_HEADER_GAP = 3.0  # header row within this many line heights under the title
+UNRULED_ROW_GAP = 2.2  # a line further than this below the last ends the table
+UNRULED_CONT_GAP = 1.4  # an untagged line this close under a row continues it
+UNRULED_WORD_GAP = 0.6  # words closer than this many text heights are one cell
+UNRULED_COL_GAP = 8.0  # header words further apart than this many heights: another table
 
 AXIS_TOL_PT = 0.5  # a segment within this of horizontal/vertical is axis-aligned
 SNAP_PT = 1.0  # line coordinates closer than this are the same line
@@ -86,6 +94,7 @@ class PdfSchedule:
     kind: str  # door | window | lighting | mechanical | other
     status: str  # ok | unparsed
     reason: str = ""
+    method: str = METHOD  # pdf_ruled_table | pdf_unruled_table
     bbox_pt: List[float] = field(default_factory=list)  # [x0, y0, x1, y1], y down
     headers: List[str] = field(default_factory=list)
     rows: List[List[str]] = field(default_factory=list)
@@ -481,6 +490,213 @@ def _to_table(sheet, sched, cells, owner, ys, xs, row_bands, h0) -> ScheduleTabl
     )
 
 
+# ------------------------------------------------------------------ unruled
+
+
+def _text_rows(items: list) -> List[list]:
+    """Text items grouped into lines, top to bottom (y down)."""
+    rows: List[list] = []
+    for t in sorted(items, key=lambda t: (_cy(t), t["bbox"][0])):
+        hh = max(t["bbox"][3] - t["bbox"][1], 1.0)
+        if rows and abs(_cy(t) - _cy(rows[-1][0])) <= 0.5 * hh:
+            rows[-1].append(t)
+        else:
+            rows.append([t])
+    return rows
+
+
+def _chunks(row: list) -> List[dict]:
+    """Words on one line joined into cells where the gap is under a word space."""
+    out: List[dict] = []
+    for t in sorted(row, key=lambda t: t["bbox"][0]):
+        hh = max(t["bbox"][3] - t["bbox"][1], 1.0)
+        if out and t["bbox"][0] - out[-1]["bbox"][2] <= UNRULED_WORD_GAP * hh:
+            c = out[-1]
+            c["text"] = (c["text"] + " " + t["text"].strip()).strip()
+            c["bbox"] = [
+                min(c["bbox"][0], t["bbox"][0]),
+                min(c["bbox"][1], t["bbox"][1]),
+                max(c["bbox"][2], t["bbox"][2]),
+                max(c["bbox"][3], t["bbox"][3]),
+            ]
+            c["items"].append(t)
+        else:
+            out.append({"text": t["text"].strip(), "bbox": list(t["bbox"]), "items": [t]})
+    return out
+
+
+def _height(rows: List[list]) -> float:
+    hs = sorted(t["bbox"][3] - t["bbox"][1] for r in rows for t in r)
+    return max(hs[len(hs) // 2], 1.0) if hs else 1.0
+
+
+def _read_unruled(sheet: dict, texts: list, used: set) -> List[PdfSchedule]:
+    """Schedules drawn as whitespace-aligned text under a SCHEDULE title (#746).
+
+    The header row sets the columns: each header cell owns the band halfway to
+    its neighbours. Every data line needs a value in the tag column; an untagged
+    line tight under a row continues it (a wrapped description), a single cell
+    spanning several columns is a note, and a wider gap or anything else ends
+    the table. A value crossing a column boundary leaves the table unparsed
+    rather than guessed.
+    """
+    pos = {id(t): i for i, t in enumerate(texts)}
+    out: List[PdfSchedule] = []
+    titles = [i for i, t in enumerate(texts) if i not in used and "SCHEDULE" in t["text"].upper()]
+    for ti in sorted(titles, key=lambda i: (_cy(texts[i]), texts[i]["bbox"][0])):
+        if ti in used:
+            continue
+        tt = texts[ti]
+        tx0, _ty0, tx1, ty1 = tt["bbox"]
+        pool = [t for i, t in enumerate(texts) if i not in used and i != ti and _cy(t) > ty1]
+        rows = _text_rows(pool)
+        if not rows:
+            continue
+        lh = _height(rows)
+        head = None
+        for r in rows:
+            top = min(t["bbox"][1] for t in r)
+            if top - ty1 > UNRULED_HEADER_GAP * lh:
+                break
+            head = r
+            break
+        if head is None:
+            continue
+        hch = _chunks(head)
+        # the run of header cells under the title, split where the gap says another table
+        runs: List[List[dict]] = [[hch[0]]]
+        for c in hch[1:]:
+            if c["bbox"][0] - runs[-1][-1]["bbox"][2] > UNRULED_COL_GAP * lh:
+                runs.append([c])
+            else:
+                runs[-1].append(c)
+        run = next((r for r in runs if r[0]["bbox"][0] <= tx1 and r[-1]["bbox"][2] >= tx0), None)
+        if run is None or len(run) < UNRULED_MIN_COLS:
+            continue
+        headers = [c["text"].upper() for c in run]
+        tagc = next((k for k, h in enumerate(headers) if _TAG_HDR.match(h)), None)
+        if tagc is None:
+            continue
+        gaps = [b["bbox"][0] - a["bbox"][2] for a, b in zip(run, run[1:])]
+        half = sorted(gaps)[len(gaps) // 2] / 2
+        bounds = [run[0]["bbox"][0] - half]
+        bounds += [(a["bbox"][2] + b["bbox"][0]) / 2 for a, b in zip(run, run[1:])]
+        bounds.append(run[-1]["bbox"][2] + half)
+        C = len(run)
+        title = tt["text"].strip()
+        sched = PdfSchedule(
+            title=title, kind=_kind(title), status="unparsed", method=METHOD_UNRULED
+        )
+        taken = [ti] + [pos[id(t)] for c in run for t in c["items"]]
+        data: List[List[List[dict]]] = []  # rows of per-column item lists
+        last = max(t["bbox"][3] for c in run for t in c["items"])
+        start = rows.index(head) + 1
+        for r in rows[start:]:
+            mine = [
+                c
+                for c in _chunks(r)
+                if bounds[0] <= (c["bbox"][0] + c["bbox"][2]) / 2 <= bounds[-1]
+            ]
+            if not mine:
+                continue
+            top = min(c["bbox"][1] for c in mine)
+            gap = top - last
+            if gap > UNRULED_ROW_GAP * lh:
+                break
+            cols = []
+            crossing = None
+            for c in mine:
+                # an end past the table's outer edge counts as the edge column
+                k0 = _locate(max(c["bbox"][0] + CROSS_TOL_PT, bounds[0]), bounds)
+                k1 = _locate(min(c["bbox"][2] - CROSS_TOL_PT, bounds[-1] - 1e-6), bounds)
+                if k0 is None or k1 is None or k1 < k0:
+                    k0 = k1 = _locate((c["bbox"][0] + c["bbox"][2]) / 2, bounds)
+                cols.append((k0, k1, c))
+                if k0 != k1:
+                    crossing = c
+            if crossing is not None:
+                if len(mine) == 1:  # one cell across the table: a note
+                    sched.notes.append(crossing["text"])
+                    taken += [pos[id(t)] for t in crossing["items"]]
+                    last = crossing["bbox"][3]
+                    continue
+                sched.reason = f"text {crossing['text']!r} crosses a column"
+                break
+            vals: List[List[dict]] = [[] for _ in range(C)]
+            for k0, _k1, c in cols:
+                vals[k0].extend(c["items"])
+            if not vals[tagc]:
+                if data and gap <= UNRULED_CONT_GAP * lh:
+                    for k in range(C):
+                        data[-1][k].extend(vals[k])
+                else:
+                    break
+            else:
+                data.append(vals)
+            taken += [pos[id(t)] for c in mine for t in c["items"]]
+            last = max(c["bbox"][3] for c in mine)
+        if sched.reason:
+            used.update(taken)
+            out.append(sched)
+            continue
+        if not data:
+            continue  # a title with words under it, but no rows: not a table we can claim
+        rows_txt = [[_join_lines(v) for v in vals] for vals in data]
+        tags = [normalize_tag(v[tagc]) for v in rows_txt]
+        allx = [t for vals in data for v in vals for t in v] + [t for c in run for t in c["items"]]
+        sched.bbox_pt = [
+            round(min(bounds[0], tx0), 2),
+            round(tt["bbox"][1], 2),
+            round(max(bounds[-1], tx1), 2),
+            round(max(t["bbox"][3] for t in allx), 2),
+        ]
+        used.update(taken)
+        dup = sorted({t for t in tags if tags.count(t) > 1})
+        if dup:
+            sched.reason = f"tag {dup[0]} appears more than once"
+            out.append(sched)
+            continue
+        sched.status = "ok"
+        sched.headers = headers
+        sched.rows = rows_txt
+        sched.table = _unruled_table(sheet, sched, data, bounds)
+        _records(sched, tagc)
+        out.append(sched)
+    return out
+
+
+def _unruled_table(sheet, sched, data, bounds) -> ScheduleTable:
+    sid = sheet.get("sheet_id") or f"page_{sheet.get('page_number', 0)}"
+    k = float(sheet.get("px_per_pt") or 1.0)
+
+    def prov(box) -> Provenance:
+        p = _cell_provenance(sid, 0, METHOD_UNRULED, CONFIDENCE_UNRULED)
+        p.bbox = [round(v * k, 1) for v in box]
+        return p
+
+    rows = []
+    for ri, (vals, items) in enumerate(zip(sched.rows, data)):
+        ts = [t for v in items for t in v]
+        y0 = min(t["bbox"][1] for t in ts)
+        y1 = max(t["bbox"][3] for t in ts)
+        cs = [
+            ScheduleCell(
+                value=v, row=ri, col=c, provenance=prov([bounds[c], y0, bounds[c + 1], y1])
+            )
+            for c, v in enumerate(vals)
+        ]
+        rows.append(
+            ScheduleRow(cells=cs, row_index=ri, provenance=prov([bounds[0], y0, bounds[-1], y1]))
+        )
+    return ScheduleTable(
+        name=sched.title,
+        headers=sched.headers,
+        rows=rows,
+        source_entity=None,
+        provenance=prov(sched.bbox_pt),
+    )
+
+
 # ------------------------------------------------------------------ records
 
 
@@ -640,7 +856,7 @@ def _records(sched: PdfSchedule, tagc: int) -> None:
 
 
 def extract_schedules(sheet: dict, sheet_id: Optional[str] = None) -> List[PdfSchedule]:
-    """Every schedule-titled ruled table on one ingested sheet."""
+    """Every schedule-titled table on one ingested sheet: ruled first, then unruled."""
     if sheet_id:
         sheet = {**sheet, "sheet_id": sheet_id}
     hs, vs = _segments(sheet)
@@ -654,6 +870,7 @@ def extract_schedules(sheet: dict, sheet_id: Optional[str] = None) -> List[PdfSc
         s = _read_table(sheet, ch, cv, texts, used)
         if s is not None:
             out.append(s)
+    out.extend(_read_unruled(sheet, texts, used))
     return out
 
 

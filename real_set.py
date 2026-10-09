@@ -919,7 +919,7 @@ def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
                         kind="fixture_schedule",
                         description=f"{sheet_id}: {x['title']} not read ({x['reason']})",
                         confidence=0.5,
-                        provenance=Provenance(sheet_id, 0, "pdf_ruled_table", 0.5),
+                        provenance=Provenance(sheet_id, 0, x.get("method", "pdf_ruled_table"), 0.5),
                     )
                 )
                 continue
@@ -937,7 +937,9 @@ def _merge_schedules(files, status, schedules, review, Provenance, ReviewItem):
                                 f"different values on {sheet_id}; kept {where[tag]}"
                             ),
                             confidence=0.5,
-                            provenance=Provenance(sheet_id, 0, "pdf_ruled_table", 0.5),
+                            provenance=Provenance(
+                                sheet_id, 0, x.get("method", "pdf_ruled_table"), 0.5
+                            ),
                         )
                     )
                     continue
