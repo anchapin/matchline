@@ -139,3 +139,5 @@ def test_door_swing_provider_without_a_scale_reports_nothing(tmp_path):
     assert dp.DoorSwingProvider().detect(png, "s") == []
     fixed = dp.provider_from_config({"provider": "door_swing", "px_per_m": 50.0})
     assert len(fixed.detect(png, "s")) == 1
+    with pytest.raises(dp.ProviderConfigError, match="px_per_metre"):
+        dp.provider_from_config({"provider": "door_swing", "px_per_metre": 50.0})

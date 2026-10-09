@@ -193,8 +193,9 @@ class DoorSwingProvider(DetectionProvider):
         ink_max: Optional[int] = None,
         min_width_m: Optional[float] = None,
         max_width_m: Optional[float] = None,
-        **_kw,
     ):
+        # rules, not weights: nothing for the license ledger to look up, so
+        # the class is set here (permissive) rather than read from it
         self.artifact = "door_detect.py"
         self.info = ProviderInfo(self.name, self.artifact, "permissive", False)
         self.px_per_m = px_per_m
@@ -259,7 +260,10 @@ def provider_from_config(
     missing = [k for k in _REQUIRED.get(name, ()) if not cfg.get(k)]
     if missing:
         raise ProviderConfigError(f"detector provider {name!r} needs {', '.join(missing)}")
-    prov = PROVIDERS[name](**cfg)
+    try:
+        prov = PROVIDERS[name](**cfg)
+    except TypeError as e:
+        raise ProviderConfigError(f"detector provider {name!r}: {e}") from e
     if release and prov.info.eval_only:
         raise ProviderLicenseError(f"{prov.info.note()}; not allowed in a release")
     return prov
