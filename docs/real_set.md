@@ -33,6 +33,17 @@ What this slice does not invent:
   Window sills use the export's 0.9 m convention until elevations are read.
   A matched gap whose schedule rows state U, SHGC or VT gets a stated construction
   from them (see `docs/pdf_schedules.md`); rows that disagree go to review.
+- A storefront run with doors drawn inside it (`doors_in_glazing`, #793): a
+  window row within 0.05 m of the whole run includes its doors, and the window
+  note says so. A window row within 0.05 m of the run less its doors is the
+  glass alone: the window takes the row's width centred on the glass left once
+  the doors are cut out, and each door is modelled at its jambs from the door
+  schedule by width (provenance `plan_glazing_door`, confidence 0.75, 0.7 when
+  several same-size rows agree). A door no scheduled door explains, or one
+  same-width rows disagree on, goes to review as `opening_unsized` (gap
+  `drawn: "door"`) and is not modelled. The glass and its door share one
+  stretch of wall, so their along-wall intervals overlap: areas are right, the
+  exact placement of the glass around the door is not.
 - Mechanical symbols. Mechanical plans are marked `failed` at the symbols stage unless a
   detector provider runs. `--detector-config` picks one (see
   `docs/detection_provider.md`); the report's `detector` block records which ran and

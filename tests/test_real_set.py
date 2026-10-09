@@ -791,3 +791,77 @@ def test_grid_bubble_labels_are_not_fixtures():
     assert real_set._in_grid_bubble([96, 36, 104, 44], g)
     assert not real_set._in_grid_bubble([196, 36, 204, 44], g)
     assert not real_set._in_grid_bubble([96, 36, 104, 44], None)
+
+
+# ---- #793: a door drawn inside a storefront run --------------------------
+
+# 0.9 m door between jambs at x=4.55 / 5.45 in a 9.7 m storefront (mullions at 2 and 8)
+_SF_DOOR_ROWS = [("D1", "3'-0\"", "7'-0\"", "AL")]
+
+
+def _storefront_door_set(tmp_path, win_rows, door_rows=None, tag=None):
+    from test_pdf_schedules import door_schedule
+    from test_plan_walls import _door_symbol, _glazing, _mullion_ticks
+
+    a = _pt(5, 3)
+    body = _outline(_mass(SHELL)) + text(*a, "LOBBY", 8) + text(a[0], a[1] - 10, "101", 8)
+    body += _glazing(0, 10) + _mullion_ticks([2, 4.55, 5.45, 8])
+    body += _door_symbol((4.55, 0), (4.55, 0.9), (5.45, 0))
+    if tag:
+        body += text(*_pt(3, -0.6), tag, 8)
+    pages = [
+        _tb("A-101", "FIRST FLOOR PLAN") + text(100, 48, SCALE_NOTE, 8) + body,
+        _tb("A-601", "WINDOW SCHEDULE") + _window_schedule(win_rows),
+    ]
+    if door_rows:
+        pages.append(_tb("A-602", "DOOR SCHEDULE") + door_schedule(100, 1000, rows=door_rows))
+    model, rep = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+    ops = sorted((o for s in model.spaces.values() for o in s.openings), key=lambda o: o.id)
+    return model, rep, ops
+
+
+def test_storefront_row_without_its_door_models_glass_and_door(tmp_path):
+    # SF-1 scheduled 28'-10" (8.79 m): the 9.7 m run less the 0.9 m door
+    rows = [("SF-1", "28'-10\"", "8'-0\"", "FIXED")]
+    model, rep, ops = _storefront_door_set(tmp_path, rows, _SF_DOOR_ROWS)
+    assert [(o.category, o.tag) for o in ops] == [("window", "SF-1"), ("door", "D1")]
+    glass, door = ops
+    assert glass.width_m == pytest.approx(346 * 0.0254)
+    assert "glass less the 1 door" in glass.provenance.note
+    assert door.provenance.method == "plan_glazing_door" and "SF-1" in door.provenance.note
+    assert door.width_m == pytest.approx(36 * 0.0254)
+    assert door.height_m == pytest.approx(84 * 0.0254, abs=1e-3)  # schedule height
+    assert door.s_center_m == pytest.approx(5.0, abs=0.05) and door.host_facade == "south"
+    assert rep.levels[0]["openings"]["modelled"] == 2
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+def test_storefront_row_spanning_the_run_includes_its_door(tmp_path):
+    rows = [("SF-1", "31'-10\"", "8'-0\"", "FIXED")]  # 9.70 m: the door is part of it
+    _model, _rep, ops = _storefront_door_set(tmp_path, rows, _SF_DOOR_ROWS)
+    assert [(o.category, o.tag) for o in ops] == [("window", "SF-1")]
+    assert "includes the 1 door" in ops[0].provenance.note
+
+
+def test_unscheduled_door_in_a_storefront_goes_to_review(tmp_path):
+    rows = [("SF-1", "28'-10\"", "8'-0\"", "FIXED")]
+    model, rep, ops = _storefront_door_set(tmp_path, rows)
+    assert [(o.category, o.tag) for o in ops] == [("window", "SF-1")]
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "door drawn in storefront SF-1" in rq.description
+    assert rq.target["gap"]["drawn"] == "door" and rq.target["gap"]["width_m"] == pytest.approx(
+        0.9, abs=0.03
+    )
+    assert rep.levels[0]["openings"]["unsized"] == 1
+
+
+def test_storefront_tag_names_the_glass_row_less_its_door(tmp_path):
+    # by width SF-1 and SF-2 disagree on height; the SF-1 tag on the plan settles it
+    rows = [("SF-1", "28'-10\"", "8'-0\"", "FIXED"), ("SF-2", "28'-10\"", "9'-0\"", "FIXED")]
+    model, _rep, ops = _storefront_door_set(tmp_path, rows, _SF_DOOR_ROWS, tag="SF-1")
+    assert [(o.category, o.tag) for o in ops] == [("window", "SF-1"), ("door", "D1")]
+    glass = ops[0]
+    assert glass.provenance.method == "plan_gap_tag"
+    assert glass.provenance.confidence == pytest.approx(0.80)  # 0.85 less 0.05: doors taken out
+    assert "confidence lowered" in glass.provenance.note
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]

@@ -232,8 +232,10 @@ When the run is still a window (other mullions, or a glazing layer), it keeps
 its whole length and lists each door inside it under `doors_in_glazing`
 (jamb points and width). The window is not split, because a storefront's
 schedule width may or may not include its door and the schedule tag match
-downstream sizes the window from the schedule. Taking the door out of the
-glass, and adding it as a door, is not done yet.
+downstream sizes the window from the schedule. On a set run the schedule
+decides (see `docs/real_set.md`): a window row as wide as the whole run keeps
+the door inside the storefront, and a row as wide as the run less its doors is
+the glass alone, so each door is modelled as a door beside it.
 
 ### CAD layers (#793)
 
