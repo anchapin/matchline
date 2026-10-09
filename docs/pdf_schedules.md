@@ -112,4 +112,23 @@ gets `zone_id`. AHUs, fans and air outlets do not make zones.
 A zone holds only the room its terminal unit is tagged in; rooms it serves
 through ductwork need duct tracing. Tags are read from text only, not tied to
 detected symbols.
-Unruled (whitespace-aligned) tables and scanned schedules are not read.
+Scanned schedules are not read.
+
+## Unruled schedules
+
+A schedule drawn as whitespace-aligned text, with no cell lines, is read after
+the ruled tables (`method: "pdf_unruled_table"`, cell confidence 0.75). It
+needs a title containing SCHEDULE and, within three line heights under it, a
+header row of at least three cells, one of them a tag header (MARK, TAG, TYPE,
+NO., ...). Each header cell owns the band halfway to its neighbours; the outer
+columns reach half the typical header gap past the first and last cell.
+
+Under the header, each line needs a value in the tag column. An untagged line
+tight under a row (within 1.4 line heights) continues it, so a wrapped
+description joins its row. One text run across several columns is a note. A
+gap of more than 2.2 line heights, or an untagged line further down, ends the
+table. A value crossing a column boundary, or a repeated tag, leaves the table
+`unparsed` with the reason instead of a guess. Two-line headers (a group header
+over WIDTH / HEIGHT) are not read on unruled tables yet: the first header line
+sets the columns.
+

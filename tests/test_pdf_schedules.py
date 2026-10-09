@@ -282,3 +282,107 @@ def test_window_shgc_out_of_range_is_not_read(tmp_path):
 def test_door_schedule_without_thermal_columns_is_unchanged(full):
     e = full[0]["door"].entries["D1"]
     assert e["u_value_w_m2k"] is None and e["thermal_note"] == ""
+
+
+# ---- unruled (whitespace-aligned) schedules (#746) -----------------------
+
+
+def unruled(x, ytop, title, header, rows, widths, size=7, pitch=11):
+    """Text only: title, header words, data rows; a row value may be [lines]."""
+    xs = [x]
+    for w in widths:
+        xs.append(xs[-1] + w)
+    out = text(x, ytop + 6, title, 10)
+    for c, h in enumerate(header):
+        out += text(xs[c], ytop - size, h, size)
+    y = ytop - size - pitch - 4
+    for r in rows:
+        if isinstance(r, str):  # a note across the table
+            out += text(x, y, r, size)
+            y -= pitch
+            continue
+        depth = 1
+        for c, v in enumerate(r):
+            lines = v if isinstance(v, list) else [v]
+            depth = max(depth, len(lines))
+            for i, s in enumerate(lines):
+                out += text(xs[c], y - i * (size + 1), s, size)
+        y -= pitch + (depth - 1) * (size + 1)
+    return out
+
+
+DOOR_UNRULED = dict(
+    title="DOOR SCHEDULE",
+    header=["MARK", "WIDTH", "HEIGHT", "TYPE"],
+    widths=[50, 60, 60, 110],
+)
+
+
+def test_unruled_door_schedule_reads_rows_wrapped_cells_and_a_note(tmp_path):
+    rows = [
+        ("D1", "3'-0\"", "7'-0\"", "HOLLOW METAL"),
+        ("D2", "6'-0\"", "7'-0\"", ["PAIR,", "HOLLOW METAL"]),
+        ("D3", "3'-0\"", "8'-0\"", "WOOD"),
+        "NOTES: VERIFY ALL OPENINGS IN FIELD BEFORE ORDERING",
+    ]
+    sheet = _sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED))
+    (s,) = extract_schedules(sheet, "A-601")
+    assert s.status == "ok", s.reason
+    assert s.method == "pdf_unruled_table" and s.kind == "door"
+    assert s.headers == ["MARK", "WIDTH", "HEIGHT", "TYPE"]
+    assert [r[0] for r in s.rows] == ["D1", "D2", "D3"]
+    assert s.rows[1][3] == "PAIR, HOLLOW METAL"
+    assert s.notes == ["NOTES: VERIFY ALL OPENINGS IN FIELD BEFORE ORDERING"]
+    assert s.entries["D2"]["width_m"] == pytest.approx(72 * INCH_M, abs=1e-6)
+    assert s.entries["D3"]["height_m"] == pytest.approx(96 * INCH_M, abs=1e-6)
+    cell = s.table.rows[0].cells[1]
+    assert cell.provenance.method == "pdf_unruled_table"
+    assert cell.provenance.confidence == pytest.approx(0.75)
+    assert len(cell.provenance.bbox) == 4
+
+
+def test_unruled_vav_schedule_gives_equipment(tmp_path):
+    rows = [("VAV-1", "1,200", "360", '10"'), ("VAV-2", "800", "240", '8"')]
+    content = unruled(
+        60, 700, "VAV BOX SCHEDULE", ["TAG", "MAX CFM", "MIN CFM", "INLET SIZE"], rows,
+        [50, 50, 50, 60],
+    )  # fmt: skip
+    (s,) = extract_schedules(_sheet(tmp_path, content), "M-601")
+    assert s.status == "ok", s.reason
+    assert [(e["tag"], e["cfm_max"], e["cfm_min"]) for e in s.equipment] == [
+        ("VAV-1", 1200.0, 360.0),
+        ("VAV-2", 800.0, 240.0),
+    ]
+
+
+def test_ruled_and_unruled_on_one_sheet_are_each_read_once(tmp_path):
+    rows = [("W1", "4'-0\"", "5'-0\"", "FIXED")]
+    content = vav_schedule() + unruled(
+        60, 400, "WINDOW SCHEDULE", ["MARK", "WIDTH", "HEIGHT", "TYPE"], rows, [50, 60, 60, 110]
+    )
+    found = extract_schedules(_sheet(tmp_path, content), "A-601")
+    assert sorted((s.kind, s.method) for s in found) == [
+        ("mechanical", "pdf_ruled_table"),
+        ("window", "pdf_unruled_table"),
+    ]
+
+
+def test_unruled_value_crossing_a_column_is_flagged(tmp_path):
+    rows = [("D1", "3'-0\"", "7'-0\"", "WOOD"), ("D2", "A VERY LONG WIDTH VALUE", "", "WOOD")]
+    (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))
+    assert s.status == "unparsed" and "crosses a column" in s.reason
+
+
+def test_unruled_duplicate_tag_is_flagged(tmp_path):
+    rows = [("D1", "3'-0\"", "7'-0\"", "WOOD"), ("D1", "3'-0\"", "8'-0\"", "WOOD")]
+    (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))
+    assert s.status == "unparsed" and "D1" in s.reason
+
+
+def test_schedule_word_in_plan_notes_is_not_a_table(tmp_path):
+    content = (
+        text(60, 700, "SEE DOOR SCHEDULE ON A-601", 7)
+        + text(60, 690, "PROVIDE BLOCKING AT ALL WALL MOUNTED EQUIPMENT", 7)
+        + text(60, 680, "1. FIELD VERIFY", 7)
+    )
+    assert extract_schedules(_sheet(tmp_path, content)) == []

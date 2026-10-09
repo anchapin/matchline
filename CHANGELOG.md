@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Schedules drawn as whitespace-aligned text with no cell lines are read (`pdf_unruled_table`, confidence 0.75): columns from the header row, wrapped cells and note rows handled, crossing values and repeated tags flagged unparsed (#746).
 - Plan walls that stop 2.5 to 4.5 m short of the wall ahead close with a reviewed air wall when that parts two labelled rooms (counters, half walls between named spaces); inside one named space they stay open (#740).
 - Each placed VAV or fan-coil tag on a set run becomes an HVAC zone on the room it sits in (#746).
 - Scheduled mechanical equipment tags on the mechanical plans are placed in rooms, registered to the architectural plan by the shared grid or the same sheet frame (#746).
