@@ -246,9 +246,13 @@ opaque: nothing says how tall the glazing is or which product it is, and a
 review edit adds it. A band with a scheduled tag on it is left to the tag rule
 above.
 
+A wall that thins for a recess (a panel niche) reads the same way and is
+flagged too; that costs a review item, never a window.
+
 Not covered yet: a thin bay narrower than `MAX_OPENING_M` is bridged by the
-thicker wall run it interrupts and is not flagged; PDF layer names; door jambs
-inside a full-length glazing line would read as ticks.
+thicker wall run it interrupts and is not flagged; glazing drawn as two lines
+closer than `WALL_T_MIN_M` never becomes a wall to flag; PDF layer names; door
+jambs inside a full-length glazing line would read as ticks.
 
 ## Opening tags (#793)
 

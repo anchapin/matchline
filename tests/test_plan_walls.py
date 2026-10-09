@@ -661,3 +661,15 @@ def test_thin_band_rules():
     # a thick wall overlapping the thin one is not meeting it end to end
     lap = [_w(1, (0, 0), (50, 0), 3.0), thin, right]
     assert W._thin_bands(lap, [], 0.5, 1.0 * k) == []
+
+
+def test_long_neighbour_at_a_slight_angle_still_meets_the_band():
+    # 300 pt neighbour 0.9 deg off the band's line: its far end drifts ~4.7 pt,
+    # more than the reach, but it meets the band exactly at the joint
+    import math as _m
+
+    k = 10.0
+    dy = 300 * _m.tan(_m.radians(0.9))
+    left = _w(1, (-300, -dy), (0, 0), 3.0)
+    thin, right = _w(2, (0, 0), (40, 0), 1.2), _w(3, (40, 0), (70, 0), 3.0)
+    assert W._thin_bands([left, thin, right], [], 0.5, 1.0 * k) == ["W2"]

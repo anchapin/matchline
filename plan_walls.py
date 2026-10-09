@@ -289,13 +289,14 @@ def _thin_bands(walls: List[Wall], openings: List[dict], tol: float, min_len: fl
             tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0])
             if not _angle_close(th % math.pi, tho % math.pi, atol):
                 continue
-            # perpendicular offset of o's line from w's line
-            vx, vy = o.a[0] - w.a[0], o.a[1] - w.a[1]
-            off = abs(vx * uy - vy * ux)
-            if off > 0.5 * o.t + tol:
-                continue
             reach = 0.5 * o.t + tol
             s0, s1 = sorted((along(o.a), along(o.b)))
+            # perpendicular offset at o's end nearest the joint: walls up to
+            # ANGLE_TOL_DEG apart drift along a long neighbour's far end
+            near = min((o.a, o.b), key=lambda p: min(abs(along(p)), abs(along(p) - L)))
+            vx, vy = near[0] - w.a[0], near[1] - w.a[1]
+            if abs(vx * uy - vy * ux) > reach:
+                continue
             if abs(s1) <= reach and s0 < -reach:
                 sides.add("a")
             if abs(s0 - L) <= reach and s1 > L + reach:
