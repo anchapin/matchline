@@ -493,6 +493,47 @@ def test_middle_line_along_the_whole_wall_is_not_a_window(tmp_path):
     assert not _windows(res)
 
 
+def _returns(xs, depth=0.30, t=0.05):
+    """Thin reveal returns meeting the south wall's inside face at ``xs``."""
+    y0 = T_EXT / 2
+    return [((x, y0), (x, y0 + depth), t) for x in xs]
+
+
+def test_reveal_returns_at_both_jambs_keep_the_window(tmp_path):
+    # #743: Clinic first floor, a window with a return just past each jamb
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + _returns([3.85, 5.15]))) + _glazing(4, 5))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_reveal_return_inside_a_jamb_keeps_the_window(tmp_path):
+    # the return meets the face 0.08 m inside the glazing, cutting one half short
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + _returns([4.92]))) + _glazing(4, 5))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_cavity_line_past_reveal_returns_is_not_a_window(tmp_path):
+    # returns along a wall do not turn its full-length cavity line into glazing
+    mass = _mass(SHELL + _returns([3, 6]))
+    res, _ = _read(tmp_path, _outline(mass) + _glazing(0, 10))
+    assert not _windows(res)
+
+
+def test_middle_line_continues_only_end_to_end_on_the_same_line():
+    g = W.Band(0.0, 10.0, 0.0, 50.0, 5.0, "line_pair", (), True)
+
+    def other(u0, u1, rho=10.0, glazed=True):
+        return W.Band(0.0, rho, u0, u1, 5.0, "line_pair", (), glazed)
+
+    assert W._middle_line_continues(g, [g, other(52, 90)], 1.0)  # carries on: cavity
+    assert W._middle_line_continues(g, [g, other(-40, -3)], 1.0)
+    assert not W._middle_line_continues(g, [g], 1.0)  # lone band: glazing
+    assert not W._middle_line_continues(g, [g, other(70, 90)], 1.0)  # too far
+    assert not W._middle_line_continues(g, [g, other(52, 90, rho=14.0)], 1.0)  # other line
+    assert not W._middle_line_continues(g, [g, other(52, 90, glazed=False)], 1.0)
+
+
 def _mullion_ticks(xs, y=0.0, t=T_EXT):
     out = ""
     for x in xs:
