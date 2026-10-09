@@ -102,7 +102,9 @@ TIGHT_TURNS = {"grille": (0, 1)}
 # on the Clinic ablation a +-15% scale alone dropped diffusers from 234/234 to
 # 135/234 (proposal recall 169/234). The scales are the ends of that +-15%
 # range (1/1.15 and 1.15); in-between sizes sit within ~7% of a template.
-# Nominal comes first. Other classes keep their one template.
+# Nominal comes first. Other classes keep their one template. A sheet drawn far
+# outside +-15% of our scale (a 1:50 plan) needs the sheet's own legend
+# templates (#744), not more scales here.
 TEMPLATE_SCALES = {"diffuser": (1.0, 0.87, 1.15), "grille": (1.0, 0.87, 1.15)}
 
 
@@ -272,12 +274,15 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
             merged.append(p)
     from synth.mech import detection_crop
 
-    X = np.stack([detection_crop(gray, p["cx"], p["cy"], p["ncc_cls"]) for p in merged])
-    scores = _logodds_scores(clf, X)
-    top2 = np.sort(scores, axis=1)[:, -2:]
-    margins = top2[:, 1] - top2[:, 0]
-    wi = scores.argmax(axis=1)
     out = []
+    if merged:  # a sheet with no proposal still gets the tight passes below
+        X = np.stack([detection_crop(gray, p["cx"], p["cy"], p["ncc_cls"]) for p in merged])
+        scores = _logodds_scores(clf, X)
+        top2 = np.sort(scores, axis=1)[:, -2:]
+        margins = top2[:, 1] - top2[:, 0]
+        wi = scores.argmax(axis=1)
+    else:
+        wi = margins = []
     n_bg = len(MECH_CLASSES)  # background index
     for p, wi_i, m in zip(merged, wi, margins):
         cls, s = p["ncc_cls"], p["ncc"]

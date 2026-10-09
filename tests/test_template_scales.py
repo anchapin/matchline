@@ -70,3 +70,31 @@ def test_rescaled_grille_not_taken_for_diffuser():
         H._local_ncc(g, d, 150, 150, H.TIGHT_CONFIRM_R_PX) for d in H._tight_templates("diffuser")
     )
     assert best < H.DIFFUSER_TIGHT_NCC
+
+
+def _detect_diffuser(monkeypatch, gray):
+    def fake_scores(clf, X):
+        s = np.zeros((len(X), len(H.MECH_CLASSES) + 1))
+        s[:, H.MECH_CLASSES.index("diffuser")] = 5.0
+        return s
+
+    monkeypatch.setattr(H, "_logodds_scores", fake_scores)
+    monkeypatch.setattr(M, "detection_crop", lambda g, x, y, c: np.zeros((8, 8)))
+    templates = {"diffuser": M.render_template("diffuser").astype(np.float64)}
+    monkeypatch.setattr(H, "NCC_PROPOSE", {**H.NCC_PROPOSE})
+    return [d for d in H.detect_components(gray, templates, clf=None) if d["label"] == "diffuser"]
+
+
+@pytest.mark.parametrize("sc", [0.85, 1.15])
+def test_rescaled_diffuser_detected_end_to_end(monkeypatch, sc):
+    t = M.render_template("diffuser", margin_px=0, stubs=False).astype(np.float64)
+    out = _detect_diffuser(monkeypatch, _sheet_with(_resized(t, sc)))
+    assert [(round(d["cx"]), round(d["cy"])) for d in out if abs(d["cx"] - 150) <= 3] != []
+
+
+@pytest.mark.parametrize("sc", [0.85, 1.15])
+def test_rescaled_diffuser_lost_without_scales(monkeypatch, sc):
+    monkeypatch.setattr(H, "TEMPLATE_SCALES", {})
+    t = M.render_template("diffuser", margin_px=0, stubs=False).astype(np.float64)
+    out = _detect_diffuser(monkeypatch, _sheet_with(_resized(t, sc)))
+    assert [d for d in out if abs(d["cx"] - 150) <= 3 and abs(d["cy"] - 150) <= 3] == []
