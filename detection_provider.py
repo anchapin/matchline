@@ -8,12 +8,15 @@ which backend ran. Which provider runs is a config value, not code:
     {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger path>"}
     {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger path>"}
     {"provider": "door_swing"}
+    {"provider": "vector_glazing"}
     {"provider": "none"}
 
 ``door_swing`` finds door swings (leaf plus quarter arc) by rule
 (``door_detect.py``): no training data and no weights, so it may ship. It
 needs the sheet's scale, which the set reader passes per sheet; a fixed
 ``px_per_m`` in the config is used when the caller has none.
+``vector_glazing`` reports the windows the wall reader found in the sheet's
+vector glazing (``plan_walls``); the set reader hands it each sheet's walls.
 
 Every provider names the trained artifact behind it. Its license class comes
 from ``license_ledger.json`` (#751): weights trained on non-commercial or
@@ -231,10 +234,77 @@ class DoorSwingProvider(DetectionProvider):
         ]
 
 
+class VectorGlazingProvider(DetectionProvider):
+    """Windows read from the sheet's vector glazing by the wall reader.
+
+    ``plan_walls`` marks a glazing line drawn inside a wall run, a storefront
+    run and a glazing-layer band as ``kind: "window"`` openings. This provider
+    turns each into a window detection: the opening's span, widened by its
+    wall's thickness, in rendered pixels. Rules, not weights, so it may ship.
+    It needs the sheet's walls result (``needs_walls``); the set reader passes
+    it per sheet. Doors are not reported here; ``door_swing`` finds those.
+    """
+
+    name = "vector_glazing"
+    needs_walls = True
+
+    def __init__(self):
+        self.artifact = "plan_walls.py"
+        self.info = ProviderInfo(self.name, self.artifact, "permissive", False)
+
+    def detect(self, image_path, sheet_id, plan: Optional[dict] = None):
+        if not plan:
+            return []
+        return window_detections(plan["walls"], plan["height_pt"], plan["px_per_pt"], sheet_id)
+
+
+def window_detections(
+    walls: dict, height_pt: float, px_per_pt: float, source: str
+) -> List[Detection]:
+    """Window openings of one ``plan_walls`` result as pixel-box detections.
+
+    ``plan_walls`` metres are y-up from the sheet's bottom edge
+    (``x_m = x_pt * m_per_pt``, ``y_m = (H - y_pt) * m_per_pt``); the rendered
+    sheet is y-down at ``px_per_pt``. The box spans the opening and half its
+    wall's thickness either side of the centreline.
+    """
+    m = walls.get("m_per_pt")
+    if not m:
+        return []
+    thick = {w["id"]: w.get("thickness_m", 0.0) for w in walls.get("walls", [])}
+
+    def px(p):
+        return (p[0] / m * px_per_pt, (height_pt - p[1] / m) * px_per_pt)
+
+    out = []
+    for op in walls.get("openings", []):
+        if op.get("kind") != "window":
+            continue
+        (ax, ay), (bx, by) = px(op["a_m"]), px(op["b_m"])
+        ids = op.get("walls") or []
+        pad = max((thick.get(i, 0.0) for i in ids), default=0.0) / 2 / m * px_per_pt
+        out.append(
+            Detection(
+                label="window",
+                tag=str(op.get("tag_text") or ""),
+                score=float(op.get("window_confidence", 0.5)),
+                bbox=(
+                    min(ax, bx) - pad,
+                    min(ay, by) - pad,
+                    max(ax, bx) + pad,
+                    max(ay, by) + pad,
+                ),
+                source=source,
+            )
+        )
+    return out
+
+
 PROVIDERS: Dict[str, type] = {
     "door_swing": DoorSwingProvider,
     "none": NoneProvider,
     "precomputed": PrecomputedProvider,
+    "vector_glazing": VectorGlazingProvider,
     "yolo_sahi": YoloSahiProvider,
 }
 _REQUIRED = {"precomputed": ("dir",), "yolo_sahi": ("weights",)}
@@ -272,6 +342,7 @@ def provider_from_config(
 __all__ = [
     "DetectionProvider",
     "DoorSwingProvider",
+    "VectorGlazingProvider",
     "NoneProvider",
     "PrecomputedProvider",
     "YoloSahiProvider",
@@ -281,4 +352,5 @@ __all__ = [
     "PROVIDERS",
     "license_class",
     "provider_from_config",
+    "window_detections",
 ]
