@@ -103,8 +103,10 @@ drawings often tag one fixture of a group, so each lit level gets a
 `lighting_from_tags` review item listing its rooms (it does not block
 export). A fixture type with no watts on the schedule is counted but adds
 nothing (`fixture_no_watts`). The watts reach the gbXML as
-`LightPowerPerArea` and the IFC as `LightingPower`; rooms with no fixture tags
-keep the space-use default.
+`LightPowerPerArea` and the IFC as `LightingPower`. A room whose tags are all
+types with no watts lists its fixtures but gets no watts or LPD, so a 0 is
+never written over a default. Rooms with no fixture tags get no lighting from
+the drawings.
 
 ## Mechanical equipment in rooms
 

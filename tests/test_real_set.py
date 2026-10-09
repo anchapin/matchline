@@ -760,6 +760,13 @@ def test_fixture_type_without_watts_is_counted_and_sent_to_review(tmp_path):
     assert "1 tag(s) fall in no room" in rq["lighting_from_tags"].description
 
 
+def test_room_with_only_unwatted_fixtures_gets_no_lpd(tmp_path):
+    model, _ = _light_set(tmp_path, [("C", (6.5, 2)), ("A", (1.5, 2))])
+    exit_only = model.spaces["L1-102"].lighting
+    assert [f.tag for f in exit_only.fixtures] == ["C"]
+    assert exit_only.total_w == 0.0 and exit_only.lpd_w_m2 is None
+
+
 def test_rcp_and_lighting_plan_are_not_both_counted(tmp_path):
     model, report = _light_set(
         tmp_path, [("A", (1.5, 2))], rcp_tags=[("A", (1.5, 2)), ("A", (2.5, 2))]

@@ -959,6 +959,9 @@ def _place_fixtures(files, idx_entries, status, scales, sheets_dir, plan_of_leve
                 f"shows more ({n}) for the same level"
             )
         if lid not in plan_of_level:
+            report.notes.append(
+                f"{sheet_id}: {n} lighting fixture tag(s) on a level with no rooms; not counted"
+            )
             continue
         af, asid, _li = plan_of_level[lid]
         arch = json.loads((sheets_dir / af).read_text())
@@ -1015,6 +1018,8 @@ def _place_fixtures(files, idx_entries, status, scales, sheets_dir, plan_of_leve
             sp = spaces[sid]
             total = sum(x.watts for x in fx if x.watts is not None)
             sp.lighting.fixtures = fx
+            if total <= 0:
+                continue  # only types with no watts: no LPD of 0 that hides a default
             sp.lighting.total_w = total
             if sp.area_m2:
                 sp.lighting.lpd_w_m2 = total / sp.area_m2
