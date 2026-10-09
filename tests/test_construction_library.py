@@ -692,3 +692,20 @@ def test_set_run_whole_slab_when_a_served_room_is_not_on_the_ground_floor():
 def test_slab_heated_spaces_round_trips_through_json():
     m = BuildingModel(name="t", slab_heated_spaces=["L1-101"])
     assert BuildingModel.from_json(m.to_json()).slab_heated_spaces == ["L1-101"]
+
+
+def test_heated_room_in_the_middle_counts_only_its_own_edge():
+    m = _slab_model(
+        A=("L1", _rect(0, 0, 10, 30)),
+        B=("L1", _rect(10, 0, 20, 30)),
+        C=("L1", _rect(20, 0, 30, 30)),
+    )
+    m.slab_heated_by = "radiant floor / in-slab heating scheduled: RFM-1"
+    m.slab_heated_spaces = ["B"]
+    s = apply_construction_library(m, "5A")
+    fh = lookup("GroundContactFloor", "Heated", "5A").f_ip * 1.730735
+    fu = lookup("GroundContactFloor", "Unheated", "5A").f_ip * 1.730735
+    # 30 x 30 slab, perimeter 120; B touches the edge only top and bottom: 10 + 10
+    assert s.defaulted["t55-slab"]["heated_perimeter_m"] == pytest.approx(20.0, abs=1e-6)
+    want = (fh * 20.0 + fu * 100.0) / 900.0
+    assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)

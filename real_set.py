@@ -947,7 +947,12 @@ def _heated_slab(model, equipment, review, report, Provenance, ReviewItem) -> No
         if missing:
             extent += (
                 f" (the schedule says it serves {', '.join(rooms)}, but "
-                f"{', '.join(missing)} is not a ground-floor room)"
+                f"{', '.join(missing)} "
+                + (
+                    "is not a ground-floor room)"
+                    if len(missing) == 1
+                    else "are not ground-floor rooms)"
+                )
             )
     report.notes.append(f"heated slab: {why}")
     sheet = next((e.get("sheet", "") for e in equipment if e.get("sheet")), "")

@@ -519,7 +519,9 @@ def _slab_geometry(model, lowest: bool = True):
     its edge is exposed and its area is not slab. Any other hole (an
     unmodelled room or shaft) stays slab and its edge is not exposed, which is
     what the exported footprint (holes dropped) already assumes. ``detail``
-    lists wings, courtyards and holes for the report.
+    lists wings, courtyards and holes for the report; its private ``_edges``
+    (exposed edge rings) and ``_spaces`` (slab-level spaces by id) are for
+    ``_heated_part`` only and are not JSON, so never copy ``detail`` whole.
     """
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
