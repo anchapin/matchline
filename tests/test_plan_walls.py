@@ -566,6 +566,76 @@ def test_wall_faces_on_a_layer_do_not_judge_the_middle_line(tmp_path):
     assert not _windows(_read_layers(tmp_path / "g", content, ["A-GLAZ"]))
 
 
+def _split_outline(mass, on_layer):
+    """Outline edges split in two: those ``on_layer(a, b)`` picks, and the rest."""
+    picked = rest = ""
+    for poly in getattr(mass, "geoms", [mass]):
+        for ring in [poly.exterior, *poly.interiors]:
+            c = list(ring.coords)
+            for a, b in zip(c, c[1:]):
+                seg = line(*_pt(*a), *_pt(*b), 0.5)
+                if on_layer(a, b):
+                    picked += seg
+                else:
+                    rest += seg
+    return picked, rest
+
+
+def _band_faces(x0, x1):
+    def pick(a, b):
+        return all(x0 - 1e-6 <= p[0] <= x1 + 1e-6 and abs(p[1]) < T_EXT / 2 - 1e-6 for p in (a, b))
+
+    return pick
+
+
+def test_thin_band_on_a_glazing_layer_is_a_window(tmp_path):
+    glass, rest = _split_outline(_mass(_thin_bay(3, 7)), _band_faces(3, 7))
+    assert glass  # the band's faces really are split out
+    res = _read_layers(tmp_path, rest + oc(0, glass), ["A-GLAZ"])
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_layer_band"
+    assert op["window_confidence"] == W.LAYER_GLAZING_CONFIDENCE
+    assert op["width_m"] == pytest.approx(3.7, abs=0.05)
+    (w,) = [w for w in res.walls if w["id"] in op["walls"]]
+    assert w["thickness_m"] == pytest.approx(T_GLZ, abs=0.01) and not w.get("maybe_glazing")
+    assert not [r for r in res.review if r["kind"] == "maybe_glazing"]
+    assert res.stats["windows"] == 1 and res.stats["maybe_glazing"] == 0
+    assert _areas(res) == [60.0]  # the band still closes the room
+
+
+def test_thin_band_on_other_layers_stays_a_question(tmp_path):
+    glass, rest = _split_outline(_mass(_thin_bay(3, 7)), _band_faces(3, 7))
+    res = _read_layers(tmp_path, rest + oc(0, glass), ["A-WALL"])
+    assert not _windows(res) and res.stats["maybe_glazing"] == 1
+    (tmp_path / "p").mkdir()
+    res = _read_layers(tmp_path / "p", rest + oc(0, glass), ["A-WALL-PATT"])
+    assert not _windows(res) and res.stats["maybe_glazing"] == 1
+
+
+def test_glazing_layer_band_rules():
+    k = 10.0
+    band = _w(2, (30, 0), (70, 0), 1.2)
+    tol = 0.2
+
+    def seg(x0, x1, y, layer):
+        return W.Seg((x0, y), (x1, y), 0, layer)
+
+    faces = [seg(30, 70, 0.6, "A-GLAZ"), seg(30, 70, -0.6, "A-GLAZ")]
+    assert W._glazing_layer_band(band, faces, tol)
+    # glazing covers only half the band: not enough
+    assert not W._glazing_layer_band(band, [seg(30, 50, 0.6, "A-GLAZ")], tol)
+    # two pieces that together cover it count
+    assert W._glazing_layer_band(
+        band, [seg(30, 52, 0.6, "A-GLAZ"), seg(50, 70, -0.6, "A-GLAZ")], tol
+    )
+    # a hatch line on the band vetoes it
+    assert not W._glazing_layer_band(band, faces + [seg(30, 70, 0.0, "A-WALL-PATT")], tol)
+    # glazing lines off to the side (another wall) say nothing about this band
+    assert not W._glazing_layer_band(band, [seg(30, 70, 0.6 + 2 * k, "A-GLAZ")], tol)
+    # perpendicular lines say nothing either
+    assert not W._glazing_layer_band(band, [W.Seg((40, -0.6), (40, 0.6), 0, "A-GLAZ")], tol)
+
+
 def test_door_and_window_on_one_plan(tmp_path):
     mass = _mass(SHELL + PARTITION, [DOOR])
     sym = _door_symbol((4, 2.55), (4.9, 2.55), (4, 3.45))

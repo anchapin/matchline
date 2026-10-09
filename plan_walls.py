@@ -385,6 +385,40 @@ def _thin_bands(walls: List[Wall], openings: List[dict], tol: float, min_len: fl
     return out
 
 
+def _glazing_layer_band(w: "Wall", segs: List[Seg], tol: float) -> bool:
+    """A thin wall band drawn on a glazing CAD layer (#793): its face lines
+    (parallel, within half the band of its centreline) that sit on a glazing
+    layer cover at least ``THIN_FILL_SHARE`` of its length, and none of its
+    face lines is on a pattern layer."""
+    L = math.dist(w.a, w.b)
+    if L <= tol:
+        return False
+    atol = math.radians(ANGLE_TOL_DEG)
+    ux, uy = (w.b[0] - w.a[0]) / L, (w.b[1] - w.a[1]) / L
+    th = math.atan2(uy, ux) % math.pi
+    ivs: List[Tuple[float, float]] = []
+    for sg in segs:
+        kind = _layer_kind(sg.layer)
+        if kind is None or not _angle_close(sg.theta, th, atol):
+            continue
+        off = [abs((p[0] - w.a[0]) * uy - (p[1] - w.a[1]) * ux) for p in (sg.a, sg.b)]
+        if max(off) > 0.5 * w.t + tol:
+            continue
+        s0, s1 = sorted(((p[0] - w.a[0]) * ux + (p[1] - w.a[1]) * uy) for p in (sg.a, sg.b))
+        s0, s1 = max(s0, 0.0), min(s1, L)
+        if s1 - s0 <= tol:
+            continue
+        if kind == "pattern":
+            return False
+        ivs.append((s0, s1))
+    covered, end = 0.0, 0.0
+    for s0, s1 in sorted(ivs):
+        if s1 > end:
+            covered += s1 - max(s0, end)
+            end = s1
+    return covered >= THIN_FILL_SHARE * L
+
+
 def _attach_tags(openings: List[dict], spans, to_m) -> int:
     """Schedule-tag text placed next to an opening labels it (#793).
 
@@ -1245,6 +1279,23 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     tagged = _attach_tags(openings, spans, to_m)
     wall_tags = _wall_tags(wall_out, openings, spans, to_m)
     thin = set(_thin_bands(walls, openings, tol, THIN_BAND_MIN_M * k))
+    # a thin band whose faces are on a glazing CAD layer is glass, not a
+    # question (#793): a window over the whole band instead of maybe_glazing
+    layer_bands = {w.id for w in walls if w.id in thin and _glazing_layer_band(w, segs, tol)}
+    for w in walls:
+        if w.id in layer_bands:
+            openings.append(
+                {
+                    "walls": [w.id],
+                    "a_m": to_m(w.a),
+                    "b_m": to_m(w.b),
+                    "width_m": round(math.dist(w.a, w.b) * m_per_pt, 3),
+                    "kind": "window",
+                    "source": "glazing_layer_band",
+                    "window_confidence": LAYER_GLAZING_CONFIDENCE,
+                }
+            )
+    thin -= layer_bands
     for wo in wall_out:
         if wo["id"] in thin:
             wo["maybe_glazing"] = True
@@ -1267,7 +1318,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "walls": len(walls),
         "openings": len(openings),
         "doors": doors,
-        "windows": len(windows),
+        "windows": len(windows) + len(layer_bands),
         "layers": sorted({sg.layer for sg in segs if sg.layer}),
         "tagged": tagged,
         "wall_tags": len(wall_tags),
