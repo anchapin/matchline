@@ -94,6 +94,17 @@ def test_wall_face_at_a_gap_without_an_arc_is_not_a_door(k):
     assert detect_door_swings(img, PPM) == []
 
 
+def test_leaf_on_a_wall_face_needs_the_jamb_wall_past_the_opening():
+    """With the leaf on a face only the far jamb places the hinge (#743)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 45
+    d.rectangle([x - 10, 40, x + 10, yh], fill=0)  # wall ends at the hinge
+    d.rectangle([x + 10, yh - 10, x + 190, yh + 1], fill=0)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    assert detect_door_swings(np.asarray(img), PPM) == []
+
+
 def test_wall_corners_without_swings_are_not_doors():
     img = Image.new("L", (400, 400), 255)
     d = ImageDraw.Draw(img)
