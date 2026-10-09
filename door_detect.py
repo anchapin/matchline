@@ -211,6 +211,37 @@ def _opening_clear(ink: np.ndarray, y: int, r: int, cols, p: _P) -> bool:
     return True
 
 
+def _hollow(ink: np.ndarray, y: int, wl, p: _P) -> bool:
+    """Wall ``wl`` seen on row y is two thin lines with a clear gap between
+    them, wider than two leaves (#875)."""
+    if wl is None or wl[2] - wl[1] <= 2 * p.max_leaf or not (0 <= y < ink.shape[0]):
+        return False
+    return not ink[y, int(round(wl[0]))]
+
+
+def _hinge_options(behind, past, p: _P, hollow_b: bool = False, hollow_p: bool = False):
+    """(walls, hinge x) pairs to try for one leaf row and radius.
+
+    The hinge is snapped to the centre of the wall the door is cut in, seen
+    behind the leaf and past the opening. A thick wall drawn as two thin
+    lines with a gap (a hollow jamb, #875) can hang its door on either face
+    line instead, so a hollow wall also offers its two faces, tried with that
+    wall alone too: the ink behind a door hung on a hollow wall's face is
+    often a neighbouring door's leaf or jamb, not this door's wall.
+    """
+    walls = [wl for wl in (behind, past) if wl is not None]
+    if not walls:
+        return []
+    out = [(walls, int(round(sum(wl[0] for wl in walls) / len(walls))))]
+    for wl, hol in ((behind, hollow_b), (past, hollow_p)):
+        if wl is None or not hol:
+            continue
+        for sx in (int(round(wl[0])), wl[1], wl[2] - 1):
+            if sx not in [o[1] for o in out if o[0] == [wl]]:
+                out.append(([wl], sx))
+    return out
+
+
 def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
     """(coverage, fit, hinge x, hinge y, r) for leaf->+x, arc->+y symbols.
 
@@ -243,21 +274,20 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
             best = None
             for r in radii.tolist():
                 past = _wall_at(ink, y + r + p.probe, p.probe, s, p)
-                walls = [wl for wl in (behind, past) if wl is not None]
-                if not walls:
-                    continue
-                sx = int(round(sum(wl[0] for wl in walls) / len(walls)))
-                if sx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
-                    continue
-                ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
-                if not _opening_clear(ink, y, r, (ws + 1, sx, we - 2), p):
-                    continue
-                cov = float(_arc_coverage(fat, sx, y, r)[0])
-                if cov < MIN_ARC_COVERAGE:
-                    continue
-                cand = (float(_arc_coverage(tight, sx, y, r)[0]), cov, sx, y, r)
-                if best is None or cand[:2] > best[:2]:
-                    best = cand
+                hol_b = _hollow(ink, y - p.probe, behind, p)
+                hol_p = _hollow(ink, y + r + p.probe, past, p)
+                for walls, sx in _hinge_options(behind, past, p, hol_b, hol_p):
+                    if sx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
+                        continue
+                    ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
+                    if not _opening_clear(ink, y, r, (ws + 1, sx, we - 2), p):
+                        continue
+                    cov = float(_arc_coverage(fat, sx, y, r)[0])
+                    if cov < MIN_ARC_COVERAGE:
+                        continue
+                    cand = (float(_arc_coverage(tight, sx, y, r)[0]), cov, sx, y, r)
+                    if best is None or cand[:2] > best[:2]:
+                        best = cand
             if best is not None:
                 fit, cov, sx, yy, r = best
                 found.append((cov, fit, sx, yy, r))
