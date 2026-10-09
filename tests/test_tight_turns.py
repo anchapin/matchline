@@ -59,12 +59,13 @@ def test_diffuser_not_taken_for_turned_grille():
 
 def _detect(monkeypatch, gray):
     std = np.zeros((11, 11))
+    real_locate = H.ncc_locate
 
     def fake_locate(g, t, thresh=0.0):
         if t is std:  # WiSARD-side proposal at the glyph, labeled diffuser below
             return [(150 - 5.5, 150 - 5.5, 0.9)]
         if t.shape == TIGHT.shape:
-            return H.__dict__["_real_locate"](g, t, thresh)
+            return real_locate(g, t, thresh)
         return []
 
     def fake_scores(clf, X):
@@ -72,7 +73,6 @@ def _detect(monkeypatch, gray):
         s[:, H.MECH_CLASSES.index("diffuser")] = 5.0
         return s
 
-    monkeypatch.setitem(H.__dict__, "_real_locate", H.ncc_locate)
     monkeypatch.setattr(H, "ncc_locate", fake_locate)
     monkeypatch.setattr(H, "_logodds_scores", fake_scores)
     monkeypatch.setattr(M, "detection_crop", lambda g, x, y, c: np.zeros((8, 8)))
