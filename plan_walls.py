@@ -328,7 +328,12 @@ def _glazing_windows(
             margin = max(2 * w.t, WINDOW_RETURN_M * k)
             source = "glazing_line"
             doors: List[Tuple[float, float]] = []
-            if wide or (s0 < margin and L - s1 < margin):
+            # reveal returns at the jambs end the run there (#743); the
+            # collinear walls just past them still count as the wall running on
+            run_lo, run_hi = 0.0, L
+            if s0 < margin and L - s1 < margin and not _middle_line_continues(g, bands, tol):
+                run_lo, run_hi = _collinear_run(w, ls, th, walls, atol, tol)
+            if wide or (s0 - run_lo < margin and run_hi - s1 < margin):
                 # runs the whole wall, or wider than a window: storefront only
                 # when its layer says glazing or mullions break it up, else a
                 # cavity or insulation line
@@ -358,6 +363,67 @@ def _glazing_windows(
             )
             break
     return out
+
+
+def _middle_line_continues(g, bands, tol: float) -> bool:
+    """Another glazed band carries ``g``'s middle line on along the same line,
+    end to end with it (#743). A cavity or insulation line drawn in a wall
+    split into pieces by partitions does this; a window's glazing stops at
+    its jambs."""
+    atol = math.radians(ANGLE_TOL_DEG)
+    gap = max(g.t, tol)
+    for o in bands:
+        if o is g or not o.glazed or not _angle_close(o.theta, g.theta, atol):
+            continue
+        ro, o0, o1 = _in_frame(o, g.theta)
+        if abs(ro - g.rho) > max(tol, 0.25 * g.t):
+            continue
+        if abs(o0 - g.u1) <= gap or abs(g.u0 - o1) <= gap:
+            return True
+    return False
+
+
+def _collinear_run(w, ls, th, walls, atol: float, tol: float) -> Tuple[float, float]:
+    """Extent of ``w`` along its own line, in ``ls.project`` units, grown
+    through collinear walls of about the same thickness whose ends lie within
+    one wall thickness of it (#743). A short return meeting a wall's face at a
+    window jamb ends the wall run there, leaving the window alone on a wall
+    no longer than itself, which would read as full-length glazing."""
+    L = ls.length
+    lo, hi = 0.0, L
+    gap = max(w.t, tol)
+    pieces = []
+    for o in walls:
+        if o is w or abs(o.t - w.t) > 0.25 * w.t:
+            continue
+        tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]) % math.pi
+        if not _angle_close(th, tho, atol):
+            continue
+        # offset from the line, measured at both ends
+        if max(_line_offset(ls, o.a), _line_offset(ls, o.b)) > 0.5 * w.t:
+            continue
+        pieces.append(sorted((_signed_proj(ls, o.a), _signed_proj(ls, o.b))))
+    changed = True
+    while changed:
+        changed = False
+        for p0, p1 in pieces:
+            if p1 > hi and p0 <= hi + gap:
+                hi, changed = p1, True
+            if p0 < lo and p1 >= lo - gap:
+                lo, changed = p0, True
+    return lo, hi
+
+
+def _signed_proj(ls: LineString, p: Pt) -> float:
+    (ax, ay), (bx, by) = ls.coords[0], ls.coords[-1]
+    L = ls.length
+    return ((p[0] - ax) * (bx - ax) + (p[1] - ay) * (by - ay)) / L
+
+
+def _line_offset(ls: LineString, p: Pt) -> float:
+    (ax, ay), (bx, by) = ls.coords[0], ls.coords[-1]
+    L = ls.length
+    return abs((p[0] - ax) * (by - ay) - (p[1] - ay) * (bx - ax)) / L
 
 
 def _thin_fill(walls: List[Wall], a: Pt, b: Pt, t: float, tol: float) -> bool:
@@ -724,7 +790,12 @@ def _merge_glazing(bands: List[Band], t_max: float) -> List[Band]:
             a, b = bands[idx[0]], bands[idx[1]]
             rb, b0, b1 = _in_frame(b, a.theta)
             tol = 0.1 * min(a.t, b.t)
-            if abs(a.u0 - b0) > tol or abs(a.u1 - b1) > tol:
+            # a reveal return meeting one face inside the opening cuts that
+            # half short of its jamb (#743): allow up to one wall thickness
+            etol = max(tol, min(a.t + b.t, t_max) / 2)
+            if abs(a.u0 - b0) > etol or abs(a.u1 - b1) > etol:
+                continue
+            if min(a.u1, b1) - max(a.u0, b0) < 0.5 * max(a.u1 - a.u0, b1 - b0):
                 continue
             if abs(abs(a.rho - rb) - (a.t + b.t) / 2) > tol:  # same side: not a shared face
                 continue
