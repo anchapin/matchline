@@ -231,9 +231,28 @@ provenance `plan_wall_tag`, confidence 0.7. Any other scheduled door or window
 tag on such a wall goes to review as `opening_unsized` ("may be glazing"), with
 the gap a review edit needs to add it (#798). Unscheduled tags are ignored.
 
-Not covered yet: storefront drawn as a thin wall band of its own between opaque
-walls with no tag, and PDF layer names; door jambs inside a full-length glazing
-line would read as ticks.
+A storefront drawn as a thin wall band of its own, with no glazing line and no
+scheduled tag, is flagged rather than modelled. A wall at most
+`THIN_BAND_RATIO` (0.6) as thick as the wall it meets end to end on both sides,
+on the same line (centrelines within half the thicker wall, since glazing often
+sits on one face), at least `THIN_BAND_MIN_M` (1.0 m) long and with no opening
+on it, gets `maybe_glazing: true`, a `maybe_glazing` review item and a count in
+`stats.maybe_glazing`. A partition turns off the exterior line; it does not
+continue it, so a thin run between two thicker ones is more often glazing. A
+thin run into a corner (thick wall on one side only) is a change of wall type
+and is not flagged. In a drawing-set run a flagged wall on the envelope goes to
+review as `opening_unsized` (gap `drawn: "thin_band"`, no candidates) and stays
+opaque: nothing says how tall the glazing is or which product it is, and a
+review edit adds it. A band with a scheduled tag on it is left to the tag rule
+above.
+
+A wall that thins for a recess (a panel niche) reads the same way and is
+flagged too; that costs a review item, never a window.
+
+Not covered yet: a thin bay narrower than `MAX_OPENING_M` is bridged by the
+thicker wall run it interrupts and is not flagged; glazing drawn as two lines
+closer than `WALL_T_MIN_M` never becomes a wall to flag; PDF layer names; door
+jambs inside a full-length glazing line would read as ticks.
 
 ## Opening tags (#793)
 

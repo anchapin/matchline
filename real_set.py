@@ -1215,6 +1215,10 @@ def _plan_openings(
         lid, wall_tags, plan_walls_by_id or {}, lines, spaces, dict(sized), sheet_id,
         review, constructions, centers, counts, len(plan_openings),
     )  # fmt: skip
+    _thin_band_review(
+        lid, wall_tags, plan_walls_by_id or {}, lines, spaces, dict(sized), sheet_id, review,
+        counts, len(plan_openings) + len(wall_tags),
+    )  # fmt: skip
     return counts
 
 
@@ -1435,6 +1439,63 @@ def _wall_tag_openings(
         counts["modelled"] += 1
         if centers is not None:
             centers[oid] = (mid.x, mid.y)
+
+
+def _thin_band_review(
+    lid, wall_tags, plan_walls, lines, spaces, sized, sheet_id, review, counts, n_before,
+) -> None:  # fmt: skip
+    """Exterior plan walls flagged ``maybe_glazing`` go to review (#793).
+
+    A thin wall band between thicker walls, with no opening drawn and no
+    scheduled tag on it, may be storefront glazing. Nothing is modelled from
+    the band alone (no schedule row says how tall or which product), so the
+    wall stays opaque and a review item carries the gap a review edit needs to
+    add it. A band with a scheduled tag is left to ``_wall_tag_openings``.
+    """
+    from building_model import Provenance, ReviewItem
+
+    tagged = {wt.get("wall") for wt in wall_tags if (wt.get("tag_text") or "") in sized}
+    flagged = [w for w in plan_walls.values() if w.get("maybe_glazing")]
+    for k, pw in enumerate(sorted(flagged, key=lambda w: w["id"])):
+        if pw["id"] in tagged or not lines:
+            continue
+        (ax, ay), (bx, by) = pw["a_m"], pw["b_m"]
+        mid = Point((ax + bx) / 2, -(ay + by) / 2)  # y-up -> canonical y-down
+        wall, ls = min(lines, key=lambda t: t[1].distance(mid))
+        if ls.distance(mid) > EXTERIOR_TOL_M:
+            continue  # interior: does not touch the envelope
+        length, thick = float(pw["length_m"]), float(pw.get("thickness_m") or 0)
+        oid = f"{lid}-OP{n_before + k + 1}"
+        counts["unsized"] += 1
+        review.append(
+            ReviewItem(
+                id=f"rq-{oid}",
+                kind="opening_unsized",
+                target={
+                    "kind": "wall",
+                    "id": wall.id,
+                    "field": "opening",
+                    "gap": {
+                        "opening_id": oid,
+                        "space_id": wall.space_id if wall.space_id in spaces else "",
+                        "facade": wall.facade,
+                        "s_center_m": round(ls.project(mid), 4),
+                        "width_m": round(length, 4),
+                        "drawn": "thin_band",
+                        "candidates": [],
+                        "sheet_id": sheet_id,
+                    },
+                },
+                description=(
+                    f"{oid}: {wall.facade} wall {wall.id}: a {length:.2f} m stretch drawn "
+                    f"{thick:.2f} m thick between thicker walls, no opening or scheduled tag; "
+                    "may be storefront glazing; modelled opaque"
+                ),
+                confidence=0.4,
+                provenance=Provenance(sheet_id, 0, "plan_walls_vector", 0.4),
+                needs_review=True,
+            )
+        )
 
 
 # Elevation <-> plan join (#810, second slice). The schedule states an
