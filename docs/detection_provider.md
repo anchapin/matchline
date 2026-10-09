@@ -71,7 +71,8 @@ weights): they work through this interface for evaluation, never for a release.
 
 A trained door/window backend whose training data and weights may ship (the
 `door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
-to plan openings and mechanical tags, and running door and window providers\ntogether on one set (one provider per run today).
+to plan openings and mechanical tags, and running door and window providers
+together on one set (one provider per run today).
 
 ## Vector door swings
 
