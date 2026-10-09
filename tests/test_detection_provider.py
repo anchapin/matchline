@@ -278,3 +278,19 @@ def test_combined_config_is_checked_and_release_refuses_an_eval_only_part(tmp_pa
     c = dp.provider_from_config(mixed)
     assert c.info.eval_only and c.info.license_class == "permissive + noncommercial"
     assert "evaluation only" in c.info.note()
+
+
+def test_combined_runs_a_part_that_needs_no_scale_where_the_others_find_nothing(tmp_path):
+    d = _preds(tmp_path, "sheet_001", [{"cls": 0, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4}])
+    c = dp.provider_from_config(
+        {"provider": "combined", "providers": [{"provider": "precomputed", "dir": str(d)},
+                                                {"provider": "door_swing"}]}
+    )  # fmt: skip
+    assert c.runs_without_scale and c.needs_scale
+    both = dp.provider_from_config(
+        {"provider": "combined", "providers": [{"provider": "door_swing"}, {"provider": "vector_glazing"}]}  # noqa: E501
+    )  # fmt: skip
+    assert not both.runs_without_scale
+    # no scale: door_swing reports nothing, the precomputed part still does
+    out = c.detect(d / "sheet_001.png", "s", plan=None, px_per_m=None)
+    assert [x.label for x in out] == ["door"]

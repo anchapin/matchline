@@ -318,6 +318,12 @@ class CombinedProvider(DetectionProvider):
         self.parts = list(parts)
         self.needs_scale = any(getattr(p, "needs_scale", False) for p in self.parts)
         self.needs_walls = any(getattr(p, "needs_walls", False) for p in self.parts)
+        # a part that needs neither still runs on a sheet with no scale; the
+        # scale-needing parts then get no px_per_m and report nothing there
+        self.runs_without_scale = any(
+            not (getattr(p, "needs_scale", False) or getattr(p, "needs_walls", False))
+            for p in self.parts
+        )
         self.artifact = " + ".join(p.info.artifact or p.info.provider for p in self.parts)
         classes = []
         for p in self.parts:

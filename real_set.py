@@ -248,6 +248,7 @@ def build_set_model(
                     getattr(provider, "needs_scale", False)
                     or getattr(provider, "needs_walls", False)
                 )
+                or getattr(provider, "runs_without_scale", False)
                 or (scales.get(f) or {}).get("m_per_pt")
             )
         ):
@@ -261,7 +262,7 @@ def build_set_model(
                     "height_pt": float(sj["height_pt"]),
                     "px_per_pt": float(sj.get("px_per_pt") or dpi / 72.0),
                 }
-            if getattr(provider, "needs_scale", False):
+            if getattr(provider, "needs_scale", False) and (scales.get(f) or {}).get("m_per_pt"):
                 # rendered px per metre: (dpi / 72 px per pt) / (m per pt)
                 kw["px_per_m"] = dpi / 72.0 / scales[f]["m_per_pt"]
             detections[f] = provider.detect(png, sid, **kw)
