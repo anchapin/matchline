@@ -536,6 +536,10 @@ def build_set_model(
         plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces, equipment,
         review, report,
     )  # fmt: skip
+    _place_fixtures(
+        files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
+        sched_entries, review, report,
+    )  # fmt: skip
     report.schedules = {
         "entries": len(sched_entries),
         "equipment": equipment,
@@ -874,6 +878,199 @@ def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_
         + (f"; {len(zones)} HVAC zone(s), one per placed terminal unit" if zones else "")
     )
     return zones
+
+
+# Lighting fixture tags are read off these plans (#746): a reflected ceiling
+# plan, or an electrical floor plan (lighting plans are drawn as floor plans).
+FIXTURE_SHEET_TYPES = ("rcp",)
+# One tag per fixture is what a count from tag text assumes; drawings often tag
+# one fixture of a group, so every room lit this way goes to review.
+FIXTURE_TAG_CONFIDENCE = 0.5
+
+
+def _in_grid_bubble(bbox_pt, grid) -> bool:
+    """True when a text span's centre sits inside a column-grid bubble: grid
+    line labels (A, B, C ...) read like fixture types and are not fixtures."""
+    if grid is None:
+        return False
+    cx, cy = (bbox_pt[0] + bbox_pt[2]) / 2, (bbox_pt[1] + bbox_pt[3]) / 2
+    for g in grid.lines:
+        for bx, by, r in g.bubbles:
+            if (cx - bx) ** 2 + (cy - by) ** 2 <= r * r:
+                return True
+    return False
+
+
+def _place_fixtures(files, idx_entries, status, scales, sheets_dir, plan_of_level, lid_of,
+                    spaces, sched, review, report) -> int:  # fmt: skip
+    """Lighting power per room from scheduled fixture tags on the plans (#746).
+
+    Each text span on a reflected ceiling plan or electrical floor plan that is
+    a lighting schedule tag counts as one fixture of that type. The sheet is
+    registered to the architectural plan of its level the way mechanical
+    plans are (``mech_tags.register``) and each fixture goes in the room that
+    contains it. A room gets its fixtures, the scheduled watts summed and the
+    LPD; a fixture type with no scheduled watts is counted but adds nothing
+    and is sent to review. Where a level has both an RCP and a lighting plan
+    with tags, only the sheet with more tags is used, so fixtures shown on
+    both are not counted twice. Returns the number of rooms given an LPD."""
+    lighting = {t: e for t, e in sched.items() if e.get("category") == "lighting"}
+    if not lighting:
+        return 0
+    from building_model import FixtureInstance, Provenance, ReviewItem
+    from grid_detect import detect_grids
+    from mech_tags import find_tags, register, room_of, to_canonical
+
+    known = set(lighting)
+    per_level: Dict[str, List[tuple]] = {}
+    for f in files:
+        st = status[f]
+        kind = _val(idx_entries.get(f, {}), "type")
+        if not (
+            kind in FIXTURE_SHEET_TYPES
+            or (_discipline(st) == "electrical" and kind in ("floor_plan", "plan"))
+        ):
+            continue  # fmt: skip
+        if st.stages["ingest"]["kind"] == "raster_only" or not st.level:
+            continue
+        sheet = json.loads((sheets_dir / f).read_text())
+        sheet_id = st.number or f
+        try:
+            grid = detect_grids(sheet, sheet_id)
+        except Exception:  # noqa: BLE001 - no grid means no bubbles to drop
+            grid = None
+        hits = [h for h in find_tags(sheet, known) if not _in_grid_bubble(h["bbox_pt"], grid)]
+        lid = lid_of.get(st.level)
+        if hits and lid is not None:
+            per_level.setdefault(lid, []).append((len(hits), f, sheet_id, sheet, grid, hits))
+        elif hits:
+            report.notes.append(
+                f"{sheet_id}: {len(hits)} lighting fixture tag(s) on a plan with no matching "
+                "architectural level; not counted"
+            )
+    lit = 0
+    no_watts: Dict[str, List[str]] = {}
+    for lid, cands in per_level.items():
+        cands.sort(key=lambda c: (-c[0], _discipline(status[c[1]]) != "electrical", c[2]))
+        n, f, sheet_id, sheet, grid, hits = cands[0]
+        for other in cands[1:]:
+            report.notes.append(
+                f"{other[2]}: {other[0]} lighting fixture tag(s) not counted; {sheet_id} "
+                f"shows more ({n}) for the same level"
+            )
+        if lid not in plan_of_level:
+            report.notes.append(
+                f"{sheet_id}: {n} lighting fixture tag(s) on a level with no rooms; not counted"
+            )
+            continue
+        af, asid, _li = plan_of_level[lid]
+        arch = json.loads((sheets_dir / af).read_text())
+        mf = (scales.get(f) or {}).get("m_per_pt")
+        ma = (scales.get(af) or {}).get("m_per_pt")
+        try:
+            ag = detect_grids(arch, asid)
+        except Exception:  # noqa: BLE001 - a grid failure falls back to the frame
+            ag = None
+        dx, dy, how, conf, why = register(sheet, arch, mf, ma, grid, ag)
+        if how is None:
+            report.notes.append(
+                f"{sheet_id}: not registered to {asid} ({why}); fixtures not counted"
+            )
+            review.append(
+                ReviewItem(
+                    id=f"rq-lightreg-{sheet_id}",
+                    kind="lighting_plan_unregistered",
+                    description=(
+                        f"{sheet_id} shows {n} lighting fixture tag(s) but does not register "
+                        f"to {asid}: {why}; lighting power not taken from the drawings"
+                    ),
+                    confidence=0.5,
+                    provenance=Provenance(sheet_id, 0, "plan_fixture_tags", 0.5),
+                    needs_review=True,
+                )
+            )
+            continue
+        conf = min(conf, FIXTURE_TAG_CONFIDENCE)
+        rooms = [sp for sp in spaces.values() if sp.level_id == lid]
+        by_room: Dict[str, List[FixtureInstance]] = {}
+        outside = 0
+        for h in hits:
+            at = to_canonical(h["bbox_pt"], mf, dx, dy, float(arch["height_pt"]), ma)
+            sid = room_of(at, rooms)
+            if sid is None:
+                outside += 1
+                continue
+            e = lighting[h["tag"]]
+            if e.get("watts") is None:
+                no_watts.setdefault(h["tag"], []).append(sid)
+            fx = by_room.setdefault(sid, [])
+            fx.append(
+                FixtureInstance(
+                    id=f"{sid}-LF{len(fx) + 1}", tag=h["tag"],
+                    fixture_class=e.get("description") or "", x_m=at[0], y_m=at[1],
+                    watts=e.get("watts"),
+                    provenance=Provenance(
+                        sheet_id, 0, "plan_fixture_tag", conf, tuple(h["bbox_pt"])
+                    ),
+                )
+            )  # fmt: skip
+        for sid, fx in sorted(by_room.items()):
+            sp = spaces[sid]
+            total = sum(x.watts for x in fx if x.watts is not None)
+            sp.lighting.fixtures = fx
+            if total <= 0:
+                continue  # only types with no watts: no LPD of 0 that hides a default
+            sp.lighting.total_w = total
+            if sp.area_m2:
+                sp.lighting.lpd_w_m2 = total / sp.area_m2
+                sp.lighting.lpd_w_ft2 = sp.lighting.lpd_w_m2 / 10.7639104
+                lit += 1
+            sp.lighting.provenance = Provenance(
+                sheet_id, 0, "plan_fixture_tags", conf,
+                note=(
+                    f"{len(fx)} fixture tag(s) on {sheet_id} x scheduled watts "
+                    f"({how}: {why}, to {asid}); one tag counted as one fixture"
+                ),
+            )  # fmt: skip
+        review.append(
+            ReviewItem(
+                id=f"rq-lighting-{lid}",
+                kind="lighting_from_tags",
+                target={"kind": "space", "ids": sorted(by_room)},
+                description=(
+                    f"{lid}: lighting power for {len(by_room)} room(s) from {n} fixture tag(s) "
+                    f"on {sheet_id}, one tag counted as one fixture; a group of fixtures "
+                    "tagged once is undercounted. Check the fixture counts"
+                    + (f"; {outside} tag(s) fall in no room" if outside else "")
+                ),
+                confidence=conf,
+                provenance=Provenance(sheet_id, 0, "plan_fixture_tags", conf),
+                needs_review=False,
+            )
+        )
+        report.notes.append(
+            f"lighting: {n - outside} fixture tag(s) on {sheet_id} placed in "
+            f"{len(by_room)} room(s) of {lid}" + (f"; {outside} in no room" if outside else "")
+        )
+    for tag, sids in sorted(no_watts.items()):
+        review.append(
+            ReviewItem(
+                id=f"rq-fixture-watts-{tag}",
+                kind="fixture_no_watts",
+                target={"kind": "space", "ids": sorted(set(sids))},
+                description=(
+                    f"fixture type {tag} ({lighting[tag].get('schedule_sheet', '?')}) has no "
+                    f"watts on the schedule; its {len(sids)} fixture(s) add nothing to the "
+                    "rooms' lighting power"
+                ),
+                confidence=0.5,
+                provenance=Provenance(
+                    lighting[tag].get("schedule_sheet", ""), 0, "pdf_schedule", 0.5
+                ),
+                needs_review=False,
+            )
+        )
+    return lit
 
 
 TERMINAL_KINDS = ("vav", "fcu")  # equipment that defines an HVAC zone

@@ -709,3 +709,85 @@ def test_scheduled_storefront_tag_on_the_thin_band_is_modelled_not_reviewed(tmp_
     (op,) = [o for s in model.spaces.values() for o in s.openings]
     assert op.tag == "SF-1" and op.provenance.method == "plan_wall_tag"
     assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
+
+
+# ---- #746: lighting power per room from fixture tags on the plans --------
+
+
+def _light_set(tmp_path, e101_tags, rcp_tags=None, scale=SCALE_NOTE):
+    from test_pdf_schedules import lighting_schedule
+
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _mech_tagged("E-101", "FIRST FLOOR LIGHTING PLAN", e101_tags, scale),
+    ]
+    if rcp_tags is not None:
+        pages.append(_mech_tagged("A-121", "FIRST FLOOR REFLECTED CEILING PLAN", rcp_tags))
+    pages.append(_tb("E-601", "ELECTRICAL SCHEDULES") + lighting_schedule(100, 1000))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+
+
+def test_fixture_tags_give_each_room_its_lighting_power(tmp_path):
+    model, report = _light_set(
+        tmp_path, [("A", (1.5, 2)), ("A", (2.5, 2)), ("B", (1.5, 1)), ("A", (6.5, 2))]
+    )
+    office, open_office = model.spaces["L1-101"], model.spaces["L1-102"]
+    assert [f.tag for f in office.lighting.fixtures] == ["A", "A", "B"]
+    assert office.lighting.total_w == pytest.approx(108.0)
+    assert office.lighting.lpd_w_m2 == pytest.approx(108.0 / office.area_m2)
+    assert office.lighting.lpd_w_ft2 == pytest.approx(office.lighting.lpd_w_m2 / 10.7639104)
+    assert open_office.lighting.total_w == pytest.approx(45.0)
+    prov = office.lighting.provenance
+    assert prov.sheet_id == "E-101" and prov.method == "plan_fixture_tags"
+    assert prov.confidence == pytest.approx(0.5) and "one tag counted as one fixture" in prov.note
+    fx = office.lighting.fixtures[0]
+    assert fx.watts == 45.0 and fx.fixture_class == "2X4 LED TROFFER"
+    assert fx.provenance.bbox is not None
+    rq = [r for r in model.review_queue if r.kind == "lighting_from_tags"]
+    assert len(rq) == 1 and not rq[0].needs_review  # listed, does not block export
+    assert rq[0].target == {"kind": "space", "ids": ["L1-101", "L1-102"]}
+    assert "undercounted" in rq[0].description
+    assert any("4 fixture tag(s) on E-101 placed in 2 room(s)" in n for n in report.notes)
+
+
+def test_fixture_type_without_watts_is_counted_and_sent_to_review(tmp_path):
+    model, _ = _light_set(tmp_path, [("A", (1.5, 2)), ("C", (2.5, 2)), ("A", (14, 2))])
+    office = model.spaces["L1-101"]
+    assert [f.tag for f in office.lighting.fixtures] == ["A", "C"]
+    assert office.lighting.total_w == pytest.approx(45.0)
+    rq = {r.kind: r for r in model.review_queue}
+    assert rq["fixture_no_watts"].target == {"kind": "space", "ids": ["L1-101"]}
+    assert "1 tag(s) fall in no room" in rq["lighting_from_tags"].description
+
+
+def test_room_with_only_unwatted_fixtures_gets_no_lpd(tmp_path):
+    model, _ = _light_set(tmp_path, [("C", (6.5, 2)), ("A", (1.5, 2))])
+    exit_only = model.spaces["L1-102"].lighting
+    assert [f.tag for f in exit_only.fixtures] == ["C"]
+    assert exit_only.total_w == 0.0 and exit_only.lpd_w_m2 is None
+
+
+def test_rcp_and_lighting_plan_are_not_both_counted(tmp_path):
+    model, report = _light_set(
+        tmp_path, [("A", (1.5, 2))], rcp_tags=[("A", (1.5, 2)), ("A", (2.5, 2))]
+    )
+    office = model.spaces["L1-101"]
+    assert len(office.lighting.fixtures) == 2 and office.lighting.provenance.sheet_id == "A-121"
+    assert any("E-101: 1 lighting fixture tag(s) not counted" in n for n in report.notes)
+
+
+def test_lighting_plan_that_does_not_register_counts_nothing(tmp_path):
+    model, _ = _light_set(tmp_path, [("A", (1.5, 2))], scale='SCALE: 1/4" = 1\'-0"')
+    assert model.spaces["L1-101"].lighting.fixtures == []
+    assert [r.kind for r in model.review_queue if r.id == "rq-lightreg-E-101"] == [
+        "lighting_plan_unregistered"
+    ]
+
+
+def test_grid_bubble_labels_are_not_fixtures():
+    from grid_detect import GridLine, GridSet
+
+    g = GridSet("E-101", [GridLine("A", "v", 100.0, (0, 500), True, [(100.0, 40.0, 9.0)], 0.9)])
+    assert real_set._in_grid_bubble([96, 36, 104, 44], g)
+    assert not real_set._in_grid_bubble([196, 36, 204, 44], g)
+    assert not real_set._in_grid_bubble([96, 36, 104, 44], None)
