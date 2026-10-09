@@ -429,6 +429,36 @@ COURTYARD_WALL_SHARE = 0.5
 # within this angle of it (degrees), counts as running along it
 _COURTYARD_TOL_M = 0.6
 _COURTYARD_ANGLE_DEG = 10.0
+# a courtyard is open to the sky: spaces on higher levels may cover at most
+# this share of it (balconies, a bridge); more means floor above a missing room
+COURTYARD_MAX_COVERED_ABOVE = 0.10
+
+
+def _slab_level_walls(model, level_ids: set) -> list:
+    """Exterior wall centrelines ``[(p0, p1)]`` on the slab's level.
+
+    IFC and drawing-set envelope ids are level-prefixed (``<level>-EW1``,
+    ``<level>-E1``); when any wall carries a known level prefix, only walls on
+    ``level_ids`` count, so an upper-floor wall over a ground-floor hole edge
+    is not evidence. Unprefixed envelopes (a single-level model) use every
+    wall.
+    """
+    known = {lv.id for lv in (getattr(model, "levels", None) or [])}
+    rows = [
+        w
+        for w in (getattr(model, "envelope", None) or [])
+        if len(w.from_m or []) >= 2 and len(w.to_m or []) >= 2 and w.from_m[:2] != w.to_m[:2]
+    ]
+
+    def level_of(w):
+        for lid in known:
+            if str(w.id).startswith(f"{lid}-"):
+                return lid
+        return None
+
+    if any(level_of(w) for w in rows):
+        rows = [w for w in rows if level_of(w) in level_ids]
+    return [(tuple(w.from_m[:2]), tuple(w.to_m[:2])) for w in rows]
 
 
 def _wall_cover(ring, walls) -> float:
@@ -483,11 +513,12 @@ def _slab_geometry(model, lowest: bool = True):
     space polygons, every part of it (#747): a separate wing is slab on grade
     too, so its area and its whole edge count; parts under
     ``MIN_SLAB_PART_M2`` are slivers and are only listed. A hole in the union
-    is an open-air courtyard when exterior walls run along at least
-    ``COURTYARD_WALL_SHARE`` of its edge: its edge is exposed and its area is
-    not slab. Any other hole (an unmodelled room or shaft) stays slab and its
-    edge is not exposed, which is what the exported footprint (holes dropped)
-    already assumes. ``detail`` lists wings, courtyards and holes for the
+    is an open-air courtyard when exterior walls on this level run along at
+    least ``COURTYARD_WALL_SHARE`` of its edge and spaces on higher levels
+    cover at most ``COURTYARD_MAX_COVERED_ABOVE`` of it (open to the sky):
+    its edge is exposed and its area is not slab. Any other hole (an
+    unmodelled room or shaft) stays slab and its edge is not exposed, which is
+    what the exported footprint (holes dropped) already assumes. ``detail`` lists wings, courtyards and holes for the
     report.
     """
     from shapely.geometry import Polygon
@@ -512,11 +543,18 @@ def _slab_geometry(model, lowest: bool = True):
     merged = unary_union(polys)
     parts = list(merged.geoms) if hasattr(merged, "geoms") else [merged]
     parts = [g for g in parts if g.geom_type == "Polygon" and g.area > 0]
-    walls = [
-        (tuple(w.from_m[:2]), tuple(w.to_m[:2]))
-        for w in (getattr(model, "envelope", None) or [])
-        if len(w.from_m or []) >= 2 and len(w.to_m or []) >= 2 and w.from_m != w.to_m
-    ]
+    walls = _slab_level_walls(model, {sp.level_id for sp in ground})
+    # spaces on higher levels: a courtyard is open to the sky, so a hole with
+    # floor above it is a missing room, not a courtyard
+    above = []
+    for sp in spaces:
+        if elev.get(sp.level_id, 0.0) > low + 1e-6:
+            g = Polygon([tuple(v[:2]) for v in sp.polygon_m])
+            if not g.is_valid:
+                g = g.buffer(0)
+            if not g.is_empty and g.area > 0:
+                above.append(g)
+    above_union = unary_union(above) if above else None
     detail = {"wings": 0, "slivers": [], "courtyards": [], "holes_not_exposed": []}
     area = perim = 0.0
     for g in sorted(parts, key=lambda q: -q.area):
@@ -530,12 +568,21 @@ def _slab_geometry(model, lowest: bool = True):
             h_area = Polygon(hole).area
             h_len = hole.length
             cover = _wall_cover(hole, walls) if walls else 0.0
+            covered_above = 0.0
+            if above_union is not None and h_area > 0:
+                covered_above = Polygon(hole).intersection(above_union).area / h_area
             rec = {
                 "area_m2": round(h_area, 4),
                 "perimeter_m": round(h_len, 4),
                 "wall_cover_m": round(cover, 4),
             }
-            if h_len > 0 and cover / h_len >= COURTYARD_WALL_SHARE:
+            if covered_above > 0:
+                rec["covered_above_share"] = round(covered_above, 4)
+            if (
+                h_len > 0
+                and cover / h_len >= COURTYARD_WALL_SHARE
+                and covered_above <= COURTYARD_MAX_COVERED_ABOVE
+            ):
                 area -= h_area
                 perim += h_len
                 detail["courtyards"].append(rec)

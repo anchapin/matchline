@@ -323,6 +323,38 @@ def test_perpendicular_or_distant_walls_do_not_make_a_courtyard():
     assert d["courtyards"] == [] and d["holes_not_exposed"][0]["wall_cover_m"] == 0.0
 
 
+def test_only_walls_on_the_slab_level_make_a_courtyard():
+    """An upper-floor wall over the hole edge is not evidence for the ground slab."""
+    m = _courtyard_model()
+    _ring_walls(m, _rect(10, 10, 20, 20), prefix="L2-EW")
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["courtyards"] == [] and d["holes_not_exposed"][0]["wall_cover_m"] == 0.0
+    m2 = _courtyard_model()
+    _ring_walls(m2, _rect(10, 10, 20, 20), prefix="L1-EW")
+    assert len(apply_construction_library(m2, "5A").defaulted["t55-slab"]["courtyards"]) == 1
+
+
+def test_unprefixed_envelope_walls_still_count():
+    m = _courtyard_model()
+    _ring_walls(m, _rect(10, 10, 20, 20), prefix="ENV-")
+    assert len(apply_construction_library(m, "5A").defaulted["t55-slab"]["courtyards"]) == 1
+
+
+def test_walled_hole_with_floor_above_is_a_missing_room_not_a_courtyard():
+    m = _courtyard_model()
+    _ring_walls(m, _rect(10, 10, 20, 20))
+    m.spaces["UP"] = Space(id="UP", level_id="L2", name="UP", polygon_m=_rect(0, 0, 30, 30))
+    d = apply_construction_library(m, "5A").defaulted["t55-slab"]
+    assert d["courtyards"] == []
+    assert d["holes_not_exposed"][0]["covered_above_share"] == pytest.approx(1.0)
+    assert d["exposed_perimeter_m"] == pytest.approx(120.0)
+    # a 1 m balcony strip over the court (10%) still leaves it open to the sky
+    m2 = _courtyard_model()
+    _ring_walls(m2, _rect(10, 10, 20, 20))
+    m2.spaces["BAL"] = Space(id="BAL", level_id="L2", name="BAL", polygon_m=_rect(10, 10, 20, 11))
+    assert len(apply_construction_library(m2, "5A").defaulted["t55-slab"]["courtyards"]) == 1
+
+
 def test_every_wing_counts_not_just_the_largest():
     m = _slab_model(A=("L1", _rect(0, 0, 20, 20)), B=("L1", _rect(30, 0, 40, 10)))
     d = apply_construction_library(m, "5A").defaulted["t55-slab"]
