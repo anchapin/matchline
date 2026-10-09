@@ -695,6 +695,42 @@ def test_zone_airflow_from_a_schedule_row(row, expect, note):
     assert note in why
 
 
+def test_mechanical_legend_rows_on_the_report_and_unmapped_to_review(tmp_path):
+    from test_hvac_legend import legend
+    from test_pdf_schedules import vav_schedule
+
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _mech_tagged("M-101", "FIRST FLOOR MECHANICAL PLAN", [("VAV-1", (1.5, 2))]),
+        _tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000) + legend(900, 1000),
+    ]
+    model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    (leg,) = report.to_dict()["hvac_legends"]
+    assert leg["sheet"] == "M-601" and leg["title"] == "HVAC SYMBOL LEGEND"
+    assert [r["class"] for r in leg["rows"]] == ["diffuser", "grille", "vav", "sensor", None]
+    assert all(len(r["symbol_bbox_pt"]) == 4 for r in leg["rows"])
+    (rq,) = [r for r in model.review_queue if r.kind == "hvac_legend_unmapped"]
+    assert "MANUAL VOLUME DAMPER" in rq.description and rq.provenance.method == "pdf_legend"
+    assert any("4 naming an HVAC class" in n for n in report.notes)
+    # the legend does not disturb tag placement
+    assert list(model.zones) == ["L1-Z-VAV-1"]
+
+
+def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
+    from test_hvac_legend import legend
+    from test_pdf_schedules import vav_schedule
+
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _tb("M-001", "MECHANICAL LEGEND AND NOTES") + legend(900, 1000),
+        _tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000) + legend(900, 1000),
+    ]
+    model, report = real_set.build_set_model(_set(tmp_path, pages), tmp_path / "run")
+    assert [lg["sheet"] for lg in report.to_dict()["hvac_legends"]] == ["M-001", "M-601"]
+    (rq,) = [r for r in model.review_queue if r.kind == "hvac_legend_unmapped"]
+    assert "M-001, M-601" in rq.description
+
+
 def test_zones_pass_the_hvac_coverage_check(tmp_path):
     from validate import _Ctx
     from validate.invariants import _check_hvac_zone_coverage
