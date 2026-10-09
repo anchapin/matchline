@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Set runs: a door drawn inside a storefront run is modelled as a door when the storefront's window row is as wide as the run less its doors (the row is then the glass alone, centred on the glass that is left); a door no scheduled door explains goes to review. A window row as wide as the whole run still includes its doors. Before, such a storefront went to review whole and nothing was modelled (#793).
 - Plan walls: a door drawn inside full-length glazing with no gap in the wall (two jamb ticks with a single or double swing between them) no longer counts its jambs as mullions, so a cavity line with a door is not a false storefront; a storefront window that still qualifies lists the door under `doors_in_glazing` (#793).
 - Plan walls: a thin wall band between thicker walls whose face lines are on a glazing CAD layer (such as `A-GLAZ`) is a window over its whole length (`glazing_layer_band`, confidence 0.7) instead of a `maybe_glazing` review question; on any other layer it stays flagged as before (#793).
 - PDF CAD layers: ingestion records each vector path's optional content group (layer) name and each sheet's layer list. On plans, glazing that runs a whole wall counts as a window (`glazing_layer`, confidence 0.7) when it sits on a glazing layer such as `A-GLAZ`, with or without mullion ticks, and a middle line on a pattern or insulation layer such as `A-WALL-PATT` is never a window (#793).

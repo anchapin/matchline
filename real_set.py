@@ -1331,6 +1331,19 @@ def _plan_openings(
             # a door swing or a glazing line on the plan rules out same-width
             # rows of the other category (#743)
             cands = [(t, e) for t, e in cands if e["category"] == drawn]
+        # doors drawn inside a storefront run (#793): a window row as wide as
+        # the run less those doors is the glass alone, and the doors are
+        # modelled as doors beside it
+        in_glass = [d for d in op.get("doors_in_glazing") or [] if d.get("width_m")]
+        glass_w = width - sum(float(d["width_m"]) for d in in_glass)
+        less_doors = False
+        if in_glass and not cands:
+            cands = [
+                (t, e)
+                for t, e in sized
+                if e["category"] == "window" and abs(e["width_m"] - glass_w) <= WIDTH_TOL_M
+            ]
+            less_doors = bool(cands)
         # a scheduled tag written next to the gap names its row (#793); the
         # nearest scheduled one wins over a nearer wall-type mark (#829)
         near = [t["tag"] for t in op.get("tags_near") or []] or [op.get("tag_text") or ""]
@@ -1340,7 +1353,15 @@ def _plan_openings(
         if row is not None:
             if drawn and row["category"] != drawn:
                 tag_why = f"tag {tag} is a scheduled {row['category']} but the plan draws a {drawn}"
-            elif abs(row["width_m"] - width) > WIDTH_TOL_M:
+            elif abs(row["width_m"] - width) <= WIDTH_TOL_M:
+                less_doors = False
+            elif (
+                in_glass
+                and row["category"] == "window"
+                and abs(row["width_m"] - glass_w) <= WIDTH_TOL_M
+            ):
+                less_doors = True
+            else:
                 tag_why = (
                     f"tag {tag} is scheduled {row['width_m']:.2f} m wide but the gap is "
                     f"{width:.2f} m"
@@ -1397,6 +1418,11 @@ def _plan_openings(
         # the schedule states the size; the plan gap only places it (and the
         # takeoff reconcile check holds count x schedule size to the area)
         width = float(cands[0][1]["width_m"])
+        door_ivs = []
+        if less_doors:
+            # the glass is the run less its doors: centre it on what is left
+            door_ivs = [_door_interval(d, ls) for d in in_glass]
+            s = _glass_centre(s, float(op["width_m"]), door_ivs)
         prov = Provenance(
             sheet_id=sheet_id,
             revision=0,
@@ -1415,6 +1441,15 @@ def _plan_openings(
                     if drawn == "door"
                     else "; glazing line drawn on the plan"
                     if drawn == "window"
+                    else ""
+                )
+                + (
+                    f"; scheduled {width:.3f} m is the glass less the "
+                    f"{len(in_glass)} door{'s' if len(in_glass) > 1 else ''} drawn in it"
+                    if less_doors
+                    else f"; includes the {len(in_glass)} door"
+                    f"{'s' if len(in_glass) > 1 else ''} drawn in it"
+                    if in_glass
                     else ""
                 )
             ),
@@ -1445,6 +1480,11 @@ def _plan_openings(
         counts["modelled"] += 1
         if centers is not None:
             centers[oid] = (mid.x, mid.y)
+        for j, (d, (ds, dw)) in enumerate(zip(in_glass, door_ivs)):
+            _glass_door(
+                f"{oid}-D{j + 1}", d, ds, dw, wall, sp, sized, sheet_id, review, counts,
+                constructions, centers, tags[0],
+            )  # fmt: skip
     _wall_tag_openings(
         lid, wall_tags, plan_walls_by_id or {}, lines, spaces, dict(sized), sheet_id,
         review, constructions, centers, counts, len(plan_openings),
@@ -1454,6 +1494,121 @@ def _plan_openings(
         counts, len(plan_openings) + len(wall_tags),
     )  # fmt: skip
     return counts
+
+
+def _door_interval(d: dict, ls) -> Tuple[float, float]:
+    """(centre along the wall, width) of a door drawn inside a storefront run."""
+    (ax, ay), (bx, by) = d["a_m"], d["b_m"]
+    return ls.project(Point((ax + bx) / 2, -(ay + by) / 2)), float(d["width_m"])
+
+
+def _glass_centre(s: float, run_w: float, doors: List[Tuple[float, float]]) -> float:
+    """Centre of the glass left in a run [s - w/2, s + w/2] once its doors are cut out."""
+    lo, hi = s - run_w / 2, s + run_w / 2
+    pieces, cur = [], lo
+    for ds, dw in sorted(doors):
+        a, b = max(lo, ds - dw / 2), min(hi, ds + dw / 2)
+        if a > cur:
+            pieces.append((cur, a))
+        cur = max(cur, b)
+    if hi > cur:
+        pieces.append((cur, hi))
+    total = sum(b - a for a, b in pieces)
+    if total <= 0:
+        return s
+    return sum((a + b) / 2 * (b - a) for a, b in pieces) / total
+
+
+def _glass_door(
+    oid, d, ds, dw, wall, sp, sized, sheet_id, review, counts, constructions, centers, glass_tag
+):
+    """A door drawn inside a storefront whose schedule row leaves it out (#793):
+    modelled as a door when every scheduled door of its width agrees on height,
+    otherwise sent to review like any unsized gap. Never invented."""
+    from building_model import Provenance, ReviewItem, SpaceOpening
+
+    cands = [
+        (t, e)
+        for t, e in sized
+        if e["category"] == "door" and abs(e["width_m"] - dw) <= WIDTH_TOL_M
+    ]
+    heights = {round(e["height_m"], 3) for _t, e in cands}
+    if len(heights) != 1 or sp is None:
+        counts["unsized"] += 1
+        why = (
+            "no scheduled door is this wide"
+            if not cands
+            else "scheduled doors of this width disagree on height ("
+            + ", ".join(t for t, _e in cands)
+            + ")"
+            if len(heights) != 1
+            else "its wall has no room"
+        )
+        review.append(
+            ReviewItem(
+                id=f"rq-{oid}",
+                kind="opening_unsized",
+                target={
+                    "kind": "wall",
+                    "id": wall.id,
+                    "field": "opening",
+                    "gap": {
+                        "opening_id": oid,
+                        "space_id": wall.space_id if sp is not None else "",
+                        "facade": wall.facade,
+                        "s_center_m": round(ds, 4),
+                        "width_m": round(dw, 4),
+                        "drawn": "door",
+                        "candidates": [t for t, _e in cands],
+                        "sheet_id": sheet_id,
+                    },
+                },
+                description=(
+                    f"{oid}: {dw:.2f} m door drawn in storefront {glass_tag} on "
+                    f"{wall.facade} wall {wall.id}; {why}; not modelled"
+                ),
+                confidence=0.5,
+                provenance=Provenance(sheet_id, 0, "plan_walls_vector", 0.5),
+                needs_review=True,
+            )
+        )
+        return
+    tags = [t for t, _e in cands]
+    width, height = float(cands[0][1]["width_m"]), heights.pop()
+    sp.openings.append(
+        SpaceOpening(
+            id=oid,
+            tag=tags[0],
+            category="door",
+            width_m=width,
+            height_m=height,
+            host_facade=wall.facade,
+            host_interval_m=[round(ds - width / 2, 4), round(ds + width / 2, 4)],
+            s_center_m=round(ds, 4),
+            area_m2=width * height,
+            provenance=Provenance(
+                sheet_id=sheet_id,
+                revision=0,
+                method="plan_glazing_door",
+                confidence=0.75 if len(tags) == 1 else 0.7,
+                note=(
+                    f"door {dw:.3f} m drawn between jambs in storefront {glass_tag}, "
+                    f"matched schedule {'/'.join(tags)} by width; the storefront row "
+                    "is the glass alone"
+                ),
+            ),
+            needs_review=False,
+            construction_id=(
+                _schedule_construction(constructions, "door", tags, cands, sheet_id, review, oid)
+                if constructions is not None
+                else ""
+            ),
+        )
+    )
+    counts["modelled"] += 1
+    if centers is not None:
+        (ax, ay), (bx, by) = d["a_m"], d["b_m"]
+        centers[oid] = ((ax + bx) / 2, -(ay + by) / 2)
 
 
 # A scheduled window whose width spans the whole wall it is tagged on is a
