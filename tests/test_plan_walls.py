@@ -504,6 +504,47 @@ def test_wide_glazing_without_mullions_is_still_not_a_window(tmp_path):
     assert op["source"] == "glazing_mullions" and op["width_m"] == pytest.approx(6.0, abs=0.05)
 
 
+# ---- door jambs inside full-length glazing are not mullions (#793) --------
+
+# a 0.9 m door in the south wall drawn without a gap: jamb ticks at x=4.55
+# and x=5.45, hinged on the first jamb, the swing closing on the second
+_JAMBS = [4.55, 5.45]
+_SWING = _door_symbol((4.55, 0), (4.55, 0.9), (5.45, 0))
+
+
+def test_door_jambs_in_a_cavity_line_are_not_mullions(tmp_path):
+    body = _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks(_JAMBS) + _SWING
+    res, _ = _read(tmp_path, body)
+    assert not _windows(res)  # was a false 9.7 m storefront
+
+
+def test_storefront_window_splits_around_a_door_drawn_without_a_gap(tmp_path):
+    body = _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks([2, *_JAMBS, 8]) + _SWING
+    res, _ = _read(tmp_path, body)
+    ops = sorted(_windows(res), key=lambda o: min(o["a_m"][0], o["b_m"][0]))
+    assert len(ops) == 2 and {o["source"] for o in ops} == {"glazing_mullions"}
+    x0 = OX * M_PER_PT  # sheet offset in metres
+    left, right = (sorted((o["a_m"][0] - x0, o["b_m"][0] - x0)) for o in ops)
+    assert left[1] == pytest.approx(4.55, abs=0.03)  # glass stops at the first jamb
+    assert right[0] == pytest.approx(5.45, abs=0.03)  # and resumes at the second
+    assert sum(o["width_m"] for o in ops) == pytest.approx(9.7 - 0.9, abs=0.05)
+    assert res.stats["windows"] == 2
+
+
+def test_jamb_like_ticks_without_a_swing_are_still_mullions(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(0, 10) + _mullion_ticks(_JAMBS))
+    (op,) = _windows(res)
+    assert op["source"] == "glazing_mullions"
+
+
+def test_door_jambs_on_a_glazing_layer_split_the_window(tmp_path):
+    body = _outline(_mass(SHELL)) + oc(0, _glazing(0, 10)) + _mullion_ticks(_JAMBS) + _SWING
+    res = _read_layers(tmp_path, body, ["A-GLAZ"])
+    ops = _windows(res)
+    assert len(ops) == 2 and {o["source"] for o in ops} == {"glazing_layer"}
+    assert sum(o["width_m"] for o in ops) == pytest.approx(8.8, abs=0.05)
+
+
 # ---- CAD layers decide full-length glazing when the PDF keeps them (#793) --
 
 
