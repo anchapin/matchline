@@ -220,6 +220,26 @@ mullion. These openings carry `source: "glazing_mullions"` and
 A middle line along the whole wall with fewer than two ticks is still a
 cavity or insulation line and the wall stays opaque.
 
+### CAD layers (#793)
+
+When the PDF keeps its CAD layers (optional content groups), ingestion
+records each path's layer name on the primitive (`layer`) and the sheet's
+layer names (`layers`). Layers then decide before the geometry rules:
+
+- A glazed band with a face line on a glazing layer (`GLAZ`, `STOREFRONT`,
+  `CURTAIN`/`CURT-WALL`, `WINDOW`/`WIND`, e.g. `A-GLAZ`, `A-WALL-GLAZ`) is a
+  window at any length, mullions or not: `source: "glazing_layer"`,
+  `window_confidence` 0.7 (`LAYER_GLAZING_CONFIDENCE`).
+- A middle line on a pattern or insulation layer (`PATT`, `INSUL`, `HATCH`,
+  `BATT`, e.g. `A-WALL-PATT`; `A-GLAZ-PATT` counts as pattern) is never a
+  window, at any length, ticks or not.
+- Any other layer name (`A-WALL`, `0`) gives no evidence and the return,
+  width and mullion rules above apply as before.
+
+`stats["layers"]` lists the layer names on the plan's wall-face segments.
+A thin wall band on a glazing layer is still only flagged `maybe_glazing`;
+promoting it to a window is a follow-up.
+
 A storefront drawn as a plain wall band, with no glazing line at all, can still
 be found from its schedule tag. A tag-like span within `TAG_RADIUS_M` of a wall
 that has no opening (and not within it of any opening) is kept in `wall_tags`

@@ -73,6 +73,7 @@ class Primitive:
     stroked: bool
     filled: bool
     dashed: bool
+    layer: Optional[str] = None  # PDF optional content group (CAD layer) name (#793)
 
 
 @dataclass
@@ -104,6 +105,7 @@ class Sheet:
     stats: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
     provenance: Dict[str, object] = field(default_factory=dict)
+    layers: List[str] = field(default_factory=list)  # OCG names the vectors sit on (#793)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -138,6 +140,7 @@ class IngestResult:
                     "n_primitives": len(s.primitives),
                     "n_text": len(s.text),
                     "n_images": len(s.images),
+                    "layers": list(s.layers),
                     "warnings": list(s.warnings),
                 }
                 for s in self.sheets
@@ -251,6 +254,31 @@ class _Walker:
         self.images: List[ImageRef] = []
         self.visible_text_objs = 0
         self.invisible_text_objs = 0
+        self.layers: set = set()
+
+    def _wstr(self, fn, *args) -> Optional[str]:
+        n = ctypes.c_ulong()
+        buf = (ctypes.c_ushort * 256)()
+        if not fn(*args, buf, ctypes.sizeof(buf), ctypes.byref(n)) or n.value < 2:
+            return None
+        return ctypes.string_at(buf, min(n.value, ctypes.sizeof(buf)) - 2).decode(
+            "utf-16-le", "replace"
+        )
+
+    def _layer(self, obj) -> Optional[str]:
+        """Name of the optional content group (CAD layer) the object is marked
+        with: an ``/OC`` marked-content section whose property is an OCG
+        dictionary. The innermost mark wins."""
+        raw = self.raw
+        name = None
+        for k in range(raw.FPDFPageObj_CountMarks(obj)):
+            mark = raw.FPDFPageObj_GetMark(obj, k)
+            if not mark or self._wstr(raw.FPDFPageObjMark_GetName, mark) != "OC":
+                continue
+            v = self._wstr(raw.FPDFPageObjMark_GetParamStringValue, mark, b"Name")
+            if v:
+                name = v.strip() or name
+        return name
 
     def walk_page(self, page) -> None:
         raw = self.raw
@@ -266,21 +294,23 @@ class _Walker:
             return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
         return (m.a, m.b, m.c, m.d, m.e, m.f)
 
-    def _obj(self, obj, outer: Matrix) -> None:
+    def _obj(self, obj, outer: Matrix, layer: Optional[str] = None) -> None:
         raw = self.raw
         self.n_objects += 1
         if self.n_objects > self.max_objects:
             self.truncated = True
             return
         t = raw.FPDFPageObj_GetType(obj)
+        if t in (_OBJ_FORM, _OBJ_PATH):
+            layer = self._layer(obj) or layer  # a form's layer covers what it holds
         if t == _OBJ_FORM:
             m = _mul(self._matrix(obj), outer)
             for j in range(raw.FPDFFormObj_CountObjects(obj)):
                 if self.truncated:
                     return
-                self._obj(raw.FPDFFormObj_GetObject(obj, j), m)
+                self._obj(raw.FPDFFormObj_GetObject(obj, j), m, layer)
         elif t == _OBJ_PATH:
-            self._path(obj, _mul(self._matrix(obj), outer))
+            self._path(obj, _mul(self._matrix(obj), outer), layer)
         elif t == _OBJ_TEXT:
             if raw.FPDFTextObj_GetTextRenderMode(obj) == _TEXT_INVISIBLE:
                 self.invisible_text_objs += 1
@@ -305,7 +335,7 @@ class _Walker:
         self.raw.FPDFImageObj_GetImagePixelSize(obj, w, h)
         self.images.append(ImageRef(tuple(_r(v) for v in box), (int(w.value), int(h.value))))
 
-    def _path(self, obj, m: Matrix) -> None:
+    def _path(self, obj, m: Matrix, layer: Optional[str] = None) -> None:
         raw = self.raw
         n = raw.FPDFPath_CountSegments(obj)
         if n <= 0:
@@ -363,8 +393,11 @@ class _Walker:
                 stroked=bool(stroke.value),
                 filled=fill.value != 0,
                 dashed=dashed,
+                layer=layer,
             )
         )
+        if layer:
+            self.layers.add(layer)
 
 
 def _text_spans(page, to_sheet: Matrix) -> List[TextSpan]:
@@ -535,6 +568,7 @@ def _ingest_page(page, number: int, path: Path, sha: str, out, dpi, rasterize) -
             "image_area_frac": round(img_frac, 3),
         },
         warnings=warnings,
+        layers=sorted(walker.layers) if primitives else [],
         provenance={
             "source_file": str(path),
             "sha256": sha,

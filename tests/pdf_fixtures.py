@@ -24,6 +24,16 @@ class PageSpec:
     # (content, (a, b, c, d, e, f)): a form XObject drawn once via "/Fm1 Do"; CAD
     # exporters put most of a sheet inside forms, often nested under a transform
     form: Optional[Tuple[str, Tuple[float, ...]]] = None
+    # optional content groups (CAD layers) the content marks as /OC /MC<i> (#793)
+    layers: Optional[List[str]] = None
+
+
+FORM_DO = "%FORM_DO%"  # placeholder in PageSpec.content for where the form is drawn
+
+
+def oc(i: int, content: str) -> str:
+    """Wrap content in the i-th layer of its page's ``PageSpec.layers``."""
+    return f"/OC /MC{i} BDC\n{content}EMC\n"
 
 
 def line(x0, y0, x1, y1, w=1.0) -> str:
@@ -53,6 +63,7 @@ def write_pdf(path: Path, pages: List[PageSpec], encrypt_marker: bool = False) -
     font = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     pages_id = add(b"")  # placeholder, filled below
     kids = []
+    ocgs: List[int] = []
     for p in pages:
         content = p.content
         xobj = b""
@@ -80,9 +91,19 @@ def write_pdf(path: Path, pages: List[PageSpec], encrypt_marker: bool = False) -
                 + b"\nendstream"
             )
             xobj += f"/Fm1 {fm} 0 R ".encode()
-            content = content + "/Fm1 Do\n"
+            if FORM_DO in content:  # the caller placed the Do (e.g. inside a layer)
+                content = content.replace(FORM_DO, "/Fm1 Do\n")
+            else:
+                content = content + "/Fm1 Do\n"
         if xobj:
             xobj = b"/XObject << " + xobj + b">>"
+        if p.layers:
+            props = ""
+            for i, name in enumerate(p.layers):
+                g = add(f"<< /Type /OCG /Name ({name}) >>".encode("latin-1"))
+                ocgs.append(g)
+                props += f"/MC{i} {g} 0 R "
+            xobj += f" /Properties << {props}>>".encode()
         cb = content.encode("latin-1")
         cid = add(f"<< /Length {len(cb)} >>\nstream\n".encode() + cb + b"\nendstream")
         rot = f" /Rotate {p.rotate}" if p.rotate else ""
@@ -97,7 +118,11 @@ def write_pdf(path: Path, pages: List[PageSpec], encrypt_marker: bool = False) -
         f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] "
         f"/Count {len(kids)} >>".encode()
     )
-    catalog = add(f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode())
+    ocp = ""
+    if ocgs:
+        refs = " ".join(f"{g} 0 R" for g in ocgs)
+        ocp = f" /OCProperties << /OCGs [{refs}] /D << /Order [{refs}] >> >>"
+    catalog = add(f"<< /Type /Catalog /Pages {pages_id} 0 R{ocp} >>".encode())
 
     out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets = []
