@@ -786,12 +786,15 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
     from building_model import Provenance, ReviewItem
     from hvac_legend import CONFIDENCE, read_legend
 
+    # a set often repeats its legend on every mechanical plan: one review item
+    # per distinct set of unmapped rows, naming every sheet it is on
+    unmapped: Dict[tuple, List[tuple]] = {}
     for f in files:
         st = status[f]
         if _discipline(st) != "mechanical" or st.stages["ingest"]["kind"] == "raster_only":
             continue
         sheet_id = st.number or f
-        for k, leg in enumerate(read_legend(json.loads((sheets_dir / f).read_text()))):
+        for leg in read_legend(json.loads((sheets_dir / f).read_text())):
             report.hvac_legends.append(
                 {
                     "sheet": sheet_id,
@@ -812,23 +815,25 @@ def _mech_legends(files, status, sheets_dir, review, report) -> None:
                 + "; legend symbols are not yet used for detection"
             )
             if leg.unmapped:
-                names = "; ".join(r.description for r in leg.unmapped)
-                review.append(
-                    ReviewItem(
-                        id=f"rq-legend-{sheet_id}-{k}",
-                        kind="hvac_legend_unmapped",
-                        description=(
-                            f"{sheet_id} {leg.title}: {len(leg.unmapped)} symbol row(s) name no "
-                            f"HVAC class (supply diffuser, return/exhaust grille, VAV, AHU, "
-                            f"thermostat): {names}"
-                        ),
-                        confidence=CONFIDENCE,
-                        provenance=Provenance(
-                            sheet_id, 0, "pdf_legend", CONFIDENCE, tuple(leg.bbox_pt)
-                        ),
-                        needs_review=True,
-                    )
-                )
+                key = tuple(r.description for r in leg.unmapped)
+                unmapped.setdefault(key, []).append((sheet_id, leg))
+    for k, (names, seen) in enumerate(unmapped.items()):
+        sheet_id, leg = seen[0]
+        sheets = ", ".join(dict.fromkeys(sid for sid, _ in seen))
+        review.append(
+            ReviewItem(
+                id=f"rq-legend-{sheet_id}-{k}",
+                kind="hvac_legend_unmapped",
+                description=(
+                    f"{leg.title} on {sheets}: {len(names)} symbol row(s) name no HVAC class "
+                    "(supply diffuser, return/exhaust grille, VAV, AHU, thermostat): "
+                    + "; ".join(names)
+                ),
+                confidence=CONFIDENCE,
+                provenance=Provenance(sheet_id, 0, "pdf_legend", CONFIDENCE, tuple(leg.bbox_pt)),
+                needs_review=True,
+            )
+        )
 
 
 def _place_equipment(plan_files, status, scales, sheets_dir, plan_of_level, lid_of, spaces,

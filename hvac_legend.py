@@ -29,7 +29,9 @@ LEGEND_TITLE_RX = re.compile(
 # DIFFUSER" is a return, so grille is tried before diffuser)
 CLASS_RX = [
     ("sensor", re.compile(r"\bTHERMOSTAT|\bT-?STAT\b|\b(TEMPERATURE|SPACE|ROOM|ZONE)\s+SENSOR")),
-    ("vav", re.compile(r"\bVAV\b|\bVARIABLE\s+AIR\s+VOLUME|\bTERMINAL\s+UNIT|\bAIR\s+TERMINAL")),
+    # an "air terminal" alone is the diffuser or grille (IfcAirTerminal); only a
+    # terminal unit is the box
+    ("vav", re.compile(r"\bVAV\b|\bVARIABLE\s+AIR\s+VOLUME|\bTERMINAL\s+UNIT")),
     ("ahu", re.compile(r"\bAHU\b|\bAIR\s+HANDL|\bRTU\b|\bROOFTOP\s+UNIT")),
     (
         "grille",
@@ -48,6 +50,8 @@ MAX_DEPTH_PT = 500.0
 END_GAP_PITCHES = 3.0
 # a primitive wider or taller than this is a frame or a rule, not a symbol
 MAX_SYMBOL_PT = 80.0
+# a vertical line at least this share of a row pitch tall is a rule
+RULE_PITCH_SHARE = 0.8
 CONFIDENCE = 0.7
 
 
@@ -142,12 +146,18 @@ def read_legend(sheet: dict) -> List[Legend]:
                 break
             kept.append(b)
         band = max(0.5 * pitch, 6.0)
+        # a vertical line a row pitch tall is a ruled legend's cell divider or
+        # border, not part of a symbol
+        rule = RULE_PITCH_SHARE * pitch
         leg = Legend(title=title["text"].strip(), bbox_pt=list(title["bbox"]))
         for cy, dx0, desc in kept:
             sym = [
                 b
                 for b in boxes
-                if left <= b[0] and b[2] <= dx0 - 1.0 and abs((b[1] + b[3]) / 2 - cy) <= band
+                if left <= b[0]
+                and b[2] <= dx0 - 1.0
+                and abs((b[1] + b[3]) / 2 - cy) <= band
+                and not (b[2] - b[0] <= 0.5 and b[3] - b[1] >= rule)
             ]
             if not sym:
                 # a wrapped description line continues the row above it; a line

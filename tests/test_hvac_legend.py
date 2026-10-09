@@ -63,6 +63,8 @@ def _sheet(tmp_path, content):
         ("GRILLE, TRANSFER", "grille"),
         ("VAV BOX", "vav"),
         ("VARIABLE AIR VOLUME TERMINAL UNIT", "vav"),
+        ("AIR TERMINAL UNIT", "vav"),
+        ("AIR TERMINAL", None),
         ("AIR HANDLING UNIT", "ahu"),
         ("THERMOSTAT", "sensor"),
         ("SPACE TEMPERATURE SENSOR", "sensor"),
@@ -107,6 +109,20 @@ def test_text_far_below_or_beside_is_not_a_row(tmp_path):
     content += text(100, 670, "RETURN AIR GRILLE", 8) + rect(60, 668, 20, 10)
     (leg,) = read_legend(_sheet(tmp_path, content))
     assert len(leg.rows) == len(ROWS)
+
+
+def test_ruled_legend_keeps_the_divider_out_of_the_symbol_box(tmp_path):
+    # a table: border and a column divider at x+30, one short vertical per row
+    content = legend()
+    y = 720 - 2 * PITCH
+    for _ in ROWS:
+        top, bot = y + PITCH / 2 + 3, y - PITCH / 2 + 3
+        content += line(795, bot, 795, top) + line(830, bot, 830, top)
+        y -= PITCH
+    (leg,) = read_legend(_sheet(tmp_path, content))
+    assert [r.cls for r in leg.rows] == ["diffuser", "grille", "vav", "sensor", None]
+    for r in leg.rows:
+        assert (r.symbol_bbox_pt[0], r.symbol_bbox_pt[2]) == pytest.approx((800, 820), abs=1.5)
 
 
 def test_no_legend_title_no_legend(tmp_path):
