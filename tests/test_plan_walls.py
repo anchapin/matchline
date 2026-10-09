@@ -1076,3 +1076,33 @@ def test_wall_as_thick_as_the_band_never_lies_inside_it():
 
 def test_collinear_wall_piece_is_not_inside_the_band():
     assert not _inside_band(other_t=3.0, other_off=0.5)
+
+
+def _leaf_case(sides=(1, -1), leaf_t=3.0, off=4.5):
+    import math
+
+    from shapely.geometry import LineString
+
+    from plan_walls import Wall, _collinear_run
+
+    w = Wall("G", (100.0, 0.0), (110.0, 0.0), 12.0, "line_pair")
+    walls = [w]
+    for s in sides:
+        walls.append(Wall(f"L{s}a", (0.0, s * off), (100.0, s * off), leaf_t, "line_pair"))
+        walls.append(Wall(f"L{s}b", (110.0, s * off), (300.0, s * off), leaf_t, "line_pair"))
+    ls = LineString([w.a, w.b])
+    return _collinear_run(w, ls, 0.0, walls, math.radians(3), 1.0)
+
+
+def test_both_leaves_of_a_cavity_wall_carry_the_run_past_a_bridging_band():
+    lo, hi = _leaf_case()
+    assert lo == pytest.approx(-100.0) and hi == pytest.approx(200.0)
+
+
+def test_one_flush_lining_alone_does_not_carry_the_run():
+    assert _leaf_case(sides=(1,)) == (0.0, 10.0)
+
+
+def test_thin_lines_inside_the_wall_but_off_its_faces_are_not_leaves():
+    # centred well inside the band, not flush with a face: hatch or lining
+    assert _leaf_case(off=2.0) == (0.0, 10.0)

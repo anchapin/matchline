@@ -423,21 +423,42 @@ def _collinear_run(w, ls, th, walls, atol: float, tol: float) -> Tuple[float, fl
     through collinear walls of about the same thickness whose ends lie within
     one wall thickness of it (#743). A short return meeting a wall's face at a
     window jamb ends the wall run there, leaving the window alone on a wall
-    no longer than itself, which would read as full-length glazing."""
+    no longer than itself, which would read as full-length glazing.
+
+    The two leaves of a double-leaf wall also carry the run (#872): a window
+    cut through a cavity wall whose cavity is too wide to fold leaves its
+    glazed band as a wall of its own across the opening. A leaf is a thinner
+    parallel wall flush with one of ``w``'s faces; the run grows past an end
+    only as far as leaves on both faces reach."""
     L = ls.length
-    lo, hi = 0.0, L
     gap = max(w.t, tol)
     pieces = []
+    leaves: Dict[int, list] = {1: [], -1: []}
     for o in walls:
-        if o is w or abs(o.t - w.t) > 0.25 * w.t:
+        if o is w:
             continue
         tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0]) % math.pi
         if not _angle_close(th, tho, atol):
             continue
         # offset from the line, measured at both ends
-        if max(_line_offset(ls, o.a), _line_offset(ls, o.b)) > 0.5 * w.t:
+        off = max(_line_offset(ls, o.a), _line_offset(ls, o.b))
+        if off > 0.5 * w.t:
             continue
-        pieces.append(sorted((_signed_proj(ls, o.a), _signed_proj(ls, o.b))))
+        span = sorted((_signed_proj(ls, o.a), _signed_proj(ls, o.b)))
+        if abs(o.t - w.t) <= 0.25 * w.t:
+            pieces.append(span)
+        elif o.t < 0.75 * w.t and abs(off + 0.5 * o.t - 0.5 * w.t) <= tol:
+            side = 1 if _signed_offset(ls, o.a) + _signed_offset(ls, o.b) > 0 else -1
+            leaves[side].append(span)
+    lo, hi = _grow(pieces, 0.0, L, gap)
+    if leaves[1] and leaves[-1]:
+        lp, hp = _grow(leaves[1], 0.0, L, gap)
+        ln, hn = _grow(leaves[-1], 0.0, L, gap)
+        lo, hi = min(lo, max(lp, ln)), max(hi, min(hp, hn))
+    return lo, hi
+
+
+def _grow(pieces, lo: float, hi: float, gap: float) -> Tuple[float, float]:
     changed = True
     while changed:
         changed = False
@@ -447,6 +468,11 @@ def _collinear_run(w, ls, th, walls, atol: float, tol: float) -> Tuple[float, fl
             if p0 < lo and p1 >= lo - gap:
                 lo, changed = p0, True
     return lo, hi
+
+
+def _signed_offset(ls: LineString, p: Pt) -> float:
+    (ax, ay), (bx, by) = ls.coords[0], ls.coords[-1]
+    return ((bx - ax) * (p[1] - ay) - (by - ay) * (p[0] - ax)) / ls.length
 
 
 def _signed_proj(ls: LineString, p: Pt) -> float:

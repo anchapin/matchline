@@ -239,6 +239,22 @@ The two extras were a 2.29 x 0.27 m box enclosure on the first floor and a
 1.15 x 0.58 m pier with a lining and a partition on the second. Clinic walls
 and rooms are identical before and after.
 
+A window through a double-leaf (cavity) wall needs one more step (#872). When
+the cavity is narrower than a leaf, the cavity's face lines fold into one leaf
+and the window sits on that wall as usual. When the cavity is as wide as a
+leaf or wider, the two leaves stay separate walls and the glazed band across
+the opening becomes a wall of its own, no longer than the window, so the
+return rule found nothing running on past it. `_collinear_run` now also grows
+the run through the leaves: a thinner parallel wall (under 0.75 of the band's
+thickness) flush with one of the band's faces, within `tol`. Leaves must be
+present on both faces, and the run grows past an end only as far as both
+faces' leaves reach. One flush lining on one face, or thin lines inside the
+band but off its faces (hatch, insulation), do not count. Synthetic cavity
+walls (leaf/cavity 0.10/0.10, 0.10/0.05, 0.15/0.10, 0.10/0.15 m) now all give
+their window; before, 0.10/0.10 and 0.10/0.15 were missed. On the Clinic set
+walls, rooms and windows are unchanged (first floor 22/22, second 36/36,
+recall and precision 1.0): it has no cavity walls drawn this way.
+
 ### Storefront and curtain wall (#793)
 
 The return rule above misses glazing that runs the whole length of its wall
