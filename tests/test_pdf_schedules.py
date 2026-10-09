@@ -341,6 +341,23 @@ def test_unruled_door_schedule_reads_rows_wrapped_cells_and_a_note(tmp_path):
     assert len(cell.provenance.bbox) == 4
 
 
+@pytest.mark.parametrize(
+    "header, unit",
+    [
+        (["TAG", "MAX CFM", "MIN CFM", "INLET SIZE"], "cfm"),
+        (["TAG", "MAX L/S", "MIN L/S", "INLET SIZE"], "l/s"),
+        (["TAG", "MAX AIRFLOW", "MIN AIRFLOW", "INLET SIZE"], ""),
+    ],
+)
+def test_airflow_unit_comes_from_the_airflow_headers(tmp_path, header, unit):
+    rows = [("VAV-1", "1,200", "360", '10"')]
+    content = unruled(60, 700, "VAV BOX SCHEDULE", header, rows, [50, 60, 60, 60])
+    (s,) = extract_schedules(_sheet(tmp_path, content), "M-601")
+    assert s.status == "ok", s.reason
+    (e,) = s.equipment
+    assert (e["cfm_max"], e["cfm_min"], e["airflow_unit"]) == (1200.0, 360.0, unit)
+
+
 def test_unruled_vav_schedule_gives_equipment(tmp_path):
     rows = [("VAV-1", "1,200", "360", '10"'), ("VAV-2", "800", "240", '8"')]
     content = unruled(

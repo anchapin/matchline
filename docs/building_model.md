@@ -40,7 +40,11 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
    A zone's spaces = union of its diffusers' spaces; each space's
    `zone_ids` = zones containing its diffusers. Terminal units (VAVs),
    sensors, and duct-run length ride on the zone. Many-to-many is
-   emergent, not special-cased.
+   emergent, not special-cased. On a drawing-set run a zone made from a
+   placed VAV or fan coil also carries its scheduled design airflow
+   (`design_airflow_max_m3s` / `design_airflow_min_m3s`), converted from the
+   schedule's MAX/MIN CFM or L/S columns; an airflow column whose header
+   states no unit is not converted (#746).
 4. **Elevation** → facade registration (grid path preferred, geometric
    fallback required), window u-intervals → facade meters → south wall
    segments (one per room touching the facade) → owning room; tag joined
