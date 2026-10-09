@@ -42,7 +42,9 @@ def test_confirm_gate_keeps_rescaled_diffuser(sc):
 def test_grille_keeps_one_template_scale():
     # Scaled grille templates added false grilles on clean Clinic sheets (#854).
     assert "grille" not in H.TEMPLATE_SCALES
-    assert len(H._tight_templates("grille")) == len(H.TIGHT_TURNS["grille"])
+    assert len(H._tight_templates("grille")) == len(H.TIGHT_TURNS["grille"]) * len(
+        H.TEMPLATE_STYLES.get("grille", (0,))
+    )
 
 
 def test_rescaled_grille_confirm_falls_back_to_nominal(monkeypatch):

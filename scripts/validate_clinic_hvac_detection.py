@@ -119,40 +119,6 @@ def vary_aspects(only):
 _TAG_TEXT = {"diffuser": "SD-1", "grille": "RG-1", "sensor": "T-1"}
 
 
-def _draw_diffuser_arrows(d, cx, cy, lw=3):
-    """Supply diffuser as a square with four-way throw arrows (no X)."""
-    from synth.mech import DIF_S, PX_PER_M
-
-    s = DIF_S * PX_PER_M
-    h, a = s / 2, s / 7
-    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
-    for ux, uy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-        tx, ty = cx + ux * (h - 5), cy + uy * (h - 5)
-        d.line([cx + ux * a * 0.6, cy + uy * a * 0.6, tx, ty], fill=0, width=2)
-        px, py = -uy, ux  # perpendicular
-        d.polygon(
-            [
-                (tx, ty),
-                (tx - ux * a + px * a / 2, ty - uy * a + py * a / 2),
-                (tx - ux * a - px * a / 2, ty - uy * a - py * a / 2),
-            ],
-            fill=0,
-        )
-
-
-def _draw_grille_hatched(d, cx, cy, lw=3):
-    """Return grille as a square with dense parallel blade lines (no diagonal)."""
-    from synth.mech import GRI_S, PX_PER_M
-
-    s = GRI_S * PX_PER_M
-    h = s / 2
-    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
-    n = 5
-    for i in range(1, n + 1):
-        y = cy - h + i * s / (n + 1)
-        d.line([cx - h + 2, y, cx + h - 2, y], fill=0, width=1)
-
-
 def varied_glyph(cls, style=0, scale=1.0, lw=None, angle_deg=0.0, skew=0.0):
     """One terminal symbol on its own white patch (L image), centred.
 
@@ -163,10 +129,9 @@ def varied_glyph(cls, style=0, scale=1.0, lw=None, angle_deg=0.0, skew=0.0):
     """
     from PIL import Image, ImageDraw
 
-    from synth.mech import _GLYPH_EXT, _GLYPH_FN, PX_PER_M
+    from synth.mech import _ALT_GLYPH_FN, _GLYPH_EXT, _GLYPH_FN, PX_PER_M
 
-    alt = {"diffuser": _draw_diffuser_arrows, "grille": _draw_grille_hatched}
-    fn = alt[cls] if style == 1 and cls in alt else _GLYPH_FN[cls]
+    fn = _ALT_GLYPH_FN[cls] if style == 1 and cls in _ALT_GLYPH_FN else _GLYPH_FN[cls]
     side = int(math.ceil(max(_GLYPH_EXT[cls]) * PX_PER_M * 1.8)) + 8
     side += side % 2
     patch = Image.new("L", (side, side), 255)

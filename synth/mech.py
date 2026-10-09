@@ -100,6 +100,36 @@ def _draw_grille(d: ImageDraw.ImageDraw, cx, cy, lw: int = 3):
     d.line([cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2], fill=0, width=2)
 
 
+def _draw_diffuser_arrows(d, cx, cy, lw=3):
+    """Supply diffuser as a square with four-way throw arrows (no X)."""
+    s = DIF_S * PX_PER_M
+    h, a = s / 2, s / 7
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    for ux, uy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        tx, ty = cx + ux * (h - 5), cy + uy * (h - 5)
+        d.line([cx + ux * a * 0.6, cy + uy * a * 0.6, tx, ty], fill=0, width=2)
+        px, py = -uy, ux  # perpendicular
+        d.polygon(
+            [
+                (tx, ty),
+                (tx - ux * a + px * a / 2, ty - uy * a + py * a / 2),
+                (tx - ux * a - px * a / 2, ty - uy * a - py * a / 2),
+            ],
+            fill=0,
+        )
+
+
+def _draw_grille_hatched(d, cx, cy, lw=3):
+    """Return grille as a square with dense parallel blade lines (no diagonal)."""
+    s = GRI_S * PX_PER_M
+    h = s / 2
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    n = 5
+    for i in range(1, n + 1):
+        y = cy - h + i * s / (n + 1)
+        d.line([cx - h + 2, y, cx + h - 2, y], fill=0, width=1)
+
+
 def _draw_sensor(d: ImageDraw.ImageDraw, cx, cy, lw: int = 2):
     r = SEN_R * PX_PER_M
     d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=lw)
@@ -124,6 +154,12 @@ _GLYPH_FN = {
     "diffuser": _draw_diffuser,
     "grille": _draw_grille,
     "sensor": _draw_sensor,
+}
+# Other drafting conventions for the same terminal (#745): a supply diffuser
+# drawn with four throw arrows, a return grille drawn with parallel blades.
+_ALT_GLYPH_FN = {
+    "diffuser": _draw_diffuser_arrows,
+    "grille": _draw_grille_hatched,
 }
 # Tight symbol extents in meters (template windows / GT bboxes).
 _GLYPH_EXT = {
@@ -770,8 +806,13 @@ def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-def render_template(cls: str, margin_px: int = 4, stubs: bool | None = None) -> np.ndarray:
+def render_template(
+    cls: str, margin_px: int = 4, stubs: bool | None = None, style: int = 0
+) -> np.ndarray:
     """Grayscale template of one symbol at sheet scale.
+
+    ``style`` 1 draws the class's other drafting convention (``_ALT_GLYPH_FN``)
+    instead of matchline's own glyph.
 
     With stubs=True (default per TEMPLATE_STUBS) the template includes the
     duct stubs that attach to the symbol on real sheets (spine through the
@@ -813,7 +854,8 @@ def render_template(cls: str, margin_px: int = 4, stubs: bool | None = None) -> 
             d.rectangle([0, cy - 7.5, cx, cy + 7.5], fill=0)  # return
         elif cls in ("diffuser", "grille"):
             d.rectangle([cx - 7.5, 0, cx + 7.5, H], fill=0)  # drop
-    _GLYPH_FN[cls](d, cx, cy)
+    fn = _ALT_GLYPH_FN[cls] if style == 1 and cls in _ALT_GLYPH_FN else _GLYPH_FN[cls]
+    fn(d, cx, cy)
     return np.asarray(img).astype(np.float64)
 
 

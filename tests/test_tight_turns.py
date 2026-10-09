@@ -31,7 +31,11 @@ def test_turned_grille_differs_from_template():
 
 def test_tight_templates_cover_quarter_turn():
     ts = H._tight_templates("grille")
-    assert len(ts) == len(H.TIGHT_TURNS["grille"]) * len(H.TEMPLATE_SCALES.get("grille", (1.0,)))
+    assert len(ts) == (
+        len(H.TIGHT_TURNS["grille"])
+        * len(H.TEMPLATE_SCALES.get("grille", (1.0,)))
+        * len(H.TEMPLATE_STYLES.get("grille", (0,)))
+    )
     assert any(
         np.array_equal(t, np.rot90(M.render_template("grille", margin_px=0, stubs=False)))
         for t in ts
