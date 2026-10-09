@@ -273,7 +273,7 @@ def _band_layer(band, segs) -> Optional[str]:
 
 def _glazing_windows(
     bands, walls, k: float, tol: float, segs=(), arcs=()
-) -> List[Tuple["Wall", Pt, Pt, str]]:
+) -> List[Tuple["Wall", Pt, Pt, str, List[Tuple[Pt, Pt]]]]:
     """Windows drawn as a glazing line inside a wall (#743).
 
     ``_merge_glazing`` folds the two half-thickness bands either side of a
@@ -297,11 +297,12 @@ def _glazing_windows(
 
     A door drawn inside full-length glazing with no gap in the wall has two
     jamb ticks with its swing between them (#793). Those ticks are not
-    mullions, and the window is split around the door so the door's width
-    is not counted as glass.
+    mullions. The window still spans the whole glazed run (a storefront's
+    schedule width may or may not include its door, so the tag match decides
+    downstream) and lists the doors inside it, each as its two jamb points.
     """
     atol = math.radians(ANGLE_TOL_DEG)
-    out: List[Tuple[Wall, Pt, Pt, str]] = []
+    out: List[Tuple[Wall, Pt, Pt, str, List[Tuple[Pt, Pt]]]] = []
     spans: Dict[str, List[Tuple[float, float]]] = {}
     for g in bands:
         if not g.glazed:
@@ -342,12 +343,18 @@ def _glazing_windows(
             if any(min(s1, b1) - max(s0, b0) > 0.5 * (s1 - s0) for b0, b1 in spans.get(w.id, [])):
                 break
             spans.setdefault(w.id, []).append((s0, s1))
-            cuts = [s0] + [s for d in doors for s in d] + [s1]
-            for a0, a1 in zip(cuts[::2], cuts[1::2]):
-                if a1 - a0 > tol:
-                    out.append(
-                        (w, ls.interpolate(a0).coords[0], ls.interpolate(a1).coords[0], source)
-                    )
+            out.append(
+                (
+                    w,
+                    ls.interpolate(s0).coords[0],
+                    ls.interpolate(s1).coords[0],
+                    source,
+                    [
+                        (ls.interpolate(d0).coords[0], ls.interpolate(d1).coords[0])
+                        for d0, d1 in doors
+                    ],
+                )
+            )
             break
     return out
 
@@ -1302,21 +1309,30 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
             )
             doors += 1
     windows = _glazing_windows(bands, walls, k, tol, segs, arcs)
-    for w, a, b, src in windows:
-        openings.append(
-            {
-                "walls": [w.id],
-                "a_m": to_m(a),
-                "b_m": to_m(b),
-                "width_m": round(math.dist(a, b) * m_per_pt, 3),
-                "kind": "window",
-                "source": src,
-                "window_confidence": {
-                    "glazing_mullions": STOREFRONT_CONFIDENCE,
-                    "glazing_layer": LAYER_GLAZING_CONFIDENCE,
-                }.get(src, WINDOW_CONFIDENCE),
-            }
-        )
+    for w, a, b, src, in_glass in windows:
+        op = {
+            "walls": [w.id],
+            "a_m": to_m(a),
+            "b_m": to_m(b),
+            "width_m": round(math.dist(a, b) * m_per_pt, 3),
+            "kind": "window",
+            "source": src,
+            "window_confidence": {
+                "glazing_mullions": STOREFRONT_CONFIDENCE,
+                "glazing_layer": LAYER_GLAZING_CONFIDENCE,
+            }.get(src, WINDOW_CONFIDENCE),
+        }
+        if in_glass:
+            # a door drawn inside the glazing (#793): its width is in the run
+            op["doors_in_glazing"] = [
+                {
+                    "a_m": to_m(da),
+                    "b_m": to_m(db),
+                    "width_m": round(math.dist(da, db) * m_per_pt, 3),
+                }
+                for da, db in in_glass
+            ]
+        openings.append(op)
     thin = set(_thin_bands(walls, openings, tol, THIN_BAND_MIN_M * k))
     # a thin band whose faces are on a glazing CAD layer is glass, not a
     # question (#793): a window over the whole band instead of maybe_glazing
