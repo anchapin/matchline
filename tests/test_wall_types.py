@@ -62,3 +62,61 @@ def test_read_legend_agrees_conflicts_and_excludes():
     assert set(legend) == {"W1"}
     assert legend["W1"]["sheet_id"] == "A-501" and legend["W1"]["construction_type"] == "Mass"
     assert [r["construction_type"] for r in conflicts["W2"]] == ["SteelFramed", "WoodFramed"]
+
+
+# ---- #828: descriptions wrapped onto several lines ---------------------------
+
+
+def _wrapped(*lines, x=160, y=200, step=14):
+    return [_row(x, y + k * step, s) for k, s in enumerate(lines)]
+
+
+def test_class_word_on_a_wrapped_line_resolves_the_tag():
+    sh = _sheet(
+        _row(100, 200, "W2"),
+        *_wrapped("EXTERIOR WALL", '6" METAL STUD FRAMING', "R-19 BATT INSULATION"),
+    )
+    (row,) = legend_rows(sh)
+    assert row == ("W2", 'EXTERIOR WALL 6" METAL STUD FRAMING R-19 BATT INSULATION')
+
+
+def test_first_line_class_wins_over_a_later_line():
+    # MTL STUD FURRING behind a CMU wall must not make it steel-framed
+    sh = _sheet(_row(100, 200, "W1"), *_wrapped('8" CMU', '7/8" MTL STUD FURRING'))
+    assert legend_rows(sh) == [("W1", '8" CMU')]
+    legend, _c = read_legend([("A-501", sh)])
+    assert legend["W1"]["construction_type"] == "Mass"
+    assert legend["W1"]["full_text"] == '8" CMU 7/8" MTL STUD FURRING'
+
+
+def test_next_tag_row_is_never_absorbed():
+    sh = _sheet(
+        _row(100, 200, "W1"),
+        *_wrapped("EXTERIOR WALL", "SEE DETAIL"),
+        _row(100, 228, "W2"),
+        _row(160, 228, "CMU"),
+    )
+    assert legend_rows(sh) == [("W2", "CMU")]
+
+
+def test_other_column_or_a_blank_gap_is_not_absorbed():
+    sh = _sheet(
+        _row(100, 200, "W1"),
+        _row(160, 200, "EXTERIOR WALL"),
+        _row(600, 214, "CMU"),  # a different column
+        _row(160, 260, "METAL STUD FRAMING"),  # after a blank gap
+    )
+    assert legend_rows(sh) == []
+
+
+def test_inline_tag_wraps_onto_indented_lines():
+    sh = _sheet(_row(100, 200, "W3 - EXTERIOR WALL"), _row(130, 214, "WOOD STUD FRAMING"))
+    assert legend_rows(sh) == [("W3", "EXTERIOR WALL WOOD STUD FRAMING")]
+
+
+def test_r_value_on_a_wrapped_line_is_text_not_a_tag():
+    sh = _sheet(
+        _row(100, 200, "W4"),
+        *_wrapped("EXTERIOR WALL", "R-19 BATT", "WOOD STUD FRAMING"),
+    )
+    assert legend_rows(sh) == [("W4", "EXTERIOR WALL R-19 BATT WOOD STUD FRAMING")]
