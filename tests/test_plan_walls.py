@@ -205,6 +205,7 @@ def test_one_level_wing_number_is_not_a_review(tmp_path):
         ("CORRIDOR 1DC8 CLEAN U. 1D37", {"1DC8", "1D37"}),
         ("ROOM B12", {"B12"}),
         ("LOBBY", set()),
+        ("WOOD 2X4 BLOCKING", set()),
     ],
 )
 def test_room_number_pattern(txt, want):

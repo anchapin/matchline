@@ -1118,8 +1118,9 @@ class PlanWalls:
 
 
 # a room number: "101", "B12", "12A", or a level-wing number such as "1A04", "1DC8" or
-# "2CC4" (level digit, one or two wing letters, then the room digits) (#740)
-_ROOM_NO = re.compile(r"\b(?:\d[A-Z]{1,2}\d{1,3}|[A-Z]?\d{2,4}[A-Z]?)\b")
+# "2CC4" (level digit, one or two wing letters, then the room digits), but never a
+# lumber size like "2X4" written inside a note (#740)
+_ROOM_NO = re.compile(r"\b(?:\d(?!X\d)[A-Z]{1,2}\d{1,3}|[A-Z]?\d{2,4}[A-Z]?)\b")
 
 
 def _merge_slivers(faces: List[Polygon], spans, door_lines, max_area: float, tol: float):
