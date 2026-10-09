@@ -545,23 +545,30 @@ def test_window_beside_a_box_enclosure_is_still_a_window(tmp_path):
     assert op["width_m"] == pytest.approx(1.0, abs=0.02)
 
 
-def test_stacked_beyond_needs_a_band_past_the_far_face():
-    # three bands in a row on face lines 0..3 (y = 0, 3, 5, 7)
+def test_double_glazing_lines_still_make_a_window(tmp_path):
+    # two glazing lines inside the wall fold back to the wall's own thickness
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + _glazing(4, 5, -0.05) + _glazing(4, 5, 0.05))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(1.0, abs=0.02)
+
+
+def test_fold_too_thick_compares_with_the_wall_on_the_far_faces():
+    # a wall (faces 0, 1), a chase (1, 2) and a box wall (2, 3) in a row
     a = W.Band(0.0, 1.5, 0.0, 20.0, 3.0, "line_pair", (0, 1))
     b = W.Band(0.0, 4.0, 0.0, 20.0, 2.0, "line_pair", (1, 2))
     c = W.Band(0.0, 6.0, 0.0, 20.0, 2.0, "line_pair", (2, 3))
-    by_seg = {0: [0], 1: [0, 1], 2: [1, 2], 3: [2]}
-    assert W._stacked_beyond(b, a, [a, b, c], by_seg)  # c lies past b's far face
-    assert not W._stacked_beyond(a, b, [a, b, c], by_seg)  # nothing past a
-    # the whole wall on the same two face lines as a window's halves overlaps
-    # them across the thickness: not a band beyond
-    whole = W.Band(0.0, 2.5, 0.0, 20.0, 5.0, "line_pair", (0, 2))
-    by_seg = {0: [0, 2], 1: [0, 1], 2: [1, 2]}
-    assert not W._stacked_beyond(b, a, [a, b, whole], by_seg)
-    # a short band past the far face does not count
-    short = W.Band(0.0, 6.0, 0.0, 5.0, 2.0, "line_pair", (2, 3))
-    by_seg = {0: [0], 1: [0, 1], 2: [1, 2], 3: [2]}
-    assert not W._stacked_beyond(b, a, [a, b, short], by_seg)
+    wall = W.Band(0.0, 1.5, 20.0, 60.0, 3.0, "line_pair", (0, 4))  # same wall further on
+    bands = [a, b, c, wall]
+    by_seg = {0: [0, 3], 1: [0, 1], 2: [1, 2], 3: [2], 4: [3]}
+    assert W._fold_too_thick(a, b, 5.0, bands, by_seg)  # 5 > the 3 wall
+    # a window's halves fold back to the wall's own thickness
+    h1 = W.Band(0.0, 0.75, 0.0, 5.0, 1.5, "line_pair", (0, 5))
+    h2 = W.Band(0.0, 2.25, 0.0, 5.0, 1.5, "line_pair", (5, 6))
+    whole = W.Band(0.0, 1.5, 0.0, 60.0, 3.0, "line_pair", (0, 6))
+    by_seg = {0: [0, 2], 5: [0, 1], 6: [1, 2]}
+    assert not W._fold_too_thick(h1, h2, 3.0, [h1, h2, whole], by_seg)
+    # nothing else on the far faces: no evidence, so fold
+    assert not W._fold_too_thick(h1, h2, 3.0, [h1, h2], {0: [0], 5: [0, 1], 6: [1]})
 
 
 def test_middle_line_continues_only_end_to_end_on_the_same_line():
