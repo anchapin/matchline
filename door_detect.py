@@ -242,15 +242,25 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
             behind = None if on_face else _wall_at(ink, y - p.probe, -p.probe, s, p)
             best = None
             for r in radii.tolist():
-                past = _wall_at(ink, y + r + p.probe, p.probe, s, p)
-                walls = [wl for wl in (behind, past) if wl is not None]
-                if not walls:
-                    continue
-                sx = int(round(sum(wl[0] for wl in walls) / len(walls)))
-                if sx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
-                    continue
-                ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
-                if not _opening_clear(ink, y, r, (ws + 1, sx, we - 2), p):
+                # the jamb past the opening can be thickened by a stub (the
+                # hinge block of a door in the crossing wall), so if the wall
+                # just past the jamb gives no clear opening, try it further on
+                sx = None
+                for depth in (p.probe, p.slack):
+                    past = _wall_at(ink, y + r + depth, p.probe, s, p)
+                    if past is None and depth != p.probe:
+                        break  # only a jamb seen right past the opening
+                    walls = [wl for wl in (behind, past) if wl is not None]
+                    if not walls:
+                        continue
+                    cx = int(round(sum(wl[0] for wl in walls) / len(walls)))
+                    if cx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
+                        continue
+                    ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
+                    if _opening_clear(ink, y, r, (ws + 1, cx, we - 2), p):
+                        sx = cx
+                        break
+                if sx is None:
                     continue
                 cov = float(_arc_coverage(fat, sx, y, r)[0])
                 if cov < MIN_ARC_COVERAGE:
