@@ -65,6 +65,12 @@ when the ink is at least a leaf thick on the side away from the arc and
 jamb wall past the opening only, since the row behind the leaf runs through
 the side wall. The arc, jamb and clear-opening checks are unchanged, so a wall
 corner or a wall face beside a gap with no arc is still not a door (#743).
+When the far jamb is thickened by a stub (the hinge block of a door hung in
+a crossing wall, its leaf lying just off the wall line across the opening)
+and the wall just past the jamb shows no clear opening, the jamb wall is read
+again a little further along, where it is back to its own thickness; the
+clear-opening check still runs on that wall's faces and centre, so a stub
+against an unbroken wall is still not a door (#875).
 A wall gap with no swing is never treated as a door. The image is searched
 only when the model has a closet, since doors only feed closet merging.
 
@@ -114,7 +120,7 @@ Measured on the Clinic (plumbing only, nothing tuned on it):
 | Storey | IFC doors | Detections | Recall | Precision |
 |---|---|---|---|---|
 | First Floor | 148 | 140 | 0.953 | 1.000 |
-| Second Floor | 96 | 91 | 0.917 | 0.989 |
+| Second Floor | 96 | 92 | 0.927 | 0.989 |
 
 An opening wider than one leaf (`MAX_WIDTH_M`) is drawn as a pair of leaves
 meeting in the middle, as a plan draws a double door. Reading the leaf on a

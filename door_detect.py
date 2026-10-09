@@ -273,21 +273,31 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
             behind = None if on_face else _wall_at(ink, y - p.probe, -p.probe, s, p)
             best = None
             for r in radii.tolist():
-                past = _wall_at(ink, y + r + p.probe, p.probe, s, p)
+                # the jamb past the opening can be thickened by a stub (the
+                # hinge block of a door in the crossing wall), so if the wall
+                # just past the jamb gives no clear opening, try it further on
                 hol_b = _hollow(ink, y - p.probe, behind, p)
-                hol_p = _hollow(ink, y + r + p.probe, past, p)
-                for walls, sx in _hinge_options(behind, past, p, hol_b, hol_p):
-                    if sx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
-                        continue
-                    ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
-                    if not _opening_clear(ink, y, r, (ws + 1, sx, we - 2), p):
-                        continue
-                    cov = float(_arc_coverage(fat, sx, y, r)[0])
-                    if cov < MIN_ARC_COVERAGE:
-                        continue
-                    cand = (float(_arc_coverage(tight, sx, y, r)[0]), cov, sx, y, r)
-                    if best is None or cand[:2] > best[:2]:
-                        best = cand
+                for depth in (p.probe, p.slack):
+                    past = _wall_at(ink, y + r + depth, p.probe, s, p)
+                    if past is None and depth != p.probe:
+                        break  # only a jamb seen right past the opening
+                    hol_p = _hollow(ink, y + r + depth, past, p)
+                    clear = False
+                    for walls, sx in _hinge_options(behind, past, p, hol_b, hol_p):
+                        if sx + r > e - 1 + p.arc_tol:  # leaf must reach the arc
+                            continue
+                        ws, we = min(wl[1] for wl in walls), max(wl[2] for wl in walls)
+                        if not _opening_clear(ink, y, r, (ws + 1, sx, we - 2), p):
+                            continue
+                        clear = True
+                        cov = float(_arc_coverage(fat, sx, y, r)[0])
+                        if cov < MIN_ARC_COVERAGE:
+                            continue
+                        cand = (float(_arc_coverage(tight, sx, y, r)[0]), cov, sx, y, r)
+                        if best is None or cand[:2] > best[:2]:
+                            best = cand
+                    if clear or past is None:
+                        break
             if best is not None:
                 fit, cov, sx, yy, r = best
                 found.append((cov, fit, sx, yy, r))
