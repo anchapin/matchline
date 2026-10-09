@@ -61,6 +61,8 @@ MULLION_MIN = 2  # ticks across the wall inside the glazed run
 MULLION_T_TOL = 0.5  # tick length within +-50% of the wall thickness
 TAG_RE = re.compile(r"^[A-Z]{1,3}-?\d{1,3}[A-Z]?$")  # W1, D-12, SF1, SF-1A (#793)
 TAG_RADIUS_M = 1.5  # a tag this close to an opening labels it
+THIN_BAND_RATIO = 0.6  # a wall this thin next to the opaque walls either side may be glazing
+THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed bay
 
 Pt = Tuple[float, float]
 
@@ -254,6 +256,52 @@ def _glazing_windows(
             spans.setdefault(w.id, []).append((s0, s1))
             out.append((w, ls.interpolate(s0).coords[0], ls.interpolate(s1).coords[0], source))
             break
+    return out
+
+
+def _thin_bands(walls: List[Wall], openings: List[dict], tol: float, min_len: float) -> List[str]:
+    """Walls that may be storefront drawn as a thin band of its own (#793).
+
+    A wall at most ``THIN_BAND_RATIO`` as thick as the wall it meets end to end
+    on BOTH sides, on the same line (centrelines within half the thicker wall,
+    since glazing often sits on one face), at least ``min_len`` long and with no
+    opening on it, is a glazed bay between opaque walls more often than a
+    partition: a partition turns off the exterior line, it does not continue it.
+    It is only flagged; nothing is modelled from the band alone.
+    """
+    has_op = {wid for o in openings for wid in o.get("walls", [])}
+    atol = math.radians(ANGLE_TOL_DEG)
+    out = []
+    for w in walls:
+        L = math.dist(w.a, w.b)
+        if w.id in has_op or L < min_len or L == 0:
+            continue
+        th = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0])
+        ux, uy = (w.b[0] - w.a[0]) / L, (w.b[1] - w.a[1]) / L
+
+        def along(p) -> float:
+            return (p[0] - w.a[0]) * ux + (p[1] - w.a[1]) * uy
+
+        sides = set()
+        for o in walls:
+            if o is w or w.t > THIN_BAND_RATIO * o.t:
+                continue
+            tho = math.atan2(o.b[1] - o.a[1], o.b[0] - o.a[0])
+            if not _angle_close(th % math.pi, tho % math.pi, atol):
+                continue
+            # perpendicular offset of o's line from w's line
+            vx, vy = o.a[0] - w.a[0], o.a[1] - w.a[1]
+            off = abs(vx * uy - vy * ux)
+            if off > 0.5 * o.t + tol:
+                continue
+            reach = 0.5 * o.t + tol
+            s0, s1 = sorted((along(o.a), along(o.b)))
+            if abs(s1) <= reach and s0 < -reach:
+                sides.add("a")
+            if abs(s0 - L) <= reach and s1 > L + reach:
+                sides.add("b")
+        if sides == {"a", "b"}:
+            out.append(w.id)
     return out
 
 
@@ -1111,6 +1159,23 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         )
     tagged = _attach_tags(openings, spans, to_m)
     wall_tags = _wall_tags(wall_out, openings, spans, to_m)
+    thin = set(_thin_bands(walls, openings, tol, THIN_BAND_MIN_M * k))
+    for wo in wall_out:
+        if wo["id"] in thin:
+            wo["maybe_glazing"] = True
+            review.append(
+                {
+                    "kind": "maybe_glazing",
+                    "wall": wo["id"],
+                    "reason": (
+                        f"{wo['length_m']:.1f} m wall {wo['thickness_m']:.2f} m thick runs on "
+                        "from thicker walls at both ends with no opening drawn; it may be "
+                        "storefront glazing drawn as a wall band"
+                    ),
+                    "a_m": wo["a_m"],
+                    "b_m": wo["b_m"],
+                }
+            )
     stats = {
         "segments": len(segs),
         "bands": len(bands),
@@ -1120,6 +1185,7 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "windows": len(windows),
         "tagged": tagged,
         "wall_tags": len(wall_tags),
+        "maybe_glazing": len(thin),
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }

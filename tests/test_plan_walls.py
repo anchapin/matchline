@@ -587,3 +587,77 @@ def test_wall_stopping_beyond_the_air_wall_limit_stays_open(tmp_path):
     res, _ = _read(tmp_path, _outline(_mass(shell + HALF_PARTITION)) + labels)
     assert _areas(res) == [80.0]
     assert not [o for o in res.openings if o.get("air_wall")]
+
+
+# ---- #793: storefront drawn as a thin wall band of its own -----------------
+
+T_GLZ = 0.12
+
+
+def _thin_bay(x0, x1):
+    return [
+        ((0, 0), (x0, 0), T_EXT),
+        ((x0, 0), (x1, 0), T_GLZ),
+        ((x1, 0), (10, 0), T_EXT),
+    ] + SHELL[1:]
+
+
+def test_thin_band_between_thicker_walls_may_be_glazing(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(_thin_bay(3, 7))))
+    (w,) = [w for w in res.walls if w.get("maybe_glazing")]
+    assert w["thickness_m"] == pytest.approx(T_GLZ, abs=0.01)
+    assert w["length_m"] == pytest.approx(3.7, abs=0.05)  # between the thick wall faces
+    (rv,) = [r for r in res.review if r["kind"] == "maybe_glazing"]
+    assert rv["wall"] == w["id"] and "storefront glazing" in rv["reason"]
+    assert res.stats["maybe_glazing"] == 1
+    assert not _windows(res)  # flagged only, never modelled from the band alone
+    assert _areas(res) == [60.0]  # the band still closes the room
+
+
+def test_thin_band_running_into_a_corner_is_not_flagged(tmp_path):
+    # thick wall on one side only: a change of wall type, not a glazed bay
+    walls = [((0, 0), (4, 0), T_EXT), ((4, 0), (10, 0), T_GLZ)] + SHELL[1:]
+    res, _ = _read(tmp_path, _outline(_mass(walls)))
+    assert not [w for w in res.walls if w.get("maybe_glazing")]
+    assert res.stats["maybe_glazing"] == 0
+
+
+def test_plain_shell_and_partitions_are_not_flagged(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + PARTITION, [DOOR])))
+    assert res.stats["maybe_glazing"] == 0
+    assert not [r for r in res.review if r["kind"] == "maybe_glazing"]
+
+
+def _w(i, a, b, t):
+    return W.Wall(f"W{i}", a, b, t, "line_pair")
+
+
+def test_thin_band_rules():
+    k = 10.0  # pt per metre for this unit test
+    left, right = _w(1, (0, 0), (30, 0), 3.0), _w(3, (70, 0), (100, 0), 3.0)
+    thin = _w(2, (30, 0), (70, 0), 1.2)
+    assert W._thin_bands([left, thin, right], [], 0.5, 1.0 * k) == ["W2"]
+    # an opening already on it
+    assert W._thin_bands([left, thin, right], [{"walls": ["W2"]}], 0.5, 1.0 * k) == []
+    # too short to be a glazed bay
+    short = [
+        _w(1, (0, 0), (30, 0), 3.0),
+        _w(2, (30, 0), (38, 0), 1.2),
+        _w(3, (38, 0), (60, 0), 3.0),
+    ]
+    assert W._thin_bands(short, [], 0.5, 1.0 * k) == []
+    # neighbours barely thicker: one wall type with drafting noise
+    same = [left, _w(2, (30, 0), (70, 0), 2.5), right]
+    assert W._thin_bands(same, [], 0.5, 1.0 * k) == []
+    # glazing on the outer face of the thick wall still counts; a parallel wall
+    # a room's depth away does not
+    face = _w(2, (30, 1.2), (70, 1.2), 1.2)
+    assert W._thin_bands([left, face, right], [], 0.5, 1.0 * k) == ["W2"]
+    far = _w(2, (30, 40), (70, 40), 1.2)
+    assert W._thin_bands([left, far, right], [], 0.5, 1.0 * k) == []
+    # a perpendicular wall at the end is a corner, not a neighbour on the line
+    corner = [left, thin, _w(3, (70, 0), (70, 50), 3.0)]
+    assert W._thin_bands(corner, [], 0.5, 1.0 * k) == []
+    # a thick wall overlapping the thin one is not meeting it end to end
+    lap = [_w(1, (0, 0), (50, 0), 3.0), thin, right]
+    assert W._thin_bands(lap, [], 0.5, 1.0 * k) == []

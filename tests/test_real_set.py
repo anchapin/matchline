@@ -674,3 +674,38 @@ def test_zones_pass_the_hvac_coverage_check(tmp_path):
     assert sorted(model.zones) == ["L1-Z-VAV-1", "L1-Z-VAV-2"]
     r = _check_hvac_zone_coverage(_Ctx(model=model))
     assert r.severity == "pass", r.message
+
+
+# ---- #793: storefront drawn as a thin wall band, no glazing line ------------
+
+
+def _thin_bay_set(tmp_path, rows=None, tag=None):
+    from test_plan_walls import _thin_bay
+
+    body = _outline(_mass(_thin_bay(3, 7) + PARTITION, [DOOR])) + _labels(1)
+    if tag:
+        body += text(*_pt(5, -0.6), tag, 8)
+    pages = [_tb("A-101", "FIRST FLOOR PLAN") + text(100, 48, SCALE_NOTE, 8) + body]
+    if rows:
+        pages.append(_tb("A-601", "WINDOW SCHEDULE") + _window_schedule(rows))
+    return real_set.build_set_model(_set(tmp_path, pages), tmp_path / "out")
+
+
+def test_thin_band_on_the_envelope_goes_to_review_as_maybe_glazing(tmp_path):
+    model, _rep = _thin_bay_set(tmp_path)
+    assert all(not s.openings for s in model.spaces.values())  # stays opaque
+    (rq,) = [r for r in model.review_queue if r.kind == "opening_unsized"]
+    assert "may be storefront glazing" in rq.description and "modelled opaque" in rq.description
+    gap = rq.target["gap"]
+    assert gap["drawn"] == "thin_band" and gap["candidates"] == []
+    assert gap["facade"] == "south" and gap["width_m"] == pytest.approx(3.7, abs=0.05)
+    assert rq.target["kind"] == "wall" and rq.target["field"] == "opening"
+    assert gap["space_id"] in model.spaces  # a review edit can add the window
+
+
+def test_scheduled_storefront_tag_on_the_thin_band_is_modelled_not_reviewed(tmp_path):
+    rows = [("SF-1", "12'-2\"", "8'-0\"", "FIXED")]
+    model, _rep = _thin_bay_set(tmp_path, rows, tag="SF-1")
+    (op,) = [o for s in model.spaces.values() for o in s.openings]
+    assert op.tag == "SF-1" and op.provenance.method == "plan_wall_tag"
+    assert not [r for r in model.review_queue if r.kind == "opening_unsized"]
