@@ -13,6 +13,7 @@ source sheet. The takeoff join reads that shape whatever produced it.
 {"provider": "none"}
 {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger artifact path>"}
 {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger artifact path>"}
+{"provider": "door_swing"}
 ```
 
 - `none` (the default when no config is given): no detections; plan sheets report
@@ -23,6 +24,16 @@ source sheet. The takeoff join reads that shape whatever produced it.
 - `yolo_sahi`: runs tiled YOLO inference on each floor plan's rendered image (needs
   `ultralytics`; CPU unless `device` says otherwise). Optional keys: `tile`,
   `overlap`, `conf`, `device`.
+- `door_swing`: finds doors by rule in each floor plan's rendered image
+  (`door_detect.py`, see `docs/space_merge.md`): a straight leaf from the hinge
+  jamb plus a quarter arc back to the far jamb, a wall at both jambs and a clear
+  opening between them. It never guesses a door from a wall gap alone and finds
+  no windows. No dataset or trained weights sit behind it, so its license class
+  is permissive and a release may use it. It needs the drawing scale: the set
+  reader passes each plan's rendered px per metre from that sheet's own scale
+  (`dpi / 72 / m_per_pt`) and does not run it on a sheet with no scale. Optional
+  keys: `px_per_m` (a fixed scale, used only when the caller passes none),
+  `ink_max`, `min_width_m`, `max_width_m`.
 
 An unknown provider name or a missing required key stops the run with the reason.
 
@@ -46,8 +57,8 @@ weights): they work through this interface for evaluation, never for a release.
 
 ## Not yet
 
-A door/window backend whose training data and weights may ship, its measurement on
-commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
+A trained door/window backend whose training data and weights may ship (the
+`door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, joining detections
 to plan openings and mechanical tags, and a vector-path provider.
 
 ## Vector door swings

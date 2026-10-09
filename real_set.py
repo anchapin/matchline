@@ -243,8 +243,17 @@ def build_set_model(
             and report.detector
             and png.exists()
             and (not hasattr(provider, "has") or provider.has(png))
+            and (
+                not getattr(provider, "needs_scale", False) or (scales.get(f) or {}).get("m_per_pt")
+            )
         ):
-            detections[f] = provider.detect(png, f"{Path(str(pdf)).name}:{f}")
+            sid = f"{Path(str(pdf)).name}:{f}"
+            if getattr(provider, "needs_scale", False):
+                # rendered px per metre: (dpi / 72 px per pt) / (m per pt)
+                ppm = dpi / 72.0 / scales[f]["m_per_pt"]
+                detections[f] = provider.detect(png, sid, px_per_m=ppm)
+            else:
+                detections[f] = provider.detect(png, sid)
             ran = True
         if f not in plan_files:
             st.mark("symbols", "skipped", "not a floor plan for takeoff")
