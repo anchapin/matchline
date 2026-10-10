@@ -246,6 +246,13 @@ def space_duties(
     """
     out: Dict[str, dict] = {}
     caps = {k.upper(): v for k, v in (caps or {}).items()}
+    # one scheduled unit placed as the terminal of several zones (a tag reused
+    # on two floors, say) can't hand its whole capacity to each of them
+    zones_of: Dict[str, List[str]] = {}
+    for zid, z in zones.items():
+        t = (getattr(getattr(z, "terminal_unit", None), "tag", "") or "").upper()
+        if t:
+            zones_of.setdefault(t, []).append(zid)
     for zid in sorted(zones):
         z = zones[zid]
         tu = getattr(z, "terminal_unit", None)
@@ -274,6 +281,14 @@ def space_duties(
             if c is None:
                 r["review"].append(
                     f"{zid}: its unit {tag or '(untagged)'} has no capacity on the schedules"
+                )
+                for d in DUTIES:
+                    r[d] = None
+                continue
+            if len(zones_of.get(tag, [])) > 1:
+                r["review"].append(
+                    f"{zid}: {tag} is the unit of {len(zones_of[tag])} zones "
+                    f"({', '.join(sorted(zones_of[tag]))}), so its capacity can't go to one of them"
                 )
                 for d in DUTIES:
                     r[d] = None

@@ -382,3 +382,15 @@ def test_set_run_without_zones_or_equipment_changes_nothing():
         m, [{"tag": "FCU-1", "kind": "fcu"}], review, report, Provenance, ReviewItem
     )
     assert m.spaces["S1"].conditioning is None and review == [] and report.notes == []
+
+
+def test_one_unit_on_two_zones_goes_to_review_not_counted_twice():
+    zones = {
+        "L1-Z-VAV-1": zone("L1-Z-VAV-1", "VAV-1", ["S1"]),
+        "L2-Z-VAV-1": zone("L2-Z-VAV-1", "VAV-1", ["S2"]),
+    }
+    spaces = {"S1": space("S1", 100.0), "S2": space("S2", 100.0)}
+    out = classify_spaces(zones, spaces, {"VAV-1": _caps(cooling_sensible=1000.0)})
+    for s in ("S1", "S2"):
+        assert out[s]["category"] == "review" and out[s]["cooling_sensible_btuh"] is None
+        assert any("unit of 2 zones" in r for r in out[s]["review"])
