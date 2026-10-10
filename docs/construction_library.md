@@ -205,3 +205,27 @@ single-storey IFC model with a missing IfcSpace bounded by walls can still
 read as a courtyard. Non-per-space gbXML writes the slab as the footprint ring
 (courtyards filled, largest wing only), so the exported slab area can differ
 from the slab the effective U is computed on.
+
+## Semi-exterior envelope between spaces (#747)
+
+ASHRAE 90.1-2019 Section 3.2 and Figure 5.5.2 call the envelope between a
+conditioned space and a semiheated or unconditioned space semi-exterior
+building envelope. Once `Space.conditioning` holds each space's Section 3.2
+category (from the capacity of the HVAC serving it, never the room name),
+`semi_exterior.semi_exterior_boundaries` walks every pair of spaces on a level
+that share a wall. Walls on the outside of the level's spaces are exterior
+walls and are skipped. It records:
+
+- `semi_exterior` when one side is conditioned and the other is semiheated or
+  unconditioned;
+- `review` when an unsettled side (category `review`, or no zone found)
+  decides it: the wall would be semi-exterior if that side were conditioned.
+  `real_set` adds a `semi_exterior_envelope` review item for each one.
+
+Two conditioned spaces, two spaces with no category, and semiheated against
+unconditioned (the semiheated envelope, not semi-exterior) are not recorded.
+Each record carries the pair, both categories, the shared length and its
+segments, on `BuildingModel.semi_exterior`. The shared wall is found with the
+same 0.05 m tolerance as the gbXML interior walls. Nothing reads it yet: the
+gbXML still writes these walls as interior walls with the generic partition,
+and choosing a semi-exterior construction is the next step.

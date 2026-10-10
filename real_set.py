@@ -590,6 +590,7 @@ def build_set_model(
     )
     _heated_slab(model, equipment, review, report, Provenance, ReviewItem)
     _space_conditioning(model, equipment, review, report, Provenance, ReviewItem)
+    _semi_exterior(model, review, report, Provenance, ReviewItem)
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
@@ -1552,6 +1553,40 @@ def _space_conditioning(model, equipment, review, report, Provenance, ReviewItem
         "space conditioning: "
         + ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
         + f"; {unserved} space(s) with no zone found, not classified"
+    )
+
+
+def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
+    """Semi-exterior envelope between spaces from their Section 3.2 categories
+    (#747 slice 5) onto ``model.semi_exterior``. A boundary an unsettled side
+    decides gets a review item; nothing is defaulted. Exports don't read it
+    yet."""
+    from semi_exterior import semi_exterior_boundaries
+
+    if not any(sp.conditioning for sp in model.spaces.values()):
+        return
+    recs = semi_exterior_boundaries(model.spaces)
+    model.semi_exterior = recs
+    for r in recs:
+        if r["kind"] != "review":
+            continue
+        a, b = r["spaces"]
+        review.append(
+            ReviewItem(
+                id=f"rq-semi-exterior-{a}-{b}",
+                kind="semi_exterior_envelope",
+                description=(
+                    f"{a} / {b}: shared wall ({r['length_m']:.2f} m) may be "
+                    f"semi-exterior envelope ({r['reason']})"
+                ),
+                confidence=0.5,
+                provenance=Provenance("", 0, "semi_exterior", 0.5),
+                needs_review=True,
+            )
+        )
+    semi = sum(1 for r in recs if r["kind"] == "semi_exterior")
+    report.notes.append(
+        f"semi-exterior envelope: {semi} space pair(s) settled, {len(recs) - semi} to review"
     )
 
 
