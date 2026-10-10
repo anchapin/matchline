@@ -1175,3 +1175,41 @@ def test_hatch_lines_with_breaks_give_no_thin_gaps(tmp_path):
         hatch += line(*_pt(x, 0.5), *_pt(x, 2.55), 0.5) + line(*_pt(x, 3.45), *_pt(x, 5.5), 0.5)
     res, _ = _read(tmp_path, _outline(_mass(SHELL)) + hatch)
     assert res.thin_gaps == []
+
+
+def test_cavity_line_drawn_room_by_room_is_not_a_window(tmp_path):
+    # #743: a middle line drawn in pieces that stop at the partitions meeting
+    # the wall still runs the whole wall: a cavity line, not three windows
+    mass = _mass(SHELL + _returns([3, 6]))
+    for gap in (0.0, 0.1, 0.2, 0.3):
+        pieces = [(0, 3 - gap), (3 + gap, 6 - gap), (6 + gap, 10)]
+        res, _ = _read(tmp_path, _outline(mass) + "".join(_glazing(a, b) for a, b in pieces))
+        assert not _windows(res), gap
+
+
+def test_windows_either_side_of_a_partition_pier_still_count(tmp_path):
+    # the run stops short of the wall's ends, so these are real windows
+    mass = _mass(SHELL + _returns([4.2]))
+    res, _ = _read(tmp_path, _outline(mass) + _glazing(1.5, 4.0) + _glazing(4.4, 7.0))
+    assert sorted(round(o["width_m"], 1) for o in _windows(res)) == [2.5, 2.6]
+
+
+def test_one_piece_between_partitions_is_still_a_window(tmp_path):
+    mass = _mass(SHELL + _returns([3, 6]))
+    res, _ = _read(tmp_path, _outline(mass) + _glazing(3.2, 5.8))
+    (op,) = _windows(res)
+    assert op["width_m"] == pytest.approx(2.6, abs=0.03)
+
+
+def test_glazed_chain_links_across_a_partition_gap_only():
+    g = W.Band(0.0, 10.0, 0.0, 50.0, 5.0, "line_pair", (), True)
+
+    def band(u0, u1):
+        return W.Band(0.0, 10.0, u0, u1, 5.0, "line_pair", (), True)
+
+    far = band(62, 90)  # 12 px gap, wider than the band
+    assert W._glazed_chain(g, [g, far], [], 1.0)[2] == 1
+    wall = W.Wall("p", (56.0, 10.0), (56.0, 40.0), 2.0, "test")  # partition meets the line
+    lo, hi, n = W._glazed_chain(g, [g, far], [wall], 1.0)
+    assert n == 2 and hi == pytest.approx(90.0)
+    assert W._glazed_chain(g, [g, band(53, 90)], [], 1.0)[2] == 2  # 3 px gap

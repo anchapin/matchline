@@ -589,6 +589,7 @@ def build_set_model(
         constructions=constructions,
     )
     _heated_slab(model, equipment, review, report, Provenance, ReviewItem)
+    _space_conditioning(model, equipment, review, report, Provenance, ReviewItem)
     report.sheets = list(status.values())
     _write(out, report)
     return model, report
@@ -1505,6 +1506,52 @@ def _heated_slab(model, equipment, review, report, Provenance, ReviewItem) -> No
             provenance=Provenance(sheet, 0, "pdf_schedule_heated_slab", 0.6),
             needs_review=True,
         )
+    )
+
+
+def _space_conditioning(model, equipment, review, report, Provenance, ReviewItem) -> None:
+    """Section 3.2 category per space from the capacity of the zones serving it
+    (#747 slice 4b): box-to-unit links from schedule columns, zone capacity
+    split by airflow, spread over served floor area, then ``classify_space``.
+    Written to ``Space.conditioning``; each space left in review gets a review
+    item. Spaces with no zone are not classified."""
+    from zone_capacity import classify_spaces, served_by_from_schedules, zone_capacities
+
+    if not equipment or not model.zones:
+        return
+    links, notes = served_by_from_schedules(equipment)
+    caps = zone_capacities(equipment, links)
+    res = classify_spaces(model.zones, model.spaces, caps, model.climate_zone)
+    if not res:
+        return
+    report.notes += [f"space conditioning: {n}" for n in notes]
+    counts: Dict[str, int] = {}
+    for sid in sorted(res):
+        c = res[sid]
+        model.spaces[sid].conditioning = c
+        counts[c["category"]] = counts.get(c["category"], 0) + 1
+        if c["category"] != "review":
+            continue
+        sheet = next((e.get("sheet", "") for e in equipment if e.get("sheet")), "")
+        review.append(
+            ReviewItem(
+                id=f"rq-conditioning-{sid}",
+                kind="space_conditioning",
+                description=(
+                    f"{sid}: Section 3.2 category not settled from the HVAC serving it ("
+                    + "; ".join(c["reasons"])
+                    + ")"
+                ),
+                confidence=0.5,
+                provenance=Provenance(sheet, 0, "zone_capacity", 0.5),
+                needs_review=True,
+            )
+        )
+    unserved = len(model.spaces) - len(res)
+    report.notes.append(
+        "space conditioning: "
+        + ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
+        + f"; {unserved} space(s) with no zone found, not classified"
     )
 
 

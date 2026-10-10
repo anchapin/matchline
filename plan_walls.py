@@ -338,6 +338,19 @@ def _glazing_windows(
             run_lo, run_hi = 0.0, L
             if s0 < margin and L - s1 < margin and not _middle_line_continues(g, bands, tol):
                 run_lo, run_hi = _collinear_run(w, ls, th, walls, atol, tol)
+            if not wide and not (s0 - run_lo < margin and run_hi - s1 < margin):
+                # a middle line drawn in pieces, each stopping at a partition,
+                # still runs the whole wall (#743): judge the chain, not the piece
+                lo, hi, n = _glazed_chain(g, bands, walls, tol)
+                if n > 1:
+                    cs0, cs1 = sorted(
+                        ls.project(Point(p)) for p in _endpoints(g.theta, g.rho, lo, hi)
+                    )
+                    if cs0 < margin and L - cs1 < margin and lay != "glazing":
+                        pos = _mullion_pos(segs, ls, th, w.t, cs0, cs1, margin, atol)
+                        if len(pos) < MULLION_MIN:
+                            break
+                        source = "glazing_mullions"
             if wide or (s0 - run_lo < margin and run_hi - s1 < margin):
                 # runs the whole wall, or wider than a window: storefront only
                 # when its layer says glazing or mullions break it up, else a
@@ -446,6 +459,69 @@ def _middle_line_continues(g, bands, tol: float) -> bool:
         if abs(o0 - g.u1) <= gap or abs(g.u0 - o1) <= gap:
             return True
     return False
+
+
+def _glazed_chain(g, bands, walls, tol: float) -> Tuple[float, float, int]:
+    """Extent (u0, u1 in ``g``'s frame) and piece count of the run of glazed
+    bands carrying ``g``'s middle line on along the same line (#743).
+
+    Pieces are bands on the same line and about as thick as ``g`` (a leaf
+    of a double-leaf wall beside a window's band is not, #872). They link end
+    to end across a gap no wider than the band (as in
+    ``_middle_line_continues``), or across a wider gap where a crossing wall
+    meets the line inside it, up to that wall's thickness plus a band either
+    side: a cavity line drawn room by room stops short of each partition.
+    Whether the run covers the whole wall is the caller's call, so windows
+    either side of a pier where a partition meets still count unless their
+    run reaches both ends of the wall.
+    """
+    atol = math.radians(ANGLE_TOL_DEG)
+    d, n = _frame(g.theta)
+    pieces = []
+    for o in bands:
+        if not o.glazed or not _angle_close(o.theta, g.theta, atol):
+            continue
+        ro, o0, o1 = _in_frame(o, g.theta)
+        if o is g or (
+            abs(ro - g.rho) <= max(tol, 0.25 * g.t) and abs(o.t - g.t) <= max(tol, 0.25 * g.t)
+        ):
+            pieces.append((o0, o1))  # same line, same thickness: one wall's middle line
+    cross = []
+    for w in walls:
+        th = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]) % math.pi
+        if _angle_close(th, g.theta, atol):
+            continue
+        near = min(abs(_dot(w.a, n) - g.rho), abs(_dot(w.b, n) - g.rho))
+        if near <= g.t + tol:
+            cross.append((min(_dot(w.a, d), _dot(w.b, d)), max(_dot(w.a, d), _dot(w.b, d)), w.t))
+
+    def links(a: float, b: float) -> bool:  # gap from a up to b
+        if b - a <= max(g.t, tol):
+            return True
+        return any(
+            a - tol <= (c0 + c1) / 2 <= b + tol and b - a <= t + 2 * g.t + tol
+            for c0, c1, t in cross
+        )
+
+    _, lo, hi = _in_frame(g, g.theta)
+    count, grew = 1, True
+    used = {(lo, hi)}
+    while grew:
+        grew = False
+        for o0, o1 in pieces:
+            if (o0, o1) in used:
+                continue
+            if (
+                lo <= o0 <= hi
+                or lo <= o1 <= hi
+                or (o0 >= hi and links(hi, o0))
+                or (o1 <= lo and links(o1, lo))
+            ):
+                used.add((o0, o1))
+                lo, hi = min(lo, o0), max(hi, o1)
+                count += 1
+                grew = True
+    return lo, hi, count
 
 
 def _collinear_run(w, ls, th, walls, atol: float, tol: float) -> Tuple[float, float]:
