@@ -487,4 +487,5 @@ def test_a_double_door_is_drawn_as_two_leaves_and_reads_back_as_found():
     img, to_px = door_sheet(walls, [door])
     dets = detect_door_swings(img, DOOR_PPM)
     assert match_doors([door], dets, to_px)["recall"] == 1.0
-    assert sorted(round(d["width_px"] / DOOR_PPM, 1) for d in dets) == [0.9, 0.9]
+    # a double door is one door, hinge to hinge (#875)
+    assert [round(d["width_px"] / DOOR_PPM, 1) for d in dets] == [1.8]
