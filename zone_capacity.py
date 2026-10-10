@@ -15,8 +15,9 @@ Alex's rules (#747 issuecomment-6092815093):
   never defaulted.
 
 Nothing here reads drawings: the box-to-unit link comes from the caller
-(HVAC tracing). This module only does the arithmetic and the bookkeeping, so
-it has no callers yet and changes no outputs.
+(schedule columns, ``served_by_from_schedules``). ``classify_spaces`` turns
+zone capacities into a Section 3.2 category per space (slice 4b);
+``real_set`` writes it to ``Space.conditioning``.
 """
 
 from __future__ import annotations
@@ -222,3 +223,145 @@ def served_by_from_schedules(equipment: List[dict]) -> Tuple[Dict[str, str], Lis
         else:
             notes.append(f"{box}: its schedule row names {u}, which isn't on the schedules")
     return links, notes
+
+
+SQFT_PER_M2 = 1.0 / 0.3048**2
+
+
+def space_duties(
+    zones: Dict[str, object], spaces: Dict[str, object], caps: Dict[str, dict]
+) -> Dict[str, dict]:
+    """Heating and cooling output serving each space, in Btu/h (#747 slice 4b).
+
+    A zone's capacity (``zone_capacities``, keyed by its terminal unit's tag)
+    is spread over the floor area it serves, so each space gets its area share;
+    a space in several zones adds them up. A duty is None for a space when any
+    zone serving it doesn't know that duty, so a missing piece is never read
+    as zero. Spaces with no zone are left out: no terminal unit found is not
+    evidence of no HVAC.
+
+    Each entry: ``area_ft2``, one Btu/h value or None per duty, ``zones``,
+    ``sources``, ``derived`` (any share came from summed box airflow) and
+    ``review`` reasons carried from the zones.
+    """
+    out: Dict[str, dict] = {}
+    caps = {k.upper(): v for k, v in (caps or {}).items()}
+    # one scheduled unit placed as the terminal of several zones (a tag reused
+    # on two floors, say) can't hand its whole capacity to each of them
+    zones_of: Dict[str, List[str]] = {}
+    for zid, z in zones.items():
+        t = (getattr(getattr(z, "terminal_unit", None), "tag", "") or "").upper()
+        if t:
+            zones_of.setdefault(t, []).append(zid)
+    for zid in sorted(zones):
+        z = zones[zid]
+        tu = getattr(z, "terminal_unit", None)
+        tag = (getattr(tu, "tag", "") or "").upper()
+        sids = [s for s in getattr(z, "space_ids", []) or [] if s in spaces]
+        if not sids:
+            continue
+        c = caps.get(tag)
+        areas = {s: getattr(spaces[s], "area_m2", None) for s in sids}
+        missing = sorted(s for s, a in areas.items() if not a or a <= 0)
+        zone_area = sum(a for a in areas.values() if a and a > 0)
+        for s in sids:
+            a = areas[s]
+            r = out.setdefault(
+                s,
+                {
+                    "area_ft2": round(a * SQFT_PER_M2, 1) if a and a > 0 else None,
+                    **{d: 0.0 for d in DUTIES},
+                    "zones": [],
+                    "sources": [],
+                    "derived": False,
+                    "review": [],
+                },
+            )
+            r["zones"].append(zid)
+            if c is None:
+                r["review"].append(
+                    f"{zid}: its unit {tag or '(untagged)'} has no capacity on the schedules"
+                )
+                for d in DUTIES:
+                    r[d] = None
+                continue
+            if len(zones_of.get(tag, [])) > 1:
+                r["review"].append(
+                    f"{zid}: {tag} is the unit of {len(zones_of[tag])} zones "
+                    f"({', '.join(sorted(zones_of[tag]))}), so its capacity can't go to one of them"
+                )
+                for d in DUTIES:
+                    r[d] = None
+                continue
+            r["review"] += [x for x in c.get("review", []) if x not in r["review"]]
+            r["derived"] = r["derived"] or bool(c.get("derived"))
+            if missing:
+                r["review"].append(
+                    f"{zid}: no floor area for {', '.join(missing)}, so its capacity can't be split"
+                )
+                for d in DUTIES:
+                    r[d] = None
+                continue
+            frac = a / zone_area
+            for d in DUTIES:
+                v = c.get(d)
+                if v is None or r[d] is None:
+                    r[d] = None
+                    continue
+                r[d] += v["btuh"] * frac
+                part = f"{zid} {d.replace('_', ' ')} {v['btuh']:g} Btu/h"
+                if len(sids) > 1:
+                    part += f" x {frac:.3f} of its {zone_area * SQFT_PER_M2:.0f} ft2"
+                r["sources"].append(part + " (" + "; ".join(v["sources"]) + ")")
+    for r in out.values():
+        for d in DUTIES:
+            if r[d] is not None:
+                r[d] = round(r[d], 1)
+    return out
+
+
+def classify_spaces(
+    zones: Dict[str, object],
+    spaces: Dict[str, object],
+    caps: Dict[str, dict],
+    climate_zone: str = "",
+) -> Dict[str, dict]:
+    """Section 3.2 category per served space (``space_conditioning``).
+
+    Sensible cooling settles "cooled"; total cooling alone never does. The
+    indirectly-conditioned test is not run here, so a space that is neither
+    cooled nor heated stays in review rather than being called unconditioned.
+    A space whose zone carried a review reason can still be conditioned (the
+    output it was given already clears the bar), but is otherwise review.
+    """
+    from space_conditioning import classify_space
+
+    out: Dict[str, dict] = {}
+    for sid, r in space_duties(zones, spaces, caps).items():
+        sens = r["cooling_sensible"]
+        tot = r["cooling_total"] if sens is None else None
+        cat = classify_space(r["area_ft2"], sens, r["heating"], climate_zone, tot, None)
+        reasons = list(cat.reasons)
+        category = cat.category
+        if r["review"] and category != "conditioned":
+            category = "review"
+            reasons += r["review"]
+        out[sid] = {
+            "category": category,
+            "reasons": reasons,
+            "derived": r["derived"],
+            "area_ft2": r["area_ft2"],
+            "cooling_sensible_btuh": sens,
+            "cooling_total_btuh": r["cooling_total"],
+            "heating_btuh": r["heating"],
+            "cooling_btuh_ft2": None
+            if cat.cooling_btuh_ft2 is None
+            else round(cat.cooling_btuh_ft2, 2),
+            "heating_btuh_ft2": None
+            if cat.heating_btuh_ft2 is None
+            else round(cat.heating_btuh_ft2, 2),
+            "zones": r["zones"],
+            "sources": r["sources"],
+            "review": r["review"],
+        }
+    return out
