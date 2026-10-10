@@ -403,3 +403,101 @@ def test_schedule_word_in_plan_notes_is_not_a_table(tmp_path):
         + text(60, 680, "1. FIELD VERIFY", 7)
     )
     assert extract_schedules(_sheet(tmp_path, content)) == []
+
+
+# --- capacity columns on mechanical rows (#747) ---------------------------
+
+from pdf_schedules import _capacities  # noqa: E402
+
+
+def ahu_schedule(x=700, ytop=740):
+    cells = {
+        (0, 0): "TAG", (0, 1): "CLG TOTAL MBH", (0, 2): "CLG SENS MBH",
+        (0, 3): "HTG MBH", (0, 4): "COOLING EAT", (0, 5): "HEATING GPM",
+        (1, 0): "AHU-1", (1, 1): "480", (1, 2): "360", (1, 3): "250", (1, 4): "80", (1, 5): "12",
+        (2, 0): "AHU-2", (2, 1): "120", (2, 2): "", (2, 3): "60", (2, 4): "78", (2, 5): "6",
+    }  # fmt: skip
+    return text(x, ytop + 6, "AIR HANDLING UNIT SCHEDULE", 10) + grid(
+        x, ytop, [40, 60, 60, 50, 50, 50], [14, 14, 14], cells=cells
+    )
+
+
+def test_capacity_columns_are_read_with_unit_and_source(tmp_path):
+    s = extract_schedules(_sheet(tmp_path, ahu_schedule()))[0]
+    assert s.status == "ok", s.reason
+    eq = {e["tag"]: e for e in s.equipment}
+    a = eq["AHU-1"]["capacities"]
+    assert a == {
+        "cooling_total": {"value": 480.0, "unit": "MBH", "column": "CLG TOTAL MBH"},
+        "cooling_sensible": {"value": 360.0, "unit": "MBH", "column": "CLG SENS MBH"},
+        "heating": {"value": 250.0, "unit": "MBH", "column": "HTG MBH"},
+    }
+    b = eq["AHU-2"]["capacities"]
+    assert "cooling_sensible" not in b  # blank stays blank, never guessed
+    assert b["cooling_total"]["value"] == 120.0
+
+
+def test_a_schedule_without_capacity_columns_gains_no_field(full):
+    for e in full[0]["mechanical"].equipment:
+        assert "capacities" not in e
+
+
+@pytest.mark.parametrize(
+    "header, cell, key, value, unit",
+    [
+        ("REHEAT MBH", "18.5", "reheat", 18.5, "MBH"),
+        ("RH CAPACITY (BTUH)", "12,000", "reheat", 12000.0, "Btu/h"),
+        ("HEATING KW", "15", "heating", 15.0, "kW"),
+        ("ELECTRIC HEAT (W)", "1500", "heating", 1500.0, "W"),
+        ("COOLING CAPACITY (TONS)", "10", "cooling_total", 10.0, "tons"),
+        ("SENSIBLE COOLING BTU/HR", "24000", "cooling_sensible", 24000.0, "Btu/h"),
+        ("TOTAL COOLING KBTUH", "36", "cooling_total", 36.0, "MBH"),
+        ("HEATING CAPACITY", "45 KW", "heating", 45.0, "kW"),  # unit from the cell
+        ("COOLING CAPACITY", "120", "cooling_total", 120.0, ""),  # unit unstated: raw
+    ],
+)
+def test_capacity_header_forms(header, cell, key, value, unit):
+    got = _capacities(["TAG", header], ["X-1", cell])
+    assert got == {key: {"value": value, "unit": unit, "column": header}}
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "COOLING EAT",
+        "HEATING EWT",
+        "HEATING GPM",
+        "COOLING LAT DB",
+        "FAN KW",
+        "MOTOR HP",
+        "MAX CFM",
+    ],
+)
+def test_non_capacity_columns_are_not_capacities(header):
+    assert _capacities(["TAG", header], ["X-1", "42"]) == {}
+
+
+def test_two_columns_for_one_duty_leave_it_out():
+    got = _capacities(["CLG MBH", "COOLING CAPACITY MBH", "HTG MBH"], ["10", "12", "5"])
+    assert "cooling_total" not in got and got["heating"]["value"] == 5.0
+
+
+def test_capacity_units_feed_the_classifier_converter():
+    from space_conditioning import to_btuh
+
+    for unit in ("MBH", "Btu/h", "kW", "W", "tons"):
+        assert to_btuh(1.0, unit) > 0
+
+
+@pytest.mark.parametrize(
+    "header, kind, key",
+    [
+        ("HW COIL MBH", "ahu", "heating"),
+        ("HW COIL MBH", "vav", "reheat"),
+        ("HOT WATER COIL CAPACITY (MBH)", "terminal", "reheat"),
+        ("CHW COIL MBH", "ahu", "cooling_total"),
+        ("DX COOLING TONS", "", "cooling_total"),
+    ],
+)
+def test_coil_columns_and_box_reheat(header, kind, key):
+    assert list(_capacities(["TAG", header], ["X-1", "20"], kind)) == [key]

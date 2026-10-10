@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=2825  # +56 90.1 Section 3.2 space conditioning classifier (#747)
+          EXPECTED_TEST_COUNT=2850  # +25 mechanical schedule capacity columns (#747)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')

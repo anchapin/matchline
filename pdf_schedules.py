@@ -854,7 +854,77 @@ def _records(sched: PdfSchedule, tagc: int) -> None:
                 "description": desc,
                 "values": dict(zip(H, vals)),
             }
+            caps = _capacities(H, vals, rec.get("kind", ""))
+            if caps:
+                rec["capacities"] = caps
             sched.equipment.append(rec)
+
+
+# capacity units as written on a schedule -> the label space_conditioning
+# converts (#747); longest first so "KBTUH" isn't read as "BTUH"
+_CAP_UNITS = [
+    (re.compile(r"\bK\s*BTU\s*/?\s*H(R)?\b|\bMBH\b|\bMBTUH\b"), "MBH"),
+    (re.compile(r"\bBTU\s*/?\s*H(R)?\b|\bBTUH\b"), "Btu/h"),
+    (re.compile(r"\bKW\b"), "kW"),
+    (re.compile(r"\bTONS?\b"), "tons"),
+    (re.compile(r"\bW\b|\bWATTS?\b"), "W"),
+]
+_CAP_WORD = re.compile(r"\bCAP(ACITY)?\b|\bOUTPUT\b")
+_REHEAT = re.compile(r"REHEAT|\bRH\b")
+_HEAT = re.compile(r"\bHEAT(ING)?\b|\bHTG\b|\bHW\b|\bHOT WATER\b")
+_COOL = re.compile(r"\bCOOL(ING)?\b|\bCLG\b|\bCHW\b|\bCHILLED WATER\b|\bDX\b")
+_SENS = re.compile(r"\bSENS(IBLE)?\b|\bSH\b")
+_TOTAL = re.compile(r"\bTOT(AL)?\b|\bTH\b")
+
+
+def _cap_unit(text: str) -> str:
+    t = (text or "").upper()
+    for rx, label in _CAP_UNITS:
+        if rx.search(t):
+            return label
+    return ""
+
+
+def _capacities(headers: List[str], vals: List[str], kind: str = "") -> dict:
+    """Heating and cooling capacities on one mechanical schedule row (#747).
+
+    Keys ``cooling_total``, ``cooling_sensible``, ``heating`` and ``reheat``,
+    each ``{"value", "unit", "column"}``. A column counts only when its header
+    names the duty (cooling/CLG, heating/HTG, reheat/RH) and either states a
+    capacity unit (MBH, Btu/h, kW, W, tons) or says capacity/output, so an
+    EAT, LAT, GPM or EWT column under a COOLING or HEATING heading is not read
+    as a capacity. The unit comes from the header, else the cell text; with
+    neither it stays "" and nothing downstream converts it. A cooling column
+    that says neither sensible nor total is taken as total, since a schedule
+    that splits the two labels the sensible one. Two columns for the same duty
+    leave that duty out rather than pick one. On a VAV box or terminal unit
+    row a heating (HW coil) column is the box's reheat.
+    """
+    found: dict = {}
+    dup = set()
+    for h, v in zip(headers, vals):
+        hu = (h or "").upper()
+        unit = _cap_unit(hu)
+        if not (unit or _CAP_WORD.search(hu)):
+            continue
+        if _REHEAT.search(hu):
+            key = "reheat"
+        elif _HEAT.search(hu):
+            key = "reheat" if kind in ("vav", "terminal") else "heating"
+        elif _COOL.search(hu) or _SENS.search(hu) or _TOTAL.search(hu):
+            key = "cooling_sensible" if _SENS.search(hu) else "cooling_total"
+        else:
+            continue
+        num = _number(v)
+        if num is None:
+            continue
+        if key in found:
+            dup.add(key)
+            continue
+        found[key] = {"value": num, "unit": unit or _cap_unit(v), "column": h}
+    for k in dup:
+        found.pop(k, None)
+    return found
 
 
 def _airflow_unit(headers) -> str:
