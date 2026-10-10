@@ -188,10 +188,16 @@ class DoorSwingProvider(DetectionProvider):
     permissive. A door counts only when the leaf, the arc and both jambs are
     drawn; windows are not found. Without a scale it reports nothing rather
     than guess a door width.
+
+    It also takes the sheet's walls result (``needs_walls``) when the set
+    reader has one: the wall reader's door-wide gaps in partitions too thin to
+    be walls (``thin_gaps``) let a door hung in one through (#874). Without
+    them, a door needs a jamb wall at least ``MIN_WALL_M`` thick, as before.
     """
 
     name = "door_swing"
     needs_scale = True
+    needs_walls = True
 
     def __init__(
         self,
@@ -215,7 +221,13 @@ class DoorSwingProvider(DetectionProvider):
             if v is not None
         }
 
-    def detect(self, image_path, sheet_id, px_per_m: Optional[float] = None):
+    def detect(
+        self,
+        image_path,
+        sheet_id,
+        px_per_m: Optional[float] = None,
+        plan: Optional[dict] = None,
+    ):
         import numpy as np
         from PIL import Image
 
@@ -225,6 +237,8 @@ class DoorSwingProvider(DetectionProvider):
         if not ppm:
             return []
         gray = np.asarray(Image.open(image_path).convert("L"))
+        ops = thin_gap_segments(plan)
+        opts = {**self.opts, "openings_px": ops} if ops else self.opts
         return [
             Detection(
                 label="door",
@@ -233,8 +247,29 @@ class DoorSwingProvider(DetectionProvider):
                 bbox=tuple(float(v) for v in d["bbox_px"]),
                 source=sheet_id,
             )
-            for d in detect_door_swings(gray, float(ppm), **self.opts)
+            for d in detect_door_swings(gray, float(ppm), **opts)
         ]
+
+
+def thin_gap_segments(plan: Optional[dict]) -> List[tuple]:
+    """The wall reader's ``thin_gaps`` as ((ax, ay), (bx, by)) in rendered
+    pixels (#874); empty without a walls result or a scale.
+
+    Same frame as ``window_detections``: ``plan_walls`` metres are y-up from
+    the sheet's bottom edge, the rendered sheet is y-down at ``px_per_pt``.
+    """
+    if not plan:
+        return []
+    walls = plan.get("walls") or {}
+    m = walls.get("m_per_pt")
+    if not m:
+        return []
+    H, ppt = float(plan["height_pt"]), float(plan["px_per_pt"])
+
+    def px(p):
+        return (p[0] / m * ppt, (H - p[1] / m) * ppt)
+
+    return [(px(g["a_m"]), px(g["b_m"])) for g in walls.get("thin_gaps", [])]
 
 
 class VectorGlazingProvider(DetectionProvider):
