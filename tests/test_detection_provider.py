@@ -234,8 +234,8 @@ def test_combined_provider_hands_each_part_only_what_it_asks_for():
     seen = []
 
     class Doors(dp.DoorSwingProvider):
-        def detect(self, image_path, sheet_id, px_per_m=None):
-            seen.append(("doors", px_per_m))
+        def detect(self, image_path, sheet_id, px_per_m=None, plan=None):
+            seen.append(("doors", px_per_m, plan))
             return [
                 dp.Detection(label="door", tag="", score=0.9, bbox=(0, 0, 1, 1), source=sheet_id)
             ]
@@ -247,7 +247,8 @@ def test_combined_provider_hands_each_part_only_what_it_asks_for():
 
     c = dp.CombinedProvider([Doors(), Glass()])
     out = c.detect("x.png", "s", plan={"walls": {}}, px_per_m=40.0)
-    assert seen == [("doors", 40.0), ("glass", {"walls": {}})]
+    # door_swing takes the walls too, for thin-partition gaps (#874)
+    assert seen == [("doors", 40.0, {"walls": {}}), ("glass", {"walls": {}})]
     assert [d.label for d in out] == ["door"]
 
 
@@ -359,3 +360,55 @@ def test_a_door_off_the_end_of_the_run_cuts_nothing():
     op["doors_in_glazing"] = [{"a_m": (-2, 0), "b_m": (-1, 0)}]
     (piece,) = dp._glass_pieces(op)
     assert piece[1] == pytest.approx((4, 0))
+
+
+# ---- door_swing takes the wall reader's thin-partition gaps (#874) ---------
+
+
+def _thin_door_png(tmp_path, wpx=2):
+    """A door hung in a ``wpx`` px partition line at 50 px/m, and its gap ends."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 45
+    d.rectangle([x - wpx // 2, 40, x + (wpx - 1) // 2, 360], fill=0)
+    d.rectangle([x - 3, yh, x + 3, yh + r], fill=255)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    png = tmp_path / "thin.png"
+    img.save(png)
+    return png, (x, yh), (x, yh + r)
+
+
+def _plan_with_gap(a_px, b_px, px_per_pt=2.0, m_per_pt=0.01, height_pt=200.0):
+    """A walls result whose one thin gap renders at a_px..b_px."""
+
+    def m(p):
+        return [p[0] / px_per_pt * m_per_pt, (height_pt - p[1] / px_per_pt) * m_per_pt]
+
+    walls = {"m_per_pt": m_per_pt, "thin_gaps": [{"a_m": m(a_px), "b_m": m(b_px)}]}
+    return {"walls": walls, "height_pt": height_pt, "px_per_pt": px_per_pt}
+
+
+def test_thin_gap_segments_land_in_rendered_pixels():
+    plan = _plan_with_gap((150, 150), (150, 195))
+    ((a, b),) = dp.thin_gap_segments(plan)
+    assert a == pytest.approx((150, 150)) and b == pytest.approx((150, 195))
+    assert dp.thin_gap_segments(None) == []
+    assert dp.thin_gap_segments({"walls": {}, "height_pt": 1, "px_per_pt": 1}) == []
+
+
+def test_door_swing_provider_takes_a_thin_wall_door_on_a_thin_gap(tmp_path):
+    png, a, b = _thin_door_png(tmp_path)
+    p = dp.DoorSwingProvider()
+    assert p.needs_walls
+    assert p.detect(png, "s", px_per_m=50.0) == []  # a 2 px wall is below the floor
+    dets = p.detect(png, "s", px_per_m=50.0, plan=_plan_with_gap(a, b))
+    assert len(dets) == 1 and dets[0].label == "door"
+
+
+def test_door_swing_provider_ignores_a_thin_gap_elsewhere(tmp_path):
+    png, _a, _b = _thin_door_png(tmp_path)
+    plan = _plan_with_gap((150, 280), (150, 325))
+    assert dp.DoorSwingProvider().detect(png, "s", px_per_m=50.0, plan=plan) == []
