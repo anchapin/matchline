@@ -501,3 +501,14 @@ def test_capacity_units_feed_the_classifier_converter():
 )
 def test_coil_columns_and_box_reheat(header, kind, key):
     assert list(_capacities(["TAG", header], ["X-1", "20"], kind)) == [key]
+
+
+def test_duplicate_duty_is_dropped_on_every_row_even_with_a_blank_cell():
+    h = ["CLG MBH", "COOLING CAPACITY MBH"]
+    assert _capacities(h, ["", "12"]) == {}
+    assert _capacities(h, ["10", "12"]) == {}
+
+
+@pytest.mark.parametrize("header", ["TOTAL KW", "TOTAL W", "TH MBH"])
+def test_total_without_a_cooling_word_is_not_cooling(header):
+    assert _capacities(["TAG", header], ["X-1", "7"]) == {}

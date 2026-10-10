@@ -874,7 +874,6 @@ _REHEAT = re.compile(r"REHEAT|\bRH\b")
 _HEAT = re.compile(r"\bHEAT(ING)?\b|\bHTG\b|\bHW\b|\bHOT WATER\b")
 _COOL = re.compile(r"\bCOOL(ING)?\b|\bCLG\b|\bCHW\b|\bCHILLED WATER\b|\bDX\b")
 _SENS = re.compile(r"\bSENS(IBLE)?\b|\bSH\b")
-_TOTAL = re.compile(r"\bTOT(AL)?\b|\bTH\b")
 
 
 def _cap_unit(text: str) -> str:
@@ -896,35 +895,45 @@ def _capacities(headers: List[str], vals: List[str], kind: str = "") -> dict:
     as a capacity. The unit comes from the header, else the cell text; with
     neither it stays "" and nothing downstream converts it. A cooling column
     that says neither sensible nor total is taken as total, since a schedule
-    that splits the two labels the sensible one. Two columns for the same duty
-    leave that duty out rather than pick one. On a VAV box or terminal unit
+    that splits the two labels the sensible one; TOTAL alone (a TOTAL KW load
+    column) is not cooling. Two columns for the same duty leave that duty out
+    on every row rather than pick one. On a VAV box or terminal unit
     row a heating (HW coil) column is the box's reheat.
     """
-    found: dict = {}
+    cols: dict = {}
     dup = set()
-    for h, v in zip(headers, vals):
-        hu = (h or "").upper()
-        unit = _cap_unit(hu)
-        if not (unit or _CAP_WORD.search(hu)):
+    for i, h in enumerate(headers):
+        key = _capacity_key(h, kind)
+        if key is None:
             continue
-        if _REHEAT.search(hu):
-            key = "reheat"
-        elif _HEAT.search(hu):
-            key = "reheat" if kind in ("vav", "terminal") else "heating"
-        elif _COOL.search(hu) or _SENS.search(hu) or _TOTAL.search(hu):
-            key = "cooling_sensible" if _SENS.search(hu) else "cooling_total"
-        else:
+        if key in cols:
+            dup.add(key)
+        cols[key] = i
+    found: dict = {}
+    for key, i in cols.items():
+        if key in dup or i >= len(vals):
             continue
-        num = _number(v)
+        num = _number(vals[i])
         if num is None:
             continue
-        if key in found:
-            dup.add(key)
-            continue
-        found[key] = {"value": num, "unit": unit or _cap_unit(v), "column": h}
-    for k in dup:
-        found.pop(k, None)
+        unit = _cap_unit(headers[i]) or _cap_unit(vals[i])
+        found[key] = {"value": num, "unit": unit, "column": headers[i]}
     return found
+
+
+def _capacity_key(header: str, kind: str = "") -> Optional[str]:
+    hu = (header or "").upper()
+    if not (_cap_unit(hu) or _CAP_WORD.search(hu)):
+        return None
+    if _REHEAT.search(hu):
+        return "reheat"
+    if _HEAT.search(hu):
+        return "reheat" if kind in ("vav", "terminal") else "heating"
+    if _SENS.search(hu):
+        return "cooling_sensible"
+    if _COOL.search(hu):
+        return "cooling_total"
+    return None
 
 
 def _airflow_unit(headers) -> str:
