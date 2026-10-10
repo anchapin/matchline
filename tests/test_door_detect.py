@@ -313,3 +313,41 @@ def test_leaf_off_a_crossing_wall_without_a_gap_is_not_a_door():
     img, (cx, cy), _ = _stacked_canvas(gap=False)
     dets = detect_door_swings(img, PPM)
     assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _tee_jamb_canvas(*, gap=True):
+    """A door whose far jamb is a wall that a crossing wall meets in a T
+    right past the opening, hung from a stub below a hollow box wall that
+    gives no wall behind the hinge (Clinic first floor, #875).
+    """
+    img = Image.new("L", (300, 300), 255)
+    d = ImageDraw.Draw(img)
+    r = 45
+    d.rectangle([130, 0, 132, 95], fill=0)  # hollow box, outer line
+    d.rectangle([151, 0, 153, 95], fill=0)  # hollow box, inner line
+    d.rectangle([130, 96, 153, 97], fill=0)  # box closed at its end
+    d.rectangle([147, 98, 153, 103], fill=0)  # hinge stub
+    d.rectangle([147, 152, 153, 299], fill=0)  # far jamb wall
+    d.rectangle([0, 155, 146, 161], fill=0)  # crossing wall, a T at the jamb
+    if not gap:
+        d.rectangle([147, 104, 153, 151], fill=0)
+    d.line([147, 104, 147 + r + 3, 104], fill=0, width=2)  # leaf
+    d.arc([150 - r, 104 - r, 150 + r, 104 + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (150, 104 + r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_far_jamb_at_a_crossing_walls_tee(k, flip):
+    img, centre, r = _tee_jamb_canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    dets = detect_door_swings(img, PPM)
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_tee_jamb_without_a_gap_is_not_a_door():
+    img, (cx, cy), _ = _tee_jamb_canvas(gap=False)
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
