@@ -100,7 +100,7 @@ def test_no_predictions_and_no_truth_give_none_not_zero(bench):
         "tp": 0, "fp": 0, "fn": 0, "precision": None, "recall": None, "f1": None
     }  # fmt: skip
     win = rep["classes"]["window"]
-    assert win["precision"] is None and win["recall"] == 0.0 and win["f1"] is None
+    assert win["precision"] is None and win["recall"] == 0.0 and win["f1"] == 0.0
 
 
 def test_cli_writes_the_report(bench, capsys):

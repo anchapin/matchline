@@ -103,7 +103,8 @@ def load_preds(path: str | Path, width: int, height: int) -> list:
 def _prf(tp: int, fp: int, fn: int) -> dict:
     p = tp / (tp + fp) if tp + fp else None
     r = tp / (tp + fn) if tp + fn else None
-    f1 = 2 * p * r / (p + r) if p and r else (0.0 if p is not None and r is not None else None)
+    # 2tp / (2tp + fp + fn): a class with truth and no predictions scores 0, not n/a
+    f1 = 2 * tp / (2 * tp + fp + fn) if tp + fp + fn else None
     return {"tp": tp, "fp": fp, "fn": fn, "precision": p, "recall": r, "f1": f1}
 
 
