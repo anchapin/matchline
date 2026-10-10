@@ -486,3 +486,67 @@ def test_neighbouring_leaf_beside_a_thin_wall_without_an_opening_is_not_a_door()
     img, (cx, cy), _, _ = _thin_door_beside_neighbour()
     dets = detect_door_swings(img, PPM)
     assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _double_door(wpx=2, r=42, *, leaves=(True, True), gap=True, offset=0):
+    """A double door: two leaves hung from opposite jambs of one opening in a
+    vertical ``wpx`` px wall, leaves east, their tips meeting at the middle
+    (#875). ``offset`` moves the second leaf's hinge further down so the far
+    jambs no longer meet. Returns the image, opening centre, opening width and
+    the opening as (a, b) in pixels."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh = 150, 120
+    d.rectangle([x - wpx // 2, 30, x + (wpx - 1) // 2, 370], fill=0)
+    y2 = yh + 2 * r + offset
+    if gap:
+        h = max(3, wpx // 2 + 1)
+        d.rectangle([x - h, yh, x + h, y2], fill=255)
+    if leaves[0]:
+        d.line([x, yh, x + r, yh], fill=0, width=3)
+        d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    if leaves[1]:
+        d.line([x, y2, x + r, y2], fill=0, width=3)
+        d.arc([x - r, y2 - r, x + r, y2 + r], start=270, end=360, fill=0, width=2)
+    return np.asarray(img), (x, (yh + y2) / 2), y2 - yh, ((x, yh), (x, y2))
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("wpx", [2, 20])
+def test_double_door_is_one_door(k, flip, wpx):
+    img0, centre, w, seg = _double_door(wpx)
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert len(dets) == 1
+    (det,) = dets
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - w) <= 4
+    x0, y0, x1, y1 = det["bbox_px"]
+    assert x0 <= cx <= x1 and y0 <= cy <= y1
+
+
+def test_thick_wall_double_door_needs_no_opening():
+    img, (cx, cy), w, _ = _double_door(20)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - w) <= 4
+
+
+def test_thin_wall_double_door_without_an_opening_is_not_taken():
+    img, (cx, cy), _, _ = _double_door(2)
+    for ops in (None, []):
+        assert detect_door_swings(img, PPM, openings_px=ops) == []
+
+
+def test_thin_wall_single_leaf_is_not_admitted_by_a_double_width_opening():
+    img, _, _, seg = _double_door(2, leaves=(True, False))
+    assert detect_door_swings(img, PPM, openings_px=[seg]) == []
+
+
+def test_leaves_whose_far_jambs_do_not_meet_stay_two_doors():
+    img, _, _, _ = _double_door(20, offset=30)
+    dets = detect_door_swings(img, PPM)
+    assert len(dets) == 2
+    assert all(abs(dt["width_px"] - 42) <= 3 for dt in dets)
