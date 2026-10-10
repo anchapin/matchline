@@ -1155,7 +1155,17 @@ def test_continuous_thin_partition_has_no_thin_gap(tmp_path):
     assert res.thin_gaps == []
 
 
-@pytest.mark.parametrize("width", [0.3, 2.0])
+def test_double_door_gap_in_a_thin_partition_is_one_thin_gap(tmp_path):
+    # two 0.86 m leaves meeting at the middle: one 1.73 m opening (#875)
+    thin = [((4, 0), (4, 6), T_THIN)]
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, [((4, 3), (0, 1), 1.73, T_THIN)])))
+    (g,) = res.thin_gaps
+    assert g["width_m"] == pytest.approx(1.73, abs=0.03)
+    assert _gap_mid(g) == pytest.approx((4, 3), abs=0.05)
+    assert not [o for o in res.openings if o["width_m"] > 0.1]
+
+
+@pytest.mark.parametrize("width", [0.3, 3.0])
 def test_thin_partition_gap_not_a_door_wide_is_not_a_thin_gap(tmp_path, width):
     thin = [((4, 0), (4, 6), T_THIN)]
     res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, [((4, 3), (0, 1), width, T_THIN)])))

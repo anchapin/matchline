@@ -67,7 +67,7 @@ THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed b
 THIN_FILL_SHARE = 0.8  # a thin wall covering this much of a gap in a thick run stops the run
 MAX_DOOR_M = 2.5  # widest door pair whose jambs sit inside storefront glazing (#793)
 THIN_T_MIN_M = 0.015  # a partition drawn thinner than WALL_T_MIN_M (#874)
-THIN_GAP_MIN_M, THIN_GAP_MAX_M = 0.55, 1.35  # a door-wide gap in one (#874)
+THIN_GAP_MIN_M, THIN_GAP_MAX_M = 0.55, 2.7  # a door or double door wide (#874, #875)
 THIN_MIN_LEN_M = 0.1  # a partition pier between two doors can be this short (#874)
 LAYER_GLAZING_CONFIDENCE = 0.7  # full-length glazing line on a glazing CAD layer (#793)
 # CAD layer (PDF optional content group) names, NCS/AIA style and common variants (#793)
