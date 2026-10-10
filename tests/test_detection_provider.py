@@ -412,3 +412,17 @@ def test_door_swing_provider_ignores_a_thin_gap_elsewhere(tmp_path):
     png, _a, _b = _thin_door_png(tmp_path)
     plan = _plan_with_gap((150, 280), (150, 325))
     assert dp.DoorSwingProvider().detect(png, "s", px_per_m=50.0, plan=plan) == []
+
+
+def test_door_swing_provider_takes_a_thin_wall_door_on_a_wall_opening(tmp_path):
+    # a partition the wall reader calls a wall (just over WALL_T_MIN_M) reports
+    # its door gap as an opening, not a thin gap (#875)
+    png, a, b = _thin_door_png(tmp_path)
+    plan = _plan_with_gap(a, b)
+    plan["walls"]["openings"] = plan["walls"].pop("thin_gaps")
+    assert dp.thin_gap_segments(plan) == []
+    ((oa, ob),) = dp.opening_segments(plan)
+    assert oa == pytest.approx(a) and ob == pytest.approx(b)
+    assert dp.opening_segments(None) == []
+    dets = dp.DoorSwingProvider().detect(png, "s", px_per_m=50.0, plan=plan)
+    assert len(dets) == 1 and dets[0].label == "door"

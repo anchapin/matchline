@@ -549,12 +549,14 @@ def measure_doors(arch_path, png_dir=None):
 
             Image.fromarray(img).save(Path(png_dir) / f"doors_{st.replace(' ', '_')}.png")
         # the wall reader's door-wide gaps in partitions too thin to be walls
-        # let a door hung in one through (#874)
+        # (#874), and its openings in walls thinner than the raster jamb floor
+        # (a 0.054 m partition is a wall to it, #875), let a door hung in one
+        # through
         sheet, (ox, oy) = sheet_for(walls[st], rooms[st])
-        gaps = extract_walls(sheet, M_PER_PT).thin_gaps
+        pw = extract_walls(sheet, M_PER_PT)
         ops = [
             (to_px(g["a_m"][0] + ox, g["a_m"][1] + oy), to_px(g["b_m"][0] + ox, g["b_m"][1] + oy))
-            for g in gaps
+            for g in [*pw.thin_gaps, *pw.openings]
         ]
         dets = detect_door_swings(img, DOOR_PPM, openings_px=ops)
         out[st] = match_doors(doors[st], dets, to_px)
