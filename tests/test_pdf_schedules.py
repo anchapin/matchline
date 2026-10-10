@@ -390,6 +390,36 @@ def test_unruled_value_crossing_a_column_is_flagged(tmp_path):
     assert s.status == "unparsed" and "crosses a column" in s.reason
 
 
+def test_unruled_row_missing_its_tag_inside_the_table_is_flagged(tmp_path):
+    # D2 lost its mark: reading D1 and stopping would drop D3 silently (#746)
+    rows = [
+        ("D1", "3'-0\"", "7'-0\"", "WOOD"),
+        ([], "3'-0\"", "8'-0\"", "WOOD"),
+        ("D3", "6'-0\"", "7'-0\"", "HOLLOW METAL"),
+    ]
+    (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))
+    assert s.status == "unparsed" and s.reason == "a data row has no MARK"
+
+
+def test_unruled_row_missing_its_tag_at_the_bottom_is_flagged(tmp_path):
+    rows = [("D1", "3'-0\"", "7'-0\"", "WOOD"), ([], "3'-0\"", "8'-0\"", "WOOD")]
+    (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))
+    assert s.status == "unparsed" and s.reason == "a data row has no MARK"
+
+
+def test_unruled_wrapped_cell_still_continues_its_row(tmp_path):
+    # one column's second line at row pitch is a wrapped cell, not a row
+    rows = [
+        ("D1", "3'-0\"", "7'-0\"", "WOOD"),
+        ([], "", "", "VENEER"),
+        ("D2", "3'-0\"", "8'-0\"", "WOOD"),
+    ]
+    (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))
+    assert s.status == "ok", s.reason
+    assert [r[0] for r in s.rows] == ["D1", "D2"]
+    assert s.rows[0][3] == "WOOD VENEER"
+
+
 def test_unruled_duplicate_tag_is_flagged(tmp_path):
     rows = [("D1", "3'-0\"", "7'-0\"", "WOOD"), ("D1", "3'-0\"", "8'-0\"", "WOOD")]
     (s,) = extract_schedules(_sheet(tmp_path, unruled(60, 700, rows=rows, **DOOR_UNRULED)))

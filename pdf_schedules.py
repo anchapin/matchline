@@ -540,8 +540,9 @@ def _read_unruled(sheet: dict, texts: list, used: set) -> List[PdfSchedule]:
     its neighbours. Every data line needs a value in the tag column; an untagged
     line tight under a row continues it (a wrapped description), a single cell
     spanning several columns is a note, and a wider gap or anything else ends
-    the table. A value crossing a column boundary leaves the table unparsed
-    rather than guessed.
+    the table. A value crossing a column boundary, or an untagged line with
+    values in most columns (a row missing its tag), leaves the table unparsed
+    rather than half read.
     """
     pos = {id(t): i for i, t in enumerate(texts)}
     out: List[PdfSchedule] = []
@@ -629,6 +630,13 @@ def _read_unruled(sheet: dict, texts: list, used: set) -> List[PdfSchedule]:
             for k0, _k1, c in cols:
                 vals[k0].extend(c["items"])
             if not vals[tagc]:
+                filled = sum(1 for k in range(C) if k != tagc and vals[k])
+                if filled >= 2 and 2 * filled >= C - 1:
+                    # values across most columns: a row that lost its tag, not
+                    # a wrapped cell; flag it rather than fold it into the row
+                    # above or drop it (#746)
+                    sched.reason = f"a data row has no {headers[tagc] or 'tag'}"
+                    break
                 if data and gap <= UNRULED_CONT_GAP * lh:
                     for k in range(C):
                         data[-1][k].extend(vals[k])
