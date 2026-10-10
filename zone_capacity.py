@@ -21,7 +21,8 @@ it has no callers yet and changes no outputs.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import re
+from typing import Dict, List, Optional, Tuple
 
 from space_conditioning import to_btuh
 
@@ -169,3 +170,55 @@ def _box_share(b: str, box: dict, u: str, unit: dict, siblings: List[dict]) -> d
                 r["review"].append(src)
         r[d] = {"btuh": round(val, 1), "sources": srcs} if have else None
     return r
+
+
+# what a central unit's tag looks like, so a SYSTEM column saying "VAV" or
+# "CHW" isn't read as naming one
+_CENTRAL_TAG = re.compile(r"^(AHU|RTU|AH|DOAS|MAU|ACU)[-\s]?\d")
+
+# a VAV schedule column naming the central unit a box hangs off ("AHU",
+# "SERVED BY", "FED FROM", "SYSTEM"); "SERVES" names rooms, so it's not one
+_UNIT_COL = re.compile(r"\bAHU\b|\bRTU\b|AIR HANDL|SERVED\s*BY|FED\s*FROM|\bSYSTEM\b")
+
+
+def served_by_from_schedules(equipment: List[dict]) -> Tuple[Dict[str, str], List[str]]:
+    """Box tag -> central unit tag, read from a column on each VAV row (#747).
+
+    A box links only when a column whose header names its central unit (AHU,
+    RTU, AIR HANDLER, SERVED BY, FED FROM, SYSTEM) holds a tag that matches
+    an AHU/RTU row on the schedules. A box whose column
+    names an unscheduled unit, or whose columns name two different units, is
+    left unlinked with a reason, so ``zone_capacities`` sends it to review.
+    Boxes with no such column are simply not linked here (HVAC tracing may
+    link them).
+    """
+    from datasets_adapter import normalize_tag
+
+    central = {
+        normalize_tag(e["tag"]) for e in equipment if e.get("tag") and e.get("kind") in CENTRAL
+    }
+    links: Dict[str, str] = {}
+    notes: List[str] = []
+    for e in equipment:
+        if e.get("kind") not in BOXES or not e.get("tag"):
+            continue
+        box = normalize_tag(e["tag"])
+        named = set()
+        for h, v in (e.get("values") or {}).items():
+            hu = str(h).upper()
+            if not _UNIT_COL.search(hu) or re.match(r"^(TAG|MARK)\b", hu):
+                continue
+            t = normalize_tag(str(v or ""))
+            if t and t != box and (t in central or _CENTRAL_TAG.match(t)):
+                named.add(t)
+        if not named:
+            continue
+        if len(named) > 1:
+            notes.append(f"{box}: its schedule row names {', '.join(sorted(named))}, not linked")
+            continue
+        (u,) = named
+        if u in central:
+            links[box] = u
+        else:
+            notes.append(f"{box}: its schedule row names {u}, which isn't on the schedules")
+    return links, notes

@@ -149,3 +149,61 @@ def test_ahu_is_not_called_single_zone_while_a_box_is_unlinked():
     a = out["AHU-1"]
     assert a["cooling_sensible"] is None and a["heating"] is None
     assert "may not be single-zone" in a["review"][0] and "VAV-1" in a["review"][0]
+
+
+# --- box-to-unit link from a schedule column (#747 slice 4a) ---------------
+
+from zone_capacity import served_by_from_schedules  # noqa: E402
+
+
+def _box(tag, **values):
+    return {"tag": tag, "kind": "vav", "values": {"TAG": tag, **values}}
+
+
+def test_box_links_from_an_ahu_column():
+    eq = [
+        ahu("AHU-1"),
+        ahu("AHU-2"),
+        _box("VAV-1", AHU="AHU-1"),
+        _box("VAV-2", **{"SERVED BY": "ahu-2"}),
+    ]
+    links, notes = served_by_from_schedules(eq)
+    assert links == {"VAV-1": "AHU-1", "VAV-2": "AHU-2"} and notes == []
+    out = zone_capacities(eq + [], links)
+    assert out["VAV-1"]["served_by"] == "AHU-1"
+
+
+@pytest.mark.parametrize("header", ["FED FROM", "SYSTEM", "AIR HANDLER", "RTU"])
+def test_unit_column_header_forms(header):
+    eq = [ahu("RTU-3"), _box("VAV-1", **{header: "RTU-3"})]
+    assert served_by_from_schedules(eq)[0] == {"VAV-1": "RTU-3"}
+
+
+def test_unscheduled_unit_is_noted_and_not_linked():
+    links, notes = served_by_from_schedules([ahu("AHU-1"), _box("VAV-1", AHU="AHU-9")])
+    assert links == {} and "AHU-9" in notes[0]
+
+
+def test_two_units_named_is_not_linked():
+    eq = [ahu("AHU-1"), ahu("AHU-2"), _box("VAV-1", AHU="AHU-1", **{"FED FROM": "AHU-2"})]
+    links, notes = served_by_from_schedules(eq)
+    assert links == {} and "AHU-1, AHU-2" in notes[0]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"SERVES": "OFFICE 101"},
+        {"SYSTEM": "VAV"},
+        {"SYSTEM": "CHW"},
+        {"AHU": ""},
+        {"MAX CFM": "800"},
+    ],
+)
+def test_non_links_are_ignored_quietly(values):
+    assert served_by_from_schedules([ahu("AHU-1"), _box("VAV-1", **values)]) == ({}, [])
+
+
+def test_rows_other_than_boxes_are_not_linked():
+    fcu = {"tag": "FCU-1", "kind": "fcu", "values": {"AHU": "AHU-1"}}
+    assert served_by_from_schedules([ahu("AHU-1"), fcu]) == ({}, [])
