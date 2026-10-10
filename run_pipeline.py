@@ -218,7 +218,12 @@ def model_from_linked_model(
     )
     notes.extend(shade_notes)
 
-    from constructions import opening_constructions, roof_u_value, slab_u_value
+    from constructions import (
+        opening_constructions,
+        roof_u_value,
+        semi_exterior_walls,
+        slab_u_value,
+    )
 
     bem = BEMModel(
         building_name=model.name,
@@ -237,6 +242,7 @@ def model_from_linked_model(
         roof_u_value_w_m2k=roof_u_value(model),
         slab_u_value_w_m2k=slab_u_value(model),
         opening_constructions=opening_constructions(model),
+        interior_wall_constructions=semi_exterior_walls(model),
     )
 
     return bem
