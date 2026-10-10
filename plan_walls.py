@@ -465,7 +465,9 @@ def _glazed_chain(g, bands, walls, tol: float) -> Tuple[float, float, int]:
     """Extent (u0, u1 in ``g``'s frame) and piece count of the run of glazed
     bands carrying ``g``'s middle line on along the same line (#743).
 
-    Pieces link end to end across a gap no wider than the band (as in
+    Pieces are bands on the same line and about as thick as ``g`` (a leaf
+    of a double-leaf wall beside a window's band is not, #872). They link end
+    to end across a gap no wider than the band (as in
     ``_middle_line_continues``), or across a wider gap where a crossing wall
     meets the line inside it, up to that wall's thickness plus a band either
     side: a cavity line drawn room by room stops short of each partition.
@@ -480,8 +482,10 @@ def _glazed_chain(g, bands, walls, tol: float) -> Tuple[float, float, int]:
         if not o.glazed or not _angle_close(o.theta, g.theta, atol):
             continue
         ro, o0, o1 = _in_frame(o, g.theta)
-        if o is g or abs(ro - g.rho) <= max(tol, 0.25 * g.t):
-            pieces.append((o0, o1))
+        if o is g or (
+            abs(ro - g.rho) <= max(tol, 0.25 * g.t) and abs(o.t - g.t) <= max(tol, 0.25 * g.t)
+        ):
+            pieces.append((o0, o1))  # same line, same thickness: one wall's middle line
     cross = []
     for w in walls:
         th = math.atan2(w.b[1] - w.a[1], w.b[0] - w.a[0]) % math.pi
