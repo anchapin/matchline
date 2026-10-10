@@ -154,11 +154,12 @@ def _face_leaf(ink: np.ndarray, y: int, x0: int, x1: int, p: _P) -> bool:
     return float(np.median(up)) >= p.max_leaf and float(np.median(down)) <= p.max_leaf // 2
 
 
-def _band_at(ink: np.ndarray, y: int, x: int, p: _P):
+def _band_at(ink: np.ndarray, y: int, x: int, p: _P, nearest: bool = False):
     """(centre, start, end) of a wall crossing row y near x, else None.
 
-    A wall is the first ink met scanning from x - slack: either one band at
-    least min_wall thick, or two thin lines whose outer span is.
+    A wall is the first ink met scanning from x - slack (with ``nearest``,
+    the ink nearest x instead): either one band at least min_wall thick, or
+    two thin lines whose outer span is.
     """
     if not (0 <= y < ink.shape[0]):
         return None
@@ -168,7 +169,7 @@ def _band_at(ink: np.ndarray, y: int, x: int, p: _P):
     hits = np.flatnonzero(row[lo:hi])
     if hits.size == 0:
         return None
-    s = lo + int(hits[0])
+    s = lo + int(hits[np.argmin(np.abs(lo + hits - x))] if nearest else hits[0])
     while s > 0 and row[s - 1]:
         s -= 1
     e = s
@@ -194,13 +195,16 @@ def _band_at(ink: np.ndarray, y: int, x: int, p: _P):
 def _wall_at(ink: np.ndarray, y: int, step: int, x: int, p: _P):
     """A wall seen on two rows (y and y + step) with the same centre.
 
-    A wall runs on; a letter stroke or a corner does not.
+    A wall runs on; a letter stroke or a corner does not. When the first ink
+    on one row is something else drawn beside the wall (a neighbouring door's
+    leaf open along its other face, #875), the ink nearest x is read too.
     """
-    a = _band_at(ink, y, x, p)
-    b = _band_at(ink, y + step, x, p)
-    if a is None or b is None or abs(a[0] - b[0]) > 2:
-        return None
-    return (a[0] + b[0]) / 2, min(a[1], b[1]), max(a[2], b[2])
+    for nearest in (False, True):
+        a = _band_at(ink, y, x, p, nearest)
+        b = _band_at(ink, y + step, x, p, nearest)
+        if a is not None and b is not None and abs(a[0] - b[0]) <= 2:
+            return (a[0] + b[0]) / 2, min(a[1], b[1]), max(a[2], b[2])
+    return None
 
 
 def _run_through(ink: np.ndarray, y: int, x: int, p: _P) -> bool:
