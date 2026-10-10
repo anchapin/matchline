@@ -299,6 +299,10 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
                     past = _wall_at(ink, y + r + depth, p.probe, s, p)
                     if past is None and depth != p.probe:
                         break  # only a jamb seen right past the opening
+                    # a jamb seen right past the opening whose second row
+                    # meets a crossing wall (a T at the jamb) is read
+                    # further along too
+                    tee = past is None and _band_at(ink, y + r + depth, s, p) is not None
                     hol_p = _hollow(ink, y + r + depth, past, p)
                     clear = False
                     for walls, sx in _hinge_options(behind, past, p, hol_b, hol_p):
@@ -314,7 +318,7 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
                         cand = (float(_arc_coverage(tight, sx, y, r)[0]), cov, sx, y, r)
                         if best is None or cand[:2] > best[:2]:
                             best = cand
-                    if clear or past is None:
+                    if clear or (past is None and not tee):
                         break
             if best is not None:
                 fit, cov, sx, yy, r = best
