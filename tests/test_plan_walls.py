@@ -1106,3 +1106,72 @@ def test_one_flush_lining_alone_does_not_carry_the_run():
 def test_thin_lines_inside_the_wall_but_off_its_faces_are_not_leaves():
     # centred well inside the band, not flush with a face: hatch or lining
     assert _leaf_case(off=2.0) == (0.0, 10.0)
+
+
+# ---- door-wide gaps in partitions too thin to be walls (#874) -------------
+
+T_THIN = 0.025  # a partition drawn as two lines 0.025 m apart
+
+
+def _gap_mid(g):
+    """Gap midpoint in the test's metre frame."""
+    x0, y0 = OX * M_PER_PT, OY * M_PER_PT
+    return ((g["a_m"][0] + g["b_m"][0]) / 2 - x0, (g["a_m"][1] + g["b_m"][1]) / 2 - y0)
+
+
+def test_door_gap_in_a_thin_partition_is_a_thin_gap(tmp_path):
+    thin = [((4, 0), (4, 6), T_THIN)]
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, [((4, 3), (0, 1), 0.9, T_THIN)])))
+    (g,) = res.thin_gaps
+    assert g["width_m"] == pytest.approx(0.9, abs=0.03)
+    assert g["thickness_m"] == pytest.approx(T_THIN, abs=0.005)
+    assert _gap_mid(g) == pytest.approx((4, 3), abs=0.05)
+    # a cue only: the partition is not a wall and the door gap is not an
+    # opening (the shell keeps its 0.025 m slits where the partition meets it)
+    assert not [o for o in res.openings if o["width_m"] > 0.1]
+    assert "thin_gaps" in res.to_dict()
+
+
+def test_thin_partition_stopping_a_door_short_of_a_wall_is_a_thin_gap(tmp_path):
+    # the jamb on one side is the shell wall's face, not more partition
+    thin = [((4, 0), (4, 6), T_THIN)]
+    door = ((4, 6 - T_EXT / 2 - 0.45), (0, 1), 0.9, T_THIN)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, [door])))
+    (g,) = res.thin_gaps
+    assert g["width_m"] == pytest.approx(0.9, abs=0.03)
+    assert _gap_mid(g) == pytest.approx((4, 6 - T_EXT / 2 - 0.45), abs=0.05)
+
+
+def test_two_doors_with_a_short_pier_between_give_two_thin_gaps(tmp_path):
+    thin = [((4, 0), (4, 6), T_THIN)]
+    doors = [((4, 2.45), (0, 1), 0.9, T_THIN), ((4, 3.55), (0, 1), 0.9, T_THIN)]  # 0.2 m pier
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, doors)))
+    mids = sorted(_gap_mid(g)[1] for g in res.thin_gaps)
+    assert mids == pytest.approx([2.45, 3.55], abs=0.05)
+
+
+def test_continuous_thin_partition_has_no_thin_gap(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + [((4, 0), (4, 6), T_THIN)])))
+    assert res.thin_gaps == []
+
+
+@pytest.mark.parametrize("width", [0.3, 2.0])
+def test_thin_partition_gap_not_a_door_wide_is_not_a_thin_gap(tmp_path, width):
+    thin = [((4, 0), (4, 6), T_THIN)]
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, [((4, 3), (0, 1), width, T_THIN)])))
+    assert res.thin_gaps == []
+
+
+def test_door_gap_in_a_wall_is_an_opening_not_a_thin_gap(tmp_path):
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + PARTITION, [DOOR])))
+    assert len(res.openings) == 1
+    assert res.thin_gaps == []
+
+
+def test_hatch_lines_with_breaks_give_no_thin_gaps(tmp_path):
+    hatch = ""
+    for i in range(8):  # parallel lines a thin wall apart, all broken at one place
+        x = 4 + i * T_THIN
+        hatch += line(*_pt(x, 0.5), *_pt(x, 2.55), 0.5) + line(*_pt(x, 3.45), *_pt(x, 5.5), 0.5)
+    res, _ = _read(tmp_path, _outline(_mass(SHELL)) + hatch)
+    assert res.thin_gaps == []
