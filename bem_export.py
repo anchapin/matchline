@@ -150,21 +150,31 @@ def _gbxml_root(model: BEMModel):
     return root, campus
 
 
+def _flow_per_area(zone, value) -> None:
+    """FlowPerArea (m3/s per m2 of floor) on a gbXML Zone when one was settled."""
+    if value is not None and value > 0:
+        _el(zone, "FlowPerArea", f"{value:.6g}", unit="CubicMPerSecPerSquareM")
+
+
 def _write_zones(root, model: BEMModel):
     """Zone elements; returns (thermal zones, space id -> zone id)."""
     # Appendix G thermal zones (#638) when the model carries them; otherwise
     # the single default zone, as before
     tzones = list(getattr(model, "thermal_zones", None) or [])
+    # scheduled zone airflow (#746), only on zones zone_airflow settled
+    fpa = dict(getattr(model, "zone_flow_per_area", None) or {})
     zone_of: dict = {}
     if tzones:
         for zid, sids in tzones:
             zone = _el(root, "Zone", id=f"zone-{zid}")
             _el(zone, "Name", zid)
+            _flow_per_area(zone, fpa.get(f"zone-{zid}"))
             for sid in sids:
                 zone_of.setdefault(sid, f"zone-{zid}")
     else:
         zone = _el(root, "Zone", id="zone-1")
         _el(zone, "Name", "Zone 1")
+        _flow_per_area(zone, fpa.get("zone-1"))
     return tzones, zone_of
 
 

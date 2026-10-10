@@ -573,6 +573,10 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
         from bem_levels import add_levels
 
         add_levels(model, bem_model)
+    # scheduled zone airflow onto the gbXML thermal zones (#746)
+    from zone_airflow import apply_zone_airflow
+
+    apply_zone_airflow(model, bem_model)
     _stage_6_conservation_gate(bem_model)
     bem_dir = out_dir / "stage_06_bem"
     bem_dir.mkdir(parents=True, exist_ok=True)

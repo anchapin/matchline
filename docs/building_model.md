@@ -46,7 +46,17 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
    schedule's MAX/MIN CFM or L/S columns; a bare `AIRFLOW` column takes the
    unit another airflow column in the same table states, and with no stated
    unit (or a max that is not positive, or a min above the max) nothing goes
-   on the zone (#746).
+   on the zone (#746). At BEM export the max airflow reaches gbXML as
+   `FlowPerArea` (`CubicMPerSecPerSquareM`) on each thermal `Zone`: the
+   summed max airflow of the HVAC zones serving it over its floor area,
+   only where every space in it is served by HVAC zones that serve nothing
+   outside it (pieces of a split room count as their parent room). Any
+   other thermal zone gets no value and a `zone_airflow` review item naming
+   the unserved spaces, the HVAC zones reaching outside it, or the zones
+   with no scheduled max. With no Appendix G thermal zones on the BEM model
+   the writer's single `zone-1` (every space) is the thermal zone. The min
+   airflow stays on the HVAC zone in the JSON report (`zone_airflow.py`,
+   Alex's 2026-10-10 decision on #746).
 4. **Elevation** → facade registration (grid path preferred, geometric
    fallback required), window u-intervals → facade meters → south wall
    segments (one per room touching the facade) → owning room; tag joined
