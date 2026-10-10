@@ -66,6 +66,9 @@ THIN_BAND_RATIO = 0.6  # a wall this thin next to the opaque walls either side m
 THIN_BAND_MIN_M = 1.0  # shorter thin pieces are jambs or frames, not a glazed bay
 THIN_FILL_SHARE = 0.8  # a thin wall covering this much of a gap in a thick run stops the run
 MAX_DOOR_M = 2.5  # widest door pair whose jambs sit inside storefront glazing (#793)
+THIN_T_MIN_M = 0.015  # a partition drawn thinner than WALL_T_MIN_M (#874)
+THIN_GAP_MIN_M, THIN_GAP_MAX_M = 0.55, 1.35  # a door-wide gap in one (#874)
+THIN_MIN_LEN_M = 0.1  # a partition pier between two doors can be this short (#874)
 LAYER_GLAZING_CONFIDENCE = 0.7  # full-length glazing line on a glazing CAD layer (#793)
 # CAD layer (PDF optional content group) names, NCS/AIA style and common variants (#793)
 GLAZING_LAYER_RE = re.compile(r"GLAZ|STORE-?FRONT|STORFRNT|CURTAIN|CURT-?WALL|CWALL|WINDOW|WIND\b")
@@ -1262,6 +1265,9 @@ class PlanWalls:
     m_per_pt: Optional[float]
     stats: Dict[str, float] = field(default_factory=dict)
     wall_tags: List[dict] = field(default_factory=list)  # tags on walls with no opening (#793)
+    # door-wide gaps in partitions thinner than a wall (#874); not walls or
+    # openings, only a cue for the raster door reader
+    thin_gaps: List[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -1273,6 +1279,7 @@ class PlanWalls:
             "review": self.review,
             "stats": self.stats,
             "wall_tags": self.wall_tags,
+            "thin_gaps": self.thin_gaps,
         }
 
 
@@ -1346,6 +1353,73 @@ def _label_for(face: Polygon, spans) -> Tuple[Optional[dict], List[str]]:
     raw = " ".join(t for t, _ in inside)
     name, number, conf = parse_room_label(raw)
     return {"name": name, "number": number, "raw_text": raw, "parse_confidence": conf}, reasons
+
+
+def _thin_gaps(
+    segs: List[Seg], walls: List[Wall], t_min: float, k: float, tol: float, to_m
+) -> List[dict]:
+    """Door-wide gaps at the ends of partitions drawn thinner than
+    ``WALL_T_MIN_M`` (#874).
+
+    A 0.025 m partition is two face lines too close to pair as a wall, so the
+    wall reader sees no opening in it. Here those face pairs are paired on
+    their own, and from each piece's end the line is followed to the first
+    drawn line it meets: when that is ``THIN_GAP_MIN_M``..``THIN_GAP_MAX_M``
+    away (the next partition piece, or the face of the wall it stops short
+    of), the stretch is a gap. A gap between two collinear pieces whose ends
+    are left open counts too. Walls, openings and rooms are untouched; only
+    the raster door reader uses these, and it still needs a swing there.
+    """
+    lo, hi = THIN_T_MIN_M * k, t_min * 0.999
+    if hi <= lo:
+        return []
+    bands = _pair_bands(segs, lo, hi, THIN_MIN_LEN_M * k)
+    if not bands:
+        return []
+    gmin, gmax = THIN_GAP_MIN_M * k - tol, THIN_GAP_MAX_M * k + tol
+    thin, run_gaps = _runs(bands, gmax, tol)
+    found: List[Tuple[Pt, Pt, float]] = [(a, b, t) for a, b, t, _x, _y in run_gaps]
+    geoms = [LineString([sg.a, sg.b]) for sg in segs if sg.length > 0]
+    tree = STRtree(geoms)
+    for w in thin:
+        L = math.dist(w.a, w.b)
+        if L == 0:
+            continue
+        for p, q in ((w.b, w.a), (w.a, w.b)):
+            ux, uy = (p[0] - q[0]) / L, (p[1] - q[1]) / L
+            ray = LineString([p, (p[0] + ux * gmax, p[1] + uy * gmax)])
+            best = None
+            for i in tree.query(ray):
+                x = ray.intersection(geoms[int(i)])
+                if x.is_empty:
+                    continue
+                pts = list(getattr(x, "geoms", [x]))
+                for g in pts:
+                    for c in g.coords:
+                        d = (c[0] - p[0]) * ux + (c[1] - p[1]) * uy
+                        if d > tol and (best is None or d < best):
+                            best = d
+            if best is not None and gmin <= best <= gmax:
+                found.append((p, (p[0] + ux * best, p[1] + uy * best), w.t))
+    out: List[dict] = []
+    mids: List[Pt] = []
+    for a, b, t in found:
+        L = math.dist(a, b)
+        if not (gmin <= L <= gmax):
+            continue
+        mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        if any(math.dist(mid, m) <= max(2 * t, tol) for m in mids):
+            continue  # the same gap seen from its other end
+        mids.append(mid)
+        out.append(
+            {
+                "a_m": to_m(a),
+                "b_m": to_m(b),
+                "width_m": round(L / k, 3),
+                "thickness_m": round(t / k, 3),
+            }
+        )
+    return out
 
 
 def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
@@ -1653,7 +1727,8 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
         "rooms": len(rooms),
         "wall_length_m": round(sum(x["length_m"] for x in wall_out), 2),
     }
-    return PlanWalls(wall_out, openings, rooms, review, m_per_pt, stats, wall_tags)
+    thin_gaps = _thin_gaps(segs, walls, t_min, k, tol, to_m)
+    return PlanWalls(wall_out, openings, rooms, review, m_per_pt, stats, wall_tags, thin_gaps)
 
 
 # -------------------------------------------------------------- measurement
