@@ -142,3 +142,10 @@ def test_feeds_the_space_classifier():
         climate_zone="4A",
     )
     assert got.category == "conditioned"
+
+
+def test_ahu_is_not_called_single_zone_while_a_box_is_unlinked():
+    out = zone_capacities([ahu(), vav("VAV-1", 1000.0)])
+    a = out["AHU-1"]
+    assert a["cooling_sensible"] is None and a["heating"] is None
+    assert "may not be single-zone" in a["review"][0] and "VAV-1" in a["review"][0]

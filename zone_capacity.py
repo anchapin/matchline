@@ -90,8 +90,19 @@ def zone_capacities(
         r.update({d: None for d in DUTIES})
         return r
 
-    # self-serving units: fan coils, and central units with no boxes on them
+    unlinked = sorted(b for b in boxes if not served_by.get(b))
+    # self-serving units: fan coils, and central units with no boxes on them.
+    # While some box's central unit is unknown, an AHU with no boxes assigned
+    # may be feeding it, so it isn't called single-zone.
     for t, e in rows.items():
+        if t in central and t not in on_unit and unlinked:
+            r = entry()
+            r["review"].append(
+                f"{t}: no boxes assigned, but {', '.join(unlinked)} have no known "
+                "central unit, so it may not be single-zone"
+            )
+            out[t] = r
+            continue
         if e.get("kind") in SELF or (t in central and t not in on_unit):
             r = entry()
             for d in DUTIES:
