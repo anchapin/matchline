@@ -44,6 +44,7 @@ THIN_WALL_PX, THIN_WALL_M = 1, 0.02
 OPEN_WIDTH_TOL = 0.25  # opening width within +-25% of the swing radius
 OPEN_CENTRE_TOL = 0.25  # opening midpoint within this share of r of the door's
 OPEN_ANGLE_TOL_DEG = 15.0
+DOUBLE_LEAF_TOL = 0.25  # the two leaves of a double door within +-25% in radius
 WALL_PROBE_PX, WALL_PROBE_M = 4, 0.08  # how far past a jamb to look for it
 MAX_LEAF_THICK_PX, MAX_LEAF_THICK_M = 6, 0.12  # leaves are thinner than walls
 DEDUPE_PX, DEDUPE_M = 8, 0.16
@@ -365,6 +366,61 @@ def _candidates(ink0: np.ndarray, fat0: np.ndarray, tight0: np.ndarray, p: _P) -
     return cands
 
 
+def _centre(c: dict):
+    return ((c["hinge"][0] + c["jamb"][0]) / 2, (c["hinge"][1] + c["jamb"][1]) / 2)
+
+
+def _same(a: dict, b: dict, p: _P) -> bool:
+    """Two candidates are the same symbol: hinge and opening centre coincide."""
+    ca, cb = _centre(a), _centre(b)
+    return (
+        np.hypot(a["hinge"][0] - b["hinge"][0], a["hinge"][1] - b["hinge"][1]) <= p.dedupe
+        and np.hypot(ca[0] - cb[0], ca[1] - cb[1]) <= p.dedupe
+    )
+
+
+def _dedupe(cands: list[dict], p: _P, ordered: bool = False) -> list[dict]:
+    """Same symbol hit on neighbouring leaf rows and orientations: keep the
+    best (or, with ``ordered``, the first: double doors go ahead of leaves)."""
+    if not ordered:
+        cands = sorted(cands, key=lambda c: (-c["fit"], -c["score"], c["r"]))
+    kept: list[dict] = []
+    for c in cands:
+        if not any(_same(c, q, p) for q in kept):
+            kept.append(c)
+    return kept
+
+
+def _pairs(cands: list[dict], p: _P) -> list[dict]:
+    """Double doors: two leaves hung from opposite jambs of one opening, their
+    far jambs meeting at its middle (#875). Each is reported as one door from
+    one hinge to the other, as wide as both leaves together."""
+    out = []
+    for i, a in enumerate(cands):
+        for b in cands[i + 1 :]:
+            if abs(a["r"] - b["r"]) > DOUBLE_LEAF_TOL * max(a["r"], b["r"]):
+                continue
+            if np.hypot(a["jamb"][0] - b["jamb"][0], a["jamb"][1] - b["jamb"][1]) > p.dedupe:
+                continue
+            ua = np.subtract(a["jamb"], a["hinge"]) / a["r"]
+            ub = np.subtract(b["jamb"], b["hinge"]) / b["r"]
+            if float(np.dot(ua, ub)) > -np.cos(np.radians(OPEN_ANGLE_TOL_DEG)):
+                continue  # not hung from opposite jambs along one wall line
+            out.append(
+                {
+                    "score": min(a["score"], b["score"]),
+                    "fit": min(a["fit"], b["fit"]),
+                    "hinge": a["hinge"],
+                    "jamb": b["hinge"],
+                    "r": float(
+                        np.hypot(b["hinge"][0] - a["hinge"][0], b["hinge"][1] - a["hinge"][1])
+                    ),
+                    "leaves": (a, b),
+                }
+            )
+    return out
+
+
 def _on_opening(c: dict, openings_px) -> bool:
     """A vector wall opening as wide as the swing lies across its jambs (#874).
 
@@ -402,6 +458,11 @@ def detect_door_swings(
     thinner than ``MIN_WALL_M`` (down to a 1 px line) is kept only where one
     of them, about as wide as its swing, lies across its jambs (#874): at that
     weight a quarter-round fixture against a thin line looks like a door.
+
+    A double door (two leaves hung from opposite jambs, their far jambs
+    meeting at the middle) is reported as ONE door from hinge to hinge, as
+    wide as both leaves (#875). In a thin wall it needs an opening about as
+    wide as both leaves together.
     """
     if img.ndim != 2:
         raise ValueError("expected a 2-D grayscale image")
@@ -409,29 +470,24 @@ def detect_door_swings(
     ink0 = img < ink_max
     fat0 = _dilate(ink0, p.arc_tol)
     tight0 = _dilate(ink0, max(1, p.arc_tol // 2))
-    cands = _candidates(ink0, fat0, tight0, p)
+    std = _dedupe(_candidates(ink0, fat0, tight0, p), p)
+    cands = _pairs(std, p)
     if openings_px:
         thin = replace(p, min_wall=max(THIN_WALL_PX, int(round(THIN_WALL_M * px_per_m))))
-        cands += [c for c in _candidates(ink0, fat0, tight0, thin) if _on_opening(c, openings_px)]
-    # same symbol hits on neighbouring leaf rows and orientations: keep best
-    cands.sort(key=lambda c: (-c["fit"], -c["score"], c["r"]))
-
-    def _centre(c):
-        return ((c["hinge"][0] + c["jamb"][0]) / 2, (c["hinge"][1] + c["jamb"][1]) / 2)
-
-    kept: list[dict] = []
-    for c in cands:
-        if any(
-            np.hypot(c["hinge"][0] - q["hinge"][0], c["hinge"][1] - q["hinge"][1]) <= p.dedupe
-            and np.hypot(_centre(c)[0] - _centre(q)[0], _centre(c)[1] - _centre(q)[1]) <= p.dedupe
-            for q in kept
-        ):
-            continue
-        kept.append(c)
+        thin_c = _dedupe(_candidates(ink0, fat0, tight0, thin), p)
+        cands += [c for c in _pairs(thin_c, p) if _on_opening(c, openings_px)]
+        cands += [c for c in thin_c if _on_opening(c, openings_px)]
+    cands += std
+    # a leaf that is half of a double door is reported only as that door
+    leaves = [lf for c in cands for lf in c.get("leaves", ())]
+    cands = [c for c in cands if "leaves" in c or not any(_same(c, lf, p) for lf in leaves)]
+    kept = _dedupe(cands, p, ordered=True)
     out = []
     for i, c in enumerate(sorted(kept, key=lambda c: (c["hinge"][1], c["hinge"][0])), 1):
-        (hx, hy), (jx, jy), (tx, ty) = c["hinge"], c["jamb"], c["tip"]
-        xs, ys = (hx, jx, tx), (hy, jy, ty)
+        (hx, hy), (jx, jy) = c["hinge"], c["jamb"]
+        tips = [lf["tip"] for lf in c["leaves"]] if "leaves" in c else [c["tip"]]
+        xs = (hx, jx, *(t[0] for t in tips))
+        ys = (hy, jy, *(t[1] for t in tips))
         out.append(
             {
                 "id": f"DD{i}",
