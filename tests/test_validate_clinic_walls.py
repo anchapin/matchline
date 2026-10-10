@@ -409,6 +409,33 @@ def test_door_swing_stands_square_to_the_wall_from_a_jamb():
     assert abs(tip[1] - hinge[1]) == pytest.approx(0.9)
 
 
+def test_door_swing_spans_the_opening_when_a_jamb_runs_into_a_long_cross_wall():
+    """A door whose far jamb is the face of a long perpendicular wall (#875).
+
+    That wall's face lies on the jamb line, so it outscores the short wall
+    on the faces and the wall-face test alone would pick the depth (0.12 m)
+    as the opening's width. A swing door is wider than its wall is deep.
+    """
+    from shapely.ops import unary_union
+
+    t = 0.12
+    walls = [box(0, 0, 2.0, t), box(2.92, 0, 2.92 + 0.14, 6.0)]
+    hinge, tip, jamb, r = door_swing(box(2.0, 0, 2.92, t), unary_union(walls))
+    assert r == pytest.approx(0.92)
+    assert hinge[1] == pytest.approx(t / 2) and jamb[1] == pytest.approx(t / 2)
+    assert abs(tip[1] - hinge[1]) == pytest.approx(0.92)
+
+
+def test_door_swing_keeps_the_wall_face_pick_for_a_door_in_a_deep_wall():
+    """A 0.9 m door in a 0.8 m wall still spans along the wall, not across it."""
+    from shapely.ops import unary_union
+
+    t = 0.8
+    walls = [box(0, 0, 2.0, t), box(2.9, 0, 5.0, t)]
+    _h, _t, _j, r = door_swing(box(2.0, 0, 2.9, t), unary_union(walls))
+    assert r == pytest.approx(0.9)
+
+
 def test_doors_drawn_from_the_ifc_read_back_as_door_detections():
     from door_detect import detect_door_swings
 

@@ -424,8 +424,18 @@ def door_swing(poly, walls, side=1):
     ends (``glazing_line`` finds that line the same way it does for a window);
     the leaf stands square to the wall from the first jamb, as long as the
     opening is wide, and ``side`` (+1 or -1) picks which face it swings to.
+    An along-wall line shorter than the narrowest swing door is the wall's
+    depth, so the opening's long side is used instead (#875).
     """
+    from door_detect import MIN_WIDTH_M
+
     a, b = glazing_line(poly, walls)
+    if float(np.hypot(*np.subtract(b, a))) < MIN_WIDTH_M:
+        # a jamb on the face of a long cross wall can outscore the wall's
+        # own faces; a swing door is wider than its wall is deep (#875)
+        la, lb = glazing_line(poly)
+        if float(np.hypot(*np.subtract(lb, la))) >= MIN_WIDTH_M:
+            a, b = la, lb
     d = np.subtract(b, a)
     r = float(np.hypot(*d))
     n = np.array((-d[1], d[0])) / r * side
