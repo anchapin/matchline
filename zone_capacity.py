@@ -1,0 +1,160 @@
+"""Heating and cooling capacity per terminal zone (#747, slice 3).
+
+Alex's rules (#747 issuecomment-6092815093):
+
+* A central unit's coil (an AHU or RTU feeding VAV boxes) is split across the
+  boxes it serves by each box's design (max) supply airflow divided by the
+  unit's supply fan total design airflow. When the unit's schedule row gives
+  no airflow, the split uses the sum of its boxes' max airflows instead, and
+  the result is marked derived.
+* A box's own reheat capacity is added to its share of the central heating.
+* A self-serving unit (a fan coil, or an AHU/RTU with no boxes assigned to it)
+  uses its own capacity.
+* Every capacity carries its source and units. Anything unsettled (which unit
+  a box hangs off, a capacity or airflow without units) goes to review and is
+  never defaulted.
+
+Nothing here reads drawings: the box-to-unit link comes from the caller
+(HVAC tracing). This module only does the arithmetic and the bookkeeping, so
+it has no callers yet and changes no outputs.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List, Optional
+
+from space_conditioning import to_btuh
+
+AIRFLOW_M3S = {"cfm": 0.3048**3 / 60.0, "l/s": 0.001}
+DUTIES = ("cooling_sensible", "cooling_total", "heating")
+CENTRAL = ("ahu",)
+BOXES = ("vav",)
+SELF = ("fcu",)
+
+
+def _airflow_m3s(e: dict) -> Optional[float]:
+    """Design (max) supply airflow on a schedule row in m3/s, or None when the
+    row has none, it isn't positive, or its unit is unstated."""
+    v = e.get("cfm_max") if e.get("cfm_max") is not None else e.get("cfm")
+    k = AIRFLOW_M3S.get(e.get("airflow_unit") or "")
+    if v is None or k is None or v <= 0:
+        return None
+    return v * k
+
+
+def _cap(e: dict, key: str):
+    """(Btu/h, source) for one capacity on a row, (None, None) when the row has
+    none, or (None, reason) when it can't be converted."""
+    c = (e.get("capacities") or {}).get(key)
+    if not c:
+        return None, None
+    try:
+        btuh = to_btuh(c["value"], c["unit"])
+    except ValueError:
+        return None, f"{e['tag']} {c['column']} {c['value']:g} states no unit, not used"
+    unit = c["unit"] or "?"
+    return btuh, f"{e['tag']} {c['column']} {c['value']:g} {unit}"
+
+
+def zone_capacities(
+    equipment: List[dict], served_by: Optional[Dict[str, str]] = None
+) -> Dict[str, dict]:
+    """Capacity per zone-serving unit, keyed by its tag.
+
+    ``equipment`` is mechanical schedule rows (``pdf_schedules``), each with
+    ``tag``, ``kind`` and optionally ``capacities``, ``cfm_max``/``cfm`` and
+    ``airflow_unit``. ``served_by`` maps a VAV box tag to the tag of the
+    central unit feeding it.
+
+    Each entry: ``served_by`` (central tag or ""), ``share`` (the box's
+    fraction of the central unit, or None), ``derived`` (True when the split
+    used the boxes' summed airflow), and per duty either
+    ``{"btuh", "sources"}`` or None, plus ``review`` reasons. A duty is None
+    when nothing on the schedules gives it; a reason in ``review`` says why
+    when it was there but couldn't be used.
+    """
+    served_by = {k.upper(): v.upper() for k, v in (served_by or {}).items()}
+    rows = {e["tag"].upper(): e for e in equipment if e.get("tag")}
+    central = {t: e for t, e in rows.items() if e.get("kind") in CENTRAL}
+    boxes = {t: e for t, e in rows.items() if e.get("kind") in BOXES}
+    on_unit: Dict[str, List[str]] = {}
+    for b in boxes:
+        u = served_by.get(b)
+        if u in central:
+            on_unit.setdefault(u, []).append(b)
+
+    out: Dict[str, dict] = {}
+
+    def entry(served="", share=None, derived=False):
+        r = {"served_by": served, "share": share, "derived": derived, "review": []}
+        r.update({d: None for d in DUTIES})
+        return r
+
+    # self-serving units: fan coils, and central units with no boxes on them
+    for t, e in rows.items():
+        if e.get("kind") in SELF or (t in central and t not in on_unit):
+            r = entry()
+            for d in DUTIES:
+                v, src = _cap(e, d)
+                r[d] = {"btuh": round(v, 1), "sources": [src]} if v is not None else None
+                if v is None and src:
+                    r["review"].append(src)
+            out[t] = r
+
+    for b, e in boxes.items():
+        u = served_by.get(b)
+        if not u:
+            r = entry()
+            r["review"].append(f"{b}: which central unit feeds it isn't known")
+        elif u not in central:
+            r = entry(u)
+            r["review"].append(f"{b}: its central unit {u} isn't on the mechanical schedules")
+        else:
+            r = _box_share(b, e, u, central[u], [boxes[x] for x in on_unit[u]])
+        out[b] = r
+    return out
+
+
+def _box_share(b: str, box: dict, u: str, unit: dict, siblings: List[dict]) -> dict:
+    r = {"served_by": u, "share": None, "derived": False, "review": []}
+    q_box = _airflow_m3s(box)
+    q_fan = _airflow_m3s(unit)
+    if q_fan is None:
+        flows = [_airflow_m3s(s) for s in siblings]
+        if any(f is None for f in flows):
+            q_fan = None
+        else:
+            q_fan = sum(flows)
+            r["derived"] = True
+    if q_box is None:
+        r["review"].append(f"{b}: no design airflow with units on its schedule row")
+    elif not q_fan:
+        r["review"].append(
+            f"{b}: {u} has no supply airflow and not every box on it has one, so it can't be split"
+        )
+    elif q_box > q_fan * 1.0001:
+        r["review"].append(f"{b}: its airflow exceeds {u}'s supply airflow")
+    else:
+        r["share"] = round(q_box / q_fan, 6)
+    how = "sum of its boxes' max airflow" if r["derived"] else "its supply fan design airflow"
+    for d in DUTIES:
+        val, srcs = 0.0, []
+        have = False
+        if r["share"] is not None:
+            v, src = _cap(unit, d)
+            if v is not None:
+                val += v * r["share"]
+                srcs.append(f"{src} x {r['share']:.4f} ({b} airflow / {u} {how})")
+                have = True
+            elif src:
+                r["review"].append(src)
+        if d == "heating":
+            v, src = _cap(box, "reheat")
+            if v is not None:
+                val += v
+                srcs.append(src + " (reheat)")
+                have = True
+            elif src:
+                r["review"].append(src)
+        r[d] = {"btuh": round(val, 1), "sources": srcs} if have else None
+    return r
