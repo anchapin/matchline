@@ -359,6 +359,12 @@ class Space:
     # storey marks an atrium (#640). None when not stated.
     height_m: Optional[float] = None
     merged_from: List[str] = field(default_factory=list)
+    # ASHRAE 90.1-2019 Section 3.2 category from the heating/cooling output of
+    # the zones serving it, per floor area (#747): {"category": "conditioned" |
+    # "semiheated" | "unconditioned" | "review", "reasons", "derived", Btu/h
+    # and Btu/h-ft2 values, "zones", "sources", "review"}. None when no zone
+    # with a terminal unit was found for the space (never defaulted).
+    conditioning: Optional[dict] = None
     history: List[Provenance] = field(default_factory=list)
 
     @property
