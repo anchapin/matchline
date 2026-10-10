@@ -1097,7 +1097,7 @@ def test_a_provider_that_needs_the_scale_gets_it_per_sheet(tmp_path):
     seen = {}
 
     class Rec(dp.DoorSwingProvider):
-        def detect(self, image_path, sheet_id, px_per_m=None):
+        def detect(self, image_path, sheet_id, px_per_m=None, plan=None):
             seen[Path(str(image_path)).name] = px_per_m
             return []
 
@@ -1121,8 +1121,9 @@ def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     seen = {}
 
     class Doors(dp.DoorSwingProvider):
-        def detect(self, image_path, sheet_id, px_per_m=None):
-            seen.setdefault(Path(str(image_path)).name, {})["px_per_m"] = px_per_m
+        def detect(self, image_path, sheet_id, px_per_m=None, plan=None):
+            got = seen.setdefault(Path(str(image_path)).name, {})
+            got["px_per_m"], got["door_plan"] = px_per_m, plan
             return []
 
     class Glass(dp.VectorGlazingProvider):
@@ -1140,4 +1141,6 @@ def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     got = seen["sheet_001.png"]
     assert got["px_per_m"] == pytest.approx(150 / 72 / m_per_pt)
     assert got["plan"]["walls"]["m_per_pt"] and got["plan"]["px_per_pt"] == pytest.approx(150 / 72)
+    # the door part gets the same walls, for thin-partition gaps (#874)
+    assert got["door_plan"] == got["plan"] and "thin_gaps" in got["plan"]["walls"]
     assert rep.detector["provider"] == "combined" and not rep.detector["eval_only"]
