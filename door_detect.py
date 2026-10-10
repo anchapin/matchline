@@ -196,6 +196,19 @@ def _wall_at(ink: np.ndarray, y: int, step: int, x: int, p: _P):
     return (a[0] + b[0]) / 2, min(a[1], b[1]), max(a[2], b[2])
 
 
+def _run_through(ink: np.ndarray, y: int, x: int, p: _P) -> bool:
+    """Row y holds an ink run through x longer than any wall is thick."""
+    if not (0 <= y < ink.shape[0]) or not ink[y, x]:
+        return False
+    row = ink[y]
+    s = e = x
+    while s > 0 and row[s - 1]:
+        s -= 1
+    while e < row.size and row[e]:
+        e += 1
+    return e - s > p.max_wall
+
+
 def _opening_clear(ink: np.ndarray, y: int, r: int, cols, p: _P) -> bool:
     """The wall line between the jambs carries (almost) no ink."""
     y0, y1 = y + p.arc_tol, y + r - 2 * p.arc_tol
@@ -271,6 +284,11 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
             # a leaf on a wall face: the row behind it runs through that wall,
             # so only the jamb wall past the opening places the hinge
             behind = None if on_face else _wall_at(ink, y - p.probe, -p.probe, s, p)
+            if behind is None and not on_face and _run_through(ink, y - p.probe, s, p):
+                # a separable leaf drawn just off a crossing wall's face: the
+                # row behind it runs along that wall, so read the hinge wall
+                # on the far side of it
+                behind = _wall_at(ink, y - p.slack, -p.probe, s, p)
             best = None
             for r in radii.tolist():
                 # the jamb past the opening can be thickened by a stub (the

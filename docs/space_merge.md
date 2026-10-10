@@ -119,7 +119,7 @@ Measured on the Clinic (plumbing only, nothing tuned on it):
 
 | Storey | IFC doors | Detections | Recall | Precision |
 |---|---|---|---|---|
-| First Floor | 148 | 140 | 0.953 | 1.000 |
+| First Floor | 148 | 141 | 0.959 | 1.000 |
 | Second Floor | 96 | 92 | 0.927 | 0.989 |
 
 An opening wider than one leaf (`MAX_WIDTH_M`) is drawn as a pair of leaves

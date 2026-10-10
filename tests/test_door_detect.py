@@ -278,3 +278,38 @@ def test_hollow_wall_gap_without_an_arc_is_not_a_door(k):
     img, _, _ = _hollow_canvas(arc=False)
     img, _ = _orient(img, (0, 0), k, False)
     assert detect_door_swings(img, PPM) == []
+
+
+def _stacked_canvas(*, gap=True):
+    """A door whose leaf, drawn just off a crossing wall's face, is separable
+    from it; the hinge wall runs on beyond that crossing wall and the far jamb
+    is the end of another crossing wall (Clinic first floor, #875).
+    """
+    img = Image.new("L", (300, 300), 255)
+    d = ImageDraw.Draw(img)
+    r = 45
+    d.rectangle([0, 126, 153, 139], fill=0)  # far-jamb wall, ending at the jamb
+    d.rectangle([0, 186, 153, 193], fill=0)  # crossing wall the leaf lies on
+    d.rectangle([147, 194, 153, 299], fill=0)  # hinge wall, beyond it
+    if not gap:
+        d.rectangle([147, 140, 153, 185], fill=0)
+    d.line([150, 184, 150 - r, 184], fill=0, width=2)  # leaf, 1 px off the face
+    d.arc([150 - r, 184 - r, 150 + r, 184 + r], start=180, end=270, fill=0, width=2)
+    return np.asarray(img), (150, 184 - r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_leaf_just_off_a_crossing_walls_face(k, flip):
+    img, centre, r = _stacked_canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    dets = detect_door_swings(img, PPM)
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_leaf_off_a_crossing_wall_without_a_gap_is_not_a_door():
+    img, (cx, cy), _ = _stacked_canvas(gap=False)
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
