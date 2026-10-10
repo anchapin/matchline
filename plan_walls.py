@@ -505,7 +505,7 @@ def _glazed_chain(g, bands, walls, tol: float) -> Tuple[float, float, int]:
     while grew:
         grew = False
         for o0, o1 in pieces:
-            if (o0, o1) in used or o1 < lo - 1e9:
+            if (o0, o1) in used:
                 continue
             if (
                 lo <= o0 <= hi
