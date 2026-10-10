@@ -236,3 +236,19 @@ Recall (TP / terminals), false hits, and end-to-end room outcomes, both storeys,
 | `--vary 2` | 40/234 (0.17) | 16/206 (0.08) | 0 / 2 | 56 / 0 / 381 |
 
 Where they are lost (stage check, seed 1 / seed 2): an NCC proposal of the right class lands on only 71 of 234 diffusers (both seeds) and 63 / 67 of 206 grilles (clean: 234 and 203), while WiSARD at the true position still says the right class for 174/169 diffusers and 151/147 grilles. So the loss is mostly at the template proposal stage: the stub-less built-in templates don't match a rescaled, tilted, alternative-style or noisy symbol. A detection that is made still lands in the right room every time. Any fix (scale/rotation template banks, legend templates from #744) gets validated on synthetic sheets first, with Clinic only measured.
+
+### Grille/diffuser relabel when WiSARD and the template disagree
+
+Most grilles lost under the line-weight and scale variations were proposed by the grille template but labeled diffuser by WiSARD, then dropped by the tight confirm. Now, when a grille or diffuser fails the tight confirm under its WiSARD label and the NCC proposal named the other terminal class, the detection takes the proposal's class if that class's tight template scores at least `RELABEL_CONFIRM_NCC` (0.76; `hvac_trace._confirm_label`). A detection whose WiSARD label confirms is never changed. At 0.70 the rule made 9 false grilles on the clean render (those score 0.70 to 0.75), while grilles drawn 1 px heavier or lighter score 0.76 to 0.90. The bar was read off Clinic and approved by the maintainer; a firmer signal and a WiSARD that holds up under line weight and size are tracked in #887.
+
+Clinic grilles, TP / FP per storey (first floor of 123, second floor of 83), develop vs this rule; diffusers are unchanged on every render:
+
+| Render | First floor, develop | First floor, relabel | Second floor, develop | Second floor, relabel |
+|---|---|---|---|---|
+| clean | 123 / 0 | 123 / 0 | 83 / 0 | 83 / 0 |
+| `--vary-only weight` | 94 / 1 | 118 / 1 | 63 / 0 | 81 / 0 |
+| `--vary-only scale` | 76 / 0 | 96 / 0 | 62 / 0 | 69 / 0 |
+| `--vary 1` | 11 / 2 | 18 / 3 | 17 / 0 | 19 / 0 |
+| `--vary 2` | 19 / 0 | 28 / 0 | 12 / 2 | 17 / 2 |
+
+`--vary 1` gains one false grille on the first floor.

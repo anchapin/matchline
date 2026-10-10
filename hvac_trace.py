@@ -202,6 +202,40 @@ def _tight_confirm_score(gray: np.ndarray, cls: str, cx: float, cy: float) -> fl
     )
 
 
+# A grille or diffuser whose WiSARD label fails the tight confirm takes the
+# NCC proposal's class when that is the other terminal class and its tight
+# template scores at least this (#745). It sits above TIGHT_CONFIRM_NCC: at
+# 0.70 the relabel made 9 false grilles on the clean Clinic render (their
+# grille scores 0.70 to 0.75), while grilles drawn 1 px heavier or lighter
+# score 0.76 to 0.90. Read off Clinic, approved by the maintainer; follow-up
+# in the issue linked from docs/hvac_trace.md.
+RELABEL_CONFIRM_NCC = 0.76
+_TERMINAL_PAIR = {"grille": "diffuser", "diffuser": "grille"}
+
+
+def _confirm_label(gray: np.ndarray, d: dict) -> bool:
+    """Tight-confirm a grille or diffuser detection (#745); other labels pass.
+
+    When WiSARD's label fails the confirm but the NCC proposal named the other
+    terminal class, the two disagree and the pixels decide: the detection takes
+    the proposal's class if that class's tight template scores at least
+    RELABEL_CONFIRM_NCC. A detection whose WiSARD label confirms is never
+    changed. Relabels ``d`` in place and returns whether it survives.
+    """
+    label = d["label"]
+    if label not in _TERMINAL_PAIR:
+        return True
+    if _tight_confirm_score(gray, label, d["cx"], d["cy"]) >= TIGHT_CONFIRM_NCC:
+        return True
+    other = _TERMINAL_PAIR[label]
+    if RELABEL_CONFIRM_NCC is None or d.get("ncc_cls") != other:
+        return False
+    if _tight_confirm_score(gray, other, d["cx"], d["cy"]) >= RELABEL_CONFIRM_NCC:
+        d["label"] = other
+        return True
+    return False
+
+
 WISARD_ONLY = {"vav", "diffuser", "grille"}
 ASSOC_PX = 30  # diffuser/skeleton association radius (px)
 VAV_DILATE = 12  # px around VAV bbox whose skeleton is removed
@@ -365,12 +399,7 @@ def detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier):
                 if d["label"] == other and snap:
                     d["label"] = cls
     if TIGHT_CONFIRM_NCC is not None:
-        out = [
-            d
-            for d in out
-            if d["label"] not in ("grille", "diffuser")
-            or _tight_confirm_score(gray, d["label"], d["cx"], d["cy"]) >= TIGHT_CONFIRM_NCC
-        ]
+        out = [d for d in out if _confirm_label(gray, d)]
     # One AHU per sheet in the generator (and typically one per real plan):
     # keep the top-NCC AHU proposal so a lowered accept threshold can't
     # spawn false AHUs on VAV boxes.
