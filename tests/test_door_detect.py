@@ -351,3 +351,98 @@ def test_tee_jamb_without_a_gap_is_not_a_door():
     img, (cx, cy), _ = _tee_jamb_canvas(gap=False)
     dets = detect_door_swings(img, PPM)
     assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _thin_wall_door(wpx=2, width_m=0.9):
+    """A door in a ``wpx`` px wall line (a 0.02-0.04 m partition), leaf east,
+    and the wall opening its jambs bound, as (a, b) in pixels (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, width_m * PPM
+    d.rectangle([x - wpx // 2, 40, x + (wpx - 1) // 2, 360], fill=0)
+    d.rectangle([x - 3, yh, x + 3, yh + r], fill=255)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r, ((x, yh), (x, yh + r))
+
+
+def _quarter_round_on_line():
+    """A quarter arc with both radii drawn against a continuous 2 px line:
+    a fixture, not a door, and no wall opening (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.line([150, 40, 150, 360], fill=0, width=2)
+    r = 45
+    d.line([150, 150, 150 + r, 150], fill=0, width=2)
+    d.arc([150 - r, 150 - r, 150 + r, 150 + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (150, 150 + r / 2), r
+
+
+def _arc_at_line_break():
+    """A thin quarter arc and radius at a break in a 1 px line (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.line([150, 40, 150, 148], fill=0, width=1)
+    d.line([150, 197, 150, 360], fill=0, width=1)
+    r = 46
+    d.line([150, 150, 150 + r, 150], fill=0, width=1)
+    d.arc([150 - r, 150 - r, 150 + r, 150 + r], start=0, end=90, fill=0, width=1)
+    return np.asarray(img), (150, 150 + r / 2), r
+
+
+def _orient_seg(img, seg, k, flip):
+    return tuple(_orient(img, q, k, flip)[1] for q in seg)
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("wpx", [1, 2, 3])
+def test_thin_wall_door_with_a_vector_opening(k, flip, wpx):
+    img0, centre, r, seg = _thin_wall_door(wpx)
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("wpx", [1, 2, 3])
+def test_thin_wall_door_without_an_opening_is_not_taken(wpx):
+    img, (cx, cy), _, _ = _thin_wall_door(wpx)
+    for ops in (None, []):
+        dets = detect_door_swings(img, PPM, openings_px=ops)
+        assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("scale", [0.5, 2.0])
+def test_thin_wall_opening_must_match_the_swing_width(scale):
+    img, (cx, cy), r, ((ax, ay), _) = _thin_wall_door(2)
+    op = ((ax, ay), (ax, ay + scale * r))
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def test_thin_wall_opening_elsewhere_does_not_admit_a_door():
+    img, (cx, cy), r, _ = _thin_wall_door(2)
+    op = ((150, 250), (150, 250 + r))  # a real opening further down the wall
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def test_thin_wall_opening_across_the_wall_does_not_admit_a_door():
+    img, (cx, cy), r, _ = _thin_wall_door(2)
+    op = ((cx - r / 2, cy), (cx + r / 2, cy))  # right size and place, wrong direction
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("sheet", [_quarter_round_on_line, _arc_at_line_break])
+def test_thin_line_fixtures_without_an_opening_are_not_doors(k, flip, sheet):
+    img0, centre, r = sheet()
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    far = _orient_seg(img0, ((300, 60), (300, 60 + r)), k, flip)  # an opening elsewhere
+    dets = detect_door_swings(img, PPM, openings_px=[far])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]

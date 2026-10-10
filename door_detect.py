@@ -21,7 +21,8 @@ Outputs are in SHEET PIXELS; callers register them into plan metres.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -37,6 +38,12 @@ GAP_MAX_INK = 0.2  # share of the opening's wall line allowed to carry ink
 ARC_TOL_PX, ARC_TOL_M = 2, 0.04
 HINGE_SLACK_PX, HINGE_SLACK_M = 14, 0.28  # leaf may start inside its wall
 MIN_WALL_PX, MIN_WALL_M = 6, 0.12  # a wall is at least this thick
+# a thinner jamb wall (down to a 1 px line) is taken only where the vector
+# walls report an opening there about as wide as the swing (#874)
+THIN_WALL_PX, THIN_WALL_M = 1, 0.02
+OPEN_WIDTH_TOL = 0.25  # opening width within +-25% of the swing radius
+OPEN_CENTRE_TOL = 0.25  # opening midpoint within this share of r of the door's
+OPEN_ANGLE_TOL_DEG = 15.0
 WALL_PROBE_PX, WALL_PROBE_M = 4, 0.08  # how far past a jamb to look for it
 MAX_LEAF_THICK_PX, MAX_LEAF_THICK_M = 6, 0.12  # leaves are thinner than walls
 DEDUPE_PX, DEDUPE_M = 8, 0.16
@@ -330,22 +337,9 @@ def _view(a: np.ndarray, k: int, flip: bool) -> np.ndarray:
     return np.ascontiguousarray(np.rot90(a[::-1] if flip else a, k))
 
 
-def detect_door_swings(
-    img: np.ndarray,
-    px_per_m: float,
-    *,
-    min_width_m: float = MIN_WIDTH_M,
-    max_width_m: float = MAX_WIDTH_M,
-    ink_max: int = INK_MAX,
-) -> list[dict]:
-    """Door symbols in ``img`` (2-D grayscale, 0 = black ink)."""
-    if img.ndim != 2:
-        raise ValueError("expected a 2-D grayscale image")
-    p = _params(px_per_m, min_width_m, max_width_m)
-    ink0 = img < ink_max
-    fat0 = _dilate(ink0, p.arc_tol)
-    tight0 = _dilate(ink0, max(1, p.arc_tol // 2))
-    yy, xx = np.indices(img.shape)
+def _candidates(ink0: np.ndarray, fat0: np.ndarray, tight0: np.ndarray, p: _P) -> list[dict]:
+    """Swing candidates over all 8 views, in image coordinates."""
+    yy, xx = np.indices(ink0.shape)
     cands = []
     for flip in (False, True):
         for k in range(4):
@@ -364,6 +358,57 @@ def detect_door_swings(
                         "r": float(r),
                     }
                 )
+    return cands
+
+
+def _on_opening(c: dict, openings_px) -> bool:
+    """A vector wall opening as wide as the swing lies across its jambs (#874).
+
+    ``openings_px`` are (a, b) segments in image pixels along the wall line.
+    """
+    (hx, hy), (jx, jy), r = c["hinge"], c["jamb"], c["r"]
+    cx, cy = (hx + jx) / 2, (hy + jy) / 2
+    th = np.arctan2(jy - hy, jx - hx)
+    tol = np.radians(OPEN_ANGLE_TOL_DEG)
+    for (ax, ay), (bx, by) in openings_px:
+        L = float(np.hypot(bx - ax, by - ay))
+        if L == 0 or abs(L - r) > OPEN_WIDTH_TOL * r:
+            continue
+        if np.hypot((ax + bx) / 2 - cx, (ay + by) / 2 - cy) > OPEN_CENTRE_TOL * r:
+            continue
+        d = abs((np.arctan2(by - ay, bx - ax) - th + np.pi / 2) % np.pi - np.pi / 2)
+        if d <= tol:
+            return True
+    return False
+
+
+def detect_door_swings(
+    img: np.ndarray,
+    px_per_m: float,
+    *,
+    min_width_m: float = MIN_WIDTH_M,
+    max_width_m: float = MAX_WIDTH_M,
+    ink_max: int = INK_MAX,
+    openings_px: Optional[Sequence] = None,
+) -> list[dict]:
+    """Door symbols in ``img`` (2-D grayscale, 0 = black ink).
+
+    ``openings_px``: wall openings the vector walls report, as ((ax, ay),
+    (bx, by)) segments in image pixels. When given, a door whose jamb wall is
+    thinner than ``MIN_WALL_M`` (down to a 1 px line) is kept only where one
+    of them, about as wide as its swing, lies across its jambs (#874): at that
+    weight a quarter-round fixture against a thin line looks like a door.
+    """
+    if img.ndim != 2:
+        raise ValueError("expected a 2-D grayscale image")
+    p = _params(px_per_m, min_width_m, max_width_m)
+    ink0 = img < ink_max
+    fat0 = _dilate(ink0, p.arc_tol)
+    tight0 = _dilate(ink0, max(1, p.arc_tol // 2))
+    cands = _candidates(ink0, fat0, tight0, p)
+    if openings_px:
+        thin = replace(p, min_wall=max(THIN_WALL_PX, int(round(THIN_WALL_M * px_per_m))))
+        cands += [c for c in _candidates(ink0, fat0, tight0, thin) if _on_opening(c, openings_px)]
     # same symbol hits on neighbouring leaf rows and orientations: keep best
     cands.sort(key=lambda c: (-c["fit"], -c["score"], c["r"]))
 
