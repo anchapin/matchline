@@ -446,3 +446,43 @@ def test_thin_line_fixtures_without_an_opening_are_not_doors(k, flip, sheet):
     far = _orient_seg(img0, ((300, 60), (300, 60 + r)), k, flip)  # an opening elsewhere
     dets = detect_door_swings(img, PPM, openings_px=[far])
     assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _thin_door_beside_neighbour(*, gap=True, neighbour=True):
+    """A door in a 2 px partition whose far jamb is an L into a crossing
+    wall, with a neighbouring door's leaf open along the partition's other
+    face just behind the hinge (Clinic second floor, #875). Returns the
+    image, door centre, radius and the opening as (a, b) in pixels."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 45
+    d.rectangle([x - 1, 40, x, yh - 1], fill=0)  # partition behind the hinge
+    if not gap:
+        d.rectangle([x - 1, yh, x, yh + r], fill=0)
+    d.rectangle([x - 1, yh + r, x, yh + r + 3], fill=0)  # jamb stub
+    d.rectangle([50, yh + r + 4, x, yh + r + 6], fill=0)  # crossing wall, an L at the jamb
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    if neighbour:
+        r2, tip = 44, yh - 6
+        d.rectangle([x - 6, tip - r2, x - 4, tip], fill=0)  # its leaf, 3 px off the face
+        d.arc([x - 5 - r2, tip - 2 * r2, x - 5 + r2, tip], start=90, end=180, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r, ((x, yh), (x, yh + r))
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_thin_wall_door_beside_a_neighbouring_doors_leaf(k, flip):
+    img0, centre, r, seg = _thin_door_beside_neighbour()
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_neighbouring_leaf_beside_a_thin_wall_without_an_opening_is_not_a_door():
+    img, (cx, cy), _, _ = _thin_door_beside_neighbour()
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
