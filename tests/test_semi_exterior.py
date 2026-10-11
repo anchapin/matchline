@@ -202,9 +202,7 @@ def test_real_set_records_walls_then_floors():
     assert m.semi_exterior[0]["spaces"] == ["A", "B"]
     assert m.semi_exterior[1]["spaces"] == ["A", "C"]
     assert review == []
-    assert report.notes == [
-        "semi-exterior envelope: 2 space pair(s) settled, 0 to review"
-    ]
+    assert report.notes == ["semi-exterior envelope: 2 space pair(s) settled, 0 to review"]
 
 
 def test_real_set_floor_and_wall_records_keep_distinct_review_ids():
@@ -227,9 +225,7 @@ def test_real_set_floor_and_wall_records_keep_distinct_review_ids():
         "rq-semi-exterior-S2-S3",
         "rq-semi-exterior-floor-S1-S3",
     ]
-    assert report.notes == [
-        "semi-exterior envelope: 1 space pair(s) settled, 2 to review"
-    ]
+    assert report.notes == ["semi-exterior envelope: 1 space pair(s) settled, 2 to review"]
 
 
 def test_construction_stage_skips_floor_records():
