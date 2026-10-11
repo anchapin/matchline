@@ -228,4 +228,28 @@ Each record carries the pair, both categories, the shared length and its
 segments, on `BuildingModel.semi_exterior`. The shared wall is found with the
 same 0.05 m tolerance as the gbXML interior walls. Nothing reads it yet: the
 gbXML still writes these walls as interior walls with the generic partition,
-and choosing a semi-exterior construction is the next step.
+and the wall's construction is chosen below.
+
+### Semi-exterior wall construction (#747 slice 6)
+
+ASHRAE 90.1-2019 5.5.2: "If a building contains any semiheated space or
+unconditioned space then the semiexterior building envelope shall comply with
+the requirements for semiheated space in Tables 5.5-0 through 5.5-8 for the
+appropriate climate." So once the climate zone is known, every settled
+semi-exterior boundary gets `t55-semiext-wall`: the **Semiheated** column's
+`ExteriorWall` row for the climate zone, whatever the building category, in the
+steel-framed class the unlabeled exterior walls use (G3.1-5(b)). Provenance is
+`construction_default`, naming 5.5.2 and the Table 5.5 row, and the record's
+`construction_id` is set. A stated construction under that id, a record that
+already names a construction, and boundaries still to review are left alone.
+
+In the gbXML the wall stays an `InteriorWall` (gbXML has no semi-exterior
+type); only its `constructionIdRef` changes, to the layered `t55-semiext-wall`
+(one no-mass layer, R = 1/U minus the interior-wall films). Pieces of a split
+room match through their parent space. Every other interior wall, review pairs
+included, keeps the DOE partition.
+
+Not yet: the 5.5.2 sentence on unconditioned vestibules ("interior surfaces
+and exterior surfaces of unconditioned vestibules shall comply with the
+building envelope requirements for a semiheated space") needs a vestibule
+signal that is not the room name.

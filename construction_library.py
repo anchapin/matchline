@@ -240,6 +240,7 @@ def apply_construction_library(
         }
     if climate_zone:
         _apply_baseline_defaults(model, s, climate_zone, category)
+        _default_semi_exterior(model, s, climate_zone)
         s.baseline = baseline_envelope(model, climate_zone, category)
     if s.resolved or s.defaulted:
         apply_wall_u_rollup(model)
@@ -309,6 +310,71 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
     if not (getattr(model, "slab_construction_id", "") or ""):
         _default_slab(model, s, climate_zone, category)
     _default_openings(model, s, climate_zone, category)
+
+
+# Semi-exterior envelope (#747 slice 6). ASHRAE 90.1-2019 5.5.2: "If a
+# building contains any semiheated space or unconditioned space then the
+# semiexterior building envelope shall comply with the requirements for
+# semiheated space in Tables 5.5-0 through 5.5-8 for the appropriate
+# climate" (Alex, 747#issuecomment-6101561224). So a settled semi-exterior
+# boundary (``model.semi_exterior`` kind "semi_exterior") takes the
+# Semiheated column's wall row whatever the building category, in the same
+# class the unlabeled exterior walls use (steel framed, G3.1-5(b)). A
+# boundary still "review" keeps the partition and its review item.
+DEFAULT_SEMIEXT_WALL_ID = "t55-semiext-wall"
+SEMIEXT_CATEGORY = "Semiheated"
+SEMIEXT_CLASS = "SteelFramed"
+_SEMIEXT_WHY = (
+    "semi-exterior wall (ASHRAE 90.1-2019 5.5.2: semiexterior envelope meets the "
+    "semiheated requirements of Table 5.5); no assembly stated, class {ctype}"
+)
+
+
+def _default_semi_exterior(model, s: "LibrarySummary", climate_zone: str) -> None:
+    """Give settled semi-exterior boundaries the Table 5.5 Semiheated wall (#747).
+
+    A record that already names a construction, a stated construction under
+    the same id, and boundaries still to review are left alone.
+    """
+    from building_model import Construction
+
+    recs = [
+        r
+        for r in (getattr(model, "semi_exterior", None) or [])
+        if r.get("kind") == "semi_exterior" and not r.get("construction_id")
+    ]
+    if not recs:
+        return
+    cid = DEFAULT_SEMIEXT_WALL_ID
+    cons = model.constructions
+    have = cons.get(cid)
+    if have is None or not (have.u_value_w_m2k and have.u_value_w_m2k > 0):
+        row = lookup("ExteriorWall", SEMIEXT_CLASS, climate_zone, SEMIEXT_CATEGORY)
+        if row is None or row.u_si is None:
+            s.unmatched[cid] = (
+                f"no Table 5.5 U-value for {SEMIEXT_CATEGORY} ExteriorWall {SEMIEXT_CLASS}"
+            )
+            return
+        why = _SEMIEXT_WHY.format(ctype=SEMIEXT_CLASS)
+        cons[cid] = Construction(
+            id=cid,
+            name="Semi-exterior wall, Table 5.5 Semiheated code maximum",
+            u_value_w_m2k=row.u_si,
+            provenance=_prov(row, cid, why, climate_zone),
+        )
+        s.defaulted[cid] = {
+            "surface": "ExteriorWall",
+            "construction_type": SEMIEXT_CLASS,
+            "category": SEMIEXT_CATEGORY,
+            "table": row.table,
+            "u_ip": row.u_ip,
+            "u_si": row.u_si,
+            "why": why,
+        }
+    for r in recs:
+        r["construction_id"] = cid
+    if cid in s.defaulted:
+        s.defaulted[cid]["space_pairs"] = sorted(list(r["spaces"]) for r in recs)
 
 
 DEFAULT_WINDOW_ID = "t55-window"
