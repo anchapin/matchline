@@ -213,6 +213,140 @@ def _op(m):
     return R._find_opening(m, "S-W1")
 
 
+def _with_assignments():
+    # fixture / diffuser / sensor assignment items (#799)
+    from building_model import ComponentRef, FixtureInstance, Space, Zone
+
+    m = BuildingModel(name="snap799")
+    for sid, num in (("L1-101", "101"), ("L1-102", "102")):
+        m.spaces[sid] = Space(id=sid, level_id="L1", number=num)
+    m.spaces["L1-102"].area_m2 = 20.0
+    prov = Provenance(sheet_id="E-101", revision=1, method="point_in_polygon", confidence=0.4)
+    # F1: the linker found no space for it, so the fixture data rides in the
+    # target for an assignment edit to build the instance from
+    m.flag_for_review(
+        "fixture_assignment",
+        "fixture F1 falls in no space",
+        0.4,
+        prov,
+        target={
+            "kind": "fixture",
+            "id": "F1",
+            "fixture": {
+                "tag": "A1",
+                "fixture_class": "troffer",
+                "x_m": 1.0,
+                "y_m": 2.0,
+                "watts": 32.0,
+                "sheet_id": "E-101",
+            },
+        },  # fmt: skip
+    )
+    # F2: assigned, to the wrong space
+    m.spaces["L1-101"].lighting.fixtures.append(
+        FixtureInstance(id="F2", tag="A2", fixture_class="troffer", x_m=0.5, y_m=0.5, watts=40.0)
+    )
+    m.spaces["L1-101"].lighting.total_w = 40.0
+    m.flag_for_review("fixture_assignment", "fixture F2 in the wrong space", 0.5, prov,
+                      target={"kind": "fixture", "id": "F2"})  # fmt: skip
+    ref = ComponentRef(id="D1", type="diffuser", x_m=3.0, y_m=3.0)
+    sref = ComponentRef(id="S1", type="sensor", x_m=4.0, y_m=4.0)
+    m.zones["Z1"] = Zone(id="Z1", level_id="L1", space_ids=["L1-101"],
+                         diffusers=[ref], sensors=[sref])  # fmt: skip
+    m.spaces["L1-101"].hvac.zone_ids.append("Z1")
+    m.spaces["L1-101"].hvac.sensors.append(sref)
+    m.flag_for_review("diffuser_assignment", "diffuser D1 falls in no space", 0.4, prov,
+                      target={"kind": "diffuser", "id": "D1"})  # fmt: skip
+    m.flag_for_review("sensor_assignment", "sensor S1 in the wrong space", 0.5, prov,
+                      target={"kind": "sensor", "id": "S1"})  # fmt: skip
+    return m
+
+
+def test_fixture_assignment_edit_assigns_and_revert_restores():
+    m = _with_assignments()
+    tpl = R.template(m, "x")
+    fid = m.review_queue[0].id
+    s = R.apply_decisions(m, _doc0(tpl, {"id": fid, "action": "edit", "value": "102"}))
+    fx = m.spaces["L1-102"].lighting.fixtures[0]
+    assert s["edit"] == 1 and fx.id == "F1" and fx.watts == 32.0
+    assert fx.provenance.method == "review_edit"
+    assert m.spaces["L1-102"].lighting.total_w == pytest.approx(32.0)
+    assert m.spaces["L1-102"].lighting.lpd_w_m2 == pytest.approx(1.6)
+    assert any("space_id None -> 'L1-102'" in e.note for e in m.revision_log)
+    R.apply_decisions(m, _doc0(tpl, {"id": fid, "action": "revert"}))
+    assert not m.spaces["L1-102"].lighting.fixtures
+    assert m.spaces["L1-102"].lighting.total_w == 0.0
+    assert m.review_queue[0].status == "open"
+
+
+def test_fixture_assignment_edit_moves_an_assigned_fixture():
+    m = _with_assignments()
+    tpl = R.template(m, "x")
+    fid = m.review_queue[1].id
+    R.apply_decisions(m, _doc0(tpl, {"id": fid, "action": "edit", "value": "102"}))
+    assert [f.id for f in m.spaces["L1-102"].lighting.fixtures] == ["F2"]
+    assert not m.spaces["L1-101"].lighting.fixtures
+    assert m.spaces["L1-102"].lighting.total_w == pytest.approx(40.0)
+    assert m.spaces["L1-101"].lighting.total_w == 0.0
+    R.apply_decisions(m, _doc0(tpl, {"id": fid, "action": "revert"}))
+    assert [f.id for f in m.spaces["L1-101"].lighting.fixtures] == ["F2"]
+    assert m.spaces["L1-101"].lighting.total_w == pytest.approx(40.0)
+
+
+def test_diffuser_and_sensor_assignment_edits_and_revert():
+    m = _with_assignments()
+    tpl = R.template(m, "x")
+    did, sid = m.review_queue[2].id, m.review_queue[3].id
+    R.apply_decisions(
+        m,
+        _doc0(
+            tpl,
+            {"id": did, "action": "edit", "value": "102"},
+            {"id": sid, "action": "edit", "value": "102"},
+        ),
+    )
+    assert [r.id for r in m.spaces["L1-102"].hvac.diffusers] == ["D1"]
+    assert [r.id for r in m.spaces["L1-102"].hvac.sensors] == ["S1"]
+    assert not m.spaces["L1-101"].hvac.sensors
+    assert "L1-102" in m.zones["Z1"].space_ids
+    assert "Z1" in m.spaces["L1-102"].hvac.zone_ids
+    R.apply_decisions(
+        m, _doc0(tpl, {"id": did, "action": "revert"}, {"id": sid, "action": "revert"})
+    )
+    assert not m.spaces["L1-102"].hvac.diffusers
+    assert [r.id for r in m.spaces["L1-101"].hvac.sensors] == ["S1"]
+    assert m.review_queue[2].status == "open"
+
+
+def test_bad_assignment_value_changes_nothing():
+    m = _with_assignments()
+    before = m.to_json()
+    with pytest.raises(ValueError, match="not a space id or room number"):
+        R.apply_decisions(m, _doc(m, {"id": m.review_queue[0].id,
+                                      "action": "edit", "value": "999"}))  # fmt: skip
+    assert m.to_json() == before
+
+
+def test_assignment_without_a_target_record_records_only():
+    m = _with_assignments()
+    m.review_queue[0].target = {"kind": "fixture", "id": "F9"}  # pre-#799 item
+    before = m.to_json()
+    s = R.apply_decisions(m, _doc(m, {"id": m.review_queue[0].id,
+                                      "action": "edit", "value": "102"}))  # fmt: skip
+    assert s["edit"] == 1
+    assert m.review_queue[0].status == "confirmed"
+
+    def _core(doc):
+        d = json.loads(doc)
+        d["model"]["review_queue"] = []
+        d["model"]["revision_log"] = []
+        return d
+
+    assert _core(m.to_json()) == _core(before)
+    page = R.render_html(m, R.template(m, "x"))
+    assert '"field": ""' in page
+
+
 def _doc0(tpl, *decisions):
     # decisions against the automatic snapshot taken when the run wrote the page
     return dict(tpl, decisions=[dict(x, at="2026-10-08T12:00:00+00:00") for x in decisions])

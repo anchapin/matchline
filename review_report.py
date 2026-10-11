@@ -64,7 +64,14 @@ def auto_state(item) -> dict:
 
 # Fields a review edit can write, per target kind (#796). Anything else keeps
 # the #749 behaviour: the value is recorded and the item closed.
-EDITABLE = {"opening": ("width_m", "space_id", "construction_id"), "wall": ("opening",)}
+EDITABLE = {
+    "opening": ("width_m", "space_id", "construction_id"),
+    "wall": ("opening",),
+    # fixture / diffuser / sensor space assignment (#799)
+    "fixture": ("space_id",),
+    "diffuser": ("space_id",),
+    "sensor": ("space_id",),
+}
 MAX_OPENING_WIDTH_M = 30.0
 # An unsized wall gap (#798): a review edit can add the opening the pipeline
 # left out. Its width may exceed the drawn gap by no more than the tolerance
@@ -83,17 +90,59 @@ def _find_opening(model, oid):
     return None, None
 
 
+def _find_fixture(model, fid):
+    """The space a fixture instance sits in, or (None, None)."""
+    for sp in model.spaces.values():
+        for fx in sp.lighting.fixtures:
+            if fx.id == fid:
+                return sp, fx
+    return None, None
+
+
+def _find_ref(model, kind, rid):
+    """The space a diffuser or sensor is assigned to, or (None, None)."""
+    for sp in model.spaces.values():
+        for ref in sp.hvac.diffusers if kind == "diffuser" else sp.hvac.sensors:
+            if ref.id == rid:
+                return sp, ref
+    return None, None
+
+
+def _zone_of_ref(model, kind, rid):
+    """The zone whose air path lists this diffuser or sensor."""
+    for zid, z in model.zones.items():
+        if any(r.id == rid for r in (z.diffusers if kind == "diffuser" else z.sensors)):
+            return zid, z
+    return None, None
+
+
 def edit_field(model, item) -> str:
     """The model field an edit of ``item`` writes, or "" when it only records."""
     t = item.target or {}
+    kind = t.get("kind", "")
     f = t.get("field", "")
-    if f not in EDITABLE.get(t.get("kind", ""), ()):
+    if not f:
+        fields = EDITABLE.get(kind, ())
+        f = fields[0] if len(fields) == 1 else ""
+    if f not in EDITABLE.get(kind, ()):
         return ""
-    if t["kind"] == "opening" and _find_opening(model, t.get("id"))[1] is None:
+    if kind == "opening" and _find_opening(model, t.get("id"))[1] is None:
         return ""
-    if t["kind"] == "wall":
+    if kind == "wall":
         gap = t.get("gap") or {}
         if not gap.get("opening_id") or gap.get("space_id") not in model.spaces:
+            return ""
+    if kind == "fixture":
+        # one already in the model can move; an unassigned one needs the data
+        # the lighting linker put in the target (#799)
+        if _find_fixture(model, t.get("id"))[1] is None and not t.get("fixture"):
+            return ""
+    if kind in ("diffuser", "sensor"):
+        # the ref must exist in the model: on a zone's air path or in a space
+        if (
+            _find_ref(model, kind, t.get("id"))[1] is None
+            and _zone_of_ref(model, kind, t.get("id"))[1] is None
+        ):
             return ""
     return f
 
@@ -121,6 +170,12 @@ def _read(model, t: dict, f: str):
         if op is None:
             return None
         return sp.id if f == "space_id" else getattr(op, f)
+    if kind == "fixture" and f == "space_id":
+        sp, _ = _find_fixture(model, eid)
+        return sp.id if sp is not None else None
+    if kind in ("diffuser", "sensor") and f == "space_id":
+        sp, _ = _find_ref(model, kind, eid)
+        return sp.id if sp is not None else None
     return None
 
 
@@ -173,6 +228,13 @@ def _write(model, t: dict, f: str, value) -> None:
     if f == "opening":
         _write_gap(model, t, value)
         return
+    kind = t.get("kind", "")
+    if kind == "fixture" and f == "space_id":
+        _assign_fixture(model, t, value)
+        return
+    if kind in ("diffuser", "sensor") and f == "space_id":
+        _assign_ref(model, t, value)
+        return
     sp, op = _find_opening(model, t.get("id"))
     if f == "space_id":
         if sp.id != value:
@@ -186,6 +248,90 @@ def _write(model, t: dict, f: str, value) -> None:
         if op.host_interval_m and len(op.host_interval_m) == 2:
             c = op.s_center_m if op.s_center_m is not None else sum(op.host_interval_m) / 2
             op.host_interval_m = [round(c - value / 2, 4), round(c + value / 2, 4)]
+
+
+def _refresh_lighting(model, *sids) -> None:
+    """Recompute the lighting rollups the lighting linker maintains."""
+    from link._lighting import FT2_PER_M2
+
+    for sid in sids:
+        sp = model.spaces.get(sid)
+        if sp is None:
+            continue
+        w = sum(fx.watts or 0.0 for fx in sp.lighting.fixtures)
+        sp.lighting.total_w = w
+        if sp.area_m2:
+            sp.lighting.lpd_w_m2 = w / sp.area_m2
+            sp.lighting.lpd_w_ft2 = sp.lighting.lpd_w_m2 / FT2_PER_M2
+
+
+def _assign_fixture(model, t: dict, value) -> None:
+    """Move a fixture to space ``value``, creating it when the linker left
+    it unassigned (data for that comes in the item's target)."""
+    from building_model import FixtureInstance, Provenance
+
+    sp, fx = _find_fixture(model, t.get("id"))
+    old = sp.id if sp is not None else None
+    if value is None:
+        if fx is not None:
+            sp.lighting.fixtures.remove(fx)
+            _refresh_lighting(model, old)
+        return
+    if old == value:
+        return
+    if fx is not None:
+        sp.lighting.fixtures.remove(fx)
+    else:
+        d = t.get("fixture") or {}
+        fx = FixtureInstance(
+            id=t.get("id", ""),
+            tag=d.get("tag", ""),
+            fixture_class=d.get("fixture_class", ""),
+            x_m=d.get("x_m", 0.0),
+            y_m=d.get("y_m", 0.0),
+            watts=d.get("watts"),
+            provenance=Provenance(
+                sheet_id=d.get("sheet_id", ""),
+                revision=0,
+                method="review_edit",
+                confidence=REVIEW_EDIT_CONFIDENCE,
+                note=f"assigned in review to space {value}",
+            ),
+        )
+    model.spaces[value].lighting.fixtures.append(fx)
+    _refresh_lighting(model, value, old)
+
+
+def _assign_ref(model, t: dict, value) -> None:
+    """Move a diffuser or sensor to space ``value`` and mirror the zone
+    membership the mechanical linker maintains."""
+    kind, rid = t.get("kind", ""), t.get("id")
+    sp, ref = _find_ref(model, kind, rid)
+    old = sp.id if sp is not None else None
+    if value is None:
+        if sp is not None:
+            (sp.hvac.diffusers if kind == "diffuser" else sp.hvac.sensors).remove(ref)
+        return
+    if old == value:
+        return
+    if ref is None:
+        _zid, z = _zone_of_ref(model, kind, rid)
+        ref = next(
+            (r for r in (z.diffusers if kind == "diffuser" else z.sensors) if r.id == rid),
+            None,
+        )
+        if ref is None:
+            return
+    if sp is not None:
+        (sp.hvac.diffusers if kind == "diffuser" else sp.hvac.sensors).remove(ref)
+    new_sp = model.spaces[value]
+    (new_sp.hvac.diffusers if kind == "diffuser" else new_sp.hvac.sensors).append(ref)
+    _zid, z = _zone_of_ref(model, kind, rid)
+    if z is not None:
+        if value not in z.space_ids:
+            z.space_ids.append(value)
+        if _zid not in new_sp.hvac.zone_ids:
+            new_sp.hvac.zone_ids.append(_zid)
 
 
 def _num(key: str, raw: str, lo: float, hi: float, lo_open: bool = True) -> float:
@@ -1009,6 +1155,8 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
             row["hint"] = (
                 f"Schedule tag ({cands}) or " if cands else "Schedule tag or "
             ) + "category=window width_m=1.2 height_m=1.5 [sill_m=0.9]. "
+        elif f == "space_id":
+            row["hint"] = "Room number or space id. "
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}

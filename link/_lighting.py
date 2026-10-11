@@ -83,7 +83,20 @@ def _link_lighting(
                     confidence=0.4,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                 ),
-                target={"kind": "fixture", "id": fid},
+                target={
+                    "kind": "fixture",
+                    "id": fid,
+                    "field": "space_id",
+                    # everything an assignment edit needs to create the
+                    # FixtureInstance the linker never wrote (#799)
+                    "fixture": {
+                        "tag": f["tag"],
+                        "fixture_class": f["class"],
+                        "x_m": x_m,
+                        "y_m": y_m,
+                        "watts": watts,
+                    },
+                },
             )
             continue
         report.fixtures_assigned += 1

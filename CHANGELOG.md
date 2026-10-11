@@ -7,6 +7,14 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Review: an edit on a fixture, diffuser or sensor assignment item now changes the
+  model like an opening edit (#799): the device moves to the room the reviewer
+  types (space id or unique room number), a fixture the linker left unassigned is
+  created there from the data the lighting linker put in the item's target, the
+  room's lighting rollups follow, and a diffuser or sensor edit mirrors the zone
+  membership the mechanical linker maintains. Every edit value is checked before
+  anything changes, `revert`/`confirm`/`reject` restore the automatic value, and
+  items from models written before #799 stay record-only.
 - Model: floor/ceiling boundaries between levels are recorded on
   `BuildingModel.semi_exterior` alongside the walls (#900). A conditioned
   space under or over a semiheated/unconditioned space on an adjacent level
