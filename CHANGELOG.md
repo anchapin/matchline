@@ -7,6 +7,14 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- Review: an edit on an IFC opening-attachment item now changes the model (#799):
+  the opening moves into the room the reviewer types (space id or unique room
+  number). A skylight keeps its plan centre, tilt and azimuth and the room's
+  daylight is recomputed; a wall opening keeps its sill and gets a host interval
+  centred on its plan centre; an already-attached opening may move between rooms
+  on the same level and a cross-level value is refused. An edit on a BIM element
+  item still records only, and an item whose opening is no longer in the model
+  degrades to record-only. Every edit value is checked before anything changes
 - Review: an edit on a fixture, diffuser or sensor assignment item now changes the
   model like an opening edit (#799): the device moves to the room the reviewer
   types (space id or unique room number), a fixture the linker left unassigned is

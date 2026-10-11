@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import opening_attach
 import space_merge as space_merge
 
 SCHEMA = "matchline.review_decisions/1"
@@ -74,6 +75,10 @@ EDITABLE = {
     "fixture": ("space_id",),
     "diffuser": ("space_id",),
     "sensor": ("space_id",),
+    # An IFC opening left unattached at import: the edit attaches it to a
+    # room (#799). Wall items whose direction could not be determined
+    # (bim_element targets) carry several openings and no single field.
+    "bim_opening": ("space_id",),
 }
 # Keyed by review-item kind, not target kind: a kept closet/shaft gets a
 # "merge into <room>" edit (#799); other space items stay record-only.
@@ -137,6 +142,8 @@ def edit_field(model, item) -> str:
         return f if t.get("id") in model.spaces else ""
     if kind == "opening" and _find_opening(model, t.get("id"))[1] is None:
         return ""
+    if kind == "bim_opening" and opening_attach.find_bim_opening(model, t.get("id"))[0] is None:
+        return ""
     if kind == "wall":
         gap = t.get("gap") or {}
         if not gap.get("opening_id") or gap.get("space_id") not in model.spaces:
@@ -185,6 +192,9 @@ def _read(model, t: dict, f: str):
     if kind in ("diffuser", "sensor") and f == "space_id":
         sp, _ = _find_ref(model, kind, eid)
         return sp.id if sp is not None else None
+    if kind == "bim_opening" and f == "space_id":
+        sp = opening_attach.host_space(model, eid)
+        return sp.id if sp is not None else None
     if f == "merge_into":
         if eid in model.spaces:
             return None  # still its own space: no automatic merge to undo
@@ -231,7 +241,10 @@ def _coerce(model, t: dict, f: str, raw: str):
             raise ValueError(f"width_m {w:g} is outside (0, {MAX_OPENING_WIDTH_M:g}] m")
         return w
     if f == "space_id":
-        return _resolve_space_id(model, raw)
+        sid = _resolve_space_id(model, raw)
+        if t.get("kind") == "bim_opening":
+            opening_attach.check_opening_attachment(model, t.get("id", ""), sid)
+        return sid
     if f == "merge_into":
         phrase = re.match(r"(?i)^merge\s+into\s+(.+)$", raw)
         if phrase:
@@ -253,6 +266,12 @@ def _write(model, t: dict, f: str, value) -> None:
     kind = t.get("kind", "")
     if f == "merge_into":
         _merge_into(model, t, value)
+        return
+    if kind == "bim_opening" and f == "space_id":
+        if value is None:
+            opening_attach.un_attach(model, t.get("id", ""))
+        else:
+            opening_attach.attach_opening(model, t.get("id", ""), value)
         return
     if kind == "fixture" and f == "space_id":
         _assign_fixture(model, t, value)
