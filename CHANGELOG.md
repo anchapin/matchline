@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+- BEM export: semi-exterior walls take the Table 5.5 Semiheated construction. ASHRAE 90.1-2019 5.5.2 has the semiexterior envelope meet the semiheated requirements of Tables 5.5-0 to 5.5-8, so with a climate zone every settled `BuildingModel.semi_exterior` boundary gets `t55-semiext-wall` (Semiheated `ExteriorWall` steel-framed row, `construction_default` provenance citing 5.5.2), and the gbXML interior wall between that pair references it as a layered construction instead of the partition; review boundaries keep the partition (`construction_library._default_semi_exterior`, `constructions.semi_exterior_walls`, `BEMModel.interior_wall_constructions`) (#747).
 - BEM export: scheduled zone airflow now reaches gbXML as `FlowPerArea` (m3/s per m2) on each thermal `Zone`, the summed max airflow of the HVAC zones serving it over its floor area, written only where every space in the zone is served by HVAC zones that serve nothing outside it; any other thermal zone gets no value and a `zone_airflow` review item naming why. Split-room pieces count as their parent room; with no Appendix G thermal zones the single default zone is used. The min airflow stays in the JSON report (`zone_airflow.py`, Stage 6) (#746).
 
 ### Fixed

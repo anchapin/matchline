@@ -178,6 +178,18 @@ def _write_zones(root, model: BEMModel):
     return tzones, zone_of
 
 
+def _semi_exterior_pairs(model: BEMModel) -> dict:
+    """frozenset(space a, space b) -> construction id for semi-exterior walls (#747).
+
+    Pieces of a split room (#638) match through their parent space id.
+    """
+    out = {}
+    for cid, info in (getattr(model, "interior_wall_constructions", None) or {}).items():
+        for a, b in info.get("pairs", []):
+            out.setdefault(frozenset((a, b)), cid)
+    return out
+
+
 def _write_constructions(root, model: BEMModel, air_walls) -> dict:
     """Construction elements; returns the per-space wall constructions."""
     # Placeholder constructions (v1): drawings carry no assembly data, so
@@ -245,6 +257,12 @@ def _write_constructions(root, model: BEMModel, air_walls) -> dict:
             type="Visible",
             surfaceType="Both",
         )
+    # semi-exterior interior walls (#747): Table 5.5 Semiheated wall, layered
+    # with the interior-wall films; written only when the model carries one
+    for cid, info in sorted((getattr(model, "interior_wall_constructions", None) or {}).items()):
+        note = write_layered(root, cid, info["name"], _fmt(info["u"]), "InteriorWall")
+        if note:
+            layer_notes.append(note)
     if layer_notes:
         model.notes.extend(layer_notes)
     if getattr(model, "shades", None):
@@ -585,14 +603,16 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     # interior walls (#765): every boundary two spaces share, not already an
     # air wall; both spaces adjacent, normal from the first into the second
+    semiext = _semi_exterior_pairs(model)
     for k, (a, b, q0, q1) in enumerate(int_walls):
         surf_count += 1
+        pair = frozenset((a.split_from or a.sid, b.split_from or b.sid))
         su = _el(
             campus,
             "Surface",
             id=f"intwall-{k + 1:03d}",
             surfaceType="InteriorWall",
-            constructionIdRef="const-intwall",
+            constructionIdRef=semiext.get(pair, "const-intwall"),
         )
         _el(su, "Name", f"Interior wall {a.sid} / {b.sid}")
         _el(su, "AdjacentSpaceId", spaceIdRef=a.sid)
