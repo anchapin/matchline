@@ -440,10 +440,16 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         notes.append(f"{n_split} wall(s) split at grade from the site terrain")
 
     # floors, ceilings and roofs between and around the storeys
+    semiext_floors = {}  # frozenset(space below, space above) -> construction (#900)
+    for cid, info in (getattr(model, "interior_floor_constructions", None) or {}).items():
+        for pair in info.get("pairs", []):
+            semiext_floors.setdefault(frozenset(pair), cid)
     roof_loops = {}  # space id -> [(area, surface, loop, z)]
     n_horiz = 0
     for hz in model.horizontals:
         cons = CONSTRUCTION_OF.get(hz.surface_type)
+        if hz.surface_type == "InteriorFloor" and semiext_floors:
+            cons = semiext_floors.get(frozenset((hz.lower_space_id, hz.upper_space_id)), cons)
         if cons is None:
             notes.append(f"{hz.id}: surface type {hz.surface_type} not written")
             continue

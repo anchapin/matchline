@@ -241,6 +241,7 @@ def apply_construction_library(
     if climate_zone:
         _apply_baseline_defaults(model, s, climate_zone, category)
         _default_semi_exterior(model, s, climate_zone)
+        _default_semi_exterior_floor(model, s, climate_zone)
         s.baseline = baseline_envelope(model, climate_zone, category)
     if s.resolved or s.defaulted:
         apply_wall_u_rollup(model)
@@ -323,7 +324,7 @@ def _apply_baseline_defaults(model, s: "LibrarySummary", climate_zone: str, cate
 # boundary still "review" keeps the partition and its review item.
 DEFAULT_SEMIEXT_WALL_ID = "t55-semiext-wall"
 SEMIEXT_CATEGORY = "Semiheated"
-SEMIEXT_CLASS = "SteelFramed"
+SEMIEXT_CLASS = "SteelFramed"  # the class Table G3.4 baselines use for floors too
 _SEMIEXT_WHY = (
     "semi-exterior wall (ASHRAE 90.1-2019 5.5.2: semiexterior envelope meets the "
     "semiheated requirements of Table 5.5); no assembly stated, class {ctype}"
@@ -368,6 +369,69 @@ def _default_semi_exterior(model, s: "LibrarySummary", climate_zone: str) -> Non
         )
         s.defaulted[cid] = {
             "surface": "ExteriorWall",
+            "construction_type": SEMIEXT_CLASS,
+            "category": SEMIEXT_CATEGORY,
+            "table": row.table,
+            "u_ip": row.u_ip,
+            "u_si": row.u_si,
+            "why": why,
+        }
+    for r in recs:
+        r["construction_id"] = cid
+    if cid in s.defaulted:
+        s.defaulted[cid]["space_pairs"] = sorted(list(r["spaces"]) for r in recs)
+
+
+# Floor/ceiling boundaries between a conditioned space and a semiheated or
+# unconditioned one (#900) are semi-exterior envelope too. Same rule as the
+# walls: the Semiheated column's ExteriorFloor row (Table 5.5 "Floors"), in
+# the class the Table G3.4 baseline uses for floors (steel framed).
+DEFAULT_SEMIEXT_FLOOR_ID = "t55-semiext-floor"
+_SEMIEXT_FLOOR_WHY = (
+    "semi-exterior floor/ceiling (ASHRAE 90.1-2019 5.5.2: semiexterior envelope "
+    "meets the semiheated requirements of Table 5.5); no assembly stated, class {ctype}"
+)
+
+
+def _default_semi_exterior_floor(model, s: "LibrarySummary", climate_zone: str) -> None:
+    """Give settled semi-exterior floor/ceiling records the Table 5.5 Semiheated floor (#900).
+
+    Same rules as the walls: a record that already names a construction, a
+    stated construction under the same id, and boundaries still to review
+    are left alone.
+    """
+    from building_model import Construction
+
+    recs = [
+        r
+        for r in (getattr(model, "semi_exterior", None) or [])
+        if (
+            r.get("kind") == "semi_exterior"
+            and not r.get("construction_id")
+            and r.get("plane") == "floor"
+        )
+    ]
+    if not recs:
+        return
+    cid = DEFAULT_SEMIEXT_FLOOR_ID
+    cons = model.constructions
+    have = cons.get(cid)
+    if have is None or not (have.u_value_w_m2k and have.u_value_w_m2k > 0):
+        row = lookup("ExteriorFloor", SEMIEXT_CLASS, climate_zone, SEMIEXT_CATEGORY)
+        if row is None or row.u_si is None:
+            s.unmatched[cid] = (
+                f"no Table 5.5 U-value for {SEMIEXT_CATEGORY} ExteriorFloor {SEMIEXT_CLASS}"
+            )
+            return
+        why = _SEMIEXT_FLOOR_WHY.format(ctype=SEMIEXT_CLASS)
+        cons[cid] = Construction(
+            id=cid,
+            name="Semi-exterior floor/ceiling, Table 5.5 Semiheated code maximum",
+            u_value_w_m2k=row.u_si,
+            provenance=_prov(row, cid, why, climate_zone),
+        )
+        s.defaulted[cid] = {
+            "surface": "ExteriorFloor",
             "construction_type": SEMIEXT_CLASS,
             "category": SEMIEXT_CATEGORY,
             "table": row.table,

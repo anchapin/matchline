@@ -315,6 +315,13 @@ def _write_constructions(root, model: BEMModel, air_walls) -> dict:
         note = write_layered(root, cid, info["name"], _fmt(info["u"]), "InteriorWall")
         if note:
             layer_notes.append(note)
+    # semi-exterior interior floors (#900): Table 5.5 Semiheated floor, layered
+    # with the interior-floor films; written only when the model carries one,
+    # so single-storey exports are unchanged
+    for cid, info in sorted((getattr(model, "interior_floor_constructions", None) or {}).items()):
+        note = write_layered(root, cid, info["name"], _fmt(info["u"]), "InteriorFloor")
+        if note:
+            layer_notes.append(note)
     if layer_notes:
         model.notes.extend(layer_notes)
     if getattr(model, "shades", None):

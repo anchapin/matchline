@@ -260,6 +260,17 @@ type); only its `constructionIdRef` changes, to the layered `t55-semiext-wall`
 room match through their parent space. Every other interior wall, review pairs
 included, keeps the DOE partition.
 
+### Semi-exterior floor/ceiling construction (#900)
+
+A settled floor/ceiling boundary (#900) is semi-exterior envelope too and gets
+`t55-semiext-floor` the same way: the **Semiheated** column's `ExteriorFloor`
+row (Table 5.5 "Floors") for the climate zone, whatever the building category,
+in the steel-framed class the Table G3.4 baseline uses for floors. Provenance
+and the record's `construction_id` follow the walls. In the multi-storey gbXML
+the `InteriorFloor` between that pair references the layered construction
+instead of the no-U partition; single-storey exports never carry floor records,
+so they are unchanged. Review boundaries keep the partition.
+
 Not yet: the 5.5.2 sentence on unconditioned vestibules ("interior surfaces
 and exterior surfaces of unconditioned vestibules shall comply with the
 building envelope requirements for a semiheated space") needs a vestibule

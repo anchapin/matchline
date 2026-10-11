@@ -179,6 +179,10 @@ class BEMModel:
     # "pairs": [[space a, space b], ...]}; an interior wall between a listed
     # pair takes that construction, every other interior wall the partition
     interior_wall_constructions: dict = field(default_factory=dict)
+    # semi-exterior interior floors (#900): construction id -> {"name", "u",
+    # "pairs": [[space a, space b], ...]}; an InteriorFloor between a listed
+    # pair takes that construction, every other one const-intfloor as before
+    interior_floor_constructions: dict = field(default_factory=dict)
     # BEMRoof planes (#618); empty -> flat roof at wall_height_m, as before
     roof_planes: list = field(default_factory=list)
     # Appendix G thermal zones (#638): [(block_id, [space_ids])]; empty ->
