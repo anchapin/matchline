@@ -38,6 +38,178 @@ def _model() -> BuildingModel:
     return m
 
 
+# --- space merge target edits (#799, second slice) ---------------------------
+
+
+def _merge_fixture():
+    """A closet kept for review beside Room 101, plus the pieces a merge moves."""
+    from space_merge import merge_closets_and_shafts
+
+    m = _model()
+    from building_model import EnvelopeWall, Level, Space, SpaceOpening, Zone
+
+    m.levels.append(Level(id="L1", wall_height_m=3.0))
+
+    def rect(x0, y0, x1, y1):
+        return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+    room = Space(
+        id="L1-101",
+        level_id="L1",
+        number="101",
+        polygon_m=rect(0, 0, 6, 4),
+        area_m2=24.0,
+        volume_m3=72.0,
+    )
+    clo = Space(
+        id="L1-103",
+        level_id="L1",
+        number="103",
+        polygon_m=rect(6, 0, 8, 2),
+        area_m2=4.0,
+        volume_m3=12.0,
+        poly_type="closet",
+        poly_type_confidence=0.85,
+    )
+    # a door with no plan position: the automatic rule cannot connect the
+    # closet to a room, so it keeps the closet and flags it for review
+    clo.openings.append(SpaceOpening(id="D7", tag="D1", category="door", width_m=0.9, height_m=2.1))
+    m.spaces["L1-101"] = room
+    m.spaces["L1-103"] = clo
+    m.zones["Z1"] = Zone(id="Z1", level_id="L1", space_ids=["L1-103", "L1-101"])
+    m.envelope.append(EnvelopeWall(id="E1", facade="east", space_id="L1-103"))
+    # the automatic rule keeps the closet for review (no merge happened)
+    res = merge_closets_and_shafts(m)
+    assert res.merged == [] and res.kept, res
+    # the item the automatic rule raised (R3 in _model() has no target)
+    item = next(
+        i for i in m.review_queue if i.kind == "space_merge" and i.target and i.target.get("id")
+    )
+    return m, item
+
+
+def _merge_doc(m, *decisions):
+    d = R.template(m, R.sha256_text(m.to_json()))
+    d["decisions"] = [dict(x, at="2026-10-11T19:40:00+00:00") for x in decisions]
+    return d
+
+
+def test_space_merge_edit_merges_into_the_room_the_reviewer_picked():
+    m, item = _merge_fixture()
+    doc = _merge_doc(m, {"id": item.id, "action": "edit", "value": "merge into 101"})
+    s = R.apply_decisions(m, doc, R.sha256_text(m.to_json()))
+    assert s["edit"] == 1 and s["warnings"] == []
+    assert "L1-103" not in m.spaces
+    room = m.spaces["L1-101"]
+    assert "L1-103" in room.merged_from
+    assert abs(room.area_m2 - 28.0) < 1e-6
+    assert m.zones["Z1"].space_ids == ["L1-101"]
+    assert m.envelope[0].space_id == "L1-101"
+    h = room.history[-1]
+    assert h.method == "space_merge:review_edit"
+    notes = [e.note for e in m.revision_log if e.action == "review"]
+    assert any(item.id in n and "merge_into" in n for n in notes)
+    # replaying the same file again changes and logs nothing
+    s2 = R.apply_decisions(m, doc)
+    assert s2["unchanged"] == 1
+    assert len([e for e in m.revision_log if e.action == "review"]) == 1
+
+
+def test_space_merge_edit_bad_value_changes_nothing():
+    m, item = _merge_fixture()
+    doc = _merge_doc(m, {"id": item.id, "action": "edit", "value": "merge into 999"})
+    with pytest.raises(ValueError, match="999"):
+        R.apply_decisions(m, doc, R.sha256_text(m.to_json()))
+    # still there, still its own space, item untouched
+    assert "L1-103" in m.spaces and "L1-101" in m.spaces
+    assert m.spaces["L1-101"].merged_from == []
+    assert not [e for e in m.revision_log if e.action == "review"]
+    # a target on another level is refused too
+    from building_model import Space
+
+    m.spaces["L2-201"] = Space(
+        id="L2-201", level_id="L2", number="201",
+        polygon_m=[[0, 0], [4, 0], [4, 4], [0, 4]], area_m2=16.0,
+    )  # fmt: skip
+    doc2 = _merge_doc(m, {"id": item.id, "action": "edit", "value": "merge into L2-201"})
+    with pytest.raises(ValueError, match="level"):
+        R.apply_decisions(m, doc2, R.sha256_text(m.to_json()))
+    assert "L1-103" in m.spaces
+
+
+def test_space_merge_edit_revert_restores_both_spaces():
+    m, item = _merge_fixture()
+    h = R.sha256_text(m.to_json())
+    s = R.apply_decisions(
+        m, _merge_doc(m, {"id": item.id, "action": "edit", "value": "merge into 101"}), h
+    )
+    assert s["edit"] == 1
+    # a second pass undoes the merge
+    s2 = R.apply_decisions(m, _merge_doc(m, {"id": item.id, "action": "revert"}))
+    assert s2["revert"] == 1
+    # the closet is back, unchanged
+    clo = m.spaces["L1-103"]
+    assert clo.poly_type == "closet" and abs(clo.area_m2 - 4.0) < 1e-6
+    assert abs(clo.volume_m3 - 12.0) < 1e-6
+    assert [o.id for o in clo.openings] == ["D7"]
+    # the room is back to 24 m2 with nothing absorbed
+    room = m.spaces["L1-101"]
+    assert room.merged_from == [] and abs(room.area_m2 - 24.0) < 1e-6
+    assert abs(room.volume_m3 - 72.0) < 1e-6
+    assert m.zones["Z1"].space_ids == ["L1-103", "L1-101"]
+    assert m.envelope[0].space_id == "L1-103"
+    assert not [h for h in room.history if h.method == "space_merge:review_edit"]
+    # and the file replays idempotently after the revert
+    s3 = R.apply_decisions(m, _merge_doc(m, {"id": item.id, "action": "revert"}))
+    assert s3["unchanged"] == 1 and "L1-103" in m.spaces
+
+
+def test_space_item_that_is_not_a_merge_stays_record_only():
+    from building_model import Provenance, Space
+
+    m, _ = _merge_fixture()
+    m.spaces["L1-110"] = Space(
+        id="L1-110", level_id="L1", number="110",
+        polygon_m=[[0, 0], [2, 0], [2, 2], [0, 2]], area_m2=4.0,
+    )  # fmt: skip
+    m.review_queue.append(
+        ReviewItem(
+            id="RVW-NG1",
+            kind="space_no_geometry",
+            description="Space L1-110 has no usable polygon",
+            confidence=0.5,
+            provenance=Provenance(sheet_id="A-101", revision=2, method="t", confidence=0.5),
+            urgency=1,
+            target={"kind": "space", "id": "L1-110"},
+        )
+    )
+    doc = _merge_doc(m, {"id": "RVW-NG1", "action": "edit", "value": "merge into 101"})
+    s = R.apply_decisions(m, doc, R.sha256_text(m.to_json()))
+    assert s["edit"] == 1
+    assert "L1-110" in m.spaces and "L1-103" in m.spaces
+    assert m.spaces["L1-101"].merged_from == []
+    q = {i.id: i for i in m.review_queue}
+    assert q["RVW-NG1"].status == "confirmed"
+    notes = [e.note for e in m.revision_log if e.action == "review"]
+    assert any("RVW-NG1 edit: merge into 101" in n for n in notes)
+
+
+def test_space_merge_edit_survives_a_model_roundtrip():
+    """The snapshot lives on the item, so revert still works after save/reload."""
+    m, item = _merge_fixture()
+    doc = _merge_doc(m, {"id": item.id, "action": "edit", "value": "merge into 101"})
+    R.apply_decisions(m, doc, R.sha256_text(m.to_json()))
+    # ...then someone saves and reloads the merged model
+    m2 = m.from_json(m.to_json())
+    item2 = next(i for i in m2.review_queue if i.id == item.id)
+    doc2 = _merge_doc(m2, {"id": item2.id, "action": "revert"})
+    s = R.apply_decisions(m2, doc2)
+    assert s["revert"] == 1
+    assert "L1-103" in m2.spaces
+    assert m2.spaces["L1-101"].merged_from == []
+    assert abs(m2.spaces["L1-101"].area_m2 - 24.0) < 1e-6
+
+
 def _doc(m, *decisions):
     d = R.template(m, R.sha256_text(m.to_json()))
     d["decisions"] = [dict(x, at="2026-10-08T12:00:00+00:00") for x in decisions]
@@ -385,12 +557,18 @@ def test_bad_edit_value_changes_nothing():
 
 
 def test_edit_without_a_model_field_records_only_and_page_says_so():
+    from building_model import Provenance, Space
+
     m = _with_openings()
-    rid = m.review_queue[1].id
+    m.spaces["L1-110"] = Space(id="L1-110", level_id="L1", number="110")
+    m.flag_for_review("space_no_geometry", "space L1-110 has no polygon", 0.5,
+                      Provenance(sheet_id="A-1", revision=1, method="t", confidence=0.5),
+                      target={"kind": "space", "id": "L1-110"})  # fmt: skip
+    rid = "RVW-003"
     before = [sp.openings[:] for sp in m.spaces.values()]
     R.apply_decisions(m, _doc(m, {"id": rid, "action": "edit", "value": "merge into 101"}))
     assert [sp.openings for sp in m.spaces.values()] == before
-    assert m.review_queue[1].status == "confirmed"
+    assert next(i for i in m.review_queue if i.id == rid).status == "confirmed"
     page = R.render_html(m, R.template(m, "x"))
     assert '"field": "space_id"' in page and '"field": ""' in page
 

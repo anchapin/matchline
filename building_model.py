@@ -1181,6 +1181,11 @@ def _conv(t, v):
     return v
 
 
+def space_from_dict(d: dict) -> Space:
+    """Rebuild one Space from its serialized form (as ``to_dict`` wrote it)."""
+    return _revive(Space, d)
+
+
 def _revive(cls, data: dict):
     hints = get_type_hints(cls, globals())
     init_kwargs = {}

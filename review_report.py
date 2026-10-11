@@ -35,9 +35,12 @@ import hashlib
 import html
 import io
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+
+import space_merge as space_merge
 
 SCHEMA = "matchline.review_decisions/1"
 ACTIONS = ("confirm", "reject", "edit", "revert")
@@ -72,6 +75,9 @@ EDITABLE = {
     "diffuser": ("space_id",),
     "sensor": ("space_id",),
 }
+# Keyed by review-item kind, not target kind: a kept closet/shaft gets a
+# "merge into <room>" edit (#799); other space items stay record-only.
+MERGE_EDITABLE = {"space_merge": ("merge_into",)}
 MAX_OPENING_WIDTH_M = 30.0
 # An unsized wall gap (#798): a review edit can add the opening the pipeline
 # left out. Its width may exceed the drawn gap by no more than the tolerance
@@ -121,11 +127,14 @@ def edit_field(model, item) -> str:
     t = item.target or {}
     kind = t.get("kind", "")
     f = t.get("field", "")
+    allowed = EDITABLE.get(kind, ()) + MERGE_EDITABLE.get(getattr(item, "kind", ""), ())
     if not f:
-        fields = EDITABLE.get(kind, ())
-        f = fields[0] if len(fields) == 1 else ""
-    if f not in EDITABLE.get(kind, ()):
+        f = allowed[0] if len(allowed) == 1 else ""
+    if f not in allowed:
         return ""
+    if f == "merge_into":
+        # the kept space must still be there to merge away
+        return f if t.get("id") in model.spaces else ""
     if kind == "opening" and _find_opening(model, t.get("id"))[1] is None:
         return ""
     if kind == "wall":
@@ -176,6 +185,12 @@ def _read(model, t: dict, f: str):
     if kind in ("diffuser", "sensor") and f == "space_id":
         sp, _ = _find_ref(model, kind, eid)
         return sp.id if sp is not None else None
+    if f == "merge_into":
+        if eid in model.spaces:
+            return None  # still its own space: no automatic merge to undo
+        for sp in model.spaces.values():
+            if eid in sp.merged_from:
+                return sp.id
     return None
 
 
@@ -186,9 +201,21 @@ def _split(model, item, value):
     raw = str(value).strip()
     if f and "=" in raw:
         k, v = (x.strip() for x in raw.split("=", 1))
-        if k in EDITABLE.get(t["kind"], ()):
+        if k in EDITABLE.get(t["kind"], ()) or k in MERGE_EDITABLE.get(item.kind, ()):
             return k, v
     return f, raw
+
+
+def _resolve_space_id(model, raw: str) -> str:
+    """The space id ``raw`` names, accepting a room number; ValueError else."""
+    if raw in model.spaces:
+        return raw
+    hits = [sid for sid, sp in model.spaces.items() if sp.number == raw]
+    if len(hits) == 1:
+        return hits[0]
+    if hits:
+        raise ValueError(f"room {raw!r} is ambiguous (" + ", ".join(sorted(hits)) + ")")
+    raise ValueError(f"room {raw!r} is not a space id or room number")
 
 
 def _coerce(model, t: dict, f: str, raw: str):
@@ -204,19 +231,14 @@ def _coerce(model, t: dict, f: str, raw: str):
             raise ValueError(f"width_m {w:g} is outside (0, {MAX_OPENING_WIDTH_M:g}] m")
         return w
     if f == "space_id":
-        if raw in model.spaces:
-            return raw
-        hits = [sid for sid, sp in model.spaces.items() if sp.number == raw]
-        if len(hits) == 1:
-            return hits[0]
-        raise ValueError(
-            f"room {raw!r} is "
-            + (
-                "ambiguous (" + ", ".join(sorted(hits)) + ")"
-                if hits
-                else "not a space id or room number"
-            )
-        )
+        return _resolve_space_id(model, raw)
+    if f == "merge_into":
+        phrase = re.match(r"(?i)^merge\s+into\s+(.+)$", raw)
+        if phrase:
+            raw = phrase.group(1).strip()
+        tid = _resolve_space_id(model, raw)
+        space_merge.check_merge(model, t.get("id", ""), tid)
+        return tid
     if f == "construction_id":
         if raw in model.constructions:
             return raw
@@ -229,6 +251,9 @@ def _write(model, t: dict, f: str, value) -> None:
         _write_gap(model, t, value)
         return
     kind = t.get("kind", "")
+    if f == "merge_into":
+        _merge_into(model, t, value)
+        return
     if kind == "fixture" and f == "space_id":
         _assign_fixture(model, t, value)
         return
@@ -332,6 +357,24 @@ def _assign_ref(model, t: dict, value) -> None:
             z.space_ids.append(value)
         if _zid not in new_sp.hvac.zone_ids:
             new_sp.hvac.zone_ids.append(_zid)
+
+
+def _merge_into(model, t: dict, value) -> None:
+    """Merge the kept space into room ``value``; None undoes a merge (#799).
+
+    The snapshot ``space_merge.merge_into`` returns is kept on the item so a
+    revert can put both spaces back the way the pipeline left them.
+    """
+    sid = t.get("id", "")
+    if value is None:
+        if t.get("merge_state"):
+            space_merge.un_merge(model, t["merge_state"])
+            del t["merge_state"]
+        return
+    if value and sid in model.spaces:
+        snap = space_merge.merge_into(model, sid, value)
+        if snap:
+            t["merge_state"] = snap
 
 
 def _num(key: str, raw: str, lo: float, hi: float, lo_open: bool = True) -> float:
@@ -1157,6 +1200,8 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
             ) + "category=window width_m=1.2 height_m=1.5 [sill_m=0.9]. "
         elif f == "space_id":
             row["hint"] = "Room number or space id. "
+        elif f == "merge_into":
+            row["hint"] = "Room number or space id to merge into. "
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}
