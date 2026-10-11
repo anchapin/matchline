@@ -188,6 +188,12 @@ class BEMModel:
     # scheduled zone airflow (#746): gbXML Zone id -> FlowPerArea in m3/s per m2
     # of floor, set by zone_airflow.apply_zone_airflow; empty -> none written
     zone_flow_per_area: dict = field(default_factory=dict)
+    # air loops (#746): [{"id", "name", "system_type", "fan_airflow_lps",
+    # "cooling_total_btuh", "cooling_sensible_btuh", "heating_btuh",
+    # "sources"}], and gbXML Zone id -> air loop id, set by
+    # air_loops.apply_air_loops; empty -> none written
+    air_loops: list = field(default_factory=list)
+    zone_air_loop: dict = field(default_factory=dict)
     # air walls between pieces of a split room (#638), thermal_zoning.AirWall
     air_walls: list = field(default_factory=list)
     # multi-storey (#639): BEMLevel per storey and BEMHorizontal floors,

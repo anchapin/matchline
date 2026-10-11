@@ -156,6 +156,53 @@ def _flow_per_area(zone, value) -> None:
         _el(zone, "FlowPerArea", f"{value:.6g}", unit="CubicMPerSecPerSquareM")
 
 
+def _air_loop_ref(zone, loop_id) -> None:
+    """AirLoopId on a gbXML Zone when air_loops settled its air handler."""
+    if loop_id:
+        _el(zone, "AirLoopId", airLoopIdRef=loop_id)
+
+
+def _write_air_loops(root, model: BEMModel) -> None:
+    """One AirLoop per scheduled air handler (#746, option 3): a supply fan
+    with its scheduled design airflow and coils with their scheduled
+    capacities (Btu/h), each described by its schedule source."""
+    for lp in getattr(model, "air_loops", None) or []:
+        attrs = {"id": lp["id"]}
+        if lp.get("system_type"):
+            attrs["systemType"] = lp["system_type"]
+        loop = _el(root, "AirLoop", **attrs)
+        _el(loop, "Name", lp["name"])
+        if lp.get("sources"):
+            _el(loop, "Description", "From the mechanical schedules: " + "; ".join(lp["sources"]))
+        fan = _el(loop, "AirLoopEquipment", id=f"{lp['id']}-fan", equipmentType="Fan")
+        _el(fan, "Name", f"{lp['name']} supply fan")
+        if lp.get("fan_airflow_lps"):
+            _el(fan, "MaximumFlow", f"{lp['fan_airflow_lps']:.6g}", unit="LPerSec")
+        cool = [
+            (k, t)
+            for k, t in (
+                ("cooling_total_btuh", "CoolingTotal"),
+                ("cooling_sensible_btuh", "CoolingSensible"),
+            )
+            if lp.get(k)
+        ]
+        if cool:
+            coil = _el(loop, "AirLoopEquipment", id=f"{lp['id']}-ccoil", equipmentType="Coil")
+            _el(coil, "Name", f"{lp['name']} cooling coil")
+            for k, t in cool:
+                _el(coil, "Capacity", f"{lp[k]:.6g}", unit="BtuPerHour", capacityType=t)
+        if lp.get("heating_btuh"):
+            coil = _el(loop, "AirLoopEquipment", id=f"{lp['id']}-hcoil", equipmentType="Coil")
+            _el(coil, "Name", f"{lp['name']} heating coil")
+            _el(
+                coil,
+                "Capacity",
+                f"{lp['heating_btuh']:.6g}",
+                unit="BtuPerHour",
+                capacityType="Heating",
+            )
+
+
 def _write_zones(root, model: BEMModel):
     """Zone elements; returns (thermal zones, space id -> zone id)."""
     # Appendix G thermal zones (#638) when the model carries them; otherwise
@@ -163,18 +210,23 @@ def _write_zones(root, model: BEMModel):
     tzones = list(getattr(model, "thermal_zones", None) or [])
     # scheduled zone airflow (#746), only on zones zone_airflow settled
     fpa = dict(getattr(model, "zone_flow_per_area", None) or {})
+    # serving air handler (#746, option 3), only on zones air_loops settled
+    zal = dict(getattr(model, "zone_air_loop", None) or {})
     zone_of: dict = {}
     if tzones:
         for zid, sids in tzones:
             zone = _el(root, "Zone", id=f"zone-{zid}")
             _el(zone, "Name", zid)
             _flow_per_area(zone, fpa.get(f"zone-{zid}"))
+            _air_loop_ref(zone, zal.get(f"zone-{zid}"))
             for sid in sids:
                 zone_of.setdefault(sid, f"zone-{zid}")
     else:
         zone = _el(root, "Zone", id="zone-1")
         _el(zone, "Name", "Zone 1")
         _flow_per_area(zone, fpa.get("zone-1"))
+        _air_loop_ref(zone, zal.get("zone-1"))
+    _write_air_loops(root, model)
     return tzones, zone_of
 
 

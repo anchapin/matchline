@@ -392,8 +392,35 @@ class Zone:
     # (#746), m3/s; None when the schedule gives no airflow or no units
     design_airflow_max_m3s: Optional[float] = None
     design_airflow_min_m3s: Optional[float] = None
+    # tag of the scheduled central air handler (AHU/RTU) feeding this zone's
+    # terminal unit (#746), from the box-to-unit link on the schedules; ""
+    # when not known
+    air_loop: str = ""
     provenance: Provenance | None = None
     history: List[Provenance] = field(default_factory=list)
+
+
+@dataclass
+class AirLoop:
+    """One scheduled central air handler (AHU/RTU) and the HVAC zones on it
+    (#746, option 3). Written to gbXML as an ``AirLoop``; each thermal zone
+    it serves references it. Capacities are as scheduled, in Btu/h; None when
+    the schedule row doesn't give one with units. ``box_airflow_sum_m3s`` is
+    the summed max airflow of its boxes (None unless every box has one): it
+    may exceed the supply fan airflow because of diversity, which is normal.
+    """
+
+    tag: str
+    sheet: str = ""
+    supply_airflow_m3s: Optional[float] = None
+    cooling_total_btuh: Optional[float] = None
+    cooling_sensible_btuh: Optional[float] = None
+    heating_btuh: Optional[float] = None
+    sources: List[str] = field(default_factory=list)
+    box_tags: List[str] = field(default_factory=list)
+    zone_ids: List[str] = field(default_factory=list)
+    box_airflow_sum_m3s: Optional[float] = None
+    provenance: Provenance | None = None
 
 
 @dataclass
@@ -693,6 +720,7 @@ class ReviewItem:
         "interstory",
         "below_grade",
         "zone_airflow",
+        "air_loop",
     ]
     description: str
     confidence: float
@@ -841,6 +869,8 @@ class BuildingModel:
     levels: List[Level] = field(default_factory=list)
     spaces: Dict[str, Space] = field(default_factory=dict)
     zones: Dict[str, Zone] = field(default_factory=dict)
+    # scheduled central air handlers (#746); empty -> no AirLoop written
+    air_loops: List[AirLoop] = field(default_factory=list)
     envelope: List[EnvelopeWall] = field(default_factory=list)
     constructions: Dict[str, Construction] = field(default_factory=dict)
     # Construction.id of the roof assembly, when known (IFC import reads it
@@ -957,6 +987,7 @@ class BuildingModel:
             "interstory",
             "below_grade",
             "zone_airflow",
+            "air_loop",
         ],
         description: str,
         confidence: float,

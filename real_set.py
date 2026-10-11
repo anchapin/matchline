@@ -590,6 +590,11 @@ def build_set_model(
     )
     _heated_slab(model, equipment, review, report, Provenance, ReviewItem)
     _space_conditioning(model, equipment, review, report, Provenance, ReviewItem)
+    # scheduled air handlers and which HVAC zones they feed (#746, option 3)
+    if equipment and model.zones:
+        from air_loops import build_air_loops
+
+        report.notes += build_air_loops(model, equipment)
     _semi_exterior(model, review, report, Provenance, ReviewItem)
     report.sheets = list(status.values())
     _write(out, report)

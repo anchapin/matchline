@@ -57,6 +57,19 @@ office can span two AHUs/VAVs; a VAV can serve several rooms).
    the writer's single `zone-1` (every space) is the thermal zone. The min
    airflow stays on the HVAC zone in the JSON report (`zone_airflow.py`,
    Alex's 2026-10-10 decision on #746).
+   Each scheduled AHU/RTU is an air loop (`BuildingModel.air_loops`): its
+   supply fan design airflow and coil capacities as scheduled (Btu/h, each
+   with its schedule source), the boxes linked to it by a column on their
+   schedule rows (`zone_capacity.served_by_from_schedules`), and the HVAC
+   zones whose terminal unit is one of those boxes or the air handler itself
+   (`Zone.air_loop`). The boxes' summed max airflow may exceed the fan's:
+   zones peak at different times (diversity), so it is reported, never
+   flagged. At BEM export each air loop is a gbXML `AirLoop` (fan
+   `AirLoopEquipment` with `MaximumFlow` in L/s, coil `AirLoopEquipment` with
+   `Capacity`), and each thermal `Zone` gets `AirLoopId` when the HVAC zones
+   serving it all name the same air handler; otherwise no reference and an
+   `air_loop` review item (`air_loops.py`, Alex's 2026-10-11 decision on
+   #746).
 4. **Elevation** → facade registration (grid path preferred, geometric
    fallback required), window u-intervals → facade meters → south wall
    segments (one per room touching the facade) → owning room; tag joined
