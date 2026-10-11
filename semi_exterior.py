@@ -13,8 +13,12 @@ Two spaces with no category at all are not reported, so a set with no HVAC
 data stays silent. Semiheated against unconditioned is the semiheated
 envelope, not semi-exterior, and is not reported here.
 
-Output only: nothing reads it yet, so constructions and the gbXML are
-unchanged (the gbXML still writes these as interior walls).
+Floor/ceiling boundaries between spaces on adjacent levels are
+semi-exterior envelope too (#900); ``semi_exterior_floor_boundaries``
+records those the same way, with ``area_m2`` and ``plane: "floor"``.
+Wall records carry ``plane: "wall"`` so the construction stage can tell
+them apart: only wall records take the Table 5.5 Semiheated wall, so
+exports are unchanged by the floor records.
 """
 
 from __future__ import annotations
@@ -112,8 +116,63 @@ def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
                         "categories": [ca, cb],
                         "kind": kind,
                         "reason": reason,
+                        "plane": "wall",
                         "length_m": round(sum(math.dist(*s) for s in segs), 4),
                         "segments": segs,
                     }
                 )
+    return out
+
+
+def semi_exterior_floor_boundaries(spaces: Dict[str, object], levels: List[object]) -> List[dict]:
+    """Semi-exterior and to-review floor/ceiling boundaries between levels (#900).
+
+    A floor/ceiling between a conditioned space and a semiheated or
+    unconditioned space on the level above or below is semi-exterior
+    envelope too (90.1-2019 Section 3.2 / Figure 5.5.2). Only levels next to
+    each other in elevation are compared, and only real footprint overlap
+    counts: below ``TOL_M ** 2`` the overlap is drafting noise, not a
+    boundary. One record per space pair, same ``kind``/``reason`` as the
+    wall boundaries plus ``area_m2`` and ``plane: "floor"``, sorted by
+    pair. No construction is attached here, so exports are unchanged.
+    """
+    from bem_space_split import TOL_M, _poly
+
+    elev = {}
+    for lv in levels or []:
+        elev[getattr(lv, "id", "")] = float(getattr(lv, "elevation_z_m", 0.0) or 0.0)
+    by_level: Dict[str, list] = {}
+    for sid, sp in spaces.items():
+        if len(getattr(sp, "polygon_m", None) or []) >= 3:
+            by_level.setdefault(sp.level_id, []).append((sid, sp))
+    ordered = sorted(elev, key=lambda lid: (elev[lid], lid))
+    min_area = TOL_M * TOL_M
+    out: List[dict] = []
+    for lower, upper in zip(ordered, ordered[1:]):
+        if lower not in by_level or upper not in by_level:
+            continue  # an empty level between two floors breaks adjacency
+        for sa, a in by_level[lower]:
+            ca = _category(a)
+            pa = _poly([tuple(p[:2]) for p in a.polygon_m])
+            for sb, b in by_level[upper]:
+                cb = _category(b)
+                kind, reason = boundary_kind(ca, cb)
+                if kind is None:
+                    continue
+                area = pa.intersection(_poly([tuple(p[:2]) for p in b.polygon_m])).area
+                if area <= min_area:
+                    continue
+                pair = sorted((sa, sb))
+                cats = [ca, cb] if sa == pair[0] else [cb, ca]
+                out.append(
+                    {
+                        "spaces": pair,
+                        "categories": cats,
+                        "kind": kind,
+                        "reason": reason,
+                        "plane": "floor",
+                        "area_m2": round(area, 4),
+                    }
+                )
+    out.sort(key=lambda r: r["spaces"])
     return out

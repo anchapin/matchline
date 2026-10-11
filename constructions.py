@@ -135,6 +135,8 @@ def semi_exterior_walls(model) -> Dict[str, dict]:
     cons = getattr(model, "constructions", None) or {}
     out: Dict[str, dict] = {}
     for r in getattr(model, "semi_exterior", None) or []:
+        if r.get("plane", "wall") != "wall":  # floor/ceiling records (#900)
+            continue
         cid = r.get("construction_id") or ""
         if r.get("kind") != "semi_exterior" or not cid:
             continue

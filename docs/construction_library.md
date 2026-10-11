@@ -226,9 +226,20 @@ Two conditioned spaces, two spaces with no category, and semiheated against
 unconditioned (the semiheated envelope, not semi-exterior) are not recorded.
 Each record carries the pair, both categories, the shared length and its
 segments, on `BuildingModel.semi_exterior`. The shared wall is found with the
-same 0.05 m tolerance as the gbXML interior walls. Nothing reads it yet: the
-gbXML still writes these walls as interior walls with the generic partition,
-and the wall's construction is chosen below.
+same 0.05 m tolerance as the gbXML interior walls.
+
+A floor/ceiling between a conditioned space and a semiheated or unconditioned
+space on the level above or below is semi-exterior envelope too (#900):
+`semi_exterior_floor_boundaries` compares only levels next to each other in
+elevation and only real footprint overlap (below `TOL_M ** 2` is drafting
+noise). Each floor record carries the pair, both categories, the overlap
+`area_m2`, and `plane: "floor"`; wall records carry `plane: "wall"`. Floor
+records take no construction, so exports are unchanged; an unsettled side
+still goes to review, with its own `rq-semi-exterior-floor-<a>-<b>` item.
+
+Nothing reads `BuildingModel.semi_exterior` for the gbXML yet: it still
+writes these walls as interior walls with the generic partition, and the
+wall's construction is chosen below.
 
 ### Semi-exterior wall construction (#747 slice 6)
 

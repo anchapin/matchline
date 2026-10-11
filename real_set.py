@@ -1566,32 +1566,39 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     (#747 slice 5) onto ``model.semi_exterior``. A boundary an unsettled side
     decides gets a review item; nothing is defaulted. Exports don't read it
     yet."""
-    from semi_exterior import semi_exterior_boundaries
+    from semi_exterior import semi_exterior_boundaries, semi_exterior_floor_boundaries
 
     if not any(sp.conditioning for sp in model.spaces.values()):
         return
     recs = semi_exterior_boundaries(model.spaces)
-    model.semi_exterior = recs
-    for r in recs:
+    # floor/ceiling between levels (#900); walls keep their record order,
+    # floor records follow them
+    floors = semi_exterior_floor_boundaries(model.spaces, model.levels)
+    model.semi_exterior = recs + floors
+    for r in model.semi_exterior:
         if r["kind"] != "review":
             continue
         a, b = r["spaces"]
+        if r.get("plane") == "floor":
+            shape = f"floor/ceiling between levels ({r['area_m2']:.2f} sq m)"
+            rid = f"rq-semi-exterior-floor-{a}-{b}"
+        else:
+            shape = f"shared wall ({r['length_m']:.2f} m)"
+            rid = f"rq-semi-exterior-{a}-{b}"
         review.append(
             ReviewItem(
-                id=f"rq-semi-exterior-{a}-{b}",
+                id=rid,
                 kind="semi_exterior_envelope",
-                description=(
-                    f"{a} / {b}: shared wall ({r['length_m']:.2f} m) may be "
-                    f"semi-exterior envelope ({r['reason']})"
-                ),
+                description=f"{a} / {b}: {shape} may be semi-exterior envelope ({r['reason']})",
                 confidence=0.5,
                 provenance=Provenance("", 0, "semi_exterior", 0.5),
                 needs_review=True,
             )
         )
-    semi = sum(1 for r in recs if r["kind"] == "semi_exterior")
+    semi = sum(1 for r in model.semi_exterior if r["kind"] == "semi_exterior")
     report.notes.append(
-        f"semi-exterior envelope: {semi} space pair(s) settled, {len(recs) - semi} to review"
+        f"semi-exterior envelope: {semi} space pair(s) settled, "
+        f"{len(model.semi_exterior) - semi} to review"
     )
 
 

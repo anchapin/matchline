@@ -341,7 +341,11 @@ def _default_semi_exterior(model, s: "LibrarySummary", climate_zone: str) -> Non
     recs = [
         r
         for r in (getattr(model, "semi_exterior", None) or [])
-        if r.get("kind") == "semi_exterior" and not r.get("construction_id")
+        if (
+            r.get("kind") == "semi_exterior"
+            and not r.get("construction_id")
+            and r.get("plane", "wall") == "wall"
+        )
     ]
     if not recs:
         return
