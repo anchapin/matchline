@@ -899,7 +899,10 @@ class BuildingModel:
     # semiheated or unconditioned, per ASHRAE 90.1-2019 Section 3.2 and
     # Figure 5.5.2, from Space.conditioning. One dict per space pair
     # (semi_exterior.semi_exterior_boundaries); "kind" is "semi_exterior" or
-    # "review" when an unsettled side decides it. Not yet used by exports.
+    # "review" when an unsettled side decides it. Wall records carry
+    # "plane": "wall" with "length_m"/"segments"; floor/ceiling records
+    # between adjacent levels (#900) carry "plane": "floor" with "area_m2".
+    # Only wall records take a construction; exports don't read the field.
     semi_exterior: List[dict] = field(default_factory=list)
     # sloped roof facets (roadmap item 2, #613); empty -> flat roof at wall height
     roof_planes: List[RoofPlane] = field(default_factory=list)
