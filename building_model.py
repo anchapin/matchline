@@ -692,6 +692,7 @@ class ReviewItem:
         "roof_plane",
         "interstory",
         "below_grade",
+        "zone_airflow",
     ]
     description: str
     confidence: float
@@ -955,6 +956,7 @@ class BuildingModel:
             "roof_plane",
             "interstory",
             "below_grade",
+            "zone_airflow",
         ],
         description: str,
         confidence: float,

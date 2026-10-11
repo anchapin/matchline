@@ -185,6 +185,9 @@ class BEMModel:
     # the writers' single default zone, as before. Kept apart from ``zones``,
     # which carries HVAC zones and their diffusers.
     thermal_zones: list = field(default_factory=list)
+    # scheduled zone airflow (#746): gbXML Zone id -> FlowPerArea in m3/s per m2
+    # of floor, set by zone_airflow.apply_zone_airflow; empty -> none written
+    zone_flow_per_area: dict = field(default_factory=dict)
     # air walls between pieces of a split room (#638), thermal_zoning.AirWall
     air_walls: list = field(default_factory=list)
     # multi-storey (#639): BEMLevel per storey and BEMHorizontal floors,
