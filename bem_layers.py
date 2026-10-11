@@ -36,6 +36,8 @@ FILM_R_SI = {
     "Roof": 0.1373659432721986,
     "SlabOnGrade": 0.1620213689877214,  # GroundContactFloor: inside film only
     "InteriorWall": 0.239509849807936,
+    "InteriorFloor": 0.239509849807936,  # same two-film total as InteriorWall; the
+    # horizontal up/down-flow film split is a v2 refinement
 }
 
 # EnergyPlus rejects a Material:NoMass thinner than this resistance (m2-K/W)

@@ -149,3 +149,30 @@ def semi_exterior_walls(model) -> Dict[str, dict]:
     for info in out.values():
         info["pairs"].sort()
     return out
+
+
+def semi_exterior_floors(model) -> Dict[str, dict]:
+    """Interior-floor constructions for semi-exterior boundaries (#900).
+
+    construction id -> {"name", "u", "pairs": [[space a, space b], ...]} for
+    settled ``model.semi_exterior`` floor/ceiling records that name a
+    construction with a usable U. Review boundaries and records with no
+    construction are left out, so those floors keep the generic partition.
+    """
+    cons = getattr(model, "constructions", None) or {}
+    out: Dict[str, dict] = {}
+    for r in getattr(model, "semi_exterior", None) or []:
+        if r.get("plane") != "floor":
+            continue
+        cid = r.get("construction_id") or ""
+        if r.get("kind") != "semi_exterior" or not cid:
+            continue
+        c = cons.get(cid)
+        u = getattr(c, "u_value_w_m2k", None)
+        if u is None or u <= 0:
+            continue
+        info = out.setdefault(cid, {"name": c.name or cid, "u": float(u), "pairs": []})
+        info["pairs"].append(sorted(r["spaces"]))
+    for info in out.values():
+        info["pairs"].sort()
+    return out

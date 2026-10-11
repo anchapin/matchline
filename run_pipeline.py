@@ -221,6 +221,7 @@ def model_from_linked_model(
     from constructions import (
         opening_constructions,
         roof_u_value,
+        semi_exterior_floors,
         semi_exterior_walls,
         slab_u_value,
     )
@@ -243,6 +244,7 @@ def model_from_linked_model(
         slab_u_value_w_m2k=slab_u_value(model),
         opening_constructions=opening_constructions(model),
         interior_wall_constructions=semi_exterior_walls(model),
+        interior_floor_constructions=semi_exterior_floors(model),
     )
 
     return bem
