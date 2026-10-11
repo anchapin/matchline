@@ -25,18 +25,20 @@ square joins) and the absorbed wall strip area is recorded on the merge.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Iterable, List, Optional
 
 from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
 
-from building_model import BuildingModel, Provenance, Space
+from building_model import BuildingModel, Provenance, Space, space_from_dict
 
 SOURCE = "space_merge"
 METHOD_CLOSET = "space_merge:closet_door"
 METHOD_SHAFT = "space_merge:shaft_shared_wall"
+# A merge a reviewer directed by a review edit (#799), not the automatic rule.
+METHOD_REVIEW = "space_merge:review_edit"
 # Largest interior-face gap still read as one shared wall (partition
 # thickness); also how far a door's plan centre may sit from a face.
 ADJ_TOL_M = 0.35
@@ -349,6 +351,81 @@ def _merge_shaft(model, sp, result) -> None:
     )
     _absorb(model, sp, tgt, joined, rec)
     result.merged.append(rec)
+
+
+def check_merge(model: BuildingModel, source_id: str, target_id: str) -> None:
+    """Raise ValueError when ``source_id`` cannot merge into ``target_id``.
+
+    Used to validate a review edit before anything changes (#799): the
+    source must still be in the model, the target a different space on the
+    same level, and the two outlines must join into one polygon.
+    """
+    src = model.spaces.get(source_id)
+    if src is None:
+        raise ValueError(f"space {source_id!r} is not in the model (already merged?)")
+    tgt = model.spaces.get(target_id)
+    if tgt is None:
+        raise ValueError(f"room {target_id!r} is not a space id in the model")
+    if target_id == source_id:
+        raise ValueError(f"space {source_id!r} cannot merge into itself")
+    if tgt.level_id != src.level_id:
+        raise ValueError(
+            f"room {target_id!r} is on level {tgt.level_id!r}; {source_id!r} is on {src.level_id!r}"
+        )
+    if _joined(_poly(tgt), _poly(src)) is None:
+        raise ValueError(f"could not join its outline to {target_id}")
+
+
+def merge_into(model: BuildingModel, source_id: str, target_id: str) -> dict:
+    """Merge ``source_id`` into ``target_id`` by review decision (#799).
+
+    Same absorb path the automatic rule uses, but the target is the
+    reviewer's choice. Returns the snapshot ``un_merge`` restores; the
+    caller keeps it on the review item so a revert can undo the merge.
+    Empty dict when the merge cannot happen (the caller validated first).
+    """
+    src = model.spaces.get(source_id)
+    tgt = model.spaces.get(target_id)
+    if src is None or tgt is None:
+        return {}
+    p, q = _poly(src), _poly(tgt)
+    if p is None or q is None:
+        return {}
+    joined = _joined(q, p)
+    if joined is None:
+        return {}
+    snap = {
+        "src": asdict(src),
+        "tgt": asdict(tgt),
+        "zones": {zid: list(z.space_ids) for zid, z in model.zones.items()},
+        "segs": [seg.id for seg in model.envelope if getattr(seg, "space_id", "") == source_id],
+    }
+    rec = MergeRecord(source_id, target_id, METHOD_REVIEW, src.poly_type, round(p.area, 6))
+    _absorb(model, src, tgt, joined, rec)
+    return snap
+
+
+def un_merge(model: BuildingModel, snap: dict) -> None:
+    """Undo a review merge, restoring the snapshot ``merge_into`` took (#799).
+
+    Puts the absorbed space back with its own polygon, openings, lighting,
+    HVAC and daylight, restores the absorbing space's pre-merge state, and
+    rewinds the zone membership and envelope segment moves.
+    """
+    if not snap or "src" not in snap or "tgt" not in snap:
+        return
+    tgt = space_from_dict(snap["tgt"])
+    src = space_from_dict(snap["src"])
+    model.spaces[tgt.id] = tgt
+    model.spaces[src.id] = src
+    for zid, ids in (snap.get("zones") or {}).items():
+        z = model.zones.get(zid)
+        if z is not None:
+            z.space_ids = list(ids)
+    for seg_id in snap.get("segs") or []:
+        for seg in model.envelope:
+            if seg.id == seg_id:
+                seg.space_id = src.id
 
 
 def merge_closets_and_shafts(

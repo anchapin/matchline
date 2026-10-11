@@ -93,6 +93,7 @@ All notable changes to this project are documented here, in
 - Each level takes its own storey height from the elevation level marks (matched by name: FIRST FLOOR to L1, SECOND FLOOR to L2); level elevations are the running sum, and only levels whose marks disagree or are missing keep the default and go to `rq-storey-height` (#814).
 
 ### Changed
+- Review edits on space-merge items change the model (#799): ``merge into <room>`` (or a bare space id / room number) merges the kept space into the room the reviewer picked, validated against the same rules as the automatic merge (same level, outlines must join); the merge snapshot is kept on the item so ``revert`` restores both spaces, zones, openings, lighting, HVAC, daylight and envelope walls, even after save/reload.
 - Elevation join review items use the window kinds: size mismatches and plan openings missing from the elevation are `elevation_conflict`, elevation openings with no plan opening are `window_room_link`; ids, targets and triage task unchanged (#817).
 
 ### Added
