@@ -955,6 +955,7 @@ def test_opening_attachment_edit_attaches_the_skylight_to_the_room_picked():
     assert o.category == "skylight" and o.host_facade == "roof" and o.plan_center_m == [2.0, 1.5]
     assert o.tilt_deg == 0.0 and o.azimuth_deg == 180.0 and o.area_m2 == 1.2
     assert o.needs_review is False
+    assert m.spaces["L1-101"].daylight.toplit  # daylight computed on attach
     it = next(x for x in m.review_queue if x.id == "R5")
     assert it.needs_review is False and it.resolution == "reassign"
     assert m.to_json() != before
@@ -1011,6 +1012,15 @@ def test_opening_attachment_edit_moves_an_opening_between_rooms():
         x.id == "WIN-1" for sp in m.spaces.values() for x in sp.openings if sp.id == "L1-101"
     )
     assert next(x for x in m.spaces["L1-102"].openings if x.id == "WIN-1")
+
+
+def test_opening_attachment_move_recomputes_the_vacated_rooms_daylight():
+    m = _attach_fixture()
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-101")))
+    assert m.spaces["L1-101"].daylight.toplit
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-102")))
+    assert not m.spaces["L1-101"].daylight.toplit  # vacated room recomputed
+    assert next(x for x in m.spaces["L1-102"].openings if x.id == "SK-1")
 
 
 def test_bim_element_items_stay_record_only():

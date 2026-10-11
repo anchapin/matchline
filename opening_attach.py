@@ -111,11 +111,18 @@ def attach_opening(model: BuildingModel, opening_id: str, space_id: str) -> None
 
 
 def un_attach(model: BuildingModel, opening_id: str) -> None:
-    """Remove the opening from whichever space holds it (revert, #799)."""
+    """Remove the opening from whichever space holds it (revert, #799).
+
+    The vacated room's daylight is recomputed, so a skylight that moves
+    rooms or is reverted away leaves no stale top-lit zone behind.
+    """
     sp = host_space(model, opening_id)
     if sp is None:
         return
+    had_skylight = any(o.category == "skylight" for o in sp.openings)
     sp.openings = [o for o in sp.openings if o.id != opening_id]
+    if had_skylight:
+        _skylight_daylight(sp, model)
 
 
 def _skylight_daylight(sp, model: BuildingModel) -> None:
