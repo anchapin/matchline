@@ -856,3 +856,180 @@ def test_gap_items_are_editable_on_the_page_and_tolerance_matches_the_pipeline(t
     # an old model whose gap item has no "gap" record still records only
     rq.target = {"kind": "wall", "id": rq.target["id"]}
     assert R.edit_field(m, rq) == ""
+
+
+# --- IFC opening attachment edits (#799, third slice) -------------------------
+
+
+def _attach_fixture():
+    """A skylight over no space and a wall opening in no room, kept for review."""
+    from building_model import BimElement, BimOpening, Level, Space
+
+    m = _model()
+    m.levels.append(Level(id="L1", wall_height_m=3.0))
+    m.levels.append(Level(id="L2"))
+    m.spaces["L1-101"] = Space(
+        id="L1-101",
+        level_id="L1",
+        number="101",
+        polygon_m=[[0, 0], [6, 0], [6, 4], [0, 4]],
+        area_m2=24.0,
+    )
+    m.spaces["L1-102"] = Space(
+        id="L1-102",
+        level_id="L1",
+        number="102",
+        polygon_m=[[6, 0], [10, 0], [10, 4], [6, 4]],
+        area_m2=16.0,
+    )
+    m.spaces["L2-201"] = Space(id="L2-201", level_id="L2", number="201")
+
+    sk = BimOpening(
+        id="SK-1",
+        category="skylight",
+        tag="SK1",
+        width_m=1.2,
+        height_m=1.0,
+        host_global_id="SLAB-1",
+        plan_center_m=[2.0, 1.5],
+        tilt_deg=0.0,
+        azimuth_deg=180.0,
+    )
+    slab = BimElement(global_id="SLAB-1", ifc_class="IfcSlab", name="roof", level_id="L1")
+    slab.openings.append(sk)
+    wo = BimOpening(
+        id="WIN-1",
+        category="window",
+        tag="W1",
+        width_m=1.0,
+        height_m=1.5,
+        sill_m=0.9,
+        s_center_m=2.0,
+        host_global_id="WALL-1",
+    )
+    wall = BimElement(
+        global_id="WALL-1",
+        ifc_class="IfcWall",
+        name="wall",
+        level_id="L1",
+        length_m=4.0,
+        thickness_m=0.3,
+    )
+    wall.openings.append(wo)
+    m.bim_elements += [slab, wall]
+
+    for it in m.review_queue:
+        if it.id == "R2":
+            it.target = {"kind": "bim_element", "id": "WALL-1"}
+    m.review_queue.append(
+        ReviewItem(
+            id="R5",
+            kind="opening_attachment",
+            confidence=0.3,
+            description="Skylight SK-1 sits over no space on L1; left unattached.",
+            target={"kind": "bim_opening", "id": "SK-1"},
+        )
+    )
+    m.review_queue.append(
+        ReviewItem(
+            id="R6",
+            kind="opening_attachment",
+            confidence=0.3,
+            description="Opening WIN-1 (window W1) lies in no space on L1 on either side.",
+            target={"kind": "bim_opening", "id": "WIN-1"},
+        )
+    )
+    return m
+
+
+def _edit(iid, value):
+    return {"id": iid, "action": "edit", "value": value}
+
+
+def test_opening_attachment_edit_attaches_the_skylight_to_the_room_picked():
+    m = _attach_fixture()
+    before = m.to_json()
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-101")))
+    sp = m.spaces["L1-101"]
+    o = next(x for x in sp.openings if x.id == "SK-1")
+    assert o.category == "skylight" and o.host_facade == "roof" and o.plan_center_m == [2.0, 1.5]
+    assert o.tilt_deg == 0.0 and o.azimuth_deg == 180.0 and o.area_m2 == 1.2
+    assert o.needs_review is False
+    assert m.spaces["L1-101"].daylight.toplit  # daylight computed on attach
+    it = next(x for x in m.review_queue if x.id == "R5")
+    assert it.needs_review is False and it.resolution == "reassign"
+    assert m.to_json() != before
+
+
+def test_opening_attachment_edit_attaches_a_wall_opening_with_its_interval():
+    m = _attach_fixture()
+    R.apply_decisions(m, _doc(m, _edit("R6", "L1-102")))
+    sp = m.spaces["L1-102"]
+    o = next(x for x in sp.openings if x.id == "WIN-1")
+    assert o.category == "window" and o.sill_m == 0.9 and o.s_center_m == 2.0
+    assert o.host_interval_m == [1.5, 2.5]  # width 1.0 centred at 2.0 on a 4.0 m wall
+    assert o.needs_review is False
+
+
+def test_opening_attachment_edit_bad_value_changes_nothing():
+    m = _attach_fixture()
+    before = m.to_json()
+    for iid, value, why in [
+        ("R5", "999", "not a space id or room number"),
+        ("R5", "L2-201", "is on level 'L2'"),
+        ("R6", "L1-101", "cannot attach"),  # unreachable: same level, should attach
+    ]:
+        if iid == "R6" and why == "cannot attach":
+            continue
+        with pytest.raises(ValueError, match=why):
+            R.apply_decisions(m, _doc(m, _edit(iid, value)))
+        assert m.to_json() == before
+    # an opening id that is not in the model degrades the item to record-only
+    m2 = _attach_fixture()
+    it = next(x for x in m2.review_queue if x.id == "R5")
+    it.target = {"kind": "bim_opening", "id": "GONE"}
+    R.apply_decisions(m2, _doc(m2, _edit("R5", "L1-101")))
+    assert next(x for x in m2.review_queue if x.id == "R5").needs_review is False
+
+
+def test_opening_attachment_revert_un_attaches():
+    m = _attach_fixture()
+    before = {i.id: R.auto_state(i) for i in m.review_queue}
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-101")))
+    assert next(x for x in m.spaces["L1-101"].openings if x.id == "SK-1")
+    s2 = R.apply_decisions(m, _doc(m, {"id": "R5", "action": "revert"}))
+    assert s2["revert"] == 1
+    assert not any(x.id == "SK-1" for sp in m.spaces.values() for x in sp.openings)
+    assert before["R5"]["status"] == "open"  # the fixture started open
+
+
+def test_opening_attachment_edit_moves_an_opening_between_rooms():
+    m = _attach_fixture()
+    R.apply_decisions(m, _doc(m, _edit("R6", "L1-101")))
+    assert next(x for x in m.spaces["L1-101"].openings if x.id == "WIN-1")
+    R.apply_decisions(m, _doc(m, _edit("R6", "L1-102")))
+    assert not any(
+        x.id == "WIN-1" for sp in m.spaces.values() for x in sp.openings if sp.id == "L1-101"
+    )
+    assert next(x for x in m.spaces["L1-102"].openings if x.id == "WIN-1")
+
+
+def test_opening_attachment_move_recomputes_the_vacated_rooms_daylight():
+    m = _attach_fixture()
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-101")))
+    assert m.spaces["L1-101"].daylight.toplit
+    R.apply_decisions(m, _doc(m, _edit("R5", "L1-102")))
+    assert not m.spaces["L1-101"].daylight.toplit  # vacated room recomputed
+    assert next(x for x in m.spaces["L1-102"].openings if x.id == "SK-1")
+
+
+def test_bim_element_items_stay_record_only():
+    m = _attach_fixture()
+    R.apply_decisions(m, _doc(m, _edit("R2", "whatever the wall reviewer noted")))
+    it = next(x for x in m.review_queue if x.id == "R2")
+    assert it.needs_review is False and it.resolution == "reassign" and it.acknowledged
+    assert not any(
+        o.id == "WIN-1" for sp in m.spaces.values() for o in sp.openings
+    )  # an edit on the wall element notes the element; it attaches nothing
+    rq = next(x for x in m.review_queue if x.id == "R2")
+    assert R.edit_field(m, rq) == ""
