@@ -7,6 +7,8 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 
 ### Added
+
+- `matchline demo` (#753): sample project end to end in one command, printing where the trust report, review report and exports landed and opening the trust report on an interactive terminal. `matchline run` no longer crashes on the seed path (cli Namespace carried no image attribute).
 - Review: an edit on an IFC opening-attachment item now changes the model (#799):
   the opening moves into the room the reviewer types (space id or unique room
   number). A skylight keeps its plan centre, tilt and azimuth and the room's

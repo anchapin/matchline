@@ -192,7 +192,7 @@ jobs:
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=3057  # +5 assignment edits, +5 space merge edits, +7 IFC opening attachment edits (#799)
+          EXPECTED_TEST_COUNT=3060  # +3 demo: demo parser, demo runs the pipeline, demo never opens a browser (#753)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
@@ -207,3 +207,32 @@ jobs:
               exit 1
             fi
           fi
+
+  demo-smoke:
+    # #753: fresh-clone install + matchline demo, the quickstart path
+    name: fresh install + matchline demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package (non-editable, as a fresh user would)
+        run: pip install --no-cache-dir .
+
+      - name: Run matchline demo
+        run: |
+          start=$SECONDS
+          matchline demo --no-open
+          took=$(( SECONDS - start ))
+          echo "demo took ${took}s"
+          test -f matchline-demo/package/trust_report.html
+          test -f matchline-demo/review/review.html
+          test "$took" -lt 300

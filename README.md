@@ -90,15 +90,18 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 
 ## Quickstart
 
+One command, sample project to finished package:
+
 ```bash
-python3 -m pytest tests/ -q        # ~1,860 tests: units, invariants, defect injection, goldens
-matchline validate                 # invariant battery demo  (canonical)
-matchline run --seed 0            # unified pipeline: generate + link + validate + export
-# Legacy wrappers (still work, but matchline CLI is canonical):
-python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
-python3 run_validation.py          # invariant battery demo
-python3 run_bem_export.py          # gbXML + IFC export demos
-python3 run_facade_takeoff.py      # facade takeoffs — needs --data-root
+pip install -e .
+matchline demo                 # ~1 minute: model, gbXML + IFC, review and trust report
+```
+
+The run leaves everything in `matchline-demo/`: the one-page trust report
+(`package/trust_report.html`), the review report of low-confidence calls
+(`review/review.html`), and the gbXML and IFC exports. On a terminal it opens
+the trust report in your browser; pass `--no-open` to skip that. See
+`docs/cli.md` for the full command set.
 
 ## Validation
 
