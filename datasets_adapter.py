@@ -59,7 +59,6 @@ except ImportError:
     cv2 = None  # lazy import below; parse_schedule_table requires it
 import numpy as np
 
-from detector.classes import CLASS_NAMES
 from safe_xml import safe_xml_parse
 
 logger = logging.getLogger(__name__)
@@ -304,6 +303,9 @@ def detections_from_yolo_json(
     dets = []
     for i, p in enumerate(data["preds"]):
         try:
+            # lazy: the detector package is an optional extra (#753 wheel smoke)
+            from detector.classes import CLASS_NAMES
+
             label = CLASS_NAMES[p["cls"]]
         except IndexError:
             raise DetectorOutputValidationError(

@@ -110,6 +110,7 @@ py-modules = [
     "pdf_schedules",
     "pipeline_exceptions",
     "plan_walls",
+    "polygon_classify",
     "real_set",
     "registration",
     "review_report",
@@ -140,7 +141,13 @@ py-modules = [
     "zone_airflow",
     "zone_capacity",
 ]
-packages = ["synth"]
+packages = [
+    "link",
+    "query",
+    "sim",
+    "synth",
+    "validate",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
