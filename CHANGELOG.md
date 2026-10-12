@@ -5,7 +5,7 @@ All notable changes to this project are documented here, in
 `main` is reserved for releases; `develop` is the working branch.
 
 ## [Unreleased]
-
+- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
 ### Added
 
 - Vestibule detection (#747): a room is marked `is_vestibule` when it meets
