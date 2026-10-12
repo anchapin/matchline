@@ -631,7 +631,10 @@ STOREY_ELEVATION_TOL_M = 0.1  # Pascal storey-semantics.ts
 
 def _storey_above_ground(storey):
     """Pset_BuildingStoreyCommon.AboveGround as True/False, or None when the
-    file leaves it absent or UNKNOWN (#634). Never inferred from elevation."""
+    file leaves it absent or UNKNOWN (#634). Never inferred from elevation.
+    Synthesized storey stand-ins (#928) carry no psets and return None."""
+    if isinstance(storey, _SyntheticStorey):
+        return None
     import ifcopenshell.util.element as _El
 
     v = ((_El.get_psets(storey) or {}).get("Pset_BuildingStoreyCommon") or {}).get("AboveGround")
@@ -686,6 +689,60 @@ def _storey_less_elements(f, storeys, classes):
                 continue  # in a space or zone: its own route, not this fallback
             out.append(el)
     return sorted(out, key=lambda e: e.GlobalId)
+
+
+class _SyntheticRelAggregates:
+    """IfcRelAggregates-shaped wrapper so ``_aggregated`` works on a
+    synthesized storey stand-in (#928)."""
+
+    def __init__(self, related):
+        self.RelatedObjects = related
+
+    def is_a(self, name):
+        return name == "IfcRelAggregates"
+
+
+class _SyntheticStorey:
+    """Storey stand-in for files with IfcSpaces but no IfcBuildingStorey (#928).
+
+    Carries only what the import walk reads: GlobalId, Name, Elevation, and
+    the space aggregation. Containment stays empty: elements contained in
+    IfcSite flow through the by-elevation fallback (#585) instead.
+    """
+
+    def __init__(self, index, elevation, spaces):
+        self.GlobalId = f"MATCHLINE-SYN-STORY-{index}"
+        self.Name = f"Level {index} (synthesized)"
+        self.Elevation = elevation
+        self.IsDecomposedBy = [_SyntheticRelAggregates(spaces)]
+        self.ContainsElements = []
+
+
+def _synthesized_storeys(f, scale):
+    """Stand-in storeys for files with no IfcBuildingStorey at all (#928).
+
+    Groups every IfcSpace by placement z, bucketed at
+    STOREY_ELEVATION_TOL_M, and returns one _SyntheticStorey per bucket,
+    lowest first. Spaces without a readable placement land in the z=0
+    bucket. Returns [] when the file has no IfcSpaces, so a truly empty
+    file imports empty exactly as before.
+    """
+    buckets = {}  # bucket key -> [(raw z, IfcSpace)]
+    for sp in f.by_type("IfcSpace"):
+        try:
+            # raw IFC units: the walk applies the length scale itself when
+            # it reads Elevation, so storing scaled meters would double-scale
+            z_raw = _placement_transform(sp, 1.0)[3]
+        except Exception:
+            z_raw = 0.0
+        if z_raw is None:
+            z_raw = 0.0
+        buckets.setdefault(round(z_raw * scale / STOREY_ELEVATION_TOL_M), []).append((z_raw, sp))
+    groups = sorted(buckets.values(), key=lambda g: min(z for z, _ in g))
+    return [
+        _SyntheticStorey(i + 1, min(z for z, _ in g), [sp for _, sp in g])
+        for i, g in enumerate(groups)
+    ]
 
 
 _ROOMNUM = re.compile(r"^[A-Za-z]?\d+[A-Za-z]?$")
@@ -3059,6 +3116,11 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         # degenerate but non-empty file: fall back to a flat scan
         # (by_type returns a tuple, and storeys.sort below needs a list, #748)
         storeys = list(f.by_type("IfcBuildingStorey"))
+    if not storeys:
+        # no storeys anywhere: files like GNI gni-74 aggregate IfcSpaces
+        # directly under IfcSite, so synthesize stand-in storeys from the
+        # space elevations instead of importing nothing (#928)
+        storeys = _synthesized_storeys(f, scale)
 
     def _storey_elevation(s):
         try:

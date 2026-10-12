@@ -962,3 +962,42 @@ def test_flat_scan_fallback_storeys_not_aggregated(tmp_path):
     m = import_ifc(path)
     assert len(m.levels) == 1
     assert m.levels[0].elevation_z_m == pytest.approx(0.0)
+
+
+def test_site_level_spaces_without_storeys(tmp_path):
+    """#928: spaces aggregated under IfcSite with no IfcBuilding/IfcBuildingStorey.
+
+    gni-74 shape: 42 IfcSpaces aggregate directly under IfcSite, walls are
+    contained in IfcSite, and no IfcBuildingStorey exists anywhere. The
+    importer synthesizes stand-in storeys from the space elevations instead
+    of returning an empty model.
+    """
+    path = tmp_path / "site_spaces.ifc"
+    make_ifc_fixture(path)
+    f = ifcopenshell.open(str(path))
+    site = f.by_type("IfcSite")[0]
+    spaces = list(f.by_type("IfcSpace"))
+    walls = list(f.by_type("IfcWall"))
+    storeys = list(f.by_type("IfcBuildingStorey"))
+    assert storeys and spaces and walls
+
+    # move space aggregation and wall containment up to IfcSite, drop storeys
+    for rel in list(f.by_type("IfcRelAggregates")):
+        if rel.RelatingObject.is_a("IfcBuildingStorey"):
+            f.remove(rel)
+    _Ag.assign_object(f, products=spaces, relating_object=site)
+    for rel in list(f.by_type("IfcRelContainedInSpatialStructure")):
+        if rel.RelatingStructure.is_a("IfcBuildingStorey"):
+            f.remove(rel)
+    _Sp.assign_container(f, products=walls, relating_structure=site)
+    for st in storeys:
+        f.remove(st)
+    assert not f.by_type("IfcBuildingStorey")
+    f.write(str(path))
+
+    model = import_ifc(path)
+    assert len(model.levels) == 1
+    assert model.levels[0].name == "Level 1 (synthesized)"
+    assert len(model.spaces) == 4
+    assert len(model.envelope) > 0
+    assert all(sp.level_id == model.levels[0].id for sp in model.spaces.values())
