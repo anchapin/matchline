@@ -5,8 +5,17 @@ All notable changes to this project are documented here, in
 `main` is reserved for releases; `develop` is the working branch.
 
 ## [Unreleased]
-- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
 ### Added
+
+- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
+- Synthetic second-style mech sheets (#744): `generate_mech_sheet(..., style=1)`
+  draws every terminal in the class's other drafting convention (alt glyphs
+  added for VAV, AHU and thermostat; diffuser and grille had theirs) and
+  `legend=True` draws an HVAC symbol legend in a band below the plan, with
+  `gt["legend"]` holding sheet-dict fragments for `hvac_legend.read_legend`.
+  End-to-end tests pin: the drawn legend reads back mapped, templates are cut
+  at the drawn size, legend-template hits are true terminals only, and the
+  ducted-terminal NCC gap stays pinned as the open limitation.
 
 - Vestibule detection (#747): a room is marked `is_vestibule` when it meets
   Alex's rule (2026-10-11): it has an exterior door, its floor area is at or
