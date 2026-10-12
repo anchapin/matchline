@@ -45,8 +45,6 @@ import numpy as np
 
 import link
 from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
-from detector.classes import CLASS_NAMES
-from detector.sahi_infer import infer_sheet
 from link._elevation import facade_from_meta, wall_segments
 from link._schedules import _schedules
 from registration import (
@@ -204,8 +202,12 @@ class YOLOWindowDetectorBackend(WindowDetectorBackend):
 
     def detect(self, image, px_per_m: float, sheet_id: str, revision: int) -> list:
         # image: np.ndarray (H, W) in 0-255 uint8
+        # lazy: the detector package is an optional extra (#753 wheel smoke)
         # Write temp PNG, run infer_sheet, delete temp
         from PIL import Image
+
+        from detector.classes import CLASS_NAMES
+        from detector.sahi_infer import infer_sheet
 
         # Convert grayscale to RGB for YOLO
         if len(image.shape) == 2:

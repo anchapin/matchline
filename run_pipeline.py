@@ -414,9 +414,10 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 file=sys.stderr,
             )
         return model, None, None
-    if args.image:
-        dets = detections_from_yolo_json(args.detections, args.image.stem)
-        schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
+    if getattr(args, "image", None):  # cli Namespace carries no --image (#753)
+        dets = detections_from_yolo_json(getattr(args, "detections", None), args.image.stem)
+        schedule_csv = getattr(args, "schedule_csv", None)
+        schedule = parse_schedule_csv(schedule_csv) if schedule_csv else {}
         # Stage 1b (#668): read schedule tags beside each symbol; no-op without OCR
         from PIL import Image
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
 
@@ -316,6 +317,35 @@ def cmd_ifc_export(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}")
 
 
+def cmd_demo(args: argparse.Namespace) -> None:
+    """One-command demo (#753): sample project in, package with trust report out.
+
+    Runs the same unified pipeline as ``matchline run --seed`` on a fixed
+    sample seed, then points at the finished package: trust report, review
+    report and gbXML/IFC, all in one directory.
+    """
+    import run_pipeline
+
+    out = Path(args.out)
+    run_args = build_parser().parse_args(["run", "--seed", str(args.seed), "--out-dir", str(out)])
+    run_pipeline.main(run_args)
+
+    pkg = out / "package"
+    trust = pkg / "trust_report.html"
+    review = out / "review" / "review.html"
+    exports = sorted(p.name for pat in ("*.xml", "*.ifc") for p in pkg.glob(pat))
+    print()
+    print(f"Demo finished. Everything is in {out}/")
+    print(f"  trust report:  {trust}")
+    print(f"  review report: {review}")
+    print(f"  model files:   {', '.join(exports) if exports else '(none)'}")
+    if not args.no_open and sys.stdout.isatty() and not os.environ.get("CI"):
+        import webbrowser
+
+        webbrowser.open(trust.resolve().as_uri())
+        print("Opened the trust report in your browser.")
+
+
 def cmd_diff(args: argparse.Namespace) -> None:
     """Compare two model revisions and report changed/unchanged zones."""
     import json
@@ -408,6 +438,25 @@ def build_parser() -> argparse.ArgumentParser:
         f"Can also be set via MATCHLINE_CONFIDENCE_THRESHOLD env var.",
     )
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser(
+        "demo",
+        help="sample project end to end: model, gbXML, review and trust report (#753)",
+    )
+    p.add_argument(
+        "--seed", type=int, default=7, help="synthetic seed for the sample set (default: 7)"
+    )
+    p.add_argument(
+        "--out",
+        default="matchline-demo",
+        help="output directory (default: matchline-demo/)",
+    )
+    p.add_argument(
+        "--no-open",
+        action="store_true",
+        help="do not open the trust report in a browser",
+    )
+    p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("bem-export", help="gbXML + IFC4 export demo (synthetic)")
     p.add_argument("--sheet-id", default="sheet_007")

@@ -10,9 +10,11 @@ This document describes the automated gates that run on every PR and push.
 
 **Expected test count:** pinned as `EXPECTED_TEST_COUNT` in the `Check test count` step (see below)
 
+The `demo-smoke` job installs the package non-editable the way a fresh user would and runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753).
+
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (3057), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3060), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**

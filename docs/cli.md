@@ -26,6 +26,22 @@ Validation battery demo using two synthetic buildings (`bldg_3room`, `bldg_open_
 
 ---
 
+## `matchline demo`
+
+The whole pipeline on a bundled sample project, one command (#753):
+
+```bash
+matchline demo                 # fixed sample seed, output in matchline-demo/
+matchline demo --seed 11 --out demo-b/ --no-open
+```
+
+Runs the same stages as `matchline run --seed` (generate, link, validate, review
+and package) and prints where everything landed: `package/trust_report.html`,
+`review/review.html`, and the gbXML and IFC exports in `package/`. On an
+interactive terminal it opens the trust report in a browser unless you pass
+`--no-open`; non-interactive runs (CI) never open anything. Designed to finish
+in under five minutes on a laptop and exercised that way in CI.
+
 ## `matchline run`
 
 Unified pipeline: generate + link + validate + BEM export.
