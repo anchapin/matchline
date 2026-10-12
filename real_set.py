@@ -1675,7 +1675,11 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     (#747 slice 5) onto ``model.semi_exterior``. A boundary an unsettled side
     decides gets a review item; nothing is defaulted. Exports don't read it
     yet."""
-    from semi_exterior import semi_exterior_boundaries, semi_exterior_floor_boundaries
+    from semi_exterior import (
+        semi_exterior_boundaries,
+        semi_exterior_floor_boundaries,
+        vestibule_interior_boundaries,
+    )
 
     if not any(sp.conditioning for sp in model.spaces.values()):
         return
@@ -1683,7 +1687,11 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     # floor/ceiling between levels (#900); walls keep their record order,
     # floor records follow them
     floors = semi_exterior_floor_boundaries(model.spaces, model.levels)
-    model.semi_exterior = recs + floors
+    # 5.5.2 vestibule sentence: interior surfaces of unconditioned
+    # vestibules comply with the semiheated requirements (#747); pairs the
+    # records above already cover are not duplicated
+    vest = vestibule_interior_boundaries(model.spaces)
+    model.semi_exterior = recs + floors + vest
     for r in model.semi_exterior:
         if r["kind"] != "review":
             continue
@@ -1705,9 +1713,10 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
             )
         )
     semi = sum(1 for r in model.semi_exterior if r["kind"] == "semi_exterior")
+    vest = sum(1 for r in model.semi_exterior if r["kind"] == "vestibule")
     report.notes.append(
         f"semi-exterior envelope: {semi} space pair(s) settled, "
-        f"{len(model.semi_exterior) - semi} to review"
+        f"{vest} vestibule sentence, {len(model.semi_exterior) - semi - vest} to review"
     )
 
 

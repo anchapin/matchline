@@ -709,3 +709,105 @@ def test_heated_room_in_the_middle_counts_only_its_own_edge():
     assert s.defaulted["t55-slab"]["heated_perimeter_m"] == pytest.approx(20.0, abs=1e-6)
     want = (fh * 20.0 + fu * 100.0) / 900.0
     assert m.constructions["t55-slab"].u_value_w_m2k == pytest.approx(want, rel=1e-5)
+
+
+# --- 5.5.2 vestibule sentence: unconditioned vestibules' surfaces (#747) ---
+
+
+def _vest_model(conditioning="unconditioned", vestibule=True, stated=None):
+    m = BuildingModel(name="t")
+    m.spaces["V"] = Space(
+        id="V",
+        level_id="L1",
+        name="VESTIBULE",
+        area_m2=10.0,
+        conditioning={"category": conditioning, "reasons": []},
+        is_vestibule=vestibule,
+    )
+    m.spaces["N"] = Space(
+        id="N",
+        level_id="L1",
+        name="STORAGE",
+        conditioning={"category": "unconditioned", "reasons": []},
+    )
+    m.envelope.append(
+        EnvelopeWall(id="wv", facade="south", length_m=8.0, height_m=3.0, space_id="V")
+    )
+    m.envelope.append(
+        EnvelopeWall(id="wn", facade="east", length_m=10.0, height_m=3.0, space_id="N")
+    )
+    if stated:
+        m.constructions[stated] = Construction(id=stated, name="Stated", u_value_w_m2k=1.9)
+        m.envelope[0].construction_id = stated
+    m.semi_exterior = [
+        {
+            "spaces": ["N", "V"],
+            "kind": "vestibule",
+            "plane": "wall",
+            "reason": "x",
+            "length_m": 3.0,
+            "segments": [[[3, 0], [3, 3]]],
+        }
+    ]
+    return m
+
+
+def test_vestibule_exterior_wall_takes_semiheated_row_not_category_row():
+    m = _vest_model()
+    s = apply_construction_library(m, climate_zone="5A")
+    got = m.constructions["t55-vest-wall"]
+    row = lookup("ExteriorWall", "SteelFramed", "5A", "Semiheated")
+    assert got.u_value_w_m2k == pytest.approx(row.u_si)
+    # the vestibule segment points at it; the plain office segment does not
+    assert next(w for w in m.envelope if w.id == "wv").construction_id == "t55-vest-wall"
+    assert next(w for w in m.envelope if w.id == "wn").construction_id == "t55-wall"
+    info = s.defaulted["t55-vest-wall"]
+    assert info["category"] == "Semiheated" and info["table"] == row.table
+    assert info["wall_segments"] == ["wv"]
+
+
+def test_vestibule_interior_record_gets_the_construction():
+    m = _vest_model()
+    s = apply_construction_library(m, climate_zone="5A")
+    assert m.semi_exterior[0]["construction_id"] == "t55-vest-wall"
+    assert s.defaulted["t55-vest-wall"]["space_pairs"] == [["N", "V"]]
+    # provenance cites the vestibule sentence, not the generic semiexterior why
+    assert "vestibule" in m.constructions["t55-vest-wall"].provenance.note
+    assert "5.5.2" in m.constructions["t55-vest-wall"].provenance.note
+
+
+def test_vestibule_stated_construction_never_touched():
+    # the stated value protects the exterior segment; the interior record
+    # still defaults (no stated value on it)
+    m = _vest_model(stated="stated-1")
+    s = apply_construction_library(m, climate_zone="5A")
+    assert m.envelope[0].construction_id == "stated-1"
+    assert m.semi_exterior[0]["construction_id"] == "t55-vest-wall"
+    assert s.defaulted["t55-vest-wall"]["wall_segments"] == []
+    assert s.defaulted["t55-vest-wall"]["space_pairs"] == [["N", "V"]]
+
+
+def test_conditioned_vestibule_not_treated():
+    m = _vest_model(conditioning="conditioned")
+    apply_construction_library(m, climate_zone="5A")
+    assert "t55-vest-wall" not in m.constructions
+    assert m.semi_exterior[0].get("construction_id") in (None, "")
+    # its exterior wall falls to the ordinary unlabeled default
+    assert next(w for w in m.envelope if w.id == "wv").construction_id == "t55-wall"
+
+
+def test_unsettled_vestibule_not_defaulted():
+    m = _vest_model(conditioning="review")
+    apply_construction_library(m, climate_zone="5A")
+    assert "t55-vest-wall" not in m.constructions
+    assert m.semi_exterior[0].get("construction_id") in (None, "")
+    assert next(w for w in m.envelope if w.id == "wv").construction_id == "t55-wall"
+
+
+def test_no_vestibule_no_vest_construction():
+    m = _vest_model(vestibule=False)
+    apply_construction_library(m, climate_zone="5A")
+    assert "t55-vest-wall" not in m.constructions
+    # the vestibule-kind record without a vestibule space is impossible by
+    # construction upstream; nothing defaults here
+    assert m.semi_exterior[0].get("construction_id") in (None, "")
