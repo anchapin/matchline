@@ -90,3 +90,18 @@ def test_error_row_when_arch_ifc_unreadable(tmp_path: Path) -> None:
     # import_ifc rejects it; whatever the failure mode, the harness reports it
     assert row.status in ("error", "missing")
     assert row.detail
+
+
+def test_scoreboard_renders_doors_column() -> None:
+    row = Row(name="with-doors", doors_truth=17, doors_model=17)
+    md = render_scoreboard([row], openstudio=False)
+    assert "| 17 / 17 |" in md
+    assert "doors (t / m)" in md
+
+
+def test_scoreboard_leaves_doors_empty_without_a_count() -> None:
+    row = Row(name="no-doors")
+    md = render_scoreboard([row], openstudio=False)
+    # two adjacent empty cells: no doors, no window area error
+    assert "| no-doors | ok |" in md
+    assert "17" not in md
