@@ -239,6 +239,10 @@ def apply_construction_library(
             "why": why,
         }
     if climate_zone:
+        # before the unlabeled-envelope defaults: a vestibule's exterior
+        # walls take the Semiheated column, not the building category's
+        # (#747, 5.5.2 vestibule sentence)
+        _default_vestibule_envelope(model, s, climate_zone)
         _apply_baseline_defaults(model, s, climate_zone, category)
         _default_semi_exterior(model, s, climate_zone)
         _default_semi_exterior_floor(model, s, climate_zone)
@@ -1075,3 +1079,96 @@ def baseline_envelope(model, climate_zone: str, category: str) -> dict:
                 info["u_si_effective"] = round(row["f_ip"] * F_IP_TO_SI * perim / area, 6)
         out["surfaces"][name] = info
     return out
+
+
+# Unconditioned vestibules (#747). ASHRAE 90.1-2019 5.5.2: "The interior
+# surfaces and exterior surfaces of unconditioned vestibules shall comply
+# with the building envelope requirements for a semiheated space." The
+# vestibule mark is Space.is_vestibule (Alex's rule, #915); whether the
+# vestibule is unconditioned still comes from the Section 3.2 HVAC capacity
+# rules alone, never the name.
+DEFAULT_VEST_WALL_ID = "t55-vest-wall"
+_VEST_WHY = (
+    "unconditioned vestibule envelope (ASHRAE 90.1-2019 5.5.2: interior and exterior "
+    "surfaces of unconditioned vestibules meet the semiheated requirements of "
+    "Table 5.5); no assembly stated, class {ctype}"
+)
+
+
+def _vestibule_unconditioned(model):
+    """Ids of spaces that are both vestibule-marked and settled unconditioned."""
+    out = set()
+    for sid, sp in (getattr(model, "spaces", None) or {}).items():
+        if not getattr(sp, "is_vestibule", False):
+            continue
+        c = getattr(sp, "conditioning", None)
+        if isinstance(c, dict) and c.get("category") == "unconditioned":
+            out.add(sid)
+    return out
+
+
+def _default_vestibule_envelope(model, s: "LibrarySummary", climate_zone: str) -> None:
+    """Give unconditioned vestibules' surfaces the Table 5.5 Semiheated wall (#747).
+
+    Exterior surfaces: envelope wall segments hosted by an unconditioned
+    vestibule with no construction (they would otherwise take the building
+    category's unlabeled default). Interior surfaces: ``kind: "vestibule"``
+    records in ``model.semi_exterior`` with no construction. A stated
+    construction and review-kind records are never touched.
+    """
+    from building_model import Construction
+
+    vids = _vestibule_unconditioned(model)
+    # a record is defaulted only when one of its sides IS a settled
+    # unconditioned vestibule: a stale record whose vestibule side has since
+    # settled conditioned (or lost the mark) keeps no construction
+    recs = [
+        r
+        for r in (getattr(model, "semi_exterior", None) or [])
+        if (
+            r.get("kind") == "vestibule"
+            and not r.get("construction_id")
+            and vids.intersection(r.get("spaces") or [])
+        )
+    ]
+    segs = [
+        w
+        for w in (getattr(model, "envelope", None) or [])
+        if not (getattr(w, "construction_id", "") or "")
+        and (getattr(w, "space_id", "") or "") in vids
+    ]
+    if not recs and not segs:
+        return
+    cid = DEFAULT_VEST_WALL_ID
+    cons = model.constructions
+    have = cons.get(cid)
+    if have is None or not (have.u_value_w_m2k and have.u_value_w_m2k > 0):
+        row = lookup("ExteriorWall", SEMIEXT_CLASS, climate_zone, SEMIEXT_CATEGORY)
+        if row is None or row.u_si is None:
+            s.unmatched[cid] = (
+                f"no Table 5.5 U-value for {SEMIEXT_CATEGORY} ExteriorWall {SEMIEXT_CLASS}"
+            )
+            return
+        why = _VEST_WHY.format(ctype=SEMIEXT_CLASS)
+        cons[cid] = Construction(
+            id=cid,
+            name="Unconditioned vestibule wall, Table 5.5 Semiheated code maximum",
+            u_value_w_m2k=row.u_si,
+            provenance=_prov(row, cid, why, climate_zone),
+        )
+        s.defaulted[cid] = {
+            "surface": "ExteriorWall",
+            "construction_type": SEMIEXT_CLASS,
+            "category": SEMIEXT_CATEGORY,
+            "table": row.table,
+            "u_ip": row.u_ip,
+            "u_si": row.u_si,
+            "why": why,
+        }
+    for r in recs:
+        r["construction_id"] = cid
+    for w in segs:
+        w.construction_id = cid
+    if cid in s.defaulted:
+        s.defaulted[cid]["space_pairs"] = sorted(list(r["spaces"]) for r in recs)
+        s.defaulted[cid]["wall_segments"] = sorted(w.id for w in segs)

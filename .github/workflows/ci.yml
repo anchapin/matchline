@@ -193,9 +193,13 @@ jobs:
       - name: Check test count
         run: |
 <<<<<<< HEAD
+<<<<<<< HEAD
           EXPECTED_TEST_COUNT=3118  # auto: keep in sync with pytest --collect-only (#748/#928)
 =======
           EXPECTED_TEST_COUNT=3118  # +2 IFC2X3 upgrade regression tests (#929)
+>>>>>>> origin/develop
+=======
+          EXPECTED_TEST_COUNT=3131  # +13 5.5.2 vestibule sentence tests (#747)  # +2 IFC2X3 upgrade regression tests (#929)
 >>>>>>> origin/develop
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
