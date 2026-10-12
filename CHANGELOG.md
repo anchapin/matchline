@@ -178,6 +178,7 @@ All notable changes to this project are documented here, in
 Initial public development snapshot on `develop`.
 
 ### Added
+- IFC import: dims fallbacks for real-file geometry the kernel cannot process - closed-profile bbox for `IfcExtrudedAreaSolid` with line-only `IfcIndexedPolyCurve`/`IfcPolyline` outer curves, and vertex bbox for `IfcPolygonalFaceSet`; plus `IfcIndexedPolyCurve`/`IfcPolyline` footprints in `_polyline_footprint` so space and wall extraction survive TUM GNI anonymized exports (#748).
 - WiSARD classifier reproduction (thermometer encoding, empirical-Bayes
   normalization, COM normalization, skeletonization): 94.57% on MNIST.
 - Drawing pipeline: symbol/schedule takeoffs (`count × width × height`), OCR
