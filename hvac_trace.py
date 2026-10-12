@@ -516,7 +516,8 @@ def trace_symbols_to_terminals(
     duct, and a pixel reached from two sources at the same distance is
     contested. A symbol whose nearest skeleton pixel (within ``assoc_px``) is
     uncontested belongs to that source's terminal; anything else -- no duct
-    within reach, a contested pixel, no terminals, no ducts -- is ``None``:
+    within reach, a contested pixel, a run no tagged terminal seeds, no
+    terminals, no ducts -- is ``None``:
     never a guess, the caller keeps it unassigned.
 
     ``dets`` carry raster-px centers (``cx``, ``cy``); ``term_rects_px`` are
@@ -568,7 +569,10 @@ def trace_symbols_to_terminals(
         if contested[py, px]:
             out.append((None, "contested"))
             continue
-        out.append((int(src[py, px]), "duct"))
+        ti = int(src[py, px])
+        # a duct run no tagged terminal unit seeds keeps dist/src at -1; the
+        # negative index would silently resolve to the last zone downstream
+        out.append((ti, "duct") if ti >= 0 else (None, "no_terminal_seed"))
     return out
 
 

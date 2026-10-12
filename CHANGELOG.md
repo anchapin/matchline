@@ -12,10 +12,11 @@ All notable changes to this project are documented here, in
   assigns each legend-referenced terminal to the zone its ductwork feeds
   (#744). Seeds at terminal symbols, walks the skeleton with a shared
   `ASSOC_PX` reach, and labels runs contested when two terminals claim the
-  same skeleton; off-duct terminals stay unassigned. `real_set.py` records
+  same skeleton, and leaves a run no tagged terminal seeds unassigned; off-duct
+  terminals stay unassigned. `real_set.py` records
   `duct` / `duct_ambiguous` stats and notes the zone each terminal feeds
   ("it sits on that zone's ductwork (skeleton trace, ...)"), so ambiguous
-  traces surface as review instead of guesses. Four new trace tests plus a
+  traces surface as review instead of guesses. Five new trace tests plus a
   shared-room duct test in the real-set fixture.
 
 ### Added

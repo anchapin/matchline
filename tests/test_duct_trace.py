@@ -74,3 +74,14 @@ def test_no_terminals_or_no_ducts_assign_nothing():
     assert trace_symbols_to_terminals(lone, [_det(200, 100)], [(20, 80, 60, 120)]) == [
         (None, "no_duct")
     ]
+
+
+def test_a_symbol_on_a_run_no_terminal_seeds_is_never_assigned():
+    def draw(d):
+        d.rectangle([20, 60, 60, 100], fill=0)  # terminal A tag box
+        d.line([60, 80, 300, 80], fill=0, width=LINE_W)  # A's duct east
+        d.line([20, 200, 340, 200], fill=0, width=LINE_W)  # separate run, no tag
+
+    gray = _img(draw)
+    out = trace_symbols_to_terminals(gray, [_det(180, 200), _det(150, 80)], [(20, 60, 60, 100)])
+    assert out == [(None, "no_terminal_seed"), (0, "duct")]
