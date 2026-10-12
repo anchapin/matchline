@@ -944,3 +944,21 @@ def test_face_set_extents_none_without_face_set():
     )
     assert ifc_import._face_set_extents(el, 1.0) is None
     assert ifc_import._face_set_extents(_FakeEnt("IfcWall"), 1.0) is None
+
+
+def test_flat_scan_fallback_storeys_not_aggregated(tmp_path):
+    # #748 regression: some real files carry IfcBuildingStorey entities that are
+    # not aggregated under IfcBuilding, so the spatial walk finds nothing and
+    # import falls back to f.by_type(), which returns a tuple; .sort() needs a list.
+    path = tmp_path / "orphan-storeys.ifc"
+    bem = _bem_fixture()
+    write_ifc4(bem, path)
+    f = ifcopenshell.open(str(path))
+    rels = f.by_type("IfcRelAggregates") or ()
+    for rel in list(rels):
+        if rel.RelatingObject.is_a("IfcBuilding"):
+            f.remove(rel)
+    f.write(str(path))
+    m = import_ifc(path)
+    assert len(m.levels) == 1
+    assert m.levels[0].elevation_z_m == pytest.approx(0.0)
