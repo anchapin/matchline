@@ -1,7 +1,7 @@
 # From-scratch detector training on the self-hosted GPU runner (#743).
 #
 # Dispatch-only: nothing here runs on push/PR. The runner is Alex's Linux PC
-# (label manamind-train). A concurrency group queues runs behind each other,
+# (custom label gpu-train). A concurrency group queues runs behind each other,
 # so at most one job is active and the runner never sees more than the
 # disclosed load. Training data and outputs stay on the runner; only the
 # small metrics files are uploaded as artifacts.
@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   train:
-    runs-on: [self-hosted, manamind-train]
+    runs-on: [self-hosted, gpu-train]
     timeout-minutes: 720
     steps:
       - uses: actions/checkout@v4
