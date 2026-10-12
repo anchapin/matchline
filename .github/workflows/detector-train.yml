@@ -74,9 +74,27 @@ jobs:
             echo "using existing YOLO dataset at $DATA"
           fi
 
+      - name: Ensure ROCm venv
+        run: |
+          VENV="$HOME/workspace/venvs/det-rocm"
+          # runner-system python3 has a broken torch (imports, no torch.nn; seen
+          # in run 38309458858), so training always runs from this venv. The
+          # rocm7.2 wheels are the pins from detector/requirements-detector-rocm.txt
+          # (verified on RX 6600 XT / ROCm 7.2.3). pip caches, so a recreate is
+          # a one-time download.
+          python3 -c "import torch; print('system torch:', torch.__file__)" || true
+          if [ ! -x "$VENV/bin/python" ]; then
+            python3 -m venv "$VENV"
+            "$VENV/bin/pip" install \
+              --index-url https://download.pytorch.org/whl/rocm7.2 \
+              torch==2.14.0+rocm7.2 torchvision==0.29.0+rocm7.2
+            "$VENV/bin/pip" install 'ultralytics>=8.4.155,<8.5' numpy pillow
+          fi
+          "$VENV/bin/python" -c "import torch; print('venv torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
+
       - name: Train
         run: |
-          python3 detector/train_scratch.py \
+          "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
             --imgsz "${{ github.event.inputs.imgsz }}" \
             --epochs "${{ github.event.inputs.epochs }}" \
