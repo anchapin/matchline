@@ -132,7 +132,6 @@ def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
     space pair: ``{"spaces": [a, b], "categories": [..], "kind",
     "reason", "length_m", "segments": [[[x0, y0], [x1, y1]], ...]}``,
     sorted by pair."""
-    from bem_space_split import TOL_M, _poly  # noqa: F401  (geometry lives in _wall_pair_records)
 
     def verdict(a, b):
         kind, reason = boundary_kind(_category(a), _category(b))
