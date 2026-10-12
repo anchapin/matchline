@@ -177,3 +177,57 @@ producing incorrect results. For example:
 
 See `docs/cli.md` for the `--data-root` and `--aec-bench` flags, and each dataset's
 conversion script for the exact expected file layout.
+
+---
+
+## Real-building benchmark (#748)
+
+**Local path:** `~/workspace/datasets/matchline-bench/<building>/`
+
+**Environment variable:** None (path passed via `--config`)
+
+**What it is:** A scoreboard over 3 to 5 licensed commercial buildings, each
+with a ground-truth architectural IFC (IfcSpaces) and, where available, an
+HVAC IFC and a drawing-set PDF. `scripts/benchmark.py` runs the IFC path, the
+HVAC-terminal check and the cross-frontend comparison per building and writes
+`scoreboard.md` plus raw JSON. Data is never committed; a building whose IFC
+is not on disk shows as `missing`.
+
+**Candidates (evaluation only unless noted):**
+
+- buildingSMART sample projects, <https://github.com/buildingSMART/Sample-Test-Files>
+  (CC BY-NC or project-specific; check each file's license before use)
+- BSI ISO 16739 sample IFCs (the Clinic A and B architectural/HVAC files used
+  by the Clinic gate, same terms)
+- AEC-Bench 15-sheet release, <http://aec-bench.github.io/> (CC BY-NC,
+  evaluation only; see the AEC-Bench section above)
+
+**Setup:**
+
+```bash
+mkdir -p ~/workspace/datasets/matchline-bench/
+# one directory per building, containing:
+#   arch.ifc        ground-truth architectural IFC with IfcSpaces
+#   hvac.ifc        optional HVAC IFC (terminals)
+#   drawings.pdf    optional drawing set for the cross-frontend check
+```
+
+**Config format** (passed to `--config`; relative paths resolve against the
+config file):
+
+```json
+{
+  "buildings": [
+    {
+      "name": "example-clinic",
+      "source_url": "https://...",
+      "license": "CC BY-NC 4.0 (evaluation only)",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/example-clinic/arch.ifc",
+      "hvac_ifc": "~/workspace/datasets/matchline-bench/example-clinic/hvac.ifc",
+      "drawing_set": null
+    }
+  ]
+}
+```
+
+Run: `python scripts/benchmark.py --config benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`

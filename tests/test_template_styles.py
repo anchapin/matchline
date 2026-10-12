@@ -26,9 +26,11 @@ DIAG = M.render_template("grille", margin_px=0, stubs=False)
 def test_render_template_style_draws_other_glyph():
     assert HATCHED.shape == DIAG.shape
     assert not np.array_equal(HATCHED, DIAG)
-    # A class with no alternative falls back to its own glyph.
+    # A class with no alternative for the requested style falls back to its
+    # own glyph (style 1 now gives the sensor a square-with-T glyph, so an
+    # unstyled style value exercises the fallback instead).
     assert np.array_equal(
-        M.render_template("sensor", style=1), M.render_template("sensor", style=0)
+        M.render_template("sensor", style=2), M.render_template("sensor", style=0)
     )
 
 
