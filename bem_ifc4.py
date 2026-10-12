@@ -375,6 +375,52 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                 if _write_opening_thermal(f, fill, model, u):
                     opening_thermal.append(u.tag)
 
+    # --- semi-exterior and vestibule interior walls (#747) ------------------
+    # gbXML carries these as InteriorWall surfaces pointing at the resolved
+    # construction; the IFC4 file carries them the same way: one IfcWall per
+    # settled record segment per pair, with Pset_WallCommon (Reference, U,
+    # IsExternal False). Segments arrive y-north from semi_exterior_walls.
+    for cid, info in sorted((getattr(model, "interior_wall_constructions", None) or {}).items()):
+        for geo in info.get("geometry") or []:
+            a, b = geo["pair"]
+            i_storey, i_pl = storey_for(a)
+            for i, (p0, p1) in enumerate(geo["segments"]):
+                dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+                L = math.hypot(dx, dy)
+                if L < 1e-6:
+                    continue
+                wall = _R.create_entity(
+                    f, ifc_class="IfcWall", name=f"InteriorWall-{a}-{b}-{i + 1}"
+                )
+                wall.ObjectPlacement = placement(
+                    (p0[0], p0[1], 0.0), ref_dir=(dx / L, dy / L, 0.0), parent=i_pl
+                )
+                rep = _Gm.add_wall_representation(
+                    f,
+                    context=body,
+                    length=L,
+                    height=h,
+                    thickness=wall_thickness_m,
+                    offset=-wall_thickness_m / 2.0,
+                )
+                _Gm.assign_representation(f, product=wall, representation=rep)
+                _Sp.assign_container(f, products=[wall], relating_structure=i_storey)
+                try:
+                    import ifcopenshell.api.pset as _Ps
+
+                    pset = _Ps.add_pset(f, product=wall, name="Pset_WallCommon")
+                    _Ps.edit_pset(
+                        f,
+                        pset=pset,
+                        properties={
+                            "Reference": cid,
+                            "ThermalTransmittance": float(info["u"]),
+                            "IsExternal": False,
+                        },
+                    )
+                except (AttributeError, TypeError, ValueError, RuntimeError):
+                    pass  # thermal property is enrichment, not core validity
+
     # --- ground slab -------------------------------------------------------
     # Written only when the model knows its U (Pset_SlabCommon), so files
     # without one are unchanged. BASESLAB under the footprint, top at z=0.

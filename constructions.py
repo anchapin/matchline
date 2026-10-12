@@ -147,6 +147,15 @@ def semi_exterior_walls(model) -> Dict[str, dict]:
             continue
         info = out.setdefault(cid, {"name": c.name or cid, "u": float(u), "pairs": []})
         info["pairs"].append(sorted(r["spaces"]))
+        info.setdefault("geometry", []).append(
+            {
+                "pair": sorted(r["spaces"]),
+                # y-north for the IFC4 writer; the source records are y-down
+                "segments": [
+                    [(float(x), -float(y)) for x, y in seg] for seg in r.get("segments") or []
+                ],
+            }
+        )
     for info in out.values():
         info["pairs"].sort()
     return out
