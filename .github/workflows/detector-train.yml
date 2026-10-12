@@ -15,6 +15,10 @@ on:
         description: YOLO data dir (from convert_synth.py)
         required: true
         default: /home/alex/workspace/datasets/detector_yolo/synth
+      sheets:
+        description: synth sheets to generate when no YOLO dataset exists
+        required: true
+        default: "200"
       imgsz:
         description: input size (multiple of 8)
         required: true
@@ -53,6 +57,22 @@ jobs:
 
       - name: Show GPU
         run: rocm-smi || true
+
+      - name: Prepare synth dataset
+        run: |
+          DATA="${{ github.event.inputs.data }}"
+          if [ ! -f "$DATA/data.yaml" ]; then
+            RAW="$DATA/raw"
+            echo "no YOLO dataset at $DATA, generating synthetic data first"
+            python3 -m synth.make_dataset \
+              --sheets 200 --crops-per-class 200 --seed "${{ github.event.inputs.seed }}" \
+              --out "$RAW"
+            python3 -m detector.convert_synth \
+              --in "$RAW/sheets" --out "$DATA" \
+              --seed "${{ github.event.inputs.seed }}" --include-empty
+          else
+            echo "using existing YOLO dataset at $DATA"
+          fi
 
       - name: Train
         run: |
