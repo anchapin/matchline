@@ -390,8 +390,84 @@ def _arc_at_line_break():
     return np.asarray(img), (150, 150 + r / 2), r
 
 
+def _shared_stub_doors(wpx=2, gap=3):
+    """Two doors back to back in one ``wpx`` px partition, sharing a short
+    stub between them (#875).
+
+    Door 1 swings up: its hinge sits on the stub between the doors, its far
+    jamb T-bones into a long cross wall, and the second door's arc runs right
+    beside the stub, so the wall behind the hinge shifts band centre row by
+    row and the fixed probe lands past the stub. Door 2 swings down, hinged
+    on the wall below. Returns the image, both fixture centres, both opening
+    widths and the openings as (a, b) in pixels.
+    """
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, r = 150, 43
+    # long cross wall door 1's far jamb T-bones into
+    d.rectangle([0, 45, 399, 51], fill=0)
+    # the partition both doors hang in, openings carved out
+    d.rectangle([x - wpx // 2, 20, x + (wpx - 1) // 2, 380], fill=0)
+    h = max(3, wpx // 2 + 1)
+    top2 = 93 + gap + 1
+    y2 = top2 + 41
+    d.rectangle([x - h, 52, x + h, 93], fill=255)  # door 1's opening
+    d.rectangle([x - h, top2, x + h, y2], fill=255)  # stub 94..93+gap, then door 2's
+    # door 1: hinge (x, 94) on the stub, leaf west, arc up to the cross wall
+    d.line([x, 94, x - r, 94], fill=0, width=3)
+    d.arc([x - r, 94 - r, x + r, 94 + r], start=180, end=270, fill=0, width=2)
+    # door 2: hinge (x, y2) on the wall below, leaf west, arc up to the stub
+    d.line([x, y2, x - r, y2], fill=0, width=3)
+    d.arc([x - r, y2 - r, x + r, y2 + r], start=180, end=270, fill=0, width=2)
+    return (
+        np.asarray(img),
+        [(x, (52 + 93) / 2), (x, (top2 + y2) / 2)],
+        [93 - 52, y2 - top2],
+        [((x, 52), (x, 93)), ((x, top2), (x, y2))],
+    )
+
+
 def _orient_seg(img, seg, k, flip):
     return tuple(_orient(img, q, k, flip)[1] for q in seg)
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("wpx", [2, 20])
+def test_two_doors_sharing_a_stub_are_both_found(k, flip, wpx):
+    img0, centres, widths, segs = _shared_stub_doors(wpx, gap=7)
+    img, _ = _orient(img0, centres[0], k, flip)
+    ops = [_orient_seg(img0, seg, k, flip) for seg in segs]
+    dets = detect_door_swings(img, PPM, openings_px=ops)
+    assert len(dets) == 2
+    got = sorted((_orient(img0, c, k, flip)[1] for c in centres))
+    hits = []
+    for cx, cy in got:
+        hits.append(any(np.hypot(d["x_px"] - cx, d["y_px"] - cy) <= 3 for d in dets))
+    assert all(hits)
+
+
+def test_shared_stub_door_needs_a_vector_opening_when_thin():
+    img, centres, _, _ = _shared_stub_doors(2, gap=7)
+    assert detect_door_swings(img, PPM) == []
+    assert detect_door_swings(img, PPM, openings_px=[]) == []
+
+
+def test_leaf_stroke_over_stub_does_not_invent_a_hinge():
+    """A stub as tall as the leaf's own stroke is read as one band running to
+    the run's tail; it must not hang the door on the band's far edge."""
+    img, centres, _, _ = _shared_stub_doors(20)
+    dets = detect_door_swings(img, PPM)
+    assert len(dets) == 1
+    assert np.hypot(dets[0]["hinge_px"][0] - 150, dets[0]["hinge_px"][1] - 138) <= 3
+
+
+def test_thick_wall_shared_stub_needs_no_vector_opening():
+    img, centres, _, _ = _shared_stub_doors(20, gap=7)
+    dets = detect_door_swings(img, PPM)
+    assert len(dets) == 2
+    for cx, cy in centres:
+        assert any(np.hypot(d["x_px"] - cx, d["y_px"] - cy) <= 3 for d in dets)
 
 
 @pytest.mark.parametrize("flip", [False, True])

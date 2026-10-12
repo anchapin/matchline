@@ -340,6 +340,11 @@ class Space:
     # polygon_classify confidence for poly_type; None when the space was not
     # classified (e.g. IFC import, where IfcSpace says what it is)
     poly_type_confidence: Optional[float] = None
+    # Alex's vestibule rule (#747, 2026-10-11): True when the space meets his
+    # rule - exterior door, small floor area, connects to a lobby or main
+    # entrance. Detection never reclassifies the space; conditioning still
+    # comes from the HVAC capacity rules alone.
+    is_vestibule: bool = False
     # roadmap item 6: area-weighted exterior wall U-value over this space's
     # envelope segments, sum(U_i * A_i) / sum(A_i), written by
     # constructions.apply_wall_u_rollup. None until the rollup runs or when

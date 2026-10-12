@@ -8,6 +8,49 @@ All notable changes to this project are documented here, in
 
 ### Added
 
+- `hvac_trace.trace_symbols_to_terminals`: multi-source duct skeleton trace that
+  assigns each legend-referenced terminal to the zone its ductwork feeds
+  (#744). Seeds at terminal symbols, walks the skeleton with a shared
+  `ASSOC_PX` reach, and labels runs contested when two terminals claim the
+  same skeleton, and leaves a run no tagged terminal seeds unassigned; off-duct
+  terminals stay unassigned. `real_set.py` records
+  `duct` / `duct_ambiguous` stats and notes the zone each terminal feeds
+  ("it sits on that zone's ductwork (skeleton trace, ...)"), so ambiguous
+  traces surface as review instead of guesses. Five new trace tests plus a
+  shared-room duct test in the real-set fixture.
+
+### Added
+
+- `detector/train_scratch.py`: from-scratch YOLO-style single-shot detector
+  trainer for the synth track (#743). Grayscale letterbox input, stride-8 grid,
+  per-cell class + objectness + CIoU box losses, cell-relative box targets,
+  class-agnostic NMS decode, IoU-matched per-class evaluation, deterministic
+  seeded training. License-clean: custom PyTorch only, no ultralytics weights
+  or code paths in shipped artifacts. Outputs (ckpt.pt, metrics.json) are
+  written to a caller-set run directory, never the repo. 6 tests in
+  `detector/tests/test_train_scratch.py` (CI runs lint-only on detector code
+  by policy; suite verified locally).
+### Added
+
+- `detector/convert_synth.py`: synth gt.json -> Ultralytics YOLO converter (#743): maps sheet symbols through the unified taxonomy (AEC_MAP), clips and normalizes boxes, deterministic seeded train/val split, `data.yaml` output.
+- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
+- Synthetic second-style mech sheets (#744): `generate_mech_sheet(..., style=1)`
+  draws every terminal in the class's other drafting convention (alt glyphs
+  added for VAV, AHU and thermostat; diffuser and grille had theirs) and
+  `legend=True` draws an HVAC symbol legend in a band below the plan, with
+  `gt["legend"]` holding sheet-dict fragments for `hvac_legend.read_legend`.
+  End-to-end tests pin: the drawn legend reads back mapped, templates are cut
+  at the drawn size, legend-template hits are true terminals only, and the
+  ducted-terminal NCC gap stays pinned as the open limitation.
+
+- Vestibule detection (#747): a room is marked `is_vestibule` when it meets
+  Alex's rule (2026-10-11): it has an exterior door, its floor area is at or
+  under 15 sq m (Fo's default, flagged for Alex), and it connects to a lobby or
+  main entrance (a neighboring room named LOBBY / RECEPTION / ENTRY / FOYER /
+  WAITING, or the door's far side). Detection never reclassifies a space; the
+  Section 3.2 category still comes from the HVAC capacity rules alone. Every
+  call and the default threshold go to review.
+
 - `matchline demo` (#753): sample project end to end in one command, printing where the trust report, review report and exports landed and opening the trust report on an interactive terminal. `matchline run` no longer crashes on the seed path (cli Namespace carried no image attribute).
 - Review: an edit on an IFC opening-attachment item now changes the model (#799):
   the opening moves into the room the reviewer types (space id or unique room
@@ -161,6 +204,7 @@ All notable changes to this project are documented here, in
 Initial public development snapshot on `develop`.
 
 ### Added
+- IFC import: dims fallbacks for real-file geometry the kernel cannot process - closed-profile bbox for `IfcExtrudedAreaSolid` with line-only `IfcIndexedPolyCurve`/`IfcPolyline` outer curves, and vertex bbox for `IfcPolygonalFaceSet`; plus `IfcIndexedPolyCurve`/`IfcPolyline` footprints in `_polyline_footprint` so space and wall extraction survive TUM GNI anonymized exports (#748).
 - WiSARD classifier reproduction (thermometer encoding, empirical-Bayes
   normalization, COM normalization, skeletonization): 94.57% on MNIST.
 - Drawing pipeline: symbol/schedule takeoffs (`count × width × height`), OCR

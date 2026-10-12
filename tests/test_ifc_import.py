@@ -37,6 +37,8 @@ import ifcopenshell.api.geometry as _Gm  # noqa: E402
 import ifcopenshell.api.spatial as _Sp  # noqa: E402
 import ifcopenshell.guid as _guid  # noqa: E402
 
+import ifc_import  # noqa: E402
+
 H = 3.0  # wall height used by the fixture
 
 
@@ -858,3 +860,87 @@ def test_adjacent_space_id_round_trips():
     )
     back = BuildingModel.from_dict(m.to_dict())
     assert back.spaces["R-1"].openings[0].adjacent_space_id == "R-2"
+
+
+# ---------------------------------------------------------------------------
+# Tier 0 dims fallbacks for non-kernel-safe geometry (#748 real files)
+# ---------------------------------------------------------------------------
+
+
+class _FakeEnt:
+    """Minimal stand-in for an ifcopenshell entity in pure-python helpers."""
+
+    def __init__(self, kind, **kw):
+        self._kind = kind
+        self.__dict__.update(kw)
+
+    def is_a(self, name=None):
+        return self._kind == name if name else self._kind
+
+
+def _line_curve(coord_list):
+    pts = _FakeEnt("IfcCartesianPointList2D", CoordList=coord_list)
+    return _FakeEnt("IfcIndexedPolyCurve", Segments=None, Points=pts)
+
+
+def _closed_profile_solid(coord_list, depth):
+    area = _FakeEnt("IfcArbitraryClosedProfileDef", OuterCurve=_line_curve(coord_list))
+    return _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=depth)
+
+
+def test_profile_bbox_dims_line_only_curve_mm():
+    solid = _closed_profile_solid(
+        [(0.0, 0.0), (6000.0, 0.0), (6000.0, 240.0), (0.0, 240.0), (0.0, 0.0)],
+        depth=3000.0,
+    )
+    dims = ifc_import._profile_bbox_dims(solid, 0.001)
+    assert dims == (6.0, 0.24, 3.0)
+
+
+def test_profile_bbox_dims_none_on_arc_segment():
+    curve = _line_curve([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)])
+    curve.Segments = [_FakeEnt("IfcArcIndex")]
+    area = _FakeEnt("IfcArbitraryClosedProfileDef", OuterCurve=curve)
+    solid = _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=2.7)
+    assert ifc_import._profile_bbox_dims(solid, 1.0) is None
+
+
+def test_profile_bbox_dims_none_on_rectangle_profile():
+    area = _FakeEnt("IfcRectangleProfileDef", XDim=6.0, YDim=0.24)
+    solid = _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=3.0)
+    assert ifc_import._profile_bbox_dims(solid, 1.0) is None
+
+
+def test_face_set_extents_vertex_bbox_mm():
+    face_set = _FakeEnt(
+        "IfcPolygonalFaceSet",
+        Coordinates=_FakeEnt(
+            "IfcCartesianPointList3D", CoordList=[(0.0, 0.0, 0.0), (4000.0, 200.0, 2700.0)]
+        ),
+    )
+    item = _FakeEnt("IfcPolygonalFaceSetWrapper")  # unused decoy in another rep
+    other = _FakeEnt("IfcExtrudedAreaSolid")
+    el = _FakeEnt(
+        "IfcWall",
+        Representation=_FakeEnt(
+            "IfcProductDefinitionShape",
+            Representations=[
+                _FakeEnt("IfcShapeRepresentation", Items=[other]),
+                _FakeEnt("IfcShapeRepresentation", Items=[face_set, item]),
+            ],
+        ),
+    )
+    assert ifc_import._face_set_extents(el, 0.001) == (4.0, 0.2, 2.7)
+
+
+def test_face_set_extents_none_without_face_set():
+    other = _FakeEnt("IfcExtrudedAreaSolid")
+    el = _FakeEnt(
+        "IfcWall",
+        Representation=_FakeEnt(
+            "IfcProductDefinitionShape",
+            Representations=[_FakeEnt("IfcShapeRepresentation", Items=[other])],
+        ),
+    )
+    assert ifc_import._face_set_extents(el, 1.0) is None
+    assert ifc_import._face_set_extents(_FakeEnt("IfcWall"), 1.0) is None
