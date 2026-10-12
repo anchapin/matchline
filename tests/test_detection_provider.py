@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -426,3 +427,74 @@ def test_door_swing_provider_takes_a_thin_wall_door_on_a_wall_opening(tmp_path):
     assert dp.opening_segments(None) == []
     dets = dp.DoorSwingProvider().detect(png, "s", px_per_m=50.0, plan=plan)
     assert len(dets) == 1 and dets[0].label == "door"
+
+
+SCRATCH_CKPT = "/home/alex/workspace/datasets/detector_runs/scratch-synth-38319984460/ckpt.pt"
+
+
+def test_scratch_provider_is_chosen_by_config():
+    p = dp.provider_from_config({"provider": "scratch", "weights": SCRATCH_CKPT})
+    assert isinstance(p, dp.ScratchProvider)
+    # synthetic-only training data, BSD-3-Clause: the first detector weights that may ship
+    assert p.info.license_class == "permissive" and not p.info.eval_only
+    cfg = Path("scratch_det.json")
+    cfg.write_text(json.dumps({"provider": "scratch", "weights": SCRATCH_CKPT}))
+    try:
+        assert isinstance(dp.provider_from_config(cfg), dp.ScratchProvider)
+    finally:
+        cfg.unlink()
+
+
+def test_scratch_provider_needs_weights():
+    with pytest.raises(dp.ProviderConfigError, match="needs weights"):
+        dp.provider_from_config({"provider": "scratch"})
+
+
+def test_scratch_provider_detect_maps_decode_rows_to_detections(tmp_path):
+    pytest.importorskip("torch")
+    import torch
+
+    img = tmp_path / "sheet_001.png"
+    Image.new("L", (200, 200), 255).save(img)  # square: scale 0.32, dx = dy = 0
+
+    p = dp.ScratchProvider(weights="unused.pt")
+    # stub the network: decode these raw head channels to one door in cell (4, 4)
+    preds = torch.zeros(1, 7, 8, 8)
+    preds[0, 0, 4, 4] = 4.0  # door class logit
+    preds[0, 2, 4, 4] = 4.0  # objectness logit
+    preds[0, 3:7, 4, 4] = torch.tensor([0.0, 0.0, 0.05, 0.1])  # tx, ty, w, h
+    p._net = lambda x: preds
+    p._cfg = {"num_classes": 2, "imgsz": 64, "names": ["door", "window"]}
+    p._torch = torch
+
+    dets = p.detect(img, "sheet_001")
+    assert len(dets) == 1
+    d = dets[0]
+    assert d.label == "door" and d.source == "sheet_001"
+    assert d.score == pytest.approx(0.964, abs=1e-3)
+    assert d.bbox == pytest.approx((107.5, 102.5, 117.5, 122.5), abs=1e-6)
+
+
+def test_scratch_provider_loads_a_real_checkpoint(tmp_path):
+    pytest.importorskip("torch")
+    import torch
+
+    sys.path.append(str(Path(__file__).parent))
+    from detector.train_scratch import ScratchNet
+
+    model = ScratchNet(num_classes=2, width=4, imgsz=64)
+    ckpt = tmp_path / "ckpt.pt"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "config": {"num_classes": 2, "width": 4, "imgsz": 64, "names": ["door", "window"]},
+        },
+        ckpt,
+    )
+    img = tmp_path / "sheet_001.png"
+    Image.new("L", (200, 200), 255).save(img)
+
+    p = dp.ScratchProvider(weights=str(ckpt))
+    dets = p.detect(img, "sheet_001")
+    assert isinstance(dets, list)
+    assert all(d.source == "sheet_001" and d.label in ("door", "window") for d in dets)
