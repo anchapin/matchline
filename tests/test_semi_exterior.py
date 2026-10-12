@@ -15,6 +15,7 @@ from semi_exterior import (  # noqa: E402
     boundary_kind,
     semi_exterior_boundaries,
     semi_exterior_floor_boundaries,
+    vestibule_interior_boundaries,
 )
 
 
@@ -113,7 +114,9 @@ def test_real_set_writes_records_and_review_items():
     ]
     assert [i.id for i in review] == ["rq-semi-exterior-S1-S2"]
     assert review[0].kind == "semi_exterior_envelope" and review[0].needs_review
-    assert report.notes == ["semi-exterior envelope: 1 space pair(s) settled, 1 to review"]
+    assert report.notes == [
+        "semi-exterior envelope: 1 space pair(s) settled, 0 vestibule sentence, 1 to review"
+    ]
 
 
 def test_real_set_skips_when_nothing_classified():
@@ -202,7 +205,9 @@ def test_real_set_records_walls_then_floors():
     assert m.semi_exterior[0]["spaces"] == ["A", "B"]
     assert m.semi_exterior[1]["spaces"] == ["A", "C"]
     assert review == []
-    assert report.notes == ["semi-exterior envelope: 2 space pair(s) settled, 0 to review"]
+    assert report.notes == [
+        "semi-exterior envelope: 2 space pair(s) settled, 0 vestibule sentence, 0 to review"
+    ]
 
 
 def test_real_set_floor_and_wall_records_keep_distinct_review_ids():
@@ -225,7 +230,9 @@ def test_real_set_floor_and_wall_records_keep_distinct_review_ids():
         "rq-semi-exterior-S2-S3",
         "rq-semi-exterior-floor-S1-S3",
     ]
-    assert report.notes == ["semi-exterior envelope: 1 space pair(s) settled, 2 to review"]
+    assert report.notes == [
+        "semi-exterior envelope: 1 space pair(s) settled, 0 vestibule sentence, 2 to review"
+    ]
 
 
 def test_construction_stage_skips_floor_records():
@@ -259,3 +266,82 @@ def test_default_semi_exterior_wall_leaves_floor_records_alone():
     _default_semi_exterior(m, summary, "5A")
     assert m.semi_exterior[0].get("construction_id") is None
     assert summary.defaulted == {}
+
+
+# --- 5.5.2 vestibule sentence: interior surfaces of unconditioned vestibules (#747) ---
+
+
+def _sp2(sid, x0, x1, cat=None, vest=False):
+    return Space(
+        id=sid,
+        level_id="L1",
+        polygon_m=[[x0, 0.0], [x1, 0.0], [x1, 10.0], [x0, 10.0]],
+        conditioning=None if cat is None else {"category": cat, "reasons": []},
+        is_vestibule=vest,
+    )
+
+
+def _vest_row(*specs):
+    """specs: (cat or None, is_vestibule) per 5 m space."""
+    out = {}
+    for i, (cat, vest) in enumerate(specs):
+        out[f"S{i}"] = _sp2(f"S{i}", 5.0 * i, 5.0 * (i + 1), cat, vest)
+    return out
+
+
+def test_vestibule_against_unconditioned_gets_vestibule_record():
+    recs = vestibule_interior_boundaries(
+        _vest_row(("unconditioned", True), ("unconditioned", False))
+    )
+    assert len(recs) == 1
+    r = recs[0]
+    assert r["spaces"] == ["S0", "S1"] and r["kind"] == "vestibule"
+    assert r["plane"] == "wall" and r["length_m"] == pytest.approx(10.0)
+    assert "5.5.2" in r["reason"]
+
+
+def test_vestibule_against_conditioned_not_duplicated():
+    # conditioned pair is already a semi-exterior record; the vestibule
+    # machinery must not add a second record for the same pair
+    spaces = _vest_row(("unconditioned", True), ("conditioned", False))
+    assert vestibule_interior_boundaries(spaces) == []
+    recs = semi_exterior_boundaries(spaces)
+    assert len(recs) == 1 and recs[0]["kind"] == "semi_exterior"
+
+
+def test_vestibule_against_unsettled_neighbor_stays_review_only():
+    # unsettled neighbor: the ordinary machinery already reports review;
+    # the vestibule machinery adds nothing
+    for other in ("review", None):
+        spaces = _vest_row(("unconditioned", True), (other, False))
+        assert vestibule_interior_boundaries(spaces) == []
+        recs = semi_exterior_boundaries(spaces)
+        assert len(recs) == 1 and recs[0]["kind"] == "review"
+
+
+def test_vestibule_side_must_be_settled_unconditioned():
+    # a conditioned or unsettled vestibule gets no vestibule record
+    assert (
+        vestibule_interior_boundaries(_vest_row(("conditioned", True), ("unconditioned", False)))
+        == []
+    )
+    assert vestibule_interior_boundaries(_vest_row((None, True), ("unconditioned", False))) == []
+    assert (
+        vestibule_interior_boundaries(_vest_row(("unconditioned", False), ("unconditioned", False)))
+        == []
+    )
+
+
+def test_vestibule_against_vestibule_one_record():
+    recs = vestibule_interior_boundaries(
+        _vest_row(("unconditioned", True), ("unconditioned", True))
+    )
+    assert len(recs) == 1 and recs[0]["kind"] == "vestibule"
+
+
+def test_semiheated_against_unconditioned_without_vestibule_unreported():
+    # unchanged from slice 5: no vestibule mark, no record
+    assert (
+        vestibule_interior_boundaries(_vest_row(("semiheated", False), ("unconditioned", False)))
+        == []
+    )
