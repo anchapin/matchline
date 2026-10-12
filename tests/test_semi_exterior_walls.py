@@ -20,6 +20,7 @@ from construction_library import (
     LibrarySummary,
     _default_semi_exterior,
     apply_construction_library,
+    lookup,
 )
 from construction_library_data import CONSTRUCTION_LIBRARY
 from constructions import semi_exterior_walls
@@ -210,3 +211,47 @@ def test_pieces_of_a_split_room_match_through_their_parent(tmp_path):
         ("sp-1", "sp-2-a"): DEFAULT_SEMIEXT_WALL_ID,
         ("sp-2-a", "sp-3"): "const-intwall",
     }
+
+
+def test_vestibule_records_export_their_construction(tmp_path):
+    from construction_library import DEFAULT_VEST_WALL_ID
+
+    m = _model(_rec("S1", "S2", kind="vestibule", reason="5.5.2 vestibule sentence"))
+    # the record defaults only when a side IS a settled unconditioned vestibule
+    m.spaces["S1"].conditioning = {"category": "unconditioned", "reasons": []}
+    m.spaces["S1"].is_vestibule = True
+    s = apply_construction_library(m, "4A", "Nonresidential")
+    assert m.semi_exterior[0]["construction_id"] == DEFAULT_VEST_WALL_ID
+    # the export stage feeds semi_exterior_walls() into interior_wall_constructions
+    iwc = semi_exterior_walls(m)
+    assert set(iwc) == {DEFAULT_VEST_WALL_ID}
+    # BEM space ids here are sp-*, so remap the pair the way the pipeline's
+    # space id mapping does before the export
+    iwc = {
+        DEFAULT_VEST_WALL_ID: {
+            "name": iwc[DEFAULT_VEST_WALL_ID]["name"],
+            "u": iwc[DEFAULT_VEST_WALL_ID]["u"],
+            "pairs": [["sp-1", "sp-2"]],
+        }
+    }
+    model = BEMModel(
+        building_name="Three rooms",
+        spaces=_bem([]).spaces,
+        openings=[],
+        ring_m=list(RING),
+        wall_height_m=3.0,
+        area_delta_pct=0.0,
+        simplify_tolerance=2.0,
+        interior_wall_constructions=iwc,
+    )
+    root = _write(tmp_path, model)
+    assert _int_refs(root) == {
+        ("sp-1", "sp-2"): DEFAULT_VEST_WALL_ID,
+        ("sp-2", "sp-3"): "const-intwall",
+    }
+    co = root.find(f"g:Construction[@id='{DEFAULT_VEST_WALL_ID}']", NS)
+    assert co is not None
+    assert float(co.find("g:U-value", NS).text) == pytest.approx(
+        lookup("ExteriorWall", "SteelFramed", "4A", "Semiheated").u_si, rel=1e-5
+    )
+    assert s.defaulted[DEFAULT_VEST_WALL_ID]["space_pairs"] == [["S1", "S2"]]

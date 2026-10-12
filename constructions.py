@@ -129,8 +129,9 @@ def semi_exterior_walls(model) -> Dict[str, dict]:
 
     construction id -> {"name", "u", "pairs": [[space a, space b], ...]} for
     settled ``model.semi_exterior`` records that name a construction with a
-    usable U. Review boundaries and records with no construction are left
-    out, so those walls keep the partition.
+    usable U: ``kind: "semi_exterior"``, and ``kind: "vestibule"`` records
+    (5.5.2 vestibule sentence) the same way. Review boundaries and records
+    with no construction are left out, so those walls keep the partition.
     """
     cons = getattr(model, "constructions", None) or {}
     out: Dict[str, dict] = {}
@@ -138,7 +139,7 @@ def semi_exterior_walls(model) -> Dict[str, dict]:
         if r.get("plane", "wall") != "wall":  # floor/ceiling records (#900)
             continue
         cid = r.get("construction_id") or ""
-        if r.get("kind") != "semi_exterior" or not cid:
+        if r.get("kind") not in ("semi_exterior", "vestibule") or not cid:
             continue
         c = cons.get(cid)
         u = getattr(c, "u_value_w_m2k", None)
@@ -165,7 +166,7 @@ def semi_exterior_floors(model) -> Dict[str, dict]:
         if r.get("plane") != "floor":
             continue
         cid = r.get("construction_id") or ""
-        if r.get("kind") != "semi_exterior" or not cid:
+        if r.get("kind") not in ("semi_exterior", "vestibule") or not cid:
             continue
         c = cons.get(cid)
         u = getattr(c, "u_value_w_m2k", None)
