@@ -91,6 +91,36 @@ def test_ciou_loss_identical_boxes_is_near_zero():
     assert float(ciou_loss(box, box.clone())) < 1e-6
 
 
+def _preds_matching(box_target, cell=(4, 4), grid=8, num_classes=2, obj=6.0):
+    """Raw preds whose decoded box equals (cx, cy, w, h) image-normalized."""
+    preds = torch.zeros(1, num_classes + 5, grid, grid)
+    i, j = cell
+    preds[0, 0, i, j] = obj  # door class logit
+    preds[0, 2, i, j] = obj  # objectness logit
+    # (tx, ty) raw so sigmoid gives 0.5 -> cx = cy = (4 + 0.5) / 8 = 0.5625
+    # (w, h) linear image-normalized, passed straight through
+    preds[0, 3, i, j] = 0.0
+    preds[0, 4, i, j] = 0.0
+    preds[0, 5, i, j] = box_target[2]
+    preds[0, 6, i, j] = box_target[3]
+    return preds
+
+
+def test_loss_matches_single_cell_box():
+    # cx = cy = (4 + 0.5) / 8 = 0.5625 for grid 8, cell (4, 4)
+    target = torch.tensor([[0.0, 0.5625, 0.5625, 0.10, 0.15]])
+    _, parts = ScratchLoss(num_classes=2)(_preds_matching([0.0, 0.5625, 0.10, 0.15]), [target])
+    assert parts["box"] < 1e-4
+
+
+def test_loss_matches_multicell_box():
+    # regression for run 38317139729: every sheet box spans 1.2-5.3 grid
+    # cells, which the old sigmoid-on-w/h parametrization could not represent
+    target = torch.tensor([[0.0, 0.5625, 0.5625, 0.30, 0.35]])
+    _, parts = ScratchLoss(num_classes=2)(_preds_matching([0.0, 0.5625, 0.30, 0.35]), [target])
+    assert parts["box"] < 1e-4
+
+
 def test_decode_rows_are_normalized_and_conf_filtered():
     preds = _preds(b=1, num_classes=2, grid=8, seed=7)
     rows = decode(preds, num_classes=2, conf=0.25)[0]
