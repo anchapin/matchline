@@ -727,18 +727,21 @@ def _synthesized_storeys(f, scale):
     bucket. Returns [] when the file has no IfcSpaces, so a truly empty
     file imports empty exactly as before.
     """
-    buckets = {}  # bucket key -> [IfcSpace]
+    buckets = {}  # bucket key -> [(raw z, IfcSpace)]
     for sp in f.by_type("IfcSpace"):
         try:
-            z = _placement_transform(sp, scale)[3]
+            # raw IFC units: the walk applies the length scale itself when
+            # it reads Elevation, so storing scaled meters would double-scale
+            z_raw = _placement_transform(sp, 1.0)[3]
         except Exception:
-            z = 0.0
-        if z is None:
-            z = 0.0
-        buckets.setdefault(round(z / STOREY_ELEVATION_TOL_M), []).append(sp)
+            z_raw = 0.0
+        if z_raw is None:
+            z_raw = 0.0
+        buckets.setdefault(round(z_raw * scale / STOREY_ELEVATION_TOL_M), []).append((z_raw, sp))
+    groups = sorted(buckets.values(), key=lambda g: min(z for z, _ in g))
     return [
-        _SyntheticStorey(i + 1, key * STOREY_ELEVATION_TOL_M, buckets[key])
-        for i, key in enumerate(sorted(buckets))
+        _SyntheticStorey(i + 1, min(z for z, _ in g), [sp for _, sp in g])
+        for i, g in enumerate(groups)
     ]
 
 
