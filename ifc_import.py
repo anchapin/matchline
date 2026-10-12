@@ -3034,6 +3034,28 @@ def _facades_onto_openings(model):
                 op.host_facade = f
 
 
+def _upgrade_ifc2x3_to_ifc4(f):
+    """In-memory IFC2X3 -> IFC4 upgrade via the ifcopenshell schema Migrator (#929).
+
+    Returns ``(new_file, skipped)``: an IFC4 copy of the model, plus the
+    (entity, error) pairs the migrator could not map (IFC4 dropped a small
+    number of IFC2X3 entities). The caller keeps the skip count visible on
+    the model instead of losing those elements silently.
+    """
+    import ifcopenshell
+    from ifcopenshell.util.schema import Migrator
+
+    migrator = Migrator()
+    new_file = ifcopenshell.file(schema_identifier="IFC4")
+    skipped = []
+    for element in f:
+        try:
+            migrator.migrate(element, new_file)
+        except Exception as exc:  # noqa: BLE001 - keep going, collect for review
+            skipped.append((element, exc))
+    return new_file, skipped
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -3076,8 +3098,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             f"exceeds the {max_elements} element limit. "
             "Set MATCHLINE_MAX_IFC_ELEMENTS to increase the limit."
         )
+    upgrade_skipped = None  # (entity, error) pairs, only when we upgraded
     if f.schema != "IFC4":
-        raise ValueError(f"expected IFC4 schema, got {f.schema}")
+        if f.schema != "IFC2X3":
+            raise ValueError(f"expected IFC4 or IFC2X3 schema, got {f.schema}")
+        # Translation-first (#929): upgrade IFC2X3 to IFC4 in memory via the
+        # vendored ifcopenshell schema Migrator, then run the unchanged IFC4
+        # pipeline. Entities the migrator cannot map are collected, never
+        # silently dropped.
+        f, upgrade_skipped = _upgrade_ifc2x3_to_ifc4(f)
     sheet = sheet_id or path.name
     scale = _length_scale(f)
 
@@ -3093,6 +3122,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             for bldg in _aggregated(site, "IfcBuilding"):
                 bname = bldg.Name or ""
     model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
+    if upgrade_skipped is not None:
+        model.source_schema = "IFC2X3"
+        if upgrade_skipped:
+            model.source_schema = f"IFC2X3 ({len(upgrade_skipped)} entities skipped in upgrade)"
     if project is not None:
         from solar_aperture import compound_angle_deg
 
