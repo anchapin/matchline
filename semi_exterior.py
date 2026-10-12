@@ -64,14 +64,15 @@ def boundary_kind(cat_a: Optional[str], cat_b: Optional[str]) -> Tuple[Optional[
     return None, f"{cat_a} against {cat_b}"
 
 
-def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
-    """Semi-exterior and to-review boundaries between spaces on each level.
+def _wall_pair_records(spaces: Dict[str, object], verdict) -> List[dict]:
+    """Shared wall records for the pairs ``verdict(a, b)`` reports.
 
-    Boundaries on the outside of the level's spaces (their union's boundary,
-    courtyards included) are exterior walls and are left out. One record per
-    space pair: ``{"spaces": [a, b], "categories": [..], "kind",
-    "reason", "length_m", "segments": [[[x0, y0], [x1, y1]], ...]}``,
-    sorted by pair."""
+    ``verdict`` returns ``(kind, reason)`` for a pair to report or ``None``
+    to skip it. Geometry shared by every wall-record caller: the pair's
+    shared segments, minus any that sit on the level's outer boundary
+    (those are exterior walls, not interior pairs). One record per space
+    pair, sorted within the level by id.
+    """
     from shapely.geometry import Point
     from shapely.ops import unary_union
 
@@ -87,12 +88,11 @@ def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
         polys = {sid: _poly([tuple(p[:2]) for p in sp.polygon_m]) for sid, sp in items}
         outer = unary_union(list(polys.values())).boundary
         for i, (sa, a) in enumerate(items):
-            ca = _category(a)
             for sb, b in items[i + 1 :]:
-                cb = _category(b)
-                kind, reason = boundary_kind(ca, cb)
-                if kind is None:
+                got = verdict(a, b)
+                if got is None:
                     continue
+                kind, reason = got
                 pa, pb = polys[sa], polys[sb]
                 if not pa.buffer(TOL_M).intersects(pb):
                     continue
@@ -113,7 +113,7 @@ def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
                 out.append(
                     {
                         "spaces": [sa, sb],
-                        "categories": [ca, cb],
+                        "categories": [_category(a), _category(b)],
                         "kind": kind,
                         "reason": reason,
                         "plane": "wall",
@@ -122,6 +122,59 @@ def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
                     }
                 )
     return out
+
+
+def semi_exterior_boundaries(spaces: Dict[str, object]) -> List[dict]:
+    """Semi-exterior and to-review boundaries between spaces on each level.
+
+    Boundaries on the outside of the level's spaces (their union's boundary,
+    courtyards included) are exterior walls and are left out. One record per
+    space pair: ``{"spaces": [a, b], "categories": [..], "kind",
+    "reason", "length_m", "segments": [[[x0, y0], [x1, y1]], ...]}``,
+    sorted by pair."""
+    from bem_space_split import TOL_M, _poly  # noqa: F401  (geometry lives in _wall_pair_records)
+
+    def verdict(a, b):
+        kind, reason = boundary_kind(_category(a), _category(b))
+        return (kind, reason) if kind else None
+
+    return _wall_pair_records(spaces, verdict)
+
+
+def vestibule_interior_boundaries(spaces: Dict[str, object]) -> List[dict]:
+    """Interior surfaces of unconditioned vestibules (5.5.2 vestibule sentence).
+
+    ASHRAE 90.1-2019 5.5.2: "The interior surfaces and exterior surfaces of
+    unconditioned vestibules shall comply with the building envelope
+    requirements for a semiheated space." A partition between an
+    unconditioned vestibule and a settled semiheated or unconditioned
+    neighbor is not semi-exterior envelope (``boundary_kind`` returns
+    None), but the vestibule sentence still governs it, so it gets a
+    ``kind: "vestibule"`` record and the construction stage points it at
+    the Semiheated column. Pairs the ordinary machinery already reports are
+    not duplicated: against a conditioned space the pair is a semi-exterior
+    record (slice 5), and an unsettled neighbor is already a review record.
+    The vestibule's own category must be settled unconditioned, so nothing
+    is reported on an unsettled side; a vestibule next to a vestibule is
+    one record, both sides meeting the rule. Same shape as the
+    semi-exterior wall records, sorted by pair.
+    """
+
+    def verdict(a, b):
+        va, vb = getattr(a, "is_vestibule", False), getattr(b, "is_vestibule", False)
+        if not (va or vb):
+            return None
+        vest, other = (a, b) if va else (b, a)
+        cat_v, cat_o = _category(vest), _category(other)
+        if cat_v != "unconditioned" or cat_o == "conditioned" or cat_o not in SETTLED:
+            return None
+        return (
+            "vestibule",
+            f"interior surface of unconditioned vestibule {vest.id} against "
+            f"{other.id} ({cat_o}); 5.5.2 vestibule sentence",
+        )
+
+    return _wall_pair_records(spaces, verdict)
 
 
 def semi_exterior_floor_boundaries(spaces: Dict[str, object], levels: List[object]) -> List[dict]:
