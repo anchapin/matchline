@@ -402,11 +402,72 @@ def _polyline_footprint(solid, scale):
     if not p.is_a("IfcArbitraryClosedProfileDef"):
         return None
     oc = p.OuterCurve
-    pts = [(float(c.Coordinates[0]) * scale, float(c.Coordinates[1]) * scale) for c in oc.Points]
+    if oc.is_a("IfcIndexedPolyCurve"):
+        # IFC4 exporters (Archicad, Revit) put the points on an
+        # IfcCartesianPointList, not IfcCartesianPoint entities, and may add
+        # arc segments; chord-sampling arcs would misshape the footprint, so
+        # honor line-only curves and let the caller degrade otherwise.
+        segs = getattr(oc, "Segments", None)
+        if segs and any(not sg.is_a("IfcLineIndex") for sg in segs):
+            return None
+        coord_list = getattr(oc.Points, "CoordList", None)
+        if coord_list is None:
+            return None
+        raw = list(coord_list)
+    elif oc.is_a("IfcPolyline"):
+        raw = [c.Coordinates for c in oc.Points]
+    else:
+        return None
+    pts = [(float(c[0]) * scale, float(c[1]) * scale) for c in raw]
     # drop a duplicated closing point if present
     if len(pts) > 1 and pts[0] == pts[-1]:
         pts = pts[:-1]
     return pts, float(solid.Depth) * scale
+
+
+def _profile_bbox_dims(solid, scale):
+    """(xdim, ydim, depth) in meters from a closed profile's vertex bbox, or None.
+
+    Line-only IfcIndexedPolyCurve / IfcPolyline outer curves only: arc
+    segments would under-measure, so the caller degrades instead.
+    """
+    fp = _polyline_footprint(solid, scale)
+    if fp is None:
+        return None
+    pts, depth = fp
+    xs = [x for x, _ in pts]
+    ys = [y for _, y in pts]
+    return (max(xs) - min(xs), max(ys) - min(ys), depth)
+
+
+def _face_set_extents(el, scale):
+    """(dx, dy, dz) in meters from an IfcPolygonalFaceSet's vertex bbox, or None.
+
+    The geometry kernel fails on some exporters' face sets, so the vertex
+    list stands in; the result is still an axis-aligned bounding box.
+    """
+    rep = getattr(el, "Representation", None)
+    if rep is None:
+        return None
+    fs = None
+    for r in rep.Representations or []:
+        for it in r.Items or []:
+            if it.is_a("IfcPolygonalFaceSet"):
+                fs = it
+                break
+        if fs is not None:
+            break
+    if fs is None:
+        return None
+    coord_list = getattr(getattr(fs, "Coordinates", None), "CoordList", None)
+    if not coord_list:
+        return None
+    xs, ys, zs = [], [], []
+    for c in coord_list:
+        xs.append(float(c[0]) * scale)
+        ys.append(float(c[1]) * scale)
+        zs.append(float(c[2]) * scale)
+    return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
 
 
 def _geom_verts(el):
@@ -3190,6 +3251,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 if ext is not None:
                     dims = ext
                     dims_note = "local extents via geometry kernel (axis-aligned solid assumed)"
+            if dims is None and solids:
+                ext = _profile_bbox_dims(solids[0], scale)
+                if ext is not None:
+                    dims = ext
+                    dims_note = "IfcExtrudedAreaSolid closed-profile bbox (axis-aligned assumed)"
+            if dims is None and not solids:
+                ext = _face_set_extents(el, scale)
+                if ext is not None:
+                    dims = ext
+                    dims_note = "IfcPolygonalFaceSet vertex bbox (axis-aligned solid assumed)"
             if dims is not None:
                 xd, yd, dep = dims
                 if cls in ("IfcWall", "IfcWallStandardCase"):
