@@ -205,6 +205,11 @@ class ScratchLoss(nn.Module):
         for b, t in enumerate(targets):
             if t.numel() == 0:
                 continue
+            # targets arrive on CPU from the dataloader; move once so every
+            # derived index shares preds' device (mixed-device indexing raised
+            # "indices should be either on cpu or on the same device" in run
+            # 38311804719 on CUDA)
+            t = t.to(device)
             cls, cx, cy, w, h = t.unbind(-1)
             gi = (cy * G).long().clamp(0, G - 1)
             gj = (cx * G).long().clamp(0, G - 1)
@@ -217,7 +222,11 @@ class ScratchLoss(nn.Module):
                     first[k] = False
                 else:
                     seen[key] = True
+            # slice the box values too: leaving cx/cy/w/h at full length made
+            # box_t[b, gi, gj] = ... a [n,4]-into-[k,4] scatter that crashed
+            # whenever two GT centers shared a cell
             gi, gj, cls = gi[first], gj[first], cls[first]
+            cx, cy, w, h = cx[first], cy[first], w[first], h[first]
             obj_t[b, gi, gj] = 1.0
             cls_t[b, gi, gj, cls.long()] = 1.0
             # box targets are cell-relative: tx/ty in [0, 1) within the cell,

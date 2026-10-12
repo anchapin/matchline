@@ -92,6 +92,24 @@ jobs:
           fi
           "$VENV/bin/python" -c "import torch; print('venv torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
 
+      - name: Loss device smoke
+        run: |
+          # Fast-fail guard: a CPU/CUDA mix in ScratchLoss killed run
+          # 38311804719 eight seconds into Train, after venv setup. This
+          # catches that class of bug in about three seconds.
+          "$HOME/workspace/venvs/det-rocm/bin/python" - <<'PY'
+          import torch
+
+          from detector.train_scratch import ScratchLoss
+
+          preds = torch.randn(2, 7, 8, 8, device="cuda")
+          targets = [torch.tensor([[0.0, 0.5, 0.5, 0.2, 0.2]]), torch.zeros((0, 5))]
+          loss, parts = ScratchLoss(num_classes=2)(preds, targets)
+          assert torch.isfinite(loss), loss
+          assert all(isinstance(v, float) for v in parts.values()), parts
+          print("loss device smoke ok:", parts)
+          PY
+
       - name: Train
         run: |
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
