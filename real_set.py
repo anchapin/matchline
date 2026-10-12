@@ -874,16 +874,54 @@ LEGEND_DEDUP_M = 0.3
 LEGEND_REF_FIELD = {"diffuser": "diffusers", "grille": "diffusers", "sensor": "sensors"}
 
 
-def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> None:
+def _duct_ctx(sheet, sheet_id, zones, sheets_dir):
+    """(gray raster, [(zone id, terminal tag rect in raster px), ...]) for
+    tracing legend symbols to terminals on this sheet (#744); None without a
+    raster or when no zone's terminal unit is tagged on it."""
+    import numpy as np
+
+    raster, k = sheet.get("raster_file"), sheet.get("px_per_pt")
+    if not zones or not raster or not k or not (sheets_dir / raster).exists():
+        return None
+    k = float(k)
+    rects = []
+    for z in zones.values():
+        tu = z.terminal_unit
+        p = tu.provenance if tu else None
+        if tu and p and p.sheet_id == sheet_id and p.bbox:
+            rects.append((z.id, [c * k for c in p.bbox]))
+    if not rects:
+        return None
+    from PIL import Image
+
+    gray = np.asarray(Image.open(sheets_dir / raster).convert("L"), dtype=np.float64)
+    return gray, rects
+
+
+def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms, duct_ctx=None) -> None:
     """Put legend symbols placed in a room on that room's HVAC zone (#744).
 
     A diffuser, grille or thermostat goes on the space (``hvac.diffusers`` /
     ``hvac.sensors``) and on its zone only when exactly one zone serves the
-    room: which of several zones feeds a diffuser needs duct tracing, and a
-    terminal on a room no zone serves would be an orphan. Those stay counted
-    in ``symbols_by_room`` only. ``diff_rooms`` collects every room a supply
-    diffuser landed in, assigned or not."""
+    room. When several serve it, a supply terminal follows the sheet's own
+    ductwork (``duct_ctx`` from ``_duct_ctx``, traced by
+    ``hvac_trace.trace_symbols_to_terminals``): an unambiguous trace to the
+    terminal unit of one of those zones wins; a contested pixel or a symbol
+    off the ducts stays counted in ``symbols_by_room`` only, never a guess.
+    A terminal on a room no zone serves would be an orphan and stays
+    unassigned. ``diff_rooms`` collects every room a supply diffuser landed
+    in, assigned or not."""
     from building_model import ComponentRef, Provenance
+    from hvac_trace import trace_symbols_to_terminals
+
+    traced: dict = {}
+    if duct_ctx is not None:
+        gray, rects = duct_ctx
+        zid_of = [zid for zid, _r in rects]
+        for d, (ti, why) in zip(
+            dets, trace_symbols_to_terminals(gray, dets, [r for _zid, r in rects])
+        ):  # fmt: skip
+            traced[id(d)] = (zid_of[ti] if ti is not None else None, why)
 
     for d in dets:
         fld = LEGEND_REF_FIELD.get(d["label"])
@@ -894,9 +932,14 @@ def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> 
             diff_rooms.add(sid)
         sp = spaces[sid]
         zids = [z for z in sp.hvac.zone_ids if z in zones and sid in zones[z].space_ids]
+        tzid, why = traced.get(id(d), (None, "no_tracing"))
         if len(zids) != 1:
-            stats["no_zone" if not zids else "many_zones"] += 1
-            continue
+            if len(zids) <= 1 or duct_ctx is None or tzid not in zids:
+                stats["no_zone" if not zids else "many_zones" if len(zids) > 1 else "no_zone"] += 1
+                if len(zids) > 1:
+                    stats["duct_ambiguous"] += 1
+                continue
+            zids = [tzid]
         x, y = d["at_m"]
         held = getattr(sp.hvac, fld)
         near = [
@@ -911,20 +954,31 @@ def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> 
         stats["n"] += 1
         rc = d.get("reg_confidence")
         conf = conf_cap if rc is None else min(conf_cap, rc)
+        if tzid is not None and len(
+            [z for z in sp.hvac.zone_ids if z in zones and sid in zones[z].space_ids]
+        ) > 1:  # fmt: skip
+            method, tail = (
+                "duct_trace",
+                (f"zone {tzid}: it sits on that zone's ductwork (skeleton trace, {why})"),
+            )
+        else:
+            method, tail = "legend_symbol", "the one zone serving that room"
         ref = ComponentRef(
             id=f"{sheet_id}-{d['label'][0].upper()}{stats['n']}", type=d["label"],
             x_m=float(x), y_m=float(y),
             provenance=Provenance(
-                sheet_id, 0, "legend_symbol", conf, tuple(d["bbox_pt"]),
+                sheet_id, 0, method, conf, tuple(d["bbox_pt"]),
                 note=(
                     f"{d['label']} drawn as the sheet's own legend symbol, found by template "
-                    f"match and placed in {sid}; the one zone serving that room"
+                    f"match and placed in {sid}; {tail}"
                 ),
             ),
         )  # fmt: skip
         held.append(ref)
         getattr(zones[zids[0]], fld).append(ref)
         stats[d["label"]] += 1
+        if method == "duct_trace":
+            stats["duct"] += 1
 
 
 def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None:
@@ -947,6 +1001,12 @@ def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None
         f"{stats['grille']} grille(s), {stats['sensor']} sensor(s)"
         + (f"; {stats['no_zone']} in rooms no zone serves" if stats["no_zone"] else "")
         + (f"; {stats['many_zones']} in rooms several zones serve" if stats["many_zones"] else "")
+        + (f"; {stats['duct']} assigned by duct tracing" if stats["duct"] else "")
+        + (
+            f"; {stats['duct_ambiguous']} in shared rooms duct tracing could not settle"
+            if stats["duct_ambiguous"]
+            else ""
+        )
         + (f"; {stats['repeated']} repeated on another sheet" if stats["repeated"] else "")
         + (f"; {stats['twice']} found twice on one sheet" if stats["twice"] else "")
         + (f"; {len(bare)} zone(s) with no supply diffuser found" if bare else "")
@@ -994,7 +1054,7 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
     unmapped: Dict[tuple, List[tuple]] = {}
     ref_stats: Dict[str, int] = {
         "n": 0, "diffuser": 0, "grille": 0, "sensor": 0, "no_zone": 0, "many_zones": 0,
-        "repeated": 0, "twice": 0,
+        "duct": 0, "duct_ambiguous": 0, "repeated": 0, "twice": 0,
     }  # fmt: skip
     zoned_levels: set = set()
     diff_rooms: set = set()
@@ -1011,7 +1071,10 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
         )
         for leg, dets, by_room in zip(legends, per_legend, rooms_of):
             if zones and spaces and by_room:
-                _legend_refs(sheet_id, dets, spaces, zones, CONFIDENCE, ref_stats, diff_rooms)
+                _legend_refs(
+                    sheet_id, dets, spaces, zones, CONFIDENCE, ref_stats, diff_rooms,
+                    _duct_ctx(sheet, sheet_id, zones, sheets_dir),
+                )  # fmt: skip
                 # only a level where a supply diffuser or grille was matched can
                 # say a zone has none; a thermostat-only legend says nothing
                 zoned_levels.update(
