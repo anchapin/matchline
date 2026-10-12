@@ -8,6 +8,14 @@ All notable changes to this project are documented here, in
 
 ### Added
 
+- Vestibule detection (#747): a room is marked `is_vestibule` when it meets
+  Alex's rule (2026-10-11): it has an exterior door, its floor area is at or
+  under 15 sq m (Fo's default, flagged for Alex), and it connects to a lobby or
+  main entrance (a neighboring room named LOBBY / RECEPTION / ENTRY / FOYER /
+  WAITING, or the door's far side). Detection never reclassifies a space; the
+  Section 3.2 category still comes from the HVAC capacity rules alone. Every
+  call and the default threshold go to review.
+
 - `matchline demo` (#753): sample project end to end in one command, printing where the trust report, review report and exports landed and opening the trust report on an interactive terminal. `matchline run` no longer crashes on the seed path (cli Namespace carried no image attribute).
 - Review: an edit on an IFC opening-attachment item now changes the model (#799):
   the opening moves into the room the reviewer types (space id or unique room

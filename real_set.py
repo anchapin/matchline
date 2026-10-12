@@ -595,6 +595,8 @@ def build_set_model(
         from air_loops import build_air_loops
 
         report.notes += build_air_loops(model, equipment)
+    # Alex's vestibule rule onto Space.is_vestibule (#747, 2026-10-11)
+    _vestibules(model, review, report, Provenance, ReviewItem)
     _semi_exterior(model, review, report, Provenance, ReviewItem)
     report.sheets = list(status.values())
     _write(out, report)
@@ -1559,6 +1561,50 @@ def _space_conditioning(model, equipment, review, report, Provenance, ReviewItem
         + ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
         + f"; {unserved} space(s) with no zone found, not classified"
     )
+
+
+def _vestibules(model, review, report, Provenance, ReviewItem) -> None:
+    """Alex's vestibule rule onto ``Space.is_vestibule`` (#747, 2026-10-11).
+
+    Detection never reclassifies a space. Every call goes to review so Alex
+    sees it, and the default area threshold is flagged there too."""
+    from vestibules import VESTIBULE_MAX_AREA_M2, detect_vestibules
+
+    recs = detect_vestibules(model)
+    if not recs:
+        return
+    for r in recs:
+        sp = model.spaces[r["space_id"]]
+        sp.is_vestibule = True
+        review.append(
+            ReviewItem(
+                id=f"rq-vestibule-{r['space_id']}",
+                kind="vestibule",
+                description=(
+                    f"{r['space_id']}: exterior door {r['door_tag']}, "
+                    f"{r['area_m2']:.2f} sq m, leads to {r['lobby_neighbor']} - "
+                    "meets Alex's vestibule rule"
+                ),
+                confidence=0.5,
+                provenance=Provenance("", 0, "vestibules", 0.5),
+                needs_review=True,
+            )
+        )
+    review.append(
+        ReviewItem(
+            id="rq-vestibule-default-area",
+            kind="vestibule",
+            description=(
+                f"vestibule 'small floor area' default {VESTIBULE_MAX_AREA_M2} sq m is "
+                "Fo's pick (Alex's rule leaves it unspecified); bump it if real "
+                "vestibules exceed it"
+            ),
+            confidence=0.5,
+            provenance=Provenance("", 0, "vestibules", 0.5),
+            needs_review=True,
+        )
+    )
+    report.notes.append(f"vestibules: {len(recs)} space(s) marked per Alex's rule")
 
 
 def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
