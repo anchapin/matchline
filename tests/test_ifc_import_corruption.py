@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from ifc_import import _ensure_ifc, import_ifc
+from run_pipeline import StageError
 
 _ensure_ifc()
 
@@ -26,8 +27,8 @@ def _write_ifc(step: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def test_wrong_schema_ifc2x3_raises():
-    """IFC2X3 file raises ValueError (IFC4 required)."""
+def test_empty_ifc2x3_raises_late():
+    """Empty IFC2X3 file passes the schema gate (#929) but fails later: no units."""
     ifc = (
         "ISO-10303-21;\n"
         "HEADER;\n"
@@ -40,7 +41,7 @@ def test_wrong_schema_ifc2x3_raises():
         "END-ISO-10303-21;\n"
     )
     path = _write_ifc(ifc)
-    with pytest.raises(ValueError, match="IFC4"):
+    with pytest.raises(StageError, match="IfcUnitAssignment"):
         import_ifc(path)
 
 

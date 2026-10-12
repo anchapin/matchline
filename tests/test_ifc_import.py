@@ -1001,3 +1001,96 @@ def test_site_level_spaces_without_storeys(tmp_path):
     assert len(model.spaces) == 4
     assert len(model.envelope) > 0
     assert all(sp.level_id == model.levels[0].id for sp in model.spaces.values())
+
+
+# --- #929: IFC2X3 files are upgraded in memory, then imported --------------
+
+
+def _write_ifc2x3_fixture(path):
+    """Minimal hand-built IFC2X3 file: site/storey, one wall, one space."""
+    f = ifcopenshell.file(schema_identifier="IFC2X3")
+    org = f.create_entity("IfcOrganization", Name="MATCHLINE-TEST")
+    person = f.create_entity("IfcPerson", Id="t", FamilyName="Tester")  # Id: the IFC2X3 attr name
+    pao = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=org)
+    app = f.create_entity(
+        "IfcApplication",
+        ApplicationDeveloper=org,
+        Version="1",
+        ApplicationFullName="test",
+        ApplicationIdentifier="test",
+    )
+    owner = f.create_entity(
+        "IfcOwnerHistory",
+        OwningUser=pao,
+        OwningApplication=app,
+        ChangeAction="NOCHANGE",
+        CreationDate=0,
+    )
+    ctx = f.create_entity(
+        "IfcGeometricRepresentationContext",
+        ContextType="Model",
+        CoordinateSpaceDimension=3,
+        Precision=1e-5,
+        WorldCoordinateSystem=f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+        ),
+    )
+    body = f.create_entity(
+        "IfcGeometricRepresentationSubContext",
+        ContextIdentifier="Body",
+        ContextType="Model",
+        ParentContext=ctx,
+        TargetView="MODEL_VIEW",
+    )
+    # IFC2X3 IfcSIUnit: Dimensions is derived in ifcopenshell 0.9's schema, so
+    # only UnitType/Name are settable; Name METRE keeps _length_scale happy.
+    length_unit = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+    project = f.create_entity(
+        "IfcProject",
+        GlobalId=_guid.new(),
+        OwnerHistory=owner,
+        Name="IFC2X3 PROJ",
+        UnitsInContext=f.create_entity("IfcUnitAssignment", Units=(length_unit,)),
+    )
+    site = f.create_entity("IfcSite", GlobalId=_guid.new(), OwnerHistory=owner, Name="SITE")
+    building = f.create_entity("IfcBuilding", GlobalId=_guid.new(), OwnerHistory=owner, Name="BLDG")
+    storey = f.create_entity(
+        "IfcBuildingStorey", GlobalId=_guid.new(), OwnerHistory=owner, Name="Level 1"
+    )
+    _Ag.assign_object(f, products=[site], relating_object=project)
+    _Ag.assign_object(f, products=[building], relating_object=site)
+    _Ag.assign_object(f, products=[storey], relating_object=building)
+
+    wall = f.create_entity("IfcWall", GlobalId=_guid.new(), OwnerHistory=owner, Name="W1")
+    wall.ObjectPlacement = _placement(f, (0.0, 0.0, 0.0), storey.ObjectPlacement)
+    _add_solid(f, wall, _rect_profile(f, 10.0, 0.2, -5.0, -0.1), 3.0, body)
+    _Sp.assign_container(f, products=[wall], relating_structure=storey)
+
+    space = f.create_entity("IfcSpace", GlobalId=_guid.new(), OwnerHistory=owner, Name="ROOM 101")
+    space.ObjectPlacement = _placement(f, (0.0, 0.1, 0.0), storey.ObjectPlacement)
+    _add_solid(f, space, _rect_profile(f, 10.0, 9.0, -5.0, -4.5), 3.0, body)
+    _Ag.assign_object(f, products=[space], relating_object=storey)
+
+    f.write(str(path))
+    return path
+
+
+def test_ifc2x3_file_is_upgraded_and_imported(tmp_path):
+    path = _write_ifc2x3_fixture(tmp_path / "ifc2x3.ifc")
+    assert ifcopenshell.open(str(path)).schema == "IFC2X3"
+
+    model = import_ifc(path)
+
+    assert model.source_schema == "IFC2X3"
+    assert len(model.levels) == 1
+    assert [s.name for s in model.spaces.values() if s.name] or model.spaces
+    envelope_walls = [e for e in model.envelope if e.__class__.__name__ == "EnvelopeWall"]
+    assert envelope_walls, "wall survived the schema upgrade"
+
+
+def test_ifc4_model_has_no_source_schema_marker(tmp_path):
+    path = tmp_path / "ifc4.ifc"
+    make_ifc_fixture(path)
+    model = import_ifc(path)
+    assert not hasattr(model, "source_schema")
