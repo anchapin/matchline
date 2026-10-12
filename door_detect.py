@@ -46,6 +46,7 @@ OPEN_CENTRE_TOL = 0.25  # opening midpoint within this share of r of the door's
 OPEN_ANGLE_TOL_DEG = 15.0
 DOUBLE_LEAF_TOL = 0.25  # the two leaves of a double door within +-25% in radius
 WALL_PROBE_PX, WALL_PROBE_M = 4, 0.08  # how far past a jamb to look for it
+STUB_STEP_PX, STUB_STEP_M = 1, 0.02  # small step for a stub shared with the next door (#875)
 MAX_LEAF_THICK_PX, MAX_LEAF_THICK_M = 6, 0.12  # leaves are thinner than walls
 DEDUPE_PX, DEDUPE_M = 8, 0.16
 
@@ -61,6 +62,8 @@ class _P:
     probe: int
     max_leaf: int
     dedupe: int
+    stub_step: int = 1
+    thin_stub: bool = False
 
 
 def _params(px_per_m: float, min_width_m: float, max_width_m: float) -> _P:
@@ -78,6 +81,7 @@ def _params(px_per_m: float, min_width_m: float, max_width_m: float) -> _P:
         probe=px(WALL_PROBE_PX, WALL_PROBE_M),
         max_leaf=px(MAX_LEAF_THICK_PX, MAX_LEAF_THICK_M),
         dedupe=px(DEDUPE_PX, DEDUPE_M),
+        stub_step=px(STUB_STEP_PX, STUB_STEP_M),
     )
 
 
@@ -244,6 +248,62 @@ def _hollow(ink: np.ndarray, y: int, wl, p: _P) -> bool:
     return not ink[y, int(round(wl[0]))]
 
 
+def _stub_band_at(ink: np.ndarray, y: int, x: int, p: _P, allow_thin: bool = False):
+    """A solid band at row y near x, for a stub shared with the next door (#875).
+
+    The run itself must be the wall: at least the jamb-wall floor thick (a
+    thinner true-scale partition only with a vector opening, #874) and no
+    thicker than any wall. The floor reader's two-line handling is off here: a
+    neighbouring arc stroke would pass as the wall's second line.
+    """
+    if not (0 <= y < ink.shape[0]):
+        return None
+    row = ink[y]
+    w = row.size
+    lo, hi = max(0, x - p.slack), min(w, x + p.slack + 1)
+    hits = np.flatnonzero(row[lo:hi])
+    if hits.size == 0:
+        return None
+    s = lo + int(hits[np.argmin(np.abs(lo + hits - x))])
+    while s > 0 and row[s - 1]:
+        s -= 1
+    e = s
+    while e < w and row[e]:
+        e += 1
+    width = e - s
+    if not (1 <= width <= p.max_wall):
+        return None
+    if width < p.min_wall and not (allow_thin and width <= p.min_wall - 1):
+        return None
+    return (s + e - 1) / 2, s, e
+
+
+def _short_stub_at(ink: np.ndarray, y: int, s: int, e: int, p: _P, allow_thin: bool = False):
+    """A stub just beyond the hinge, matched one small step further (#875).
+
+    Two doors sharing a short pier hang on a pier a few pixels tall: the fixed
+    probe lands its second row past it, and the other door's arc beside it
+    shifts the band centres. So look for a band in the rows just beyond the
+    leaf and hang on it when one more small step finds the same band. A band
+    thinner than the jamb-wall floor is taken only with a vector opening
+    (#874), so ``allow_thin`` stays off without one.
+    """
+    for r in range(y - 1, y - p.max_leaf - 1, -1):
+        a = _stub_band_at(ink, r, s, p, allow_thin)
+        if a is None or a[2] >= e - 2 or (abs(a[1] - s) <= 2 and abs(a[2] - e) <= 2):
+            # the leaf's own stroke repeats the emitting run row by row, and a
+            # stub the stroke overlaps reads as one band running to the run's
+            # tail, not a wall to hang on
+            continue
+        for r2 in (r - p.stub_step, r + p.stub_step):
+            b = _stub_band_at(ink, r2, s, p, allow_thin)
+            if b is None or b[2] >= e - 2 or (abs(b[1] - s) <= 2 and abs(b[2] - e) <= 2):
+                continue
+            if abs(a[0] - b[0]) <= 2:
+                return (a[0] + b[0]) / 2, min(a[1], b[1]), max(a[2], b[2])
+    return None
+
+
 def _hinge_options(behind, past, p: _P, hollow_b: bool = False, hollow_p: bool = False):
     """(walls, hinge x) pairs to try for one leaf row and radius.
 
@@ -301,6 +361,10 @@ def _canonical(ink: np.ndarray, fat: np.ndarray, tight: np.ndarray, p: _P):
                 # row behind it runs along that wall, so read the hinge wall
                 # on the far side of it
                 behind = _wall_at(ink, y - p.slack, -p.probe, s, p)
+            if behind is None and not on_face:
+                # a stub shared with the next door: it is a few pixels tall, so
+                # hang on the rows just beyond the leaf instead (#875)
+                behind = _short_stub_at(ink, y, s, e, p, allow_thin=p.thin_stub)
             best = None
             for r in radii.tolist():
                 # the jamb past the opening can be thickened by a stub (the
@@ -473,7 +537,11 @@ def detect_door_swings(
     std = _dedupe(_candidates(ink0, fat0, tight0, p), p)
     cands = _pairs(std, p)
     if openings_px:
-        thin = replace(p, min_wall=max(THIN_WALL_PX, int(round(THIN_WALL_M * px_per_m))))
+        thin = replace(
+            p,
+            min_wall=max(THIN_WALL_PX, int(round(THIN_WALL_M * px_per_m))),
+            thin_stub=True,
+        )
         thin_c = _dedupe(_candidates(ink0, fat0, tight0, thin), p)
         cands += [c for c in _pairs(thin_c, p) if _on_opening(c, openings_px)]
         cands += [c for c in thin_c if _on_opening(c, openings_px)]

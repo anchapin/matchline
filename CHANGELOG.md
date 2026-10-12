@@ -5,6 +5,31 @@ All notable changes to this project are documented here, in
 `main` is reserved for releases; `develop` is the working branch.
 
 ## [Unreleased]
+
+### Added
+
+- `hvac_trace.trace_symbols_to_terminals`: multi-source duct skeleton trace that
+  assigns each legend-referenced terminal to the zone its ductwork feeds
+  (#744). Seeds at terminal symbols, walks the skeleton with a shared
+  `ASSOC_PX` reach, and labels runs contested when two terminals claim the
+  same skeleton, and leaves a run no tagged terminal seeds unassigned; off-duct
+  terminals stay unassigned. `real_set.py` records
+  `duct` / `duct_ambiguous` stats and notes the zone each terminal feeds
+  ("it sits on that zone's ductwork (skeleton trace, ...)"), so ambiguous
+  traces surface as review instead of guesses. Five new trace tests plus a
+  shared-room duct test in the real-set fixture.
+
+### Added
+
+- `detector/train_scratch.py`: from-scratch YOLO-style single-shot detector
+  trainer for the synth track (#743). Grayscale letterbox input, stride-8 grid,
+  per-cell class + objectness + CIoU box losses, cell-relative box targets,
+  class-agnostic NMS decode, IoU-matched per-class evaluation, deterministic
+  seeded training. License-clean: custom PyTorch only, no ultralytics weights
+  or code paths in shipped artifacts. Outputs (ckpt.pt, metrics.json) are
+  written to a caller-set run directory, never the repo. 6 tests in
+  `detector/tests/test_train_scratch.py` (CI runs lint-only on detector code
+  by policy; suite verified locally).
 ### Added
 
 - `detector/convert_synth.py`: synth gt.json -> Ultralytics YOLO converter (#743): maps sheet symbols through the unified taxonomy (AEC_MAP), clips and normalizes boxes, deterministic seeded train/val split, `data.yaml` output.

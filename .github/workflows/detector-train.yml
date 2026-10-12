@@ -1,0 +1,97 @@
+# From-scratch detector training on the self-hosted GPU runner (#743).
+#
+# Dispatch-only: nothing here runs on push/PR. The runner is Alex's Linux PC
+# (label manamind-train). A concurrency group queues runs behind each other,
+# so at most one job is active and the runner never sees more than the
+# disclosed load. Training data and outputs stay on the runner; only the
+# small metrics files are uploaded as artifacts.
+
+name: detector train
+
+on:
+  workflow_dispatch:
+    inputs:
+      data:
+        description: YOLO data dir (from convert_synth.py)
+        required: true
+        default: /home/alex/workspace/datasets/detector_yolo/synth
+      sheets:
+        description: synth sheets to generate when no YOLO dataset exists
+        required: true
+        default: "200"
+      imgsz:
+        description: input size (multiple of 8)
+        required: true
+        default: "640"
+      epochs:
+        description: training epochs
+        required: true
+        default: "30"
+      batch:
+        description: batch size
+        required: true
+        default: "8"
+      width:
+        description: base channel width
+        required: true
+        default: "32"
+      seed:
+        description: RNG seed
+        required: true
+        default: "0"
+      name:
+        description: run name
+        required: true
+        default: scratch-synth
+
+concurrency:
+  group: detector-train
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: [self-hosted, manamind-train]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show GPU
+        run: rocm-smi || true
+
+      - name: Prepare synth dataset
+        run: |
+          DATA="${{ github.event.inputs.data }}"
+          if [ ! -f "$DATA/data.yaml" ]; then
+            RAW="$DATA/raw"
+            echo "no YOLO dataset at $DATA, generating synthetic data first"
+            python3 -m synth.make_dataset \
+              --sheets 200 --crops-per-class 200 --seed "${{ github.event.inputs.seed }}" \
+              --out "$RAW"
+            python3 -m detector.convert_synth \
+              --in "$RAW/sheets" --out "$DATA" \
+              --seed "${{ github.event.inputs.seed }}" --include-empty
+          else
+            echo "using existing YOLO dataset at $DATA"
+          fi
+
+      - name: Train
+        run: |
+          python3 detector/train_scratch.py \
+            --data "${{ github.event.inputs.data }}" \
+            --imgsz "${{ github.event.inputs.imgsz }}" \
+            --epochs "${{ github.event.inputs.epochs }}" \
+            --batch "${{ github.event.inputs.batch }}" \
+            --width "${{ github.event.inputs.width }}" \
+            --seed "${{ github.event.inputs.seed }}" \
+            --name "${{ github.event.inputs.name }}" \
+            --device cuda \
+            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+
+      - name: Upload metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
+          path: >
+            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/metrics.json
+          if-no-files-found: error
