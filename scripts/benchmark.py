@@ -77,6 +77,8 @@ class Row:
     windows_truth: int | None = None
     windows_model: int | None = None
     window_area_err: float | None = None
+    doors_truth: int | None = None
+    doors_model: int | None = None
     lpd_median_err: float | None = None  # fraction, spaces with stated LPD
     terminals_scored: int | None = None
     terminals_correct: int | None = None
@@ -85,14 +87,39 @@ class Row:
     extras: dict = field(default_factory=dict)
 
 
+def _wall_openings(model: BuildingModel) -> "Counter[str]":
+    """Opening counts by category from the wall elements the IFC path carries.
+
+    On the IFC path, openings attach to the imported wall elements (BimElements
+    whose class is IfcWall*), not to spaces; counting from spaces reads an
+    always-empty list there.
+    """
+    from collections import Counter
+
+    counts: Counter[str] = Counter()
+    for be in getattr(model, "bim_elements", None) or []:
+        if not str(getattr(be, "ifc_class", "")).startswith("IfcWall"):
+            continue
+        for o in getattr(be, "openings", None) or []:
+            counts[str(o.category)] += 1
+    return counts
+
+
 def _truth_quantities(model: BuildingModel) -> dict:
     """Rooms/areas/wall length/windows/LPD straight from the imported IFC."""
     rooms = [s for s in model.spaces.values() if s.poly_type == "room"]
     areas = {s.id: s.area_m2 for s in rooms}
     walls = list(getattr(model, "envelope", []) or [])
     wall_len = sum(getattr(w, "length_m", 0.0) or 0.0 for w in walls)
-    wins = [o for s in rooms for o in s.openings if o.category == "window"]
-    win_area = sum(o.area_m2 or (o.width_m * o.height_m) for o in wins)
+    counts = _wall_openings(model)
+    wins = [
+        o
+        for be in (getattr(model, "bim_elements", None) or [])
+        if str(getattr(be, "ifc_class", "")).startswith("IfcWall")
+        for o in (getattr(be, "openings", None) or [])
+        if o.category == "window"
+    ]
+    win_area = sum(getattr(o, "area_m2", None) or (o.width_m * o.height_m) for o in wins)
     lpds = [s.lighting.lpd_w_m2 for s in rooms if s.lighting.lpd_w_m2 is not None]
     return {
         "rooms": len(rooms),
@@ -100,6 +127,7 @@ def _truth_quantities(model: BuildingModel) -> dict:
         "wall_len_m": wall_len,
         "windows": len(wins),
         "window_area_m2": win_area,
+        "doors": counts["door"],
         "lpds": lpds,
     }
 
@@ -148,10 +176,13 @@ def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> R
     row.wall_len_err = 0.0 if truth["wall_len_m"] > 0 else None
     row.windows_truth = truth["windows"]
     row.windows_model = truth["windows"]
+    row.doors_truth = truth["doors"]
+    row.doors_model = _wall_openings(truth_model)["door"]
     model_win_area = sum(
-        o.area_m2 or (o.width_m * o.height_m)
-        for s in model_rooms
-        for o in s.openings
+        getattr(o, "area_m2", None) or (o.width_m * o.height_m)
+        for be in (getattr(truth_model, "bim_elements", None) or [])
+        if str(getattr(be, "ifc_class", "")).startswith("IfcWall")
+        for o in (getattr(be, "openings", None) or [])
         if o.category == "window"
     )
     row.window_area_err = (
@@ -309,13 +340,13 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
         "# Matchline real-building benchmark",
         "",
         "| building | status | rooms (truth / model) | area err | wall len err"
-        " | windows (t / m) | win area err | LPD med err | terminals |"
+        " | windows (t / m) | doors (t / m) | win area err | LPD med err | terminals |"
         " cross-frontend | openstudio |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         if r.status != "ok":
-            lines.append(f"| {r.name} | {r.status} | | | | | | | | | |")
+            lines.append(f"| {r.name} | {r.status} | | | | | | | | | | |")
             continue
 
         def frac(v):
@@ -323,6 +354,7 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
 
         rooms = f"{r.rooms_truth} / {r.rooms_model}" if r.rooms_truth is not None else ""
         wins = f"{r.windows_truth} / {r.windows_model}" if r.windows_truth is not None else ""
+        doors = f"{r.doors_truth} / {r.doors_model}" if r.doors_truth is not None else ""
         terminals = (
             f"{r.terminals_correct}/{r.terminals_scored}" if r.terminals_scored is not None else ""
         )
@@ -330,7 +362,7 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
         os_col = r.openstudio or ""
         lines.append(
             f"| {r.name} | ok | {rooms} | {frac(r.area_err)} |"
-            f" {frac(r.wall_len_err)} | {wins} | {frac(r.window_area_err)} |"
+            f" {frac(r.wall_len_err)} | {wins} | {doors} | {frac(r.window_area_err)} |"
             f" {frac(r.lpd_median_err)} | {terminals} | {cf} | {os_col} |"
         )
     if not openstudio:
