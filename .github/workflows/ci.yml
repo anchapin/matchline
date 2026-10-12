@@ -118,7 +118,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install ruff
         run: pip install --no-cache-dir "ruff==0.16.10" && ruff --version
@@ -141,7 +141,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install package and Playwright Chromium
         run: |
@@ -168,7 +168,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install package
         run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.16.10" && ruff --version
@@ -222,7 +222,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install package (non-editable, as a fresh user would)
         run: pip install --no-cache-dir .
