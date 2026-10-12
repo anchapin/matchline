@@ -180,6 +180,29 @@ conversion script for the exact expected file layout.
 
 ---
 
+## TUM GNI BIM Dataset
+
+**Local path:** `~/workspace/datasets/matchline-bench/gni-<n>/arch.ifc` (8 candidates
+extracted from the 2025 BIMfundamentals set; the full archives stay under
+`~/workspace/datasets/gni/`)
+
+**Environment variable:** None (paths passed via the benchmark `--config`)
+
+**What it is:** 224 anonymized IFC 4 building models (Technical University of Munich,
+GNI research group), including commercial multi-storey office and school buildings
+with IfcSpaces, walls, windows and material layers.
+
+**Used for in matchline:**
+
+- `scripts/benchmark.py --config benchmarks.json` - real-building scoreboard (#748)
+- `ifc_import` Tier 0 robustness work: these files are why the kernel-unsafe
+  geometry fallbacks exist (IfcPolygonalFaceSet bodies, IfcIndexedPolyCurve
+  profiles)
+
+**Reference:** <https://zenodo.org/records/19722012> (CC BY 4.0)
+
+---
+
 ## Real-building benchmark (#748)
 
 **Local path:** `~/workspace/datasets/matchline-bench/<building>/`
