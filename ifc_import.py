@@ -1734,6 +1734,27 @@ def _wall_thermal_transmittance(wall):
     return u if u > 0 and math.isfinite(u) else None
 
 
+def _wall_marked_interior(wall):
+    """Pset_WallCommon.IsExternal explicitly False (#747).
+
+    Exported interior partitions (semi-exterior and vestibule boundaries)
+    carry this pset, so a re-imported matchline file does not count them
+    as envelope. A file without the pset, or with it True, is unchanged.
+    """
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(wall) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return False
+    ext = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
+    if ext is None or ext is True:
+        return False
+    if ext is False:
+        return True
+    return str(ext).strip().lower() in ("false", ".f.", "0")
+
+
 # ISO 6946 surface resistances for horizontal heat flow (walls), m2K/W.
 RSI_WALL_M2K_W = 0.13
 RSE_WALL_M2K_W = 0.04
@@ -3398,8 +3419,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             model.bim_elements.append(be)
 
             # walls also feed the BEM envelope (facade classification
-            # needs adjacency -> Tier 1, so facade stays empty here)
-            if cls in ("IfcWall", "IfcWallStandardCase") and length_m:
+            # needs adjacency -> Tier 1, so facade stays empty here). A wall
+            # whose pset says IsExternal False is a partition, not envelope (#747).
+            if (
+                cls in ("IfcWall", "IfcWallStandardCase")
+                and length_m
+                and not _wall_marked_interior(el)
+            ):
                 wall_axis_fix[gid] = _wall_centreline_fix(
                     el, solids, dims_note.startswith("local extents"), scale
                 )
