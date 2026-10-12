@@ -7,6 +7,7 @@ All notable changes to this project are documented here, in
 ## [Unreleased]
 ### Added
 
+- `detector/convert_synth.py`: synth gt.json -> Ultralytics YOLO converter (#743): maps sheet symbols through the unified taxonomy (AEC_MAP), clips and normalizes boxes, deterministic seeded train/val split, `data.yaml` output.
 - `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
 - Synthetic second-style mech sheets (#744): `generate_mech_sheet(..., style=1)`
   draws every terminal in the class's other drafting convention (alt glyphs
