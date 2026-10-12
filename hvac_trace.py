@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -501,6 +502,74 @@ def _disk(d: int) -> np.ndarray:
     r = (d - 1) / 2
     yy, xx = np.mgrid[:d, :d]
     return (xx - r) ** 2 + (yy - r) ** 2 <= r * r + 0.5
+
+
+def trace_symbols_to_terminals(
+    gray: np.ndarray, dets: list, term_rects_px: list, assoc_px: int = ASSOC_PX,
+    seed_pad: int = 10,
+):  # fmt: skip
+    """Which terminal's duct network each symbol sits on, by duct tracing (#744).
+
+    Multi-source BFS over the duct skeleton: every skeleton pixel within
+    ``seed_pad`` px of a terminal's tag box seeds that terminal's network;
+    each skeleton pixel keeps the nearest source's index measured along the
+    duct, and a pixel reached from two sources at the same distance is
+    contested. A symbol whose nearest skeleton pixel (within ``assoc_px``) is
+    uncontested belongs to that source's terminal; anything else -- no duct
+    within reach, a contested pixel, no terminals, no ducts -- is ``None``:
+    never a guess, the caller keeps it unassigned.
+
+    ``dets`` carry raster-px centers (``cx``, ``cy``); ``term_rects_px`` are
+    ``(x0, y0, x1, y1)`` raster-px rectangles. Returns
+    ``[(index or None, reason), ...]`` aligned with ``dets``.
+    """
+    skel = duct_skeleton(gray)
+    if not term_rects_px or not skel.any():
+        return [(None, "no_terminals" if not term_rects_px else "no_ducts") for _ in dets]
+    ys, xs = np.nonzero(skel)
+    dist = np.full(skel.shape, -1, np.int32)
+    src = np.full(skel.shape, -1, np.int16)
+    contested = np.zeros(skel.shape, bool)
+    q = deque()
+    for ti, (x0, y0, x1, y1) in enumerate(term_rects_px):
+        # true pixel-to-box distance: another terminal's duct may sweep past
+        # this tag's padded corner, and a padded bounding box would seed it
+        dxo = np.maximum(np.maximum(x0 - xs, xs - x1), 0)
+        dyo = np.maximum(np.maximum(y0 - ys, ys - y1), 0)
+        near = dxo * dxo + dyo * dyo <= seed_pad * seed_pad
+        for px, py in zip(xs[near], ys[near]):
+            if dist[py, px] == -1:
+                dist[py, px] = 0
+                src[py, px] = ti
+                q.append((py, px))
+            elif src[py, px] != ti:
+                contested[py, px] = True
+    while q:
+        y, x = q.popleft()
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                ny, nx = y + dy, x + dx
+                if not (0 <= ny < skel.shape[0] and 0 <= nx < skel.shape[1]) or not skel[ny, nx]:
+                    continue
+                if dist[ny, nx] == -1:
+                    dist[ny, nx] = dist[y, x] + 1
+                    src[ny, nx] = src[y, x]
+                    q.append((ny, nx))
+                elif src[ny, nx] != src[y, x] and dist[ny, nx] == dist[y, x] + 1:
+                    contested[ny, nx] = True
+    out = []
+    for d in dets:
+        reach = (xs - d["cx"]) ** 2 + (ys - d["cy"]) ** 2 <= assoc_px**2
+        if not reach.any():
+            out.append((None, "no_duct"))
+            continue
+        sel = np.argmin((xs[reach] - d["cx"]) ** 2 + (ys[reach] - d["cy"]) ** 2)
+        px, py = int(xs[reach][sel]), int(ys[reach][sel])
+        if contested[py, px]:
+            out.append((None, "contested"))
+            continue
+        out.append((int(src[py, px]), "duct"))
+    return out
 
 
 # ---------------------------------------------------------------------------
