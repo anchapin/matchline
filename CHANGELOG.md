@@ -4,7 +4,7 @@ All notable changes to this project are documented here, in
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style.
 `main` is reserved for releases; `develop` is the working branch.
 
-## [Unreleased]
+## [0.1.0] - 2026-10-12
 - `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
 ### Added
 
