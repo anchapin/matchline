@@ -1449,7 +1449,8 @@ def _thin_gaps(
     lo, hi = THIN_T_MIN_M * k, t_min * 0.999
     if hi <= lo:
         return []
-    bands = _pair_bands(segs, lo, hi, THIN_MIN_LEN_M * k)
+    # drawn lengths round, so a pier at exactly the minimum still pairs (#875)
+    bands = _pair_bands(segs, lo, hi, THIN_MIN_LEN_M * k - tol)
     if not bands:
         return []
     gmin, gmax = THIN_GAP_MIN_M * k - tol, THIN_GAP_MAX_M * k + tol
@@ -1464,6 +1465,10 @@ def _thin_gaps(
         for p, q in ((w.b, w.a), (w.a, w.b)):
             ux, uy = (p[0] - q[0]) / L, (p[1] - q[1]) / L
             ray = LineString([p, (p[0] + ux * gmax, p[1] + uy * gmax)])
+            # uneven pier faces clip a band short of the true end, and the
+            # opening's own jamb face is then drawn just past it: that face is
+            # the gap's near edge, so look past it for the far edge (#875)
+            near = 1.5 * w.t + tol
             best = None
             for i in tree.query(ray):
                 x = ray.intersection(geoms[int(i)])
@@ -1473,7 +1478,7 @@ def _thin_gaps(
                 for g in pts:
                     for c in g.coords:
                         d = (c[0] - p[0]) * ux + (c[1] - p[1]) * uy
-                        if d > tol and (best is None or d < best):
+                        if d > near and (best is None or d < best):
                             best = d
             if best is not None and gmin <= best <= gmax:
                 found.append((p, (p[0] + ux * best, p[1] + uy * best), w.t))
@@ -1484,7 +1489,7 @@ def _thin_gaps(
         if not (gmin <= L <= gmax):
             continue
         mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        if any(math.dist(mid, m) <= max(2 * t, tol) for m in mids):
+        if any(math.dist(mid, m) <= max(2 * t, tol) + tol for m in mids):
             continue  # the same gap seen from its other end
         mids.append(mid)
         out.append(
