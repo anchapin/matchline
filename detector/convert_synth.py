@@ -25,7 +25,11 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-from classes import AEC_MAP, CLASS_IDS
+
+try:  # package import: python -m detector.convert_synth, pytest
+    from detector.classes import AEC_MAP, CLASS_IDS
+except ImportError:  # direct script execution from inside detector/
+    from classes import AEC_MAP, CLASS_IDS
 
 # Inverse map: synth symbol type -> unified class id (or None to skip).
 SYMBOL_CLASS = {k: (CLASS_IDS[v] if v is not None else None) for k, v in AEC_MAP.items()}
