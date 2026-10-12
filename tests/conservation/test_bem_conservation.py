@@ -9,6 +9,8 @@ Tests verify that violations introduced by BEM transformation are caught
 at model_from_linked_model / model_from_takeoff time.
 """
 
+import pytest
+
 from geometry_simplify import SimplifyResult, footprint_from_regions, simplify_ring
 from link import build_model
 from run_pipeline import model_from_linked_model
@@ -87,14 +89,40 @@ class TestBEMVolumeConservation:
         result = _check_bem_volume_conservation(bem, tol_volume=0.03)
         assert result.severity == "pass"
 
-    def test_bem_volume_conservation_fails_on_large_mismatch(self):
-        """Volume conservation fails when space volumes deviate significantly."""
+    @pytest.mark.parametrize(
+        "vol_inject,expected_severity",
+        [
+            (0.0, "pass"),  # no injection - clean baseline
+            (0.05, "pass"),  # small positive - below detection threshold
+            (0.15, "error"),  # 15% over first space - exceeds 3% total tolerance
+            (0.20, "error"),  # 20% over - well above tolerance
+            (-0.20, "error"),  # -20% under - exceeds tolerance
+            (-0.50, "error"),  # -50% under - far below tolerance
+            (
+                1999.0,
+                "error",
+            ),  # extreme positive: ~100000 m³ first space
+            # (same magnitude as the original non-parametrized test)
+        ],
+    )
+    def test_bem_volume_conservation_parametrized_defect_injection(
+        self, vol_inject: float, expected_severity: str
+    ):
+        """Parametrized defect-injection: volume mismatch via proportional delta.
+
+        vol_inject is a fractional delta applied to the first space's original
+        volume (e.g. 0.20 = inflate that space's volume by 20%).
+        The resulting total-vs-expected delta is checked against tol_volume=0.03.
+        """
         bem = _build_bem()
-        # Inject a large volume mismatch to trigger failure
         if bem.spaces:
-            bem.spaces[0].volume_m3 = 100000.0  # Way different from expected
+            original = bem.spaces[0].volume_m3
+            bem.spaces[0].volume_m3 = original * (1 + vol_inject)
         result = _check_bem_volume_conservation(bem, tol_volume=0.03)
-        assert result.severity == "error", "Expected fail on volume mismatch"
+        assert result.severity == expected_severity, (
+            f"vol_inject={vol_inject}: expected {expected_severity}, "
+            f"got {result.severity} (message: {result.message})"
+        )
 
 
 class TestModelFromLinkedModelConservationChecks:
@@ -147,11 +175,13 @@ class TestModelFromTakeoffSimplifyTolValidation:
 class TestValidateBEMConservationIntegration:
     """Integration tests for validate_bem_conservation at export time."""
 
-    def test_validate_bem_conservation_returns_two_checks(self):
-        """validate_bem_conservation returns area and volume checks."""
+    def test_validate_bem_conservation_returns_six_checks(self):
+        """validate_bem_conservation returns area, volume, and zone reference checks."""
         bem = _build_bem()
         results = validate_bem_conservation(bem)
-        assert len(results) == 2  # area + volume checks
+        assert (
+            len(results) == 6
+        )  # area + space-area + volume + zone refs + hvac zone refs + symmetry
 
     def test_validate_bem_conservation_passes_on_clean_model(self):
         """validate_bem_conservation returns passing results on clean model."""

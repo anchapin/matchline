@@ -105,6 +105,16 @@ def _tri_area(a, b, c) -> float:
     return 0.5 * abs((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]))
 
 
+def _signed_tri_area(a, b, c) -> float:
+    """Signed area of triangle a-b-c using the standard shoelace formula.
+
+    Positive = vertex bends LEFT (convex) when traversed in CCW order.
+    Negative = vertex bends RIGHT (concave / reflex) when traversed in CCW order.
+    Zero = collinear.
+    """
+    return 0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+
+
 def _seg_intersects_ring(p, q, ring_pts, skip_a, skip_b) -> bool:
     """Would the new edge p->q cross any existing ring edge?
 
@@ -142,7 +152,13 @@ def _douglas_peucker(pts: np.ndarray, eps: float) -> np.ndarray:
         if L == 0:
             d = np.hypot(*(pts[i0 + 1 : i1] - a).T)
         else:
-            d = np.abs(np.cross(seg, pts[i0 + 1 : i1] - a)) / L
+            # Explicit 2-D cross product (z component of seg x rel). np.cross on
+            # 2-D vectors was deprecated in NumPy 2.0 and raises on >= 2.3, which
+            # broke the whole dp_eps pass on CI while warning locally -- the DP
+            # path had no test coverage before #502. Written out so the
+            # perpendicular distance does not depend on the NumPy version.
+            rel = pts[i0 + 1 : i1] - a
+            d = np.abs(seg[0] * rel[:, 1] - seg[1] * rel[:, 0]) / L
         rel = np.argmax(d)
         k = rel + i0 + 1
         if d[rel] > eps:
@@ -256,6 +272,7 @@ def simplify_ring(
 
     # --- Greedy minimum-area-loss vertex removal ---------------------------
     nv = len(work)
+    ring_is_ccw = Polygon(work).exterior.is_ccw
     alive = [True] * nv
     alive_count = nv
     prev = [(i - 1) % nv for i in range(nv)]
@@ -267,9 +284,9 @@ def simplify_ring(
     over_budget: set[int] = set()  # vertices currently too costly for budget
 
     def push(i):
-        a, b, c = work[prev[i]], work[i], work[nxt[i]]
+        a, b, c_pt = work[prev[i]], work[i], work[nxt[i]]
         ver[i] += 1
-        heapq.heappush(heap, (_tri_area(a, b, c), ver[i], i))
+        heapq.heappush(heap, (_tri_area(a, b, c_pt), ver[i], i))
 
     heap: list = []
     for i in range(nv):
@@ -307,6 +324,20 @@ def simplify_ring(
             continue
         over_budget.discard(i)
         p, q = prev[i], nxt[i]
+        # Concave (reflex) vertices must not be removed: their removal would
+        # increase polygon area, violating area-conservation invariants.
+        pa, pi, qa = work[p], work[i], work[q]
+        cross = 2 * _signed_tri_area(pa, pi, qa)
+        is_concave = (cross * (1 if ring_is_ccw else -1)) < -1e-6
+        if is_concave:
+            skipped.append(
+                {
+                    "op": "vertex_removal",
+                    "reason": f"vertex {orig_idx[i]}: concave \u2014 skipping",
+                }
+            )
+            over_cap.add(i)
+            continue
         # topology guard: new edge p->q must not cross the ring
         ring_pts = {j: work[j] for j in range(nv) if alive[j]}
         if _seg_intersects_ring(work[p], work[q], ring_pts, p, i):
@@ -362,6 +393,35 @@ def simplify_ring(
 
     new_area = envelope_area(new_ring, wall_height)
     delta = (new_area - orig_area) / orig_area
+
+    # Hard limit: area should not grow by more than 0.1% (1e-3)
+    # This is a stronger constraint than tol, which controls simplification aggressiveness
+    MAX_GROWTH = 1e-3
+    if delta > MAX_GROWTH:
+        skipped.append(
+            {
+                "op": "final",
+                "reason": f"actual area growth {delta:.3%} exceeds hard limit {MAX_GROWTH:.1%}",
+            }
+        )
+
+        return SimplifyResult(
+            ring=ring,
+            original_count=n0,
+            simplified_count=n0,
+            original_area=orig_area,
+            simplified_area=orig_area,
+            area_delta_pct=0.0,
+            tol=tol,
+            method="greedy_min_area_loss",
+            confidence=0.0,
+            provenance=[
+                {"surface": i, "from": [i], "note": "rollback: area growth exceeds hard limit"}
+                for i in range(n0)
+            ],
+            skipped=skipped,
+            valid=False,
+        )
 
     # Provenance: output surface s spans original vertices
     # new_orig[s] -> new_orig[s+1]; every original edge in between is listed.

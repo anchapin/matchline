@@ -15,29 +15,37 @@ Validation errors block export (exit code 1, not silent).
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from bem_export import (
     BEMModel,
     BEMOpeningUnit,
     BEMSpace,
     _validate_out_path,
+    validate_gbxml,
+    validate_ifc4,
     write_gbxml,
     write_ifc4,
 )
+from bem_helpers import _edge_facades
+from construction_library import apply_construction_library
+from convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
+    extract_with_tags,
     load_aec_bench,
     parse_schedule_csv,
     rollup_takeoff,
 )
 from geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
+from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
 from validate import export_gate, run_checks, validate_bem_conservation
 
@@ -92,6 +100,11 @@ def _run_auto_triage(model) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _north_up(pts) -> list:
+    """Canonical plan frame (x right, y down) -> BEM frame (x east, y north)."""
+    return [(float(p[0]), -float(p[1])) for p in pts]
+
+
 def model_from_linked_model(
     model, simplified_ring: list, wall_height_m: float, simplify_tolerance: float
 ) -> BEMModel:
@@ -102,9 +115,13 @@ def model_from_linked_model(
     by write_gbxml and write_ifc4.
     """
     # --- spaces -----------------------------------------------------------
+    from ifc_export import _use_fields
+    from space_use_defaults import lighting_watts
+
     bem_spaces = []
     for i, sp in enumerate(model.spaces.values()):
-        poly = _ensure_ccw(sp.polygon_m)
+        # canonical plan frame is y-down; gbXML/IFC want x=east, y=north
+        poly = _ensure_ccw(_north_up(sp.polygon_m))
         # Compute area from polygon
         area = 0.0
         n = len(poly)
@@ -122,6 +139,9 @@ def model_from_linked_model(
                 polygon_m=poly,
                 area_m2=area,
                 volume_m3=area * wall_height_m,
+                lighting_w=lighting_watts(sp),  # fixtures, else LPD x area (#746)
+                **_use_fields(sp),  # loads + schedules, as ifc_export does (#691)
+                wall_u_value_w_m2k=getattr(sp, "wall_u_value_w_m2k", None),
                 provenance=sp.core_provenance,
                 history=list(sp.history),
             )
@@ -132,9 +152,18 @@ def model_from_linked_model(
 
     # --- openings --------------------------------------------------------
     bem_openings = []
+    skipped_openings = []
     for sp in model.spaces.values():
         for op in sp.openings:
             if op.width_m is None or op.height_m is None:
+                skipped_openings.append(
+                    {
+                        "id": op.id,
+                        "tag": op.tag,
+                        "category": op.category,
+                        "reason": "dimensions missing",
+                    }
+                )
                 continue
             bem_openings.append(
                 BEMOpeningUnit(
@@ -144,11 +173,21 @@ def model_from_linked_model(
                     height_m=op.height_m,
                     provenance=op.provenance,
                     history=list(op.history),
+                    host_facade=op.host_facade or "",
+                    space_sid=sp.id,
+                    construction_id=op.construction_id or "",
                 )
             )
 
+    notes = []
+    if skipped_openings:
+        notes.append(
+            f"{len(skipped_openings)} opening(s) dropped due to missing dimensions "
+            f"(see skipped_openings)."
+        )
+
     # --- envelope ring ---------------------------------------------------
-    ring_ccw = _ensure_ccw(simplified_ring)
+    ring_ccw = _ensure_ccw(_north_up(simplified_ring))
 
     # --- area delta from simplifier (approximate from ring change) ----------
     # The simplifier reports relative area change; we pass it through
@@ -172,27 +211,41 @@ def model_from_linked_model(
 
     area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
+    from bem_shading import shades_from_model
+
+    shades, shade_notes = shades_from_model(
+        model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in bem_spaces]
+    )
+    notes.extend(shade_notes)
+
+    from constructions import (
+        opening_constructions,
+        roof_u_value,
+        semi_exterior_floors,
+        semi_exterior_walls,
+        slab_u_value,
+    )
+
     bem = BEMModel(
         building_name=model.name,
         spaces=bem_spaces,
         openings=bem_openings,
+        # y flipped above (canonical y-down -> north-up), same as the IFC
+        # and takeoff adapters; before this the ring was written mirrored N-S
+        ring_facades=_edge_facades(ring_ccw, y_north=True),
         ring_m=ring_ccw,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
         simplify_tolerance=simplify_tolerance,
+        skipped_openings=skipped_openings,
+        notes=notes,
+        shades=shades,
+        roof_u_value_w_m2k=roof_u_value(model),
+        slab_u_value_w_m2k=slab_u_value(model),
+        opening_constructions=opening_constructions(model),
+        interior_wall_constructions=semi_exterior_walls(model),
+        interior_floor_constructions=semi_exterior_floors(model),
     )
-
-    # Conservation law checks on BEMModel before returning
-    conservation_results = validate_bem_conservation(bem)
-    failed = [r for r in conservation_results if r.severity != "pass"]
-    if failed:
-        msgs = "; ".join(f"{r.name}: {r.message}" for r in failed)
-        raise StageError(
-            stage_name="model_from_linked_model",
-            stage_index=0,
-            msg=f"Conservation law violation in BEM transformation: {msgs}",
-            hint="Check area_delta_pct and simplify_tolerance thresholds",
-        )
 
     return bem
 
@@ -202,7 +255,7 @@ def model_from_linked_model(
 # ---------------------------------------------------------------------------
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args():
     import argparse
 
     ap = argparse.ArgumentParser(
@@ -222,6 +275,12 @@ def parse_args() -> argparse.Namespace:
         "--aec-bench",
         type=Path,
         help="AEC-Bench dataset root path (mutually exclusive with --seed and --image)",
+    )
+    g.add_argument(
+        "--set",
+        type=Path,
+        dest="set_pdf",
+        help="real PDF drawing set (#741): ingest, index, scale, walls/rooms, then the model",
     )
     ap.add_argument(
         "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
@@ -252,6 +311,31 @@ def parse_args() -> argparse.Namespace:
         help="which elevation variant to link (default: elev_grid)",
     )
     ap.add_argument(
+        "--detector-config",
+        type=Path,
+        default=None,
+        help="JSON naming the door/window detection provider for --set (#743); "
+        "default: none. See docs/detection_provider.md",
+    )
+    ap.add_argument(
+        "--storey-height",
+        type=float,
+        default=None,
+        help="storey height in metres for --set when the set states none (default 3.0, flagged)",
+    )
+    ap.add_argument(
+        "--climate-zone",
+        default=None,
+        help="ASHRAE climate zone (e.g. 4A) for the construction library (#747); "
+        "unset constructions stay unset without one",
+    )
+    ap.add_argument(
+        "--building-category",
+        default="Nonresidential",
+        choices=["Nonresidential", "Residential", "Semiheated"],
+        help="ASHRAE 90.1 Table 5.5 building category (default Nonresidential)",
+    )
+    ap.add_argument(
         "--simplify-tol",
         type=float,
         default=0.02,
@@ -265,70 +349,145 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 
-def main(args, config: dict | None = None) -> None:
-    out_dir = _validate_out_path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+def _set_storey_height(args, config: dict | None):
+    """Storey height for a drawing-set run: ``--storey-height`` first, then the run
+    config's ``wall_height`` (a number for every level, or ``{level: metres}``) (#821).
+    """
+    flag = getattr(args, "storey_height", None)
+    if flag is not None:
+        return flag
+    return (config or {}).get("wall_height")
 
-    # --- Stage 1: generate building or load real-sheet detections ----------
-    try:
-        if args.image:
-            dets = detections_from_yolo_json(args.detections, args.image.stem)
-            schedule = parse_schedule_csv(args.schedule_csv) if args.schedule_csv else {}
-            takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
-            bldg = {
-                "building_id": args.image.stem,
-                "seed": None,
-                "detections": [d.__dict__ for d in dets],
-                "schedule": {k: v.__dict__ for k, v in schedule.items()},
-                "takeoff": takeoff,
-            }
-            write_json(
-                out_dir / "stage_01_building.json",
-                {
-                    "source": str(args.image),
-                    "n_detections": len(dets),
-                    "n_scheduled": len(schedule),
-                },
+
+def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
+    """Stage 1: Generate building or load real-sheet detections.
+
+    Returns:
+        tuple: (model, link_report, bldg) for synthetic seed path,
+               or (model, None, None) for aec_bench path.
+    """
+    if getattr(args, "set_pdf", None):
+        from detection_provider import (
+            ProviderConfigError,
+            ProviderLicenseError,
+            provider_from_config,
+        )
+        from real_set import SetError, build_set_model
+
+        try:
+            provider = provider_from_config(getattr(args, "detector_config", None))
+            model, set_report = build_set_model(
+                args.set_pdf,
+                out_dir,
+                storey_height_m=_set_storey_height(args, config),
+                provider=provider,
             )
-            raise NotImplementedError(
-                "Stage 2 (build_model) for real sheets requires an architectural "
-                "plan sheet and the link step. For real-sheet processing, run "
-                "the full pipeline: matchline run --image <sheet> --detections <preds.json> "
-                "with a linked building model instead of this simplified path."
+        except (ProviderConfigError, ProviderLicenseError) as e:
+            raise StageError(
+                "Stage 1: drawing set",
+                1,
+                str(e),
+                hint="--detector-config names the provider; see docs/detection_provider.md.",
+            ) from e
+        except SetError as e:
+            raise StageError(
+                "Stage 1: drawing set",
+                1,
+                str(e),
+                hint="Each sheet's reason is in stage_00_set_report.json.",
+            ) from e
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.set_pdf),
+                "n_sheets": len(set_report.sheets),
+                "levels": set_report.levels,
+                "n_spaces": len(model.spaces),
+                "failed_sheets": set_report.to_dict()["failed_sheets"],
+            },
+        )
+        failed = set_report.to_dict()["failed_sheets"]
+        if failed:
+            print(
+                f"WARNING: {len(failed)} sheet(s) could not be fully read: {', '.join(failed)} "
+                f"(reasons in {out_dir / 'stage_00_set_report.json'})",
+                file=sys.stderr,
             )
-        elif args.aec_bench:
-            samples, takeoff_result = load_aec_bench(args.aec_bench)
-            write_json(
-                out_dir / "stage_01_building.json",
-                {
-                    "source": str(args.aec_bench),
-                    "n_samples": len(samples),
-                    "n_regions": len(takeoff_result.regions),
-                },
-            )
-            model = _build_minimal_model_from_regions(takeoff_result, bldg_id="aec-bench")
-        else:
-            bldg = generate_building(args.seed, open_office_span=args.open_office_span)
-            write_json(out_dir / "stage_01_building.json", bldg)
-    except StageError:
-        raise
-    except Exception as e:
+        return model, None, None
+    if getattr(args, "image", None):  # cli Namespace carries no --image (#753)
+        dets = detections_from_yolo_json(getattr(args, "detections", None), args.image.stem)
+        schedule_csv = getattr(args, "schedule_csv", None)
+        schedule = parse_schedule_csv(schedule_csv) if schedule_csv else {}
+        # Stage 1b (#668): read schedule tags beside each symbol; no-op without OCR
+        from PIL import Image
+
+        sheet = np.asarray(Image.open(args.image).convert("L"), dtype=np.float64)
+        dets = extract_with_tags(dets, sheet, config=config, schedule_tags=set(schedule))
+        takeoff = rollup_takeoff(dets, schedule, drawing_type="floor_plan")
+        bldg = {
+            "building_id": args.image.stem,
+            "seed": None,
+            "detections": [d.__dict__ for d in dets],
+            "schedule": {k: v.__dict__ for k, v in schedule.items()},
+            "takeoff": takeoff,
+        }
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.image),
+                "n_detections": len(dets),
+                "n_scheduled": len(schedule),
+            },
+        )
+        # A single raster sheet gives symbols and a takeoff (written above) but no
+        # walls or rooms: raster wall finding is not built, so there is nothing to
+        # put the symbols in. Fail loudly with the route that does build a model.
         raise StageError(
-            "Stage 1: generate_building",
-            1,
-            str(e),
-            hint="Check input data format. For --aec-bench ensure dataset path is valid. "
-            "For --seed ensure the seed is an integer.",
-        ) from e
+            "Stage 2: build_model",
+            2,
+            f"a single sheet image gives symbols and a takeoff ({len(dets)} detections, "
+            f"{len(schedule)} scheduled tags, in stage_01_building.json) but no walls or "
+            "rooms, so no building model can be built from it",
+            hint="Run the PDF drawing set instead: matchline run --set drawings.pdf --out out/ "
+            "(walls and rooms come from vector floor plans; see docs/real_set.md).",
+        )
+    elif args.aec_bench:
+        samples, takeoff_result = load_aec_bench(args.aec_bench)
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.aec_bench),
+                "n_samples": len(samples),
+                "n_regions": len(takeoff_result.regions),
+            },
+        )
+        model = _build_minimal_model_from_regions(takeoff_result, bldg_id="aec-bench")
+        return model, None, None
+    else:
+        bldg = generate_building(args.seed, open_office_span=args.open_office_span)
+        write_json(out_dir / "stage_01_building.json", bldg)
+        return None, None, bldg
 
-    # --- Stage 2: build model --------------------------------------------
-    try:
-        if args.aec_bench:
-            link_report = None
-        else:
-            model, link_report = build_model(
-                bldg, elevation_key=args.elevation_key, building_name=bldg["building_id"]
-            )
+
+def _stage_2_build_model(bldg, args, out_dir: Path, model=None):
+    """Stage 2: Build linked model from building data.
+
+    Returns:
+        tuple: (model, link_report)
+    """
+    if model is not None:
+        # real set / AEC-Bench: stage 1 already built the model
+        write_json(
+            out_dir / "stage_02_model.json", {"model": _model_to_dict(model), "link_report": None}
+        )
+        return model, None
+    if args.aec_bench:
+        link_report = None
+        return None, link_report
+    else:
+        model, link_report = build_model(
+            bldg, elevation_key=args.elevation_key, building_name=bldg["building_id"]
+        )
         write_json(
             out_dir / "stage_02_model.json",
             {
@@ -338,69 +497,45 @@ def main(args, config: dict | None = None) -> None:
                 "link_report": asdict(link_report) if link_report else None,
             },
         )
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 2: build_model",
-            2,
-            str(e),
-            hint="Check that Stage 1 output is valid. Ensure elevation_key is correct "
-            "and building detections contain required categories.",
-        ) from e
+        return model, link_report
 
-    # --- Config overrides (from YAML) ----------------------------------
-    simplify_tol = args.simplify_tol
-    wall_height = None
-    min_review_confidence = None
-    if config:
-        simplify_tol = config.get("simplify_tolerance", simplify_tol)
-        wall_height = config.get("wall_height", None)
-        min_review_confidence = config.get("review_confidence", None)
 
-    # --- Stage 3: simplify geometry --------------------------------------
-    try:
-        if wall_height is None:
-            wall_height = model.levels[0].wall_height_m
-        ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-        sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
-        write_json(
-            out_dir / "stage_03_simplified.json",
-            {
-                "original_count": sres.original_count,
-                "simplified_count": sres.simplified_count,
-                "simplified_ring": sres.ring,
-                "area_delta_pct": sres.area_delta_pct,
-                "tolerance_pct": sres.tol * 100.0,
-            },
-        )
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 3: simplify_ring",
-            3,
-            str(e),
-            hint="Check simplify_tolerance setting. Try increasing --simplify-tol (default 0.02). "
-            "Ensure wall_height is valid (> 0).",
-        ) from e
+def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out_dir: Path):
+    """Stage 3: Simplify building geometry.
 
-    # --- Stage 4: validation checks --------------------------------------
-    try:
-        report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
-        write_json(out_dir / "stage_04_validation.json", report.to_dict())
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 4: run_checks",
-            4,
-            str(e),
-            hint="Check model structure and validation rules. Ensure all required "
-            "fields are populated in the BuildingModel.",
-        ) from e
+    Returns:
+        tuple: (simplify_result, wall_height)
+    """
+    if wall_height is None:
+        wall_height = model.levels[0].wall_height_m
+    ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
+    sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
+    write_json(
+        out_dir / "stage_03_simplified.json",
+        {
+            "original_count": sres.original_count,
+            "simplified_count": sres.simplified_count,
+            "simplified_ring": sres.ring,
+            "area_delta_pct": sres.area_delta_pct,
+            "tolerance_pct": sres.tol * 100.0,
+        },
+    )
+    return sres, wall_height
 
-    # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
+
+def _stage_4_validation(model, sres, min_review_confidence, out_dir: Path):
+    """Stage 4: Run validation checks on the model.
+
+    Returns:
+        ValidationReport
+    """
+    report = run_checks(model, sres=sres, min_review_confidence=min_review_confidence)
+    write_json(out_dir / "stage_04_validation.json", report.to_dict())
+    return report
+
+
+def _stage_4b_auto_triage(model, out_dir: Path):
+    """Stage 4b: Run auto-triage on review queue items."""
     import building_model
 
     building_model.ENABLE_AUTO_TRIAGE = True
@@ -410,48 +545,240 @@ def main(args, config: dict | None = None) -> None:
         {"auto_triage": True, "items": [asdict(i) for i in model.review_queue]},
     )
 
-    # --- Stage 5: fail-fast on validation errors ------------------------
-    if not export_gate(report):
+
+def _stage_5_fail_fast(report, min_review_confidence=None):
+    """Stage 5: Fail fast if validation errors exist."""
+    if not export_gate(report, getattr(report, "model", None), min_review_confidence):
         print(f"VALIDATION FAILED: {len(report.errors)} error(s)", file=sys.stderr)
         for r in report.errors:
             print(f"  - {r.check_id}: {r.message}", file=sys.stderr)
         sys.exit(1)
 
-    # --- Stage 6: BEM export ---------------------------------------------
-    try:
-        bem_dir = out_dir / "stage_06_bem"
-        bem_dir.mkdir(parents=True, exist_ok=True)
 
-        bem_model = model_from_linked_model(
-            model=model,
-            simplified_ring=sres.ring,
-            wall_height_m=wall_height,
-            simplify_tolerance=simplify_tol * 100.0,
+def _stage_6_conservation_gate(bem_model: BEMModel) -> None:
+    """Block export if conservation law checks fail."""
+    results = validate_bem_conservation(bem_model)
+    violations = [r for r in results if r.severity == "error"]
+    if violations:
+        msgs = "; ".join(f"{r.name}: {r.message}" for r in violations)
+        raise StageError(
+            stage_name="validate_bem_conservation",
+            stage_index=6,
+            msg=f"Conservation law violation: {msgs}",
+            hint="Check area_delta_pct and simplify_tolerance thresholds",
         )
 
-        gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
-        write_gbxml(bem_model, gbxml_path)
 
-        ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
-        write_ifc4(bem_model, ifc_path)
+def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
+    """Stage 6: Export BEM model to gbXML and IFC4 formats."""
+    bem_model = model_from_linked_model(
+        model=model,
+        simplified_ring=sres.ring,
+        wall_height_m=wall_height,
+        simplify_tolerance=simplify_tol * 100.0,
+    )
+    if len(model.levels) > 1:
+        # several storeys (#639): levels, floors, ceilings and roofs
+        from bem_levels import add_levels
 
-        print(f"Pipeline complete: {out_dir}")
-        print("  stage_01_building.json")
-        print("  stage_02_model.json")
-        print("  stage_03_simplified.json")
-        print(f"  stage_04_validation.json (ok={report.ok})")
-        print(f"  stage_06_bem/{gbxml_path.name}")
-        print(f"  stage_06_bem/{ifc_path.name}")
-    except StageError:
-        raise
-    except Exception as e:
-        raise StageError(
-            "Stage 6: BEM_export",
-            6,
-            str(e),
-            hint="Check BEM export dependencies and output directory permissions. "
-            "Ensure write_gbxml and write_ifc4 can write to the output directory.",
-        ) from e
+        add_levels(model, bem_model)
+    # scheduled zone airflow onto the gbXML thermal zones (#746)
+    from zone_airflow import apply_zone_airflow
+
+    apply_zone_airflow(model, bem_model)
+    # scheduled air handlers as gbXML air loops (#746, option 3)
+    from air_loops import apply_air_loops
+
+    apply_air_loops(model, bem_model)
+    _stage_6_conservation_gate(bem_model)
+    bem_dir = out_dir / "stage_06_bem"
+    bem_dir.mkdir(parents=True, exist_ok=True)
+
+    gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
+    write_gbxml(bem_model, gbxml_path)
+    validate_gbxml(gbxml_path)
+
+    ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
+    write_ifc4(bem_model, ifc_path)
+    validate_ifc4(ifc_path)
+
+    return gbxml_path, ifc_path
+
+
+def _print_pipeline_complete(out_dir: Path, report):
+    """Print completion summary of all pipeline stages."""
+    print(f"Pipeline complete: {out_dir}")
+    print("  stage_01_building.json")
+    print("  stage_02_model.json")
+    print("  stage_03_simplified.json")
+    print(f"  stage_04_validation.json (ok={report.ok})")
+    bem_dir = out_dir / "stage_06_bem"
+    if bem_dir.exists():
+        for f in bem_dir.iterdir():
+            print(f"  stage_06_bem/{f.name}")
+
+
+def _run_inputs(args, config: dict | None) -> list:
+    """What this run read, for the trust report: input files (hashed there) and
+    the settings that change the output."""
+    out = []
+    for role, attr in (
+        ("drawing set", "set_pdf"),
+        ("sheet image", "image"),
+        ("detections", "detections"),
+        ("schedule csv", "schedule_csv"),
+        ("aec-bench", "aec_bench"),
+        ("detector config", "detector_config"),
+    ):
+        v = getattr(args, attr, None)
+        if v:
+            out.append({"role": role, "path": str(v)})
+    seed = getattr(args, "seed", None)
+    if seed is not None:
+        out.append({"role": "synthetic seed", "value": seed})
+    for role, attr in (
+        ("climate zone", "climate_zone"),
+        ("building category", "building_category"),
+    ):
+        v = (config or {}).get(attr, getattr(args, attr, None))
+        if v:
+            out.append({"role": role, "value": v})
+    if config:
+        out.append({"role": "config", "value": json.dumps(config, sort_keys=True, default=str)})
+    return out
+
+
+def main(args, config: dict | None = None) -> None:
+    out_dir = _validate_out_path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # Config overrides from YAML
+        simplify_tol = args.simplify_tol
+        wall_height = None
+        min_review_confidence = None
+        if config:
+            simplify_tol = config.get("simplify_tolerance", simplify_tol)
+            wall_height = config.get("wall_height", None)
+            if isinstance(wall_height, dict):
+                # per-level heights went to the set model (#821); simplify uses its first level
+                wall_height = None
+            min_review_confidence = config.get("review_confidence", None)
+
+        # --- Stage 1: generate building or load real-sheet detections ----------
+        try:
+            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 1: generate_building",
+                1,
+                str(e),
+                hint="Check input data format. For --aec-bench ensure dataset path is valid. "
+                "For --seed ensure the seed is an integer.",
+            ) from e
+
+        # --- Stage 2: build model --------------------------------------------
+        try:
+            model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 2: build_model",
+                2,
+                str(e),
+                hint="Check that Stage 1 output is valid. Ensure elevation_key is correct "
+                "and building detections contain required categories.",
+            ) from e
+
+        # --- Stage 3: simplify geometry --------------------------------------
+        try:
+            sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 3: simplify_ring",
+                3,
+                str(e),
+                hint="Check simplify_tolerance setting. "
+                "Try increasing --simplify-tol (default 0.02). "
+                "Ensure wall_height is valid (> 0).",
+            ) from e
+
+        # --- Stage 3b: construction library (#747) ---------------------------
+        climate_zone = getattr(args, "climate_zone", None)
+        category = getattr(args, "building_category", None) or "Nonresidential"
+        if config:
+            climate_zone = config.get("climate_zone", climate_zone)
+            category = config.get("building_category", category)
+        constructions = apply_construction_library(model, climate_zone or "", category)
+        write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
+
+        # --- Stage 4: validation checks --------------------------------------
+        try:
+            report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 4: run_checks",
+                4,
+                str(e),
+                hint="Check model structure and validation rules. Ensure all required "
+                "fields are populated in the BuildingModel.",
+            ) from e
+
+        # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
+        _stage_4b_auto_triage(model, out_dir)
+
+        # --- HTML review report, written before the fail-fast gate (#749) ---
+        from review_report import write_review
+
+        review_dir = write_review(out_dir, model)
+        print(f"  review: {review_dir / 'review.html'}")
+
+        # --- Stage 5: fail-fast on validation errors ------------------------
+        _stage_5_fail_fast(report, min_review_confidence)
+
+        # --- Stage 6: BEM export ---------------------------------------------
+        try:
+            gbxml_path, ifc_path = _stage_6_bem_export(
+                model, sres, wall_height, simplify_tol, out_dir
+            )
+            conv = build_convention_report(model, report, sres, constructions)
+            write_json(out_dir / "stage_06_bem" / "convention_report.json", conv)
+            # export package with the one-page trust report (#750)
+            from export_package import build_package
+
+            pkg = build_package(
+                out_dir,
+                model,
+                report,
+                conv,
+                [gbxml_path, ifc_path],
+                _run_inputs(args, config),
+                review_dir=review_dir,
+            )
+            print(f"  package: {pkg}")
+            _print_pipeline_complete(out_dir, report)
+        except StageError:
+            raise
+        except Exception as e:
+            raise StageError(
+                "Stage 6: BEM_export",
+                6,
+                str(e),
+                hint="Check BEM export dependencies and output directory permissions. "
+                "Ensure write_gbxml and write_ifc4 can write to the output directory.",
+            ) from e
+    except StageError as e:
+        # the stage name, the reason and the recovery hint, so a failed run says why
+        print(f"ERROR {e}", file=sys.stderr)
+        if e.hint:
+            print(f"  hint: {e.hint}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
@@ -544,27 +871,36 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
     volume = area * wall_height
 
     level = Level(id="L1", name="Level 1", wall_height_m=wall_height)
-    prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
+    labeled = attach_room_labels(takeoff_result, None)
+    if labeled.spaces:
+        first_labeled = labeled.spaces[0]
+        lconf = first_labeled.label_confidence
+        lsrc = first_labeled.label_source or "room_label_parse"
+        note = f"room_label: name={first_labeled.name}, number={first_labeled.number}"
+        prov = Provenance(
+            sheet_id=bldg_id,
+            revision=0,
+            method=lsrc,
+            confidence=lconf,
+            note=note,
+        )
+    else:
+        prov = Provenance(sheet_id=bldg_id, revision=0, method="aec-bench-minimal", confidence=1.0)
 
     # --- Space with minimal openings ---
     openings: list[SpaceOpening] = []
-    for i, wr in enumerate(by_cat.get("wall", [])):
-        tag = f"W{i:02d}"
-        openings.append(
-            SpaceOpening(
-                id=tag,
-                tag=tag,
-                category="door",
-                width_m=0.9,
-                height_m=2.1,
-                area_m2=0.9 * 2.1,
-                provenance=prov,
-                needs_review=False,
-            )
-        )
-
+    # Wall regions are walls, not openings: doors come only from door
+    # symbols (below), so a sheet's door count is never inflated by its walls.
     for i, dr in enumerate(by_cat.get("door", [])):
         tag = f"D{i:02d}"
+        # Plan position of the door symbol (centroid of its detected
+        # polygon), so space_merge can tell which rooms a door connects.
+        # A degenerate polygon leaves it None rather than guessing.
+        center = None
+        if len(dr.polygon_px) >= 3:
+            c = ShapelyPolygon([px_to_m(pt) for pt in dr.polygon_px]).centroid
+            if not c.is_empty:
+                center = [round(c.x, 6), round(c.y, 6)]
         openings.append(
             SpaceOpening(
                 id=tag,
@@ -575,6 +911,7 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
                 area_m2=0.9 * 2.1,
                 provenance=prov,
                 needs_review=False,
+                plan_center_m=center,
             )
         )
 
@@ -659,6 +996,26 @@ def _build_minimal_model_from_regions(takeoff_result, bldg_id: str):
         schedules={},  # empty: review queue suppresses errors
         review_queue=review_queue,
     )
+
+    # Route low-confidence labels to review queue
+    if labeled.spaces:
+        for ls in labeled.spaces:
+            if ls.label_confidence < 0.80:
+                model.flag_for_review(
+                    kind="space_no_geometry",
+                    description=f"Low-confidence room label: name={ls.name}, number={ls.number}",
+                    confidence=ls.label_confidence,
+                    provenance=prov,
+                )
+    for ul in labeled.unmatched_labels:
+        if ul.confidence < 0.80:
+            model.flag_for_review(
+                kind="window_room_link",
+                description=f"Low-confidence unmatched label: text={ul.text}",
+                confidence=ul.confidence,
+                provenance=prov,
+            )
+
     return model
 
 

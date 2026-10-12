@@ -1,11 +1,13 @@
 # STATE.md — Matchline
 
+> **Frozen snapshot (2026-09-22 roadmap pass).** All six phases below were completed that day. Later work is tracked on GitHub project board 12 (https://github.com/users/anchapin/projects/12) and in issues; current grades are in `QUALITY-SCORE.md`, open questions in `docs/design-docs/open-issues.md`. Fixed for consistency in #712.
+
 ## Project Reference
 
 | Field | Value |
 |-------|-------|
 | **Core value** | Deterministic, auditable extraction of BEM inputs from drawings and BIM |
-| **Current focus** | Phase 2: Detector integration |
+| **Current focus** | None (roadmap complete 2026-09-22; see board 12) |
 | **Started** | 2026-09-21 (roadmap created from codebase audit) |
 | **Granularity** | Standard (6 phases) |
 
@@ -16,7 +18,7 @@
 | **Active phase** | Phase 6: Production Hardening |
 | **Active plan** | All 4 Phase 6 requirements complete (CFG-01 through CFG-04) |
 | **Status** | Phase 6 complete — 4/4 done |
-| **Progress** | `[==============] 48%` (12/25 requirements done) |
+| **Progress** | All 6 phases complete per ROADMAP.md progress table (per-requirement tally below was not kept up after Phase 4) |
 
 ## Performance Metrics
 
@@ -26,9 +28,9 @@
 | Requirements done | 12 (ORCH-01, ORCH-02, ORCH-03, ORCH-04, DET-01, DET-02, DET-03, DET-04, CFG-01, CFG-02, CFG-03, CFG-04) |
 | Requirements gaps | 13 |
 | Phases | 6 |
-| Phases completed | 5 (Phase 1–5 complete; Phase 6 in progress) |
-| Test coverage | `tests/` exist for validate, invariants, ifc_import, review_classifier; no integration tests |
-| Open issues (docs) | 4 (window dedup, IFC Tier 1, thick-stroke skeletons, complex GD&T rows) |
+| Phases completed | 6 (Phases 1–6 complete, 2026-09-22) |
+| Test coverage | Unit, conservation and integration suites (`tests/integration/`); CI enforces the collected count (`EXPECTED_TEST_COUNT` in `.github/workflows/ci.yml`) |
+| Open issues (docs) | See `docs/design-docs/open-issues.md` (window dedup landed in #664, IFC Tier 1 in #666; thick-stroke and GD&T rows closed as CFG-02/CFG-03) |
 
 ## Accumulated Context
 

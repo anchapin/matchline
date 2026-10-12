@@ -2,12 +2,13 @@
 
 ## Plan structure
 
-Plans live under `docs/plans/` and are **gitignored** (they are local working notes, not committed documentation).
+Plans live under `docs/plans/` and design docs under `docs/design-docs/`. All are committed and tracked in git.
 
 ```
 docs/plans/
   designs/           ← permanent design references
-  work/             ← execution plans (Status: Active / Completed)
+  work/              ← execution plans (Status: Active / Completed)
+docs/design-docs/   ← architectural decisions and core beliefs
 ```
 
 Use the `Status` header to track lifecycle: `Status: Draft` → `Status: Active` → `Status: Completed` (or `Status: Superseded`).

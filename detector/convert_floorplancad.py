@@ -13,7 +13,6 @@ Output (default ~/workspace/datasets/detector_yolo/floorplancad/):
     labels/eval/<image_id>.txt
 """
 import argparse
-import io
 import os
 import sys
 from collections import Counter

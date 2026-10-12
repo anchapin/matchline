@@ -1,0 +1,552 @@
+"""Door-swing detection on plan images (door_detect.py)."""
+
+import numpy as np
+import pytest
+from PIL import Image, ImageDraw
+
+from door_detect import METHOD, detect_door_swings
+
+PPM = 50.0
+
+
+def _canvas(width_m=0.9, *, label=False):
+    """A vertical 20 px wall with one door, leaf east, arc toward +y."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x = 150
+    d.rectangle([x - 10, 40, x + 10, 360], fill=0)
+    d.rectangle([x - 10, 40, 330, 50], fill=0)  # a cross wall, for clutter
+    r = width_m * PPM
+    yh = 150
+    d.rectangle([x - 11, yh, x + 11, yh + r], fill=255)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    d.line([0, 300, 399, 300], fill=120, width=1)  # grey grid line: not ink
+    if label:
+        d.text((x + 15, yh + 12), "CLOSET", fill=0)
+    return np.asarray(img), (x, yh + r / 2), r
+
+
+def _orient(img, pt, k, flip):
+    """Rotate/flip the image and track where pt lands."""
+    h, w = img.shape
+    x, y = pt
+    if flip:
+        img, x = img[:, ::-1], w - 1 - x
+    for _ in range(k):  # np.rot90: (x, y) -> (y, W-1-x)
+        h, w = img.shape
+        img, (x, y) = np.rot90(img), (y, w - 1 - x)
+    return np.ascontiguousarray(img), (x, y)
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_finds_the_door_in_every_orientation(k, flip):
+    img, centre, r = _canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    (det,) = detect_door_swings(img, PPM)
+    assert det["method"] == METHOD
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("width_m", [0.7, 0.9, 1.1])
+def test_width_and_label_over_the_swing(width_m):
+    img, (cx, cy), r = _canvas(width_m, label=True)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+def _face_canvas(*, arc=True, side_m=3.6, thick_px=10):
+    """A door hung beside a cross wall that meets its hinge jamb (#743).
+
+    The open leaf lies on the cross wall's face, so the drafted leaf and the
+    wall merge into one band of ink.
+    """
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 0.9 * PPM
+    d.rectangle([x - 10, 40, x + 10, 360], fill=0)
+    d.rectangle([x - 11, yh, x + 11, yh + r], fill=255)
+    d.rectangle([x + 10, yh - thick_px, x + 10 + side_m * PPM, yh + 1], fill=0)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    if arc:
+        d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize(("side_m", "thick_px"), [(3.6, 10), (0.6, 10), (3.6, 5)])
+def test_leaf_lying_on_a_wall_face(k, flip, side_m, thick_px):
+    img, centre, r = _face_canvas(side_m=side_m, thick_px=thick_px)
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_wall_face_at_a_gap_without_an_arc_is_not_a_door(k):
+    img, centre, _ = _face_canvas(arc=False)
+    img, _ = _orient(img, centre, k, False)
+    assert detect_door_swings(img, PPM) == []
+
+
+def test_leaf_on_a_wall_face_needs_the_jamb_wall_past_the_opening():
+    """With the leaf on a face only the far jamb places the hinge (#743)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 45
+    d.rectangle([x - 10, 40, x + 10, yh], fill=0)  # wall ends at the hinge
+    d.rectangle([x + 10, yh - 10, x + 190, yh + 1], fill=0)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    assert detect_door_swings(np.asarray(img), PPM) == []
+
+
+def test_wall_corners_without_swings_are_not_doors():
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.rectangle([140, 40, 160, 360], fill=0)
+    d.rectangle([160, 140, 360, 150], fill=0)  # T into the wall
+    d.rectangle([40, 250, 140, 260], fill=0)  # and one from the other side
+    d.rectangle([40, 40, 360, 50], fill=0)  # an L at the top
+    assert detect_door_swings(np.asarray(img), PPM) == []
+
+
+def test_wall_gap_without_a_swing_is_not_a_door():
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.rectangle([140, 40, 160, 360], fill=0)
+    d.rectangle([139, 150, 161, 195], fill=255)  # opening, no symbol drawn
+    assert detect_door_swings(np.asarray(img), PPM) == []
+
+
+def test_symbols_outside_the_width_range_are_ignored():
+    img, _, _ = _canvas(0.4)  # 20 px: below MIN_WIDTH_M
+    assert detect_door_swings(img, PPM) == []
+
+
+def test_rejects_colour_images():
+    with pytest.raises(ValueError):
+        detect_door_swings(np.zeros((10, 10, 3), np.uint8), PPM)
+
+
+def test_synthetic_buildings_recall_and_no_false_doors():
+    from synth.multidiscipline import generate_building
+
+    hit = total = false = 0
+    for seed in range(8):
+        b = generate_building(seed, service_rooms=True)
+        arch = b["sheets"]["arch"]
+        dets = detect_door_swings(arch["image"], arch["meta"]["px_per_m"])
+        for g in arch["doors"]:
+            total += 1
+            near = [d for d in dets if np.hypot(d["x_px"] - g["x_px"], d["y_px"] - g["y_px"]) <= 6]
+            hit += bool(near)
+        false += sum(
+            all(np.hypot(d["x_px"] - g["x_px"], d["y_px"] - g["y_px"]) > 6 for g in arch["doors"])
+            for d in dets
+        )
+    assert total >= 6
+    assert hit / total >= 0.8
+    assert false == 0
+
+
+def test_default_building_has_no_false_doors():
+    from synth.multidiscipline import generate_building
+
+    b = generate_building(5)
+    arch = b["sheets"]["arch"]
+    assert detect_door_swings(arch["image"], arch["meta"]["px_per_m"]) == []
+
+
+def test_larger_scale_drawing():
+    """Tolerances grow with the scale: a 3x NEAREST upscale still reads."""
+    from synth.multidiscipline import generate_building
+
+    b = generate_building(3, service_rooms=True)
+    a = b["sheets"]["arch"]
+    img = a["image"]
+    big = np.asarray(
+        Image.fromarray(img).resize((img.shape[1] * 3, img.shape[0] * 3), Image.NEAREST)
+    )
+    (det,) = detect_door_swings(big, 3 * a["meta"]["px_per_m"])
+    (g,) = a["doors"]
+    assert np.hypot(det["x_px"] / 3 - g["x_px"], det["y_px"] / 3 - g["y_px"]) <= 3
+    assert abs(det["width_px"] / 3 - g["width_px"]) <= 3
+
+
+def test_double_line_wall_and_outlined_leaf():
+    """Thin-line drafting: wall as two lines, leaf as an outlined panel."""
+    ppm = 164  # ~200 dpi at 1/4" = 1'-0"
+    img = Image.new("L", (900, 900), 255)
+    d = ImageDraw.Draw(img)
+    x, t2 = 300, int(0.15 * ppm)
+    for xx in (x - t2 // 2, x + t2 // 2):
+        d.line([xx, 60, xx, 840], fill=0, width=2)
+    r, yh = int(0.9 * ppm), 250
+    d.rectangle([x - t2 // 2 - 2, yh, x + t2 // 2 + 2, yh + r], fill=255)
+    d.line([x - t2 // 2, yh, x + t2 // 2, yh], fill=0, width=2)
+    d.line([x - t2 // 2, yh + r, x + t2 // 2, yh + r], fill=0, width=2)
+    d.rectangle([x, yh - 3, x + r, yh + 3], outline=0, width=2)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    (det,) = detect_door_swings(np.asarray(img), float(ppm))
+    assert np.hypot(det["x_px"] - x, det["y_px"] - (yh + r / 2)) <= 4
+    assert abs(det["width_px"] - r) <= 6
+
+
+def _stub_jamb_canvas(*, gap=True):
+    """Door A in a horizontal wall whose far jamb is the hinge stub of door
+    B, hung in the crossing wall with its leaf lying just off the wall line
+    across A's opening and the two swings crossing (Clinic second floor, #875).
+    A T wall just behind A's hinge leaves the far jamb as A's only wall.
+    """
+    img = Image.new("L", (320, 300), 255)
+    d = ImageDraw.Draw(img)
+    r = 46
+    d.rectangle([0, 200, 319, 208], fill=0)  # wall A is cut in
+    d.rectangle([146, 60, 154, 140], fill=0)  # crossing wall above
+    d.rectangle([90, 208, 97, 299], fill=0)  # T wall just behind A's hinge
+    d.rectangle([146, 140 + r, 154, 208], fill=0)  # B's hinge stub = A's far jamb
+    # door B: hinge (150, 186), leaf west along y=186, arc up to the crossing wall
+    d.line([150, 186, 150 - r, 186], fill=0, width=3)
+    d.arc([150 - r, 186 - r, 150 + r, 186 + r], start=180, end=270, fill=0, width=2)
+    # door A: hinge (100, 204), leaf up, arc east to the stub
+    if gap:
+        d.rectangle([100, 199, 145, 209], fill=255)
+    d.line([100, 204, 100, 204 - r], fill=0, width=3)
+    d.arc([100 - r, 204 - r, 100 + r, 204 + r], start=270, end=360, fill=0, width=2)
+    return np.asarray(img), (100 + r / 2, 204), r
+
+
+def _hollow_canvas(*, gap_px=21, arc=True, neighbour=False):
+    """A door hung on one face line of a hollow wall (#875).
+
+    The jamb wall is two thin lines with a clear gap between them, wider
+    than two leaves, and the door hinges on the inner line rather than the
+    wall's centre. ``neighbour`` adds a short line just past the far face
+    line, like the next door's leaf in the Clinic first floor.
+    """
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x0, x1, line, yh, r = 150, 150 + gap_px, 3, 200, 44
+    for xx in (x0, x1):
+        d.rectangle([xx, 40, xx + line - 1, yh - r], fill=0)
+        d.rectangle([xx, yh, xx + line - 1, 360], fill=0)
+    d.rectangle([x0, yh - r, x1 + line - 1, yh - r + 1], fill=0)
+    d.rectangle([x0, yh, x1 + line - 1, yh + 1], fill=0)
+    d.line([x0, yh, x0 - r, yh], fill=0, width=2)
+    if arc:
+        d.arc([x0 - r, yh - r, x0 + r, yh + r], start=180, end=270, fill=0, width=2)
+    if neighbour:
+        d.rectangle([x1 + line + 3, yh - 40, x1 + line + 5, yh + 20], fill=0)
+    return np.asarray(img), (x0, yh - r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_far_jamb_thickened_by_a_crossing_doors_hinge_stub(k, flip):
+    img, centre, r = _stub_jamb_canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    dets = detect_door_swings(img, PPM)
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_stub_jamb_without_a_gap_is_not_a_door():
+    img, (cx, cy), _ = _stub_jamb_canvas(gap=False)
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("gap_px,neighbour", [(21, False), (12, False), (21, True)])
+def test_door_hung_on_a_hollow_wall_face(k, flip, gap_px, neighbour):
+    img, centre, r = _hollow_canvas(gap_px=gap_px, neighbour=neighbour)
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("k", [0, 1])
+def test_hollow_wall_gap_without_an_arc_is_not_a_door(k):
+    img, _, _ = _hollow_canvas(arc=False)
+    img, _ = _orient(img, (0, 0), k, False)
+    assert detect_door_swings(img, PPM) == []
+
+
+def _stacked_canvas(*, gap=True):
+    """A door whose leaf, drawn just off a crossing wall's face, is separable
+    from it; the hinge wall runs on beyond that crossing wall and the far jamb
+    is the end of another crossing wall (Clinic first floor, #875).
+    """
+    img = Image.new("L", (300, 300), 255)
+    d = ImageDraw.Draw(img)
+    r = 45
+    d.rectangle([0, 126, 153, 139], fill=0)  # far-jamb wall, ending at the jamb
+    d.rectangle([0, 186, 153, 193], fill=0)  # crossing wall the leaf lies on
+    d.rectangle([147, 194, 153, 299], fill=0)  # hinge wall, beyond it
+    if not gap:
+        d.rectangle([147, 140, 153, 185], fill=0)
+    d.line([150, 184, 150 - r, 184], fill=0, width=2)  # leaf, 1 px off the face
+    d.arc([150 - r, 184 - r, 150 + r, 184 + r], start=180, end=270, fill=0, width=2)
+    return np.asarray(img), (150, 184 - r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_leaf_just_off_a_crossing_walls_face(k, flip):
+    img, centre, r = _stacked_canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    dets = detect_door_swings(img, PPM)
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_leaf_off_a_crossing_wall_without_a_gap_is_not_a_door():
+    img, (cx, cy), _ = _stacked_canvas(gap=False)
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _tee_jamb_canvas(*, gap=True):
+    """A door whose far jamb is a wall that a crossing wall meets in a T
+    right past the opening, hung from a stub below a hollow box wall that
+    gives no wall behind the hinge (Clinic first floor, #875).
+    """
+    img = Image.new("L", (300, 300), 255)
+    d = ImageDraw.Draw(img)
+    r = 45
+    d.rectangle([130, 0, 132, 95], fill=0)  # hollow box, outer line
+    d.rectangle([151, 0, 153, 95], fill=0)  # hollow box, inner line
+    d.rectangle([130, 96, 153, 97], fill=0)  # box closed at its end
+    d.rectangle([147, 98, 153, 103], fill=0)  # hinge stub
+    d.rectangle([147, 152, 153, 299], fill=0)  # far jamb wall
+    d.rectangle([0, 155, 146, 161], fill=0)  # crossing wall, a T at the jamb
+    if not gap:
+        d.rectangle([147, 104, 153, 151], fill=0)
+    d.line([147, 104, 147 + r + 3, 104], fill=0, width=2)  # leaf
+    d.arc([150 - r, 104 - r, 150 + r, 104 + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (150, 104 + r / 2), r
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_far_jamb_at_a_crossing_walls_tee(k, flip):
+    img, centre, r = _tee_jamb_canvas()
+    img, (cx, cy) = _orient(img, centre, k, flip)
+    dets = detect_door_swings(img, PPM)
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_tee_jamb_without_a_gap_is_not_a_door():
+    img, (cx, cy), _ = _tee_jamb_canvas(gap=False)
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _thin_wall_door(wpx=2, width_m=0.9):
+    """A door in a ``wpx`` px wall line (a 0.02-0.04 m partition), leaf east,
+    and the wall opening its jambs bound, as (a, b) in pixels (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, width_m * PPM
+    d.rectangle([x - wpx // 2, 40, x + (wpx - 1) // 2, 360], fill=0)
+    d.rectangle([x - 3, yh, x + 3, yh + r], fill=255)
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r, ((x, yh), (x, yh + r))
+
+
+def _quarter_round_on_line():
+    """A quarter arc with both radii drawn against a continuous 2 px line:
+    a fixture, not a door, and no wall opening (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.line([150, 40, 150, 360], fill=0, width=2)
+    r = 45
+    d.line([150, 150, 150 + r, 150], fill=0, width=2)
+    d.arc([150 - r, 150 - r, 150 + r, 150 + r], start=0, end=90, fill=0, width=2)
+    return np.asarray(img), (150, 150 + r / 2), r
+
+
+def _arc_at_line_break():
+    """A thin quarter arc and radius at a break in a 1 px line (#874)."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    d.line([150, 40, 150, 148], fill=0, width=1)
+    d.line([150, 197, 150, 360], fill=0, width=1)
+    r = 46
+    d.line([150, 150, 150 + r, 150], fill=0, width=1)
+    d.arc([150 - r, 150 - r, 150 + r, 150 + r], start=0, end=90, fill=0, width=1)
+    return np.asarray(img), (150, 150 + r / 2), r
+
+
+def _orient_seg(img, seg, k, flip):
+    return tuple(_orient(img, q, k, flip)[1] for q in seg)
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("wpx", [1, 2, 3])
+def test_thin_wall_door_with_a_vector_opening(k, flip, wpx):
+    img0, centre, r, seg = _thin_wall_door(wpx)
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+@pytest.mark.parametrize("wpx", [1, 2, 3])
+def test_thin_wall_door_without_an_opening_is_not_taken(wpx):
+    img, (cx, cy), _, _ = _thin_wall_door(wpx)
+    for ops in (None, []):
+        dets = detect_door_swings(img, PPM, openings_px=ops)
+        assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("scale", [0.5, 2.0])
+def test_thin_wall_opening_must_match_the_swing_width(scale):
+    img, (cx, cy), r, ((ax, ay), _) = _thin_wall_door(2)
+    op = ((ax, ay), (ax, ay + scale * r))
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def test_thin_wall_opening_elsewhere_does_not_admit_a_door():
+    img, (cx, cy), r, _ = _thin_wall_door(2)
+    op = ((150, 250), (150, 250 + r))  # a real opening further down the wall
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def test_thin_wall_opening_across_the_wall_does_not_admit_a_door():
+    img, (cx, cy), r, _ = _thin_wall_door(2)
+    op = ((cx - r / 2, cy), (cx + r / 2, cy))  # right size and place, wrong direction
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("sheet", [_quarter_round_on_line, _arc_at_line_break])
+def test_thin_line_fixtures_without_an_opening_are_not_doors(k, flip, sheet):
+    img0, centre, r = sheet()
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    far = _orient_seg(img0, ((300, 60), (300, 60 + r)), k, flip)  # an opening elsewhere
+    dets = detect_door_swings(img, PPM, openings_px=[far])
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _thin_door_beside_neighbour(*, gap=True, neighbour=True):
+    """A door in a 2 px partition whose far jamb is an L into a crossing
+    wall, with a neighbouring door's leaf open along the partition's other
+    face just behind the hinge (Clinic second floor, #875). Returns the
+    image, door centre, radius and the opening as (a, b) in pixels."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh, r = 150, 150, 45
+    d.rectangle([x - 1, 40, x, yh - 1], fill=0)  # partition behind the hinge
+    if not gap:
+        d.rectangle([x - 1, yh, x, yh + r], fill=0)
+    d.rectangle([x - 1, yh + r, x, yh + r + 3], fill=0)  # jamb stub
+    d.rectangle([50, yh + r + 4, x, yh + r + 6], fill=0)  # crossing wall, an L at the jamb
+    d.line([x, yh, x + r, yh], fill=0, width=3)
+    d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    if neighbour:
+        r2, tip = 44, yh - 6
+        d.rectangle([x - 6, tip - r2, x - 4, tip], fill=0)  # its leaf, 3 px off the face
+        d.arc([x - 5 - r2, tip - 2 * r2, x - 5 + r2, tip], start=90, end=180, fill=0, width=2)
+    return np.asarray(img), (x, yh + r / 2), r, ((x, yh), (x, yh + r))
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+def test_thin_wall_door_beside_a_neighbouring_doors_leaf(k, flip):
+    img0, centre, r, seg = _thin_door_beside_neighbour()
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    near = [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 4]
+    assert len(near) == 1
+    assert abs(near[0]["width_px"] - r) <= 3
+
+
+def test_neighbouring_leaf_beside_a_thin_wall_without_an_opening_is_not_a_door():
+    img, (cx, cy), _, _ = _thin_door_beside_neighbour()
+    dets = detect_door_swings(img, PPM)
+    assert not [dt for dt in dets if np.hypot(dt["x_px"] - cx, dt["y_px"] - cy) <= 10]
+
+
+def _double_door(wpx=2, r=42, *, leaves=(True, True), gap=True, offset=0):
+    """A double door: two leaves hung from opposite jambs of one opening in a
+    vertical ``wpx`` px wall, leaves east, their tips meeting at the middle
+    (#875). ``offset`` moves the second leaf's hinge further down so the far
+    jambs no longer meet. Returns the image, opening centre, opening width and
+    the opening as (a, b) in pixels."""
+    img = Image.new("L", (400, 400), 255)
+    d = ImageDraw.Draw(img)
+    x, yh = 150, 120
+    d.rectangle([x - wpx // 2, 30, x + (wpx - 1) // 2, 370], fill=0)
+    y2 = yh + 2 * r + offset
+    if gap:
+        h = max(3, wpx // 2 + 1)
+        d.rectangle([x - h, yh, x + h, y2], fill=255)
+    if leaves[0]:
+        d.line([x, yh, x + r, yh], fill=0, width=3)
+        d.arc([x - r, yh - r, x + r, yh + r], start=0, end=90, fill=0, width=2)
+    if leaves[1]:
+        d.line([x, y2, x + r, y2], fill=0, width=3)
+        d.arc([x - r, y2 - r, x + r, y2 + r], start=270, end=360, fill=0, width=2)
+    return np.asarray(img), (x, (yh + y2) / 2), y2 - yh, ((x, yh), (x, y2))
+
+
+@pytest.mark.parametrize("flip", [False, True])
+@pytest.mark.parametrize("k", [0, 1, 2, 3])
+@pytest.mark.parametrize("wpx", [2, 20])
+def test_double_door_is_one_door(k, flip, wpx):
+    img0, centre, w, seg = _double_door(wpx)
+    img, (cx, cy) = _orient(img0, centre, k, flip)
+    op = _orient_seg(img0, seg, k, flip)
+    dets = detect_door_swings(img, PPM, openings_px=[op])
+    assert len(dets) == 1
+    (det,) = dets
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - w) <= 4
+    x0, y0, x1, y1 = det["bbox_px"]
+    assert x0 <= cx <= x1 and y0 <= cy <= y1
+
+
+def test_thick_wall_double_door_needs_no_opening():
+    img, (cx, cy), w, _ = _double_door(20)
+    (det,) = detect_door_swings(img, PPM)
+    assert np.hypot(det["x_px"] - cx, det["y_px"] - cy) <= 3
+    assert abs(det["width_px"] - w) <= 4
+
+
+def test_thin_wall_double_door_without_an_opening_is_not_taken():
+    img, (cx, cy), _, _ = _double_door(2)
+    for ops in (None, []):
+        assert detect_door_swings(img, PPM, openings_px=ops) == []
+
+
+def test_thin_wall_single_leaf_is_not_admitted_by_a_double_width_opening():
+    img, _, _, seg = _double_door(2, leaves=(True, False))
+    assert detect_door_swings(img, PPM, openings_px=[seg]) == []
+
+
+def test_leaves_whose_far_jambs_do_not_meet_stay_two_doors():
+    img, _, _, _ = _double_door(20, offset=30)
+    dets = detect_door_swings(img, PPM)
+    assert len(dets) == 2
+    assert all(abs(dt["width_px"] - 42) <= 3 for dt in dets)

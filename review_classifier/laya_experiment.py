@@ -80,6 +80,8 @@ import random  # noqa: E402
 
 import numpy as np  # noqa: E402
 
+_ISSUES = ["count mismatch", "size discrepancy", "label unreadable", "missing schedule"]
+
 
 def _run(code: str) -> str:
     import subprocess
@@ -189,8 +191,9 @@ def make_review_examples(seed: int = 42, n: int = 600) -> list[dict]:
 
         text = (
             f"[{rng.choice(['window', 'door', 'room_label', 'fixture'])}] "
-            f"{rng.choice(['count mismatch', 'size discrepancy', 'label unreadable', 'missing schedule'])} "
-            f"(conf={det_conf:.2f}, ocr_dist={ocr_dist:.2f}, sched={sched_match:.2f}, n={n_candidates})"
+            f"{rng.choice(_ISSUES)} "
+            f"(conf={det_conf:.2f}, ocr_dist={ocr_dist:.2f}, "
+            f"sched={sched_match:.2f}, n={n_candidates})"
         )
         examples.append(
             {
@@ -507,7 +510,9 @@ def main() -> None:
     print("\n--- Latency Summary ---")
     all_lats = [r["latency_ms"] for r in route_results]
     print(
-        f"  noul (needs_human)  : mean={sum(all_lats) / len(all_lats):.1f}ms  p50={sorted(all_lats)[len(all_lats) // 2]:.1f}ms  min={min(all_lats):.1f}ms  max={max(all_lats):.1f}ms"
+        f"  noul (needs_human)  : mean={sum(all_lats) / len(all_lats):.1f}ms  "
+        f"p50={sorted(all_lats)[len(all_lats) // 2]:.1f}ms  "
+        f"min={min(all_lats):.1f}ms  max={max(all_lats):.1f}ms"
     )
     if urg_lats:
         print(f"  score (urgency)     : mean={sum(urg_lats) / len(urg_lats):.1f}ms")

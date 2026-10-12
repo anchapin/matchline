@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # 324 tests, hermetic, a few seconds
+python -m pytest tests/ -q   # ~1,860 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
@@ -37,6 +37,11 @@ matchline elevation-windows     # exact window placement + daylight (synthetic)
 matchline room-labels          # OCR room labeling (synthetic)
 matchline symbols              # symbol eval + GD&T invariant check
 matchline facade-takeoff --n 5 # CMP Facade area takeoffs
+matchline ingest set.pdf --out sheets/  # PDF drawing set → per-page raster, vectors, text
+matchline scale sheets/        # drawing scale per sheet: notes, scale bars, dimensions
+matchline index sheets/        # sheet index: discipline, type, level; plans paired by level
+matchline walls sheets/        # walls (centreline + thickness) and rooms from vector floor plans
+matchline schedules sheets/    # door, window, lighting and mechanical schedule tables
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 matchline ifc-export model.json out.ifc  # IFC4 export
 matchline review model.json     # review queue: list/confirm/reject
@@ -69,29 +74,38 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `hvac_trace.py` | Duct tracing → terminal units → HVAC zone graphs |
 | `building_model.py` | Canonical `Space`-centric model, provenance, review queue |
 | `registration.py` | Grid + gridless (geometric) cross-sheet registration |
-| `link.py` | Cross-discipline linking: fixtures/sensors/diffusers/windows → rooms |
+| `link/` | Cross-discipline linking: fixtures/sensors/diffusers/windows → rooms |
 | `elevation_windows.py` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
-| `bem_export.py` | gbXML 6.01 + IFC4 export |
+| `bem_export.py` | gbXML 8.01 + IFC4 export |
+| `pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
+| `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
+| `sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
+| `pdf_schedules.py` | Schedule tables from vector PDF sheets: ruled cells, merged headers, door/window sizes, fixture watts, VAV/AHU airflow, unreadable tables flagged |
+| `construction_library.py` | Cited envelope U-values: wall-type and roof notes resolved to ASHRAE 90.1-2019 Table 5.5 by climate zone (`--climate-zone`), stated values never overwritten ([docs](docs/construction_library.md)) |
+| `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate.py` | 28-check invariant battery; errors block export |
+| `validate/` | 48-check invariant battery; errors block export |
 
 ## Quickstart
 
+One command, sample project to finished package:
+
 ```bash
-python3 -m pytest tests/ -q        # 324 tests: units, invariants, defect injection, goldens
-matchline validate                 # invariant battery demo  (canonical)
-matchline run --seed 0            # unified pipeline: generate + link + validate + export
-# Legacy wrappers (still work, but matchline CLI is canonical):
-python3 run_multidiscipline.py     # end-to-end: link 3 synthetic buildings
-python3 run_validation.py          # invariant battery demo
-python3 run_bem_export.py          # gbXML + IFC export demos
-python3 run_facade_takeoff.py      # facade takeoffs — needs --data-root
+pip install -e .
+matchline demo                 # ~1 minute: model, gbXML + IFC, review and trust report
+```
+
+The run leaves everything in `matchline-demo/`: the one-page trust report
+(`package/trust_report.html`), the review report of low-confidence calls
+(`review/review.html`), and the gbXML and IFC exports. On a terminal it opens
+the trust report in your browser; pass `--no-open` to skip that. See
+`docs/cli.md` for the full command set.
 
 ## Validation
 
-`validate.py` enforces conservation laws over the model and its exports:
+`validate/` enforces conservation laws over the model and its exports:
 per-level floor-area conservation, volume conservation, envelope closure,
 takeoff closure, LPD plausibility, cross-discipline referential integrity,
 provenance closure. Errors block export; warnings require acknowledgment.

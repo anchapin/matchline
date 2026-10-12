@@ -45,12 +45,9 @@ import numpy as np
 
 import link
 from building_model import REVIEW_CONFIDENCE, BuildingModel, DaylitZone, Provenance, SpaceOpening
-from detector.classes import CLASS_NAMES
-from detector.sahi_infer import infer_sheet
-from link._elevation import south_wall_segments
+from link._elevation import facade_from_meta, wall_segments
 from link._schedules import _schedules
 from registration import (
-    Facade,
     FacadeRegistration,
     interval_overlap,
     match_interval_to_segments,
@@ -205,8 +202,12 @@ class YOLOWindowDetectorBackend(WindowDetectorBackend):
 
     def detect(self, image, px_per_m: float, sheet_id: str, revision: int) -> list:
         # image: np.ndarray (H, W) in 0-255 uint8
+        # lazy: the detector package is an optional extra (#753 wheel smoke)
         # Write temp PNG, run infer_sheet, delete temp
         from PIL import Image
+
+        from detector.classes import CLASS_NAMES
+        from detector.sahi_infer import infer_sheet
 
         # Convert grayscale to RGB for YOLO
         if len(image.shape) == 2:
@@ -627,16 +628,7 @@ class ElevationLinkReport:
     review_items: int = 0
 
 
-def _facade_from_meta(meta: dict, D: float, W: float) -> Facade:
-    name = meta.get("facade", "south")
-    ref = tuple(meta.get("facade_ref_corner_m", [0.0, D]))
-    return Facade(
-        name=name,
-        ref_corner_m=ref,
-        length_m=meta.get("facade_length_m", W),
-        fixed_coord_m=D if name in ("south", "north") else W,
-        axis="x" if name in ("south", "north") else "y",
-    )
+_facade_from_meta = facade_from_meta  # backwards-compat alias
 
 
 def attach_merged_windows(
@@ -647,7 +639,7 @@ def attach_merged_windows(
     Returns (attached, unlinked). Unlinked windows are flagged for
     review, never dropped.
     """
-    segments = south_wall_segments(bldg)  # v1: south facade
+    segments = wall_segments(bldg, facade_from_meta({"facade": facade}, bldg["D_m"], bldg["W_m"]))
     space_of_num = {s.number: s for s in spaces}
     attached, unlinked = [], []
     for m in merged:
@@ -679,6 +671,7 @@ def attach_merged_windows(
                 f"window {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m matches no wall segment",
                 conf,
                 prov,
+                target={"kind": "window_detection", "id": m.id},
             )
             continue
         sp = space_of_num[seg["room_number"]]
@@ -713,6 +706,7 @@ def attach_merged_windows(
                 f"confidence {conf:.2f}",
                 conf,
                 prov,
+                target={"kind": "opening", "id": f"{facade}-{m.id}", "field": "space_id"},
             )
     return attached, unlinked
 
@@ -1008,6 +1002,7 @@ def link_elevations(
                 elev_px_per_m=data["px_per_m"],
                 v_ground_px=data["v_ground_px"],
                 revision=meta["revision"],
+                mirrored=meta.get("elevation_mirrored"),
             )
             method = "geometric"
         fw = observations_to_facade(obs, reg, facade.name)

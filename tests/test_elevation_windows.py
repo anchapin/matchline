@@ -62,6 +62,9 @@ class TestDetectWindows:
             )
 
     def test_detect_windows_with_grayscale_image(self):
+        # exc_type=ImportError: a GUI build of cv2 missing libGL raises a plain
+        # ImportError, not ModuleNotFoundError, and should still skip (#535).
+        pytest.importorskip("cv2", exc_type=ImportError)
         img = np.zeros((100, 100), dtype=np.uint8)
         result = detect_windows(img, 100.0, "sheet", 1, backend="contour")
         assert isinstance(result, list)

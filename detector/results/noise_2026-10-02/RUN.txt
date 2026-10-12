@@ -1,0 +1,60 @@
+Provenance for detector/results/noise_2026-10-02/  (issue #516 noise floor)
+
+Date           : 2026-10-02  (start 16:36 EDT, end 17:14 EDT)
+Driver         : bash detector/run_repro_noise.sh 10 3
+Driver source  : detector/run_repro_noise.sh @ develop
+Driver log     : /tmp/opencode/noise_run.log
+Per-run logs   : ~/workspace/datasets/detector_runs/repro_repro_seed0_r{0,1,2}.log
+Per-run source : ~/workspace/datasets/detector_runs/repro_seed0_r{0,1,2}/results.csv
+                (final-epoch rows; column names are Ultralytics 8.4.x)
+
+Hardware
+  GPU          : AMD Radeon RX 6600 XT (Navi 23 / gfx1030, 8 GB VRAM)
+  CPU          : AMD Ryzen 5 5600G (12 cores)
+  RAM          : 30 GB
+  ROCm runtime : 7.2.3   (driver: amdgpu)
+  /dev/kfd     : present, amdgcn-amd-amdhsa--gfx1030 resolved
+
+Toolchain (detector/.venv-det-rocm)  -- rebuilt 2026-10-02 from
+detector/requirements-detector-rocm.txt; venv was not present at session start
+  Python       : 3.12.3
+  torch        : 2.14.0+rocm7.2
+  torchvision  : 0.29.0+rocm7.2
+  ultralytics  : 8.4.171
+
+Gating check before committing the runs (the open question from #500):
+  torch.cuda.get_arch_list() -> ['gfx900', 'gfx906', 'gfx908', 'gfx90a',
+      'gfx942', 'gfx950', 'gfx1030', 'gfx1100', 'gfx1101', 'gfx1102',
+      'gfx1103', 'gfx1200', 'gfx1201', 'gfx1150', 'gfx1151']
+  gfx1030 in arch list: True
+  4096x4096 fp16 matmul, 10 iters -> 17.69 TFLOPS sustained, max abs diff
+      vs CPU reference 3.76e-04 (relative). RX 6600 XT fp16 peak ~10.6 TFLOPS;
+      the measured number is in the right ballpark, so the kernel is real and
+      being exercised (not a CPU fallback).
+  The generic rocm7.2 wheel DOES carry gfx1030 kernels. No per-arch build
+  from repo.amd.com/rocm/whl-multi-arch/ is required. #500's blocker is
+  resolved on this hardware/toolchain pair.
+
+Command (verbatim, as launched)
+  bash detector/run_repro_noise.sh 10 3
+  # 3 repeats of the baseline arm, fixed seed=0, fixed epochs=10
+  # held constant per repeat: --batch 16 --imgsz 640 --workers 6 --device 0
+  #                         --pretrained yolo11n.pt --data configs/cubicasa.yaml
+  #                         --seed 0 --model configs/yolo11n_baseline.yaml
+  # The "10" is the budget for the noise measurement. The matrix
+  # (detector/results/ab_2026-09-28/) used 50 epochs; the floor at 10
+  # is not automatically the floor at 50, and this file records which
+  # budget was used. See analysis.md.
+
+Per-run wall-clock (from the driver log)
+  repro_seed0_r0  12.4 min  (16:36:50 -> 16:49:11)
+  repro_seed0_r1  12.6 min  (16:49:11 -> 17:01:44)
+  repro_seed0_r2  12.6 min  (17:01:44 -> 17:14:17)
+  total           37.6 min  (3 runs, 10 epochs each)
+
+Output layout
+  detector/results/noise_2026-10-02/
+    per_repeat.csv  one row per (arm, repeat); columns: arm, repeat, n_epochs,
+                    wall_s, mAP50, mAP50_95, P, R, train_box_loss
+    RUN.txt         this file
+    analysis.md     the three spreads side by side + the verdict band

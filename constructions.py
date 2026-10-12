@@ -1,0 +1,178 @@
+"""Per-space exterior wall U-value rollup (roadmap item 6).
+
+Different wall types cover different parts of the envelope, so the U-value
+that matters for a space's loads is area-weighted over that space's own
+segments: U_space = sum(U_i * A_i) / sum(A_i).
+
+The rollup is deliberately strict about what it leaves out. A segment with
+no construction, an unknown construction id, a construction with no U-value,
+or no area does not enter the sum; it is reported, never filled in. The
+validation check ``wall_construction_coverage`` recomputes the same number
+independently and errors if the stored value drifts.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+
+@dataclass
+class WallURollup:
+    space_id: str
+    u_value_w_m2k: Optional[float]  # None when no segment contributes
+    area_m2: float  # wall area that entered the weighting
+    segments: List[str] = field(default_factory=list)  # contributing ids
+    left_out: Dict[str, str] = field(default_factory=dict)  # segment id -> reason
+
+
+def segment_area(wall) -> Optional[float]:
+    """Gross segment area: its own area, else length x height, else None."""
+    if wall.area_m2 is not None:
+        return wall.area_m2
+    if wall.length_m is not None and wall.height_m is not None:
+        return wall.length_m * wall.height_m
+    return None
+
+
+def wall_u_rollup(model) -> Dict[str, WallURollup]:
+    """Area-weighted wall U per space, for every space that owns a segment."""
+    out: Dict[str, WallURollup] = {}
+    for w in model.envelope:
+        sid = getattr(w, "space_id", "") or ""
+        if not sid:
+            continue
+        r = out.setdefault(sid, WallURollup(sid, None, 0.0))
+        cid = getattr(w, "construction_id", "") or ""
+        a = segment_area(w)
+        if not cid:
+            r.left_out[w.id] = "no construction"
+            continue
+        c = model.constructions.get(cid)
+        if c is None:
+            r.left_out[w.id] = f"construction {cid} not defined"
+            continue
+        if c.u_value_w_m2k is None or c.u_value_w_m2k <= 0:
+            r.left_out[w.id] = f"construction {cid} has no U-value"
+            continue
+        if not a or a <= 0:
+            r.left_out[w.id] = "no wall area"
+            continue
+        ua = (r.u_value_w_m2k or 0.0) * r.area_m2 + c.u_value_w_m2k * a
+        r.area_m2 += a
+        r.u_value_w_m2k = ua / r.area_m2
+        r.segments.append(w.id)
+    return out
+
+
+def apply_wall_u_rollup(model) -> Dict[str, WallURollup]:
+    """Write ``Space.wall_u_value_w_m2k`` from the rollup; returns it.
+
+    Spaces with no contributing segment are set to None, so a stale value
+    from an earlier run cannot survive a construction being removed.
+    """
+    roll = wall_u_rollup(model)
+    for sid, sp in model.spaces.items():
+        r = roll.get(sid)
+        sp.wall_u_value_w_m2k = r.u_value_w_m2k if r else None
+    return roll
+
+
+def _construction_u(model, attr) -> Optional[float]:
+    cid = getattr(model, attr, "") or ""
+    c = (getattr(model, "constructions", None) or {}).get(cid) if cid else None
+    u = getattr(c, "u_value_w_m2k", None)
+    return float(u) if u is not None and u > 0 else None
+
+
+def roof_u_value(model) -> Optional[float]:
+    """U of ``model.roof_construction_id`` (W/m2K), or None when unset/unusable."""
+    return _construction_u(model, "roof_construction_id")
+
+
+def slab_u_value(model) -> Optional[float]:
+    """U of ``model.slab_construction_id`` (W/m2K), or None when unset/unusable."""
+    return _construction_u(model, "slab_construction_id")
+
+
+def opening_constructions(model) -> Dict[str, dict]:
+    """Constructions the model's openings point at (#747), for the exporters.
+
+    construction id -> {"name", "category", "u", "shgc", "vt"}. An id whose
+    construction is missing or has no usable U is left out, so its openings
+    export with no reference as before. One id used by both glazing and a door
+    keeps the first category seen.
+    """
+    cons = getattr(model, "constructions", None) or {}
+    out: Dict[str, dict] = {}
+    for sp in (getattr(model, "spaces", None) or {}).values():
+        for op in getattr(sp, "openings", None) or []:
+            cid = getattr(op, "construction_id", "") or ""
+            if not cid or cid in out:
+                continue
+            c = cons.get(cid)
+            u = getattr(c, "u_value_w_m2k", None)
+            if u is None or u <= 0:
+                continue
+            out[cid] = {
+                "name": c.name or cid,
+                "category": op.category,
+                "u": float(u),
+                "shgc": getattr(c, "shgc", None),
+                "vt": getattr(c, "vt", None),
+            }
+    return out
+
+
+def semi_exterior_walls(model) -> Dict[str, dict]:
+    """Interior-wall constructions for semi-exterior boundaries (#747 slice 6).
+
+    construction id -> {"name", "u", "pairs": [[space a, space b], ...]} for
+    settled ``model.semi_exterior`` records that name a construction with a
+    usable U. Review boundaries and records with no construction are left
+    out, so those walls keep the partition.
+    """
+    cons = getattr(model, "constructions", None) or {}
+    out: Dict[str, dict] = {}
+    for r in getattr(model, "semi_exterior", None) or []:
+        if r.get("plane", "wall") != "wall":  # floor/ceiling records (#900)
+            continue
+        cid = r.get("construction_id") or ""
+        if r.get("kind") != "semi_exterior" or not cid:
+            continue
+        c = cons.get(cid)
+        u = getattr(c, "u_value_w_m2k", None)
+        if u is None or u <= 0:
+            continue
+        info = out.setdefault(cid, {"name": c.name or cid, "u": float(u), "pairs": []})
+        info["pairs"].append(sorted(r["spaces"]))
+    for info in out.values():
+        info["pairs"].sort()
+    return out
+
+
+def semi_exterior_floors(model) -> Dict[str, dict]:
+    """Interior-floor constructions for semi-exterior boundaries (#900).
+
+    construction id -> {"name", "u", "pairs": [[space a, space b], ...]} for
+    settled ``model.semi_exterior`` floor/ceiling records that name a
+    construction with a usable U. Review boundaries and records with no
+    construction are left out, so those floors keep the generic partition.
+    """
+    cons = getattr(model, "constructions", None) or {}
+    out: Dict[str, dict] = {}
+    for r in getattr(model, "semi_exterior", None) or []:
+        if r.get("plane") != "floor":
+            continue
+        cid = r.get("construction_id") or ""
+        if r.get("kind") != "semi_exterior" or not cid:
+            continue
+        c = cons.get(cid)
+        u = getattr(c, "u_value_w_m2k", None)
+        if u is None or u <= 0:
+            continue
+        info = out.setdefault(cid, {"name": c.name or cid, "u": float(u), "pairs": []})
+        info["pairs"].append(sorted(r["spaces"]))
+    for info in out.values():
+        info["pairs"].sort()
+    return out

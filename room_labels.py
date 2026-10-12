@@ -14,9 +14,11 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
+
+from building_model import Provenance
+from datasets_adapter import polygon_area_px2
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -50,6 +52,7 @@ class LabeledSpace:
     label_confidence: float = 0.0  # 0.0 -> unlabeled
     label_source: str = ""  # "enclosed" | "nearest" | ""
     label_bbox: tuple | None = None
+    core_provenance: Provenance | None = None
 
 
 @dataclass
@@ -73,7 +76,7 @@ _ENGINE = None
 _ENGINE_NAME = None
 
 
-def get_ocr_engine() -> Any:
+def get_ocr_engine():
     """Lazily construct the local OCR engine.
 
     Uses rapidocr_onnxruntime (PP-OCRv4 detection + recognition, ONNX,
@@ -258,13 +261,6 @@ def point_to_polygon_dist(pt, poly) -> float:
     return best
 
 
-def polygon_area_px2(poly) -> float:
-    p = np.asarray(poly, dtype=np.float64)
-    if len(p) < 3:
-        return 0.0
-    return 0.5 * abs(np.dot(p[:, 0], np.roll(p[:, 1], -1)) - np.dot(p[:, 1], np.roll(p[:, 0], -1)))
-
-
 def assign_labels(
     spaces: list[LabeledSpace], labels: list[RoomLabel], max_nearest_px: float = 150.0
 ) -> LabeledTakeoff:
@@ -336,19 +332,34 @@ def label_spaces_from_sheet(
 
 
 def attach_room_labels(
-    takeoff_result, sheet_image: np.ndarray, min_conf: float = 0.30, max_nearest_px: float = 150.0
+    takeoff_result,
+    sheet_image: np.ndarray | None = None,
+    min_conf: float = 0.30,
+    max_nearest_px: float = 150.0,
+    sheet_id: str | None = None,
+    revision: str | None = None,
 ) -> LabeledTakeoff:
     """Label the 'room'-category regions of an existing TakeoffResult in place.
 
     Extends takeoff_result with `.spaces` (LabeledSpace list),
     `.unmatched_labels`, and returns the LabeledTakeoff.
     """
-    spaces = [
-        LabeledSpace(polygon_px=r.polygon_px, source=r.source)
-        for r in takeoff_result.regions
-        if getattr(r, "category", "") == "room"
-    ]
-    labeled = label_spaces_from_sheet(sheet_image, spaces, min_conf, max_nearest_px)
+    if sheet_image is None:
+        spaces = [
+            LabeledSpace(polygon_px=r.polygon_px, source=r.source)
+            for r in takeoff_result.regions
+            if getattr(r, "category", "") == "room"
+        ]
+        labeled = LabeledTakeoff(
+            spaces=spaces, labels=[], unmatched_labels=[], n_labeled=0, n_total=0
+        )
+    else:
+        spaces = [
+            LabeledSpace(polygon_px=r.polygon_px, source=r.source)
+            for r in takeoff_result.regions
+            if getattr(r, "category", "") == "room"
+        ]
+        labeled = label_spaces_from_sheet(sheet_image, spaces, min_conf, max_nearest_px)
     takeoff_result.spaces = labeled.spaces
     takeoff_result.unmatched_labels = labeled.unmatched_labels
     return labeled
@@ -360,9 +371,7 @@ def attach_room_labels(
 # ---------------------------------------------------------------------------
 
 
-def synthesize_test_plan(
-    seed: int = 7,
-) -> tuple[np.ndarray, list[LabeledSpace], dict[int, tuple[str, str]]]:
+def synthesize_test_plan(seed: int = 7):
     """Draw a labeled floor plan with PIL.
 
     Returns (image, spaces, expected) where expected maps space index ->

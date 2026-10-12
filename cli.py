@@ -17,8 +17,37 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.75
+
+
+def check_range_0_1(value: str) -> float:
+    """Parse and validate a float in range [0.0, 1.0] for argparse."""
+    try:
+        f = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid float value: {value!r}")
+    if not (0.0 <= f <= 1.0):
+        raise argparse.ArgumentTypeError(f"{value} is out of range [0.0, 1.0]")
+    return f
+
+
+def _check_wall_height(v) -> str:
+    """Why a config ``wall_height`` is unusable, or "" (a positive number, or a map of
+    level id to positive number, #821)."""
+    if v is None:
+        return ""
+
+    def pos(x):
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0
+
+    if isinstance(v, dict):
+        if not v:
+            return "is an empty map"
+        bad = [str(k) for k, x in v.items() if not pos(x)]
+        return f"must be positive metres for each level (check {', '.join(bad)})" if bad else ""
+    return "" if pos(v) else "must be a positive number of metres or a map of level to metres"
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -40,10 +69,14 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit(1)
         with config_path.open() as f:
             config = yaml.safe_load(f) or {}
-        known_keys = {"simplify_tolerance", "wall_height", "review_confidence"}
+        known_keys = {"simplify_tolerance", "wall_height", "review_confidence", "datasets"}
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
+        bad = _check_wall_height(config.get("wall_height"))
+        if bad:
+            print(f"Error: config wall_height {bad}", file=sys.stderr)
+            sys.exit(1)
 
     confidence_threshold = args.confidence_threshold
     if confidence_threshold is None:
@@ -67,7 +100,13 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    """Build 2 synthetic buildings, link them, run the validation battery."""
+    """Run the full validation battery (``validate.N_CHECKS`` checks) on synthetic buildings.
+
+    Builds two synthetic buildings (3-room and 2-level), links them, then runs
+    ``validate.run_checks()``. Any check with severity="error" (a conservation law
+    violated) causes a non-zero exit. Results with needs_review=True block export
+    via ``validate.export_gate``.
+    """
     import run_validation
 
     run_validation.main()
@@ -83,7 +122,10 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
 
 
 def cmd_elevation_windows(args: argparse.Namespace) -> None:
-    """Exact window placement from elevations + daylight zones (synthetic)."""
+    """Generates SYNTHETIC window placement data for testing.
+
+    Real extraction requires detector/YOLO pipeline.
+    """
     import run_elevation_windows
 
     run_elevation_windows.main()
@@ -177,12 +219,152 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
         print(f"wrote {args.out}")
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Read a PDF drawing set into per-page sheet records (#737)."""
+    from pathlib import Path
+
+    from pdf_ingest import ingest_pdf
+
+    res = ingest_pdf(Path(args.path), out_dir=args.out, dpi=args.dpi, rasterize=not args.no_raster)
+    kinds: dict = {}
+    for s in res.sheets:
+        kinds[s.kind] = kinds.get(s.kind, 0) + 1
+    print(f"pages: {res.n_pages}  " + "  ".join(f"{k}: {v}" for k, v in sorted(kinds.items())))
+    for s in res.sheets:
+        print(
+            f"  page {s.page_number:3d}  {s.kind:11s}  {s.width_pt:.0f}x{s.height_pt:.0f} pt"
+            f"  rot {s.rotation:3d}  paths {len(s.primitives):6d}  text {len(s.text):5d}"
+        )
+    for w in res.warnings:
+        print(f"WARNING {w}")
+    print(f"wrote {args.out}/ingest.json")
+
+
+def cmd_scale(args: argparse.Namespace) -> None:
+    """Read each ingested sheet's drawing scale (#739); writes scale.json."""
+    from drawing_scale import scale_sheets
+
+    res = scale_sheets(args.sheets)
+    for name, sc in res.items():
+        if sc["ratio"]:
+            what = f"1:{sc['ratio']:.4g} from {sc['source']}  conf {sc['confidence']:.2f}"
+        else:
+            what = sc["reason"]
+        flag = "  REVIEW" if sc["needs_review"] else ""
+        print(f"  {name}  {what}{flag}")
+        for w in sc["warnings"]:
+            print(f"    WARNING {w}")
+    print(f"wrote {args.sheets}/scale.json")
+
+
+def cmd_index(args: argparse.Namespace) -> None:
+    """Index an ingested drawing set by discipline, type and level (#738)."""
+    from sheet_index import index_sheets
+
+    idx = index_sheets(args.sheets)
+    for e in idx.sheets:
+        num = e.value("number") or "?"
+        kind = e.value("type") or "?"
+        lvl = e.value("level") or "-"
+        use = "takeoff" if e.use_for_takeoff else ""
+        flag = "  REVIEW" if e.needs_review else ""
+        print(f"  {e.file}  {num:<8} {kind:<14} {lvl:<5} {use:<7} {e.value('title') or ''}{flag}")
+    for lvl, by in idx.levels.items():
+        pairs = "  ".join(f"{d}: {', '.join(n)}" for d, n in by.items())
+        print(f"  {lvl}: {pairs}")
+    for w in idx.warnings:
+        print(f"  WARNING {w}")
+    print(f"wrote {args.sheets}/sheet_index.json")
+
+
+def cmd_schedules(args: argparse.Namespace) -> None:
+    """Schedule tables (door, window, lighting, mechanical) from ingested sheets."""
+    from pdf_schedules import schedules_for_sheets
+
+    res = schedules_for_sheets(args.sheets)
+    for name, r in res.items():
+        for s in r["schedules"]:
+            n = len(s["rows"])
+            why = f"  NOT READ: {s['reason']}" if s["status"] != "ok" else ""
+            print(f"  {name}  {s['kind']:<10} {s['title']}  rows {n}{why}")
+    print(f"wrote schedules_NNN.json in {args.sheets}")
+
+
+def cmd_walls(args: argparse.Namespace) -> None:
+    """Walls and rooms from each takeoff floor plan in an ingest folder (#740)."""
+    from plan_walls import walls_for_sheets
+
+    res = walls_for_sheets(args.sheets)
+    if not res:
+        print("  no sheets to read (run `matchline scale` and `matchline index` first?)")
+    for name, r in res.items():
+        st = r["stats"]
+        n_rev = len(r["review"])
+        print(
+            f"  {name}  walls {st.get('walls', 0)}  openings {st.get('openings', 0)}  "
+            f"rooms {st.get('rooms', 0)}  review {n_rev}"
+        )
+        for item in r["review"][:5]:
+            print(f"    REVIEW {item['reason']}")
+    print(f"wrote walls_NNN.json in {args.sheets}")
+
+
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
     from ifc_export import export_ifc
 
     export_ifc(args.model, args.out)
     print(f"wrote {args.out}")
+
+
+def cmd_demo(args: argparse.Namespace) -> None:
+    """One-command demo (#753): sample project in, package with trust report out.
+
+    Runs the same unified pipeline as ``matchline run --seed`` on a fixed
+    sample seed, then points at the finished package: trust report, review
+    report and gbXML/IFC, all in one directory.
+    """
+    import run_pipeline
+
+    out = Path(args.out)
+    run_args = build_parser().parse_args(["run", "--seed", str(args.seed), "--out-dir", str(out)])
+    run_pipeline.main(run_args)
+
+    pkg = out / "package"
+    trust = pkg / "trust_report.html"
+    review = out / "review" / "review.html"
+    exports = sorted(p.name for pat in ("*.xml", "*.ifc") for p in pkg.glob(pat))
+    print()
+    print(f"Demo finished. Everything is in {out}/")
+    print(f"  trust report:  {trust}")
+    print(f"  review report: {review}")
+    print(f"  model files:   {', '.join(exports) if exports else '(none)'}")
+    if not args.no_open and sys.stdout.isatty() and not os.environ.get("CI"):
+        import webbrowser
+
+        webbrowser.open(trust.resolve().as_uri())
+        print("Opened the trust report in your browser.")
+
+
+def cmd_diff(args: argparse.Namespace) -> None:
+    """Compare two model revisions and report changed/unchanged zones."""
+    import json
+
+    from building_model import BuildingModel
+    from diff import diff_models
+
+    with open(args.old) as f:
+        old_model = BuildingModel.from_json(json.load(f))
+    with open(args.new) as f:
+        new_model = BuildingModel.from_json(json.load(f))
+
+    summary = diff_models(old_model, new_model)
+
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(summary.to_dict(), f, indent=2)
+    else:
+        print(json.dumps(summary.to_dict(), indent=2))
 
 
 def cmd_review(args: argparse.Namespace) -> None:
@@ -210,7 +392,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = ap.add_subparsers(dest="command", required=True, metavar="<command>")
 
-    p = sub.add_parser("validate", help="validation battery demo (synthetic)")
+    p = sub.add_parser(
+        "validate",
+        help="run validate.py battery of checks on a BEM model",
+    )
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser(
@@ -238,13 +423,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="config_path",
         help="YAML config file. Keys: review_confidence (float, default 0.0=no filter), "
-        "simplify_tolerance (float, default 0.02=2%%), wall_height (float, metres, "
-        "default from level). "
+        "simplify_tolerance (float, default 0.02=2%%), wall_height (metres for every "
+        "level, or a map of level id to metres such as {L1: 4.5, L2: 3.6}; default from "
+        "the drawings). "
         "Example: review_confidence: 0.85  simplify_tolerance: 0.01  wall_height: 3.5",
     )
     p.add_argument(
         "--confidence-threshold",
-        type=float,
+        type=check_range_0_1,
         default=None,
         dest="confidence_threshold",
         help=f"Minimum confidence for review queue (0.0-1.0). Overrides config file. "
@@ -252,6 +438,25 @@ def build_parser() -> argparse.ArgumentParser:
         f"Can also be set via MATCHLINE_CONFIDENCE_THRESHOLD env var.",
     )
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser(
+        "demo",
+        help="sample project end to end: model, gbXML, review and trust report (#753)",
+    )
+    p.add_argument(
+        "--seed", type=int, default=7, help="synthetic seed for the sample set (default: 7)"
+    )
+    p.add_argument(
+        "--out",
+        default="matchline-demo",
+        help="output directory (default: matchline-demo/)",
+    )
+    p.add_argument(
+        "--no-open",
+        action="store_true",
+        help="do not open the trust report in a browser",
+    )
+    p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("bem-export", help="gbXML + IFC4 export demo (synthetic)")
     p.add_argument("--sheet-id", default="sheet_007")
@@ -262,7 +467,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "facade-takeoff",
-        help="facade area takeoffs on CMP Facade (see DATASETS.md for setup; use --data-root to specify)",
+        help=(
+            "facade area takeoffs on CMP Facade "
+            "(see DATASETS.md for setup; use --data-root to specify)"
+        ),
     )
     p.add_argument("--n", type=int, default=5, help="facades for the detailed demo")
     p.add_argument("--data-root", default=None, help="CMP Facade dataset root")
@@ -297,6 +505,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None, help="write canonical model JSON here")
     p.set_defaults(func=cmd_ifc_import)
 
+    p = sub.add_parser(
+        "ingest",
+        help="read a PDF drawing set into per-page sheet records (raster + vectors + text)",
+    )
+    p.add_argument("path", help="input .pdf drawing set")
+    p.add_argument("--out", required=True, help="output folder for sheet_NNN.{png,json}")
+    p.add_argument("--dpi", type=float, default=150.0, help="raster resolution (default 150)")
+    p.add_argument("--no-raster", action="store_true", help="skip rendering page images")
+    p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("scale", help="read each ingested sheet's drawing scale")
+    p.add_argument("sheets", help="folder written by `matchline ingest`")
+    p.set_defaults(func=cmd_scale)
+
+    p = sub.add_parser("index", help="index sheets by discipline, type and level")
+    p.add_argument("sheets", help="folder written by `matchline ingest`")
+    p.set_defaults(func=cmd_index)
+
+    p = sub.add_parser("walls", help="walls and rooms from vector floor plans")
+    p.add_argument("sheets", help="folder written by `matchline ingest`, with scale.json")
+    p.set_defaults(func=cmd_walls)
+    p = sub.add_parser(
+        "schedules", help="door, window, lighting and mechanical schedules from ingested sheets"
+    )
+    p.add_argument("sheets", help="folder written by `matchline ingest`, with scale.json")
+    p.set_defaults(func=cmd_schedules)
+
     p = sub.add_parser("ifc-export", help="Export BuildingModel JSON → IFC4 file")
     p.add_argument("model", help="BuildingModel JSON file path")
     p.add_argument("out", help="Output IFC4 file path")
@@ -330,7 +565,44 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Output format for --list (default: text)",
     )
+    p.add_argument(
+        "--apply",
+        metavar="DECISIONS",
+        help="Replay a decisions.json exported from the HTML review report",
+    )
+    p.add_argument(
+        "--out", metavar="PATH", help="With --apply: write the reviewed model here, not in place"
+    )
+    p.add_argument(
+        "--report",
+        metavar="DIR",
+        help="Write the HTML review report to DIR/review (model, decisions template, page)",
+    )
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser(
+        "diff",
+        help="diff two model JSON revisions at zone/space level",
+    )
+    p.add_argument(
+        "--old",
+        required=True,
+        dest="old",
+        help="Path to the baseline (old) revision model JSON",
+    )
+    p.add_argument(
+        "--new",
+        required=True,
+        dest="new",
+        help="Path to the new revision model JSON",
+    )
+    p.add_argument(
+        "--out",
+        default=None,
+        dest="out",
+        help="Write diff summary JSON here (default: stdout)",
+    )
+    p.set_defaults(func=cmd_diff)
 
     return ap
 

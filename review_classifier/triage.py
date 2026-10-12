@@ -94,7 +94,7 @@ class ReviewTriage:
         if npz_path.exists():
             try:
                 return TypedDecider.from_npz(npz_path)
-            except Exception:
+            except (OSError, EOFError):
                 return None
         if path.exists():
             raise ValueError(
@@ -137,7 +137,7 @@ class ReviewTriage:
             return 1.0  # safe default: send to human
         try:
             return self._needs_human_decider.noul(example)
-        except Exception:
+        except ValueError:
             return 1.0
 
     def _decide_urgency(self, example: Example) -> int:
@@ -153,7 +153,7 @@ class ReviewTriage:
             if isinstance(label, (float, str)):
                 return int(label)  # type: ignore[arg-type]
             return 1
-        except Exception:
+        except (ValueError, TypeError):
             return 1
 
     def _decide_resolution(self, example: Example) -> tuple[str, float]:
@@ -162,7 +162,7 @@ class ReviewTriage:
         try:
             decision = self._resolution_decider.decide(example)
             return str(decision.label), decision.confidence
-        except Exception:
+        except (ValueError, TypeError):
             return "reassign", 0.0
 
     # -- batch -------------------------------------------------------------

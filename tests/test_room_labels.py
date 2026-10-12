@@ -5,6 +5,7 @@ from room_labels import (
     LabeledTakeoff,
     RoomLabel,
     TextBox,
+    attach_room_labels,
     looks_like_dimension,
     parse_room_label,
     point_in_polygon,
@@ -104,3 +105,31 @@ class TestLabeledTakeoff:
         unlabeled = lt.unlabeled_spaces
         assert len(unlabeled) == 1
         assert unlabeled[0].name == ""
+
+
+class TestAttachRoomLabelsProvenance:
+    """Verify attach_room_labels integration with run_pipeline sets core_provenance
+    and routes low-confidence labels to review queue."""
+
+    def test_attach_room_labels_returns_labeled_spaces_for_room_category(self):
+        """attach_room_labels creates LabeledSpace objects for 'room' category regions."""
+        from datasets_adapter import DrawingScale, Region, TakeoffResult
+
+        regions = [
+            Region(
+                category="room",
+                polygon_px=[(0, 0), (100, 0), (100, 100), (0, 100)],
+                source="test",
+            ),
+        ]
+        result = TakeoffResult(
+            drawing_type="floor_plan",
+            scale=DrawingScale(m_per_px=0.001),
+            regions=regions,
+        )
+
+        labeled = attach_room_labels(result, None)
+
+        assert len(labeled.spaces) == 1
+        assert labeled.spaces[0].polygon_px == [(0, 0), (100, 0), (100, 100), (0, 100)]
+        assert labeled.spaces[0].source == "test"

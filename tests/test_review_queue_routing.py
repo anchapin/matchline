@@ -31,12 +31,8 @@ class TestReviewQueueRoutingDirect:
             confidence=0.95,
             provenance=prov,
         )
-        assert item.confidence == 0.95
-        assert item in model.review_queue
-        assert item.provenance.sheet_id == "test"
-        assert item.provenance.revision == 1
-        assert item.provenance.method == "test"
-        assert item.provenance.confidence == 0.95
+        assert item is None
+        assert model.review_queue == []
 
     def test_provenance_preserved_in_low_confidence_review_item(self):
         """Low-confidence item (conf=0.79) preserves provenance in the review queue item."""
@@ -66,12 +62,8 @@ class TestReviewQueueRoutingDirect:
             confidence=REVIEW_CONFIDENCE,
             provenance=prov,
         )
-        assert item.confidence == REVIEW_CONFIDENCE
-        assert item in model.review_queue
-        assert item.provenance.sheet_id == "test"
-        assert item.provenance.revision == 1
-        assert item.provenance.method == "test"
-        assert item.provenance.confidence == REVIEW_CONFIDENCE
+        assert item is None
+        assert model.review_queue == []
 
     def test_flag_review_rejects_sub_threshold_confidence(self):
         """Sub-threshold confidence (conf=0.79) IS flagged for review."""

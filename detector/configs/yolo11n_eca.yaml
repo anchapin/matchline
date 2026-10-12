@@ -1,0 +1,65 @@
+# YOLO11n with Efficient Channel Attention blocks in the backbone.
+#
+# Variant of ultralytics/cfg/models/11/yolo11.yaml for issue #500 (FloorYOLO
+# ECA experiment). The head is byte-identical to stock yolo11n; the only change
+# is four parameter-free-in-spirit `ECA` rows inserted after each backbone C3k2,
+# which shift every later layer index by one. The head's `from` references are
+# remapped accordingly:
+#
+#   stock backbone P4 (idx 6)  -> 8        stock head P4   (idx 13) -> 17
+#   stock backbone P3 (idx 4)  -> 5        stock head P5   (idx 10) -> 14
+#
+# `ECA` has no args in the YAML, so parse_model takes the final `else: c2 = ch[f]`
+# branch: channels pass through and the block infers its own width. Register the
+# module first (detector/eca.py:register_eca) or parse_model cannot resolve the
+# name. See detector/eca.py for the ECA-Net reference and the init rationale.
+#
+# For a controlled A/B against the COCO-pretrained plain yolo11n baseline, build
+# this and partially load the baseline checkpoint:
+#   YOLO("configs/yolo11n_eca.yaml").load("yolo11n.pt")
+# ECA's own weights have no counterpart in the checkpoint and stay at their
+# near-neutral init; every other parameter loads as usual.
+
+# Parameters
+nc: 2 # door, window (detector/classes.py unified taxonomy)
+scales: # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # yolo11n: 181 layers, 2624080 params, 6.6 GFLOPs
+
+# YOLO11n backbone + ECA
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 2, C3k2, [256, False, 0.25]] # 2
+  - [-1, 1, ECA, []] # 3 ECA after P2/4 stage
+  - [-1, 1, Conv, [256, 3, 2]] # 4-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]] # 5
+  - [-1, 1, ECA, []] # 6 ECA after P3/8 stage
+  - [-1, 1, Conv, [512, 3, 2]] # 7-P4/16
+  - [-1, 2, C3k2, [512, True]] # 8
+  - [-1, 1, ECA, []] # 9 ECA after P4/16 stage
+  - [-1, 1, Conv, [1024, 3, 2]] # 10-P5/32
+  - [-1, 2, C3k2, [1024, True]] # 11
+  - [-1, 1, ECA, []] # 12 ECA after P5/32 stage
+  - [-1, 1, SPPF, [1024, 5]] # 13
+  - [-1, 2, C2PSA, [1024]] # 14
+
+# YOLO11n head (unchanged from stock, indices shifted by 4)
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 15
+  - [[-1, 8], 1, Concat, [1]] # 16 cat backbone P4
+  - [-1, 2, C3k2, [512, False]] # 17
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 18
+  - [[-1, 5], 1, Concat, [1]] # 19 cat backbone P3
+  - [-1, 2, C3k2, [256, False]] # 20 (P3/8-small)
+
+  - [-1, 1, Conv, [256, 3, 2]] # 21
+  - [[-1, 17], 1, Concat, [1]] # 22 cat head P4
+  - [-1, 2, C3k2, [512, False]] # 23 (P4/16-medium)
+
+  - [-1, 1, Conv, [512, 3, 2]] # 24
+  - [[-1, 14], 1, Concat, [1]] # 25 cat head P5
+  - [-1, 2, C3k2, [1024, True]] # 26 (P5/32-large)
+
+  - [[20, 23, 26], 1, Detect, [nc]] # 27 Detect(P3, P4, P5)

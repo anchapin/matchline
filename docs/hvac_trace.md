@@ -29,7 +29,7 @@ Key differences from PCBs:
 2. **Cut at VAVs:** Mask the physical VAV box (60×30 px + 10 px dilation). This severs the tap (inlet) and spine (outlet).
 3. **Find adjacent components:** Ring around the cut box (box/2+4 to box/2+30).
 4. **Select outlet:** Adjacent components containing diffusers within 30 px. (Inlet/tap components have no diffusers.)
-5. **Rooms served:** Diffusers in outlet → room via point-in-polygon.
+5. **Rooms served:** Diffusers in outlet → room (#684). A diffuser more than 0.15 m (`ROOM_EDGE_MARGIN_M`) inside exactly one room is assigned to it outright. The rest (on or near a wall line, or outside every room) take the rooms they sit in or within 0.5 m (`NEAREST_ROOM_MARGIN_M`) of as candidates: one candidate wins; with several, the one room this zone already feeds through an interior diffuser wins (duct connectivity); otherwise the room the diffuser sits deepest in wins if it leads by more than 0.1 m (`ROOM_TIE_M`). Anything else gets no room and a `diffuser_room_ambiguous` item in the zone's `review` list (also collected in `trace_sheet(...)["review"]`), never a guess. Each zone carries `diffuser_rooms`, parallel to `diffusers`. Rooms are measured against their `polygon_m` outline when the room carries one (L-shaped and angled rooms), else their `rect_m` box; depth is the signed distance to the outline's nearest edge (#697).
 6. **Sensors:** Assigned by room co-location (sensor's room → zone serving that room).
 7. **Duct length:** Skeleton pixels in outlet × 0.02 m/px.
 
@@ -77,3 +77,178 @@ Each zone reports:
 - `synth/mech.py`: Generator (rooms, VAVs, ducts, gaps, GT)
 - `hvac_trace.py`: Tracer (NCC+WiSARD detection, skeleton, cut-vertex zoning)
 - `synth/out/mech_trace_results.json`: Latest run results
+
+## Real-model room assignment check (#707)
+
+`scripts/validate_clinic_hvac.py` scores diffuser-to-room assignment against a real HVAC design: buildingSMART's Medical-Dental Clinic (`Clinic_HVAC.ifc`, IFC2X3, Revit MEP 2013). It's licensed CC BY 4.0, with attribution: BSI (2020) "Medical-Dental Test Files," buildingSMART International. The 27 MB file is not committed. Download it from https://github.com/buildingsmart-community/Community-Sample-Test-Files and set `MATCHLINE_CLINIC_HVAC` to its path to run `tests/test_clinic_hvac_validation.py::test_clinic_assignment_exact_positions`. Without that variable, the test is skipped.
+
+The designer's own containment is the ground truth: 437 of the 440 air terminals sit in an `IfcSpace`. Matchline sees only each space's floor footprint (as `polygon_m`) and each terminal's plan position, and runs them through `_assign_diffuser_room`. `--jitter` moves every terminal a fixed distance in a random direction, to mimic detector localisation error.
+
+Results (seed 0, 257 rooms on two floors):
+
+| Jitter | Correct | Wrong | Review |
+|--------|---------|-------|--------|
+| 0 m | 437 | 0 | 0 |
+| 0.15 m | 437 | 0 | 0 |
+| 0.30 m | 437 | 0 | 0 |
+| 0.50 m | 435 | 0 | 2 (`ambiguous`) |
+
+Limits: this checks room assignment on real room shapes only. The detection half below renders sheets from the same model. At exact positions every terminal is more than 0.15 m inside its room, so the #684 boundary and tie rules only come into play once jitter is added.
+
+## Real-model detection check (#707)
+
+`scripts/validate_clinic_hvac_detection.py` draws one mechanical sheet per storey from the same Clinic model and runs `detect_components` on it. `scripts/clinic_sheet_data.py` first extracts a JSON cache from the IFC: room footprints and names, all 440 air terminals (Supply Air becomes `diffuser`, Return and Exhaust Air become `grille`), and the plan footprint of every duct segment (pipes excluded). Neither the IFC nor the cache is committed.
+
+The layout is real: room shapes and labels, terminal positions and types, and the duct runs, including diagonal flex ducts. The symbols are not. Terminals are drawn with matchline's own glyphs, so this tests detection in a real layout's density and clutter, not another firm's symbology. Terminals are matched within 0.5 m (25 px), the same tolerance the synthetic validation uses.
+
+Results (two storeys, 440 terminals: 234 diffusers and 206 grilles. End to end covers the 437 the designer placed in a space):
+
+| Storey | Diffuser P / R | Grille P / R | End to end (room correct / missed) |
+|--------|----------------|--------------|------------------------------------|
+| First Floor | 0.49 / 0.17 | 0.73 / 0.07 | 32 / 231 |
+| Second Floor | 0.64 / 0.15 | 0.67 / 0.02 | 16 / 158 |
+
+Every terminal that was detected landed in the right room (0 wrong, 0 review). Detection is the bottleneck, and the script's stage check shows where terminals are lost:
+
+- **NCC proposals are fine.** 437 of the 440 terminals have a proposal of their own class within 0.5 m.
+- **WiSARD rejects most real terminals as background.** At the true position of each terminal, the classifier answers `background` for 358 of 440. It also calls 33 grilles diffusers.
+
+The classifier was trained on crops from synthetic sheets, where every terminal hangs off a vertical drop with clear space around it. On the Clinic sheets, ducts reach terminals from any side, flex ducts come in on diagonals, and room labels sit close by. Those crops fall outside what WiSARD learned. The likely fix is training-side (crops with drops from all four sides and diagonal flex, text nearby, more background drawn from real-layout clutter). That changes the detector's synthetic results, so it's tracked separately for review.
+
+## Context-augmented classifier training (#719)
+
+The #718 check showed the NCC proposals finding almost every Clinic terminal, then WiSARD rejecting most of them as `background`. On the synthetic sheets, every terminal hangs off a vertical drop with clear space around it, so the classifier had learned "clean context" as part of the class. `synth/mech.py::context_crops` adds diffuser and grille crops with the glyph drawn in context: 0–4 drops entering from random sides, some on a flex diagonal, plus walls, passing ducts and room labels. It also adds background crops with the same clutter and no symbol, half of them centred on a duct junction. Background crops are cut only at terminal sizes, because VAV-size cluttered crops taught the classifier that a duct through a box is background, and VAV recall fell. The detector recipe in `hvac_trace.main` and the Clinic harness now appends `CONTEXT_PER_CLASS = 600` symbol crops per class and `CONTEXT_BG = 600` background crops. With `context_per_class=0` the training set is unchanged. The Clinic sheets are a held-out test set and are never used in training.
+
+Clinic (BSI Medical-Dental, 440 terminals), precision / recall:
+
+| Storey | Class | Before | After |
+|---|---|---|---|
+| First Floor | diffuser | 0.49 / 0.17 | 0.71 / 0.99 |
+| First Floor | grille | 0.73 / 0.07 | 0.86 / 0.65 |
+| Second Floor | diffuser | 0.64 / 0.15 | 0.83 / 1.00 |
+| Second Floor | grille | 0.67 / 0.02 | 0.97 / 0.87 |
+
+End to end, terminals placed in the correct room went from 48 to 382 of the 437 that sit inside a room (First Floor 32 → 219, Second Floor 16 → 163). Zero went to a wrong room, before or after. Grilles called diffusers went from 33 to 50, and these are now most of the remaining false positives.
+
+Synthetic validation (seeds 11/22/33/44, tp/fp/fn summed):
+
+| Class | Before | After |
+|---|---|---|
+| vav | 8/13/2 | 8/3/2 |
+| ahu | 4/0/0 | 4/0/0 |
+| diffuser | 38/0/10 | 40/6/8 |
+| grille | 14/0/10 | 16/0/8 |
+| sensor | 17/0/7 | 17/0/7 |
+
+Room Rand index stays at 1.0 on all four seeds. Sensor-to-zone accuracy on seed 11 dropped from 4/5 to 2/5. Synthetic diffusers pick up 6 false positives. #721 traced the seed-11 drop: the true VAV there had always been deleted by the VAV suppression rule, and before this change a false VAV happened to cover the same rooms (see below).
+
+Variants tried: 300 per class with the default background count tripled Clinic diffuser recall but left grilles near 0.1. 600 per class with the default 1200 background collapsed synthetic VAV/AHU recall (VAV R 0.20, AHU 0) and room Rand to 0.0 on three seeds. Drawing the drops as wide as the terminal hurt both classes.
+
+## VAV suppression no longer counts sensors (#721)
+
+`trace_sheet` drops a VAV detection whose nearest confirmed small symbol is 25–60 px away, because the VAV template fires on diffusers and grilles. Sensors used to count as small symbols too. But a thermostat 25–60 px from its VAV box is ordinary, and on synthetic seeds 11 (42 px) and 33 (55 px) that rule deleted a VAV that `detect_components` had found at 0–1 px. Its rooms were left unzoned. Before #720, seed 11 scored 4/5 only because a false VAV at (7.0, 7.4) m happened to serve the same rooms. The rule (`suppress_vav_near_terminals`) now counts diffusers and grilles only.
+
+Synthetic, seeds 11/22/33/44, with the #720 classifier:
+
+| Metric | Before | After |
+|---|---|---|
+| VAV tp/fp/fn | 8/3/2 | 10/3/0 |
+| Sensor-to-zone, seed 11 | 2/5 | 4/5 |
+| Sensor-to-zone, seed 33 | 2/6 | 4/6 |
+| Room Rand (all seeds) | 1.0 | 1.0 |
+
+Other classes are unchanged. The Clinic detection check scores `detect_components` output, which comes before this rule, so its numbers are unchanged.
+
+Room Rand only counts room pairs where both rooms got a zone, so it stayed at 1.0 while half of seed 11 was unzoned. Read it together with sensor-to-zone accuracy or zone coverage.
+
+## Realistic synthetic sheets (#721, part 2)
+
+`generate_mech_sheet(seed, realistic=True)` draws the same layout and ground
+truth as the default sheet, with three habits seen on the BSI Clinic plans:
+
+- about 60% of return grilles are fed from the side: the drop jogs beside the
+  grille and enters its side face;
+- about 50% of supply diffusers take a diagonal flex connection into a side
+  face for the last 0.7 m;
+- about 70% of terminals get an air-device tag (for example `SD-1 150`) beside
+  them.
+
+The tweaks use their own random stream (`[seed, 721]`), so component ids,
+positions and zones are identical to the default sheet for the same seed. The
+default sheets, and every existing benchmark number, are unchanged.
+`validate_hvac_solution(..., realistic=True)` and
+`training_crops_from_sheets(..., realistic=True)` pass the flag through.
+
+Benchmark with the current detector (seeds 11/22/33/44, tp/fp/fn summed):
+
+| | default sheets | realistic sheets |
+|---|---|---|
+| diffuser | 40/6/8 | 40/6/8 |
+| grille | 16/0/8 | 13/0/11 |
+| sensor-to-zone | 4/5, 4/4, 4/6, 2/2 | 2/5, 3/4, 4/6, 2/2 |
+| room Rand | 1.0 all | 1.0 all |
+
+Findings:
+
+- **Diagonal flex breaks zoning.** Turning off only the flex tweak restores
+  sensor-to-zone to 4/5, 4/4, 4/6, 2/2; turning off the side feeds or the tags
+  changes nothing. The tracer's 13 px square opening (`OPEN_PX`) cannot fit
+  inside a diagonal bar narrower than about 18 px, so a flex run is erased and
+  its diffuser drops out of the zone. Drawing the flex at full drop width
+  (15 px) does not help.
+- **Training on realistic sheets does not close the gap.** Training crops from
+  realistic sheets (with the #720 context crops) moved realistic grille recall
+  from 13 to 14 of 24 and cost 10 correct terminals on the Clinic (382 to 372
+  of 437). Without context crops, grille recall collapsed to 1 of 24.
+
+### Fix: keep diagonal flex in the duct skeleton
+
+`duct_skeleton` now ORs the 13 px square opening with a 9 px disk opening
+(`FLEX_OPEN_PX`). A disk is the same width at every angle, so a flex run at any
+slope survives, and everything the square kept is still kept. Walls, symbol
+outlines and tag text (about 3 px strokes) are still removed.
+
+Sensor-to-zone over 12 seeds (11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 222,
+333):
+
+| | square only | square + disk |
+|---|---|---|
+| default sheets | 4/5 4/4 4/6 2/2 3/4 3/4 4/4 4/5 4/5 0/3 6/6 3/4 | identical |
+| realistic sheets | 2/5 3/4 4/6 2/2 3/4 3/4 4/4 2/5 4/5 0/3 6/6 3/4 | 4/5 4/4 4/6 2/2 3/4 3/4 4/4 3/5 4/5 1/3 6/6 3/4 |
+
+Realistic seed 111 room Rand also goes from 0.0 to 1.0; every other seed stays
+1.0 on both sheet types. Detection does not use the skeleton, so detection
+counts and the Clinic results are unchanged. A 9 px disk alone gave the same
+sensor numbers; the union was kept because it can only add duct pixels.
+
+## Symbol variation on the Clinic sheets (#745)
+
+The Clinic sheets above draw every terminal with the exact glyph the NCC templates are cut from, so a true terminal scores NCC 1.00. `--vary SEED` redraws them the way another firm or a scan would: scale 0.85 to 1.15, line weight 2 to 4 px, a quarter turn plus up to 5 degrees tilt and up to 6% shear, half the diffusers and grilles in an alternative style (four-way throw arrows instead of the X; five blade lines instead of the grille diagonal), half without the white knockout so duct ink runs through, 30% with a tag label over the symbol, then scan noise and blur (`detector/degrade.py`), JPEG at quality 55 to 80 and a 0 to 2 px raster shift. The ranges were set from the issue before any run; nothing is tuned on these numbers, and the Clinic data stays out of the repo. `--vary-only NAMES` (with `--vary SEED`) draws only the named variations out of scale, weight, turn, tilt, skew, style, knockout, text, scan (noise and JPEG) and shift, each at the value the seed gives it with all of them on, so the loss can be put down to one variation at a time; a variation left off is drawn as the clean render draws it, and `--vary-only ""` draws none.
+
+The detector answers three of these variations directly. Diffuser templates are also tried at 0.87x and 1.15x (`TEMPLATE_SCALES`); grilles keep one size because resized grille templates matched duct and wall linework. The tight grille template is also tried at a quarter turn (`TIGHT_TURNS`) and in the parallel-blade style (`TEMPLATE_STYLES`, from `synth.mech._ALT_GLYPH_FN`); the four-arrow diffuser style cost 7 of 234 diffusers, so diffusers keep one style.
+
+Recall (TP / terminals), false hits, and end-to-end room outcomes, both storeys, detector unchanged:
+
+| Render | Diffuser recall | Grille recall | False hits (diff / grille) | Room correct / wrong / missed |
+|---|---|---|---|---|
+| clean | 234/234 (1.00) | 206/206 (1.00) | 0 / 0 | 437 / 0 / 0 |
+| `--vary 1` | 29/234 (0.12) | 18/206 (0.09) | 0 / 4 | 47 / 0 / 390 |
+| `--vary 2` | 40/234 (0.17) | 16/206 (0.08) | 0 / 2 | 56 / 0 / 381 |
+
+Where they are lost (stage check, seed 1 / seed 2): an NCC proposal of the right class lands on only 71 of 234 diffusers (both seeds) and 63 / 67 of 206 grilles (clean: 234 and 203), while WiSARD at the true position still says the right class for 174/169 diffusers and 151/147 grilles. So the loss is mostly at the template proposal stage: the stub-less built-in templates don't match a rescaled, tilted, alternative-style or noisy symbol. A detection that is made still lands in the right room every time. Any fix (scale/rotation template banks, legend templates from #744) gets validated on synthetic sheets first, with Clinic only measured.
+
+### Grille/diffuser relabel when WiSARD and the template disagree
+
+Most grilles lost under the line-weight and scale variations were proposed by the grille template but labeled diffuser by WiSARD, then dropped by the tight confirm. Now, when a grille or diffuser fails the tight confirm under its WiSARD label and the NCC proposal named the other terminal class, the detection takes the proposal's class if that class's tight template scores at least `RELABEL_CONFIRM_NCC` (0.76; `hvac_trace._confirm_label`). A detection whose WiSARD label confirms is never changed. At 0.70 the rule made 9 false grilles on the clean render (those score 0.70 to 0.75), while grilles drawn 1 px heavier or lighter score 0.76 to 0.90. The bar was read off Clinic and approved by the maintainer; a firmer signal and a WiSARD that holds up under line weight and size are tracked in #887.
+
+Clinic grilles, TP / FP per storey (first floor of 123, second floor of 83), develop vs this rule; diffusers are unchanged on every render:
+
+| Render | First floor, develop | First floor, relabel | Second floor, develop | Second floor, relabel |
+|---|---|---|---|---|
+| clean | 123 / 0 | 123 / 0 | 83 / 0 | 83 / 0 |
+| `--vary-only weight` | 94 / 1 | 118 / 1 | 63 / 0 | 81 / 0 |
+| `--vary-only scale` | 76 / 0 | 96 / 0 | 62 / 0 | 69 / 0 |
+| `--vary 1` | 11 / 2 | 18 / 3 | 17 / 0 | 19 / 0 |
+| `--vary 2` | 19 / 0 | 28 / 0 | 12 / 2 | 17 / 2 |
+
+`--vary 1` gains one false grille on the first floor.

@@ -1,0 +1,46 @@
+Provenance for detector/results/ab_2026-09-28/  (issue #500 A/B)
+
+Date           : 2026-09-28  (start 14:27 EDT, end 19:34 EDT)
+Driver         : bash detector/run_ab_eca.sh 50
+Driver source  : detector/run_ab_eca.sh @ develop (PR #503, idempotency fix #524)
+Driver log     : ~/workspace/datasets/detector_runs/ab_driver.log
+Summary source : ~/workspace/datasets/detector_runs/ab_summary.csv
+                (re-copied verbatim into ab_summary.csv in this directory)
+Per-seed source: ~/workspace/datasets/detector_runs/{yolo11n_baseline,yolo11n_eca}_s{0,1,2}/results.csv
+                (final-epoch rows; column names are Ultralytics 8.4.x)
+
+Hardware
+  GPU          : AMD Radeon RX 6600 XT (Navi 23 / gfx1030, 8 GB VRAM)
+  CPU          : AMD Ryzen 5 5600G (12 cores)
+  RAM          : 30 GB
+  ROCm runtime : 7.2.3   (driver: amdgpu)
+  /dev/kfd     : present, amdgcn-amd-amdhsa--gfx1030 resolved
+
+Toolchain (detector/.venv-det-rocm)
+  Python       : 3.12.3
+  torch        : 2.14.0+rocm7.2
+  torchvision  : 0.29.0+rocm7.2
+  ultralytics  : 8.4.163
+
+Command (verbatim, as launched)
+  bash detector/run_ab_eca.sh 50
+  # matrix: 2 arms (yolo11n_baseline, yolo11n_eca) x 3 seeds (0,1,2) = 6 runs
+  # held constant per arm: --batch 16 --imgsz 640 --workers 6 --device 0
+  #                      --pretrained yolo11n.pt --data configs/cubicasa.yaml
+
+Per-run wall-clock (from ab_driver.log, lines 3-38)
+  yolo11n_baseline_s0  0.883 h   (14:27:21 -> 15:20:37)
+  yolo11n_eca_s0       0.817 h   (15:20:37 -> 16:09:50)
+  yolo11n_baseline_s1  0.904 h   (16:09:50 -> 17:04:40)
+  yolo11n_eca_s1       0.832 h   (17:04:40 -> 17:55:08)
+  yolo11n_baseline_s2  0.831 h   (17:55:08 -> 18:45:11)
+  yolo11n_eca_s2       0.815 h   (18:45:11 -> 19:34:17)
+  total                5.082 h   (49 min of driver overhead over ~5h of training)
+
+Output layout
+  detector/results/ab_2026-09-28/
+    ab_summary.csv   one row per (arm, seed); columns: arm, seed, epochs,
+                     mAP50, mAP50_95, train_box_loss
+    per_seed.csv     one row per (arm, seed); adds P and R columns
+    RUN.txt          this file
+    analysis.md      mean/sd, spread-vs-delta, disposition

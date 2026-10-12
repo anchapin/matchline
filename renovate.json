@@ -1,0 +1,60 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "baseBranchPatterns": [
+    "develop"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "pre-commit": {
+    "enabled": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ruff==X.Y.Z pins in CI workflows",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "\"ruff==(?<currentValue>[0-9.]+)\""
+      ],
+      "depNameTemplate": "ruff",
+      "datasourceTemplate": "pypi"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep the pre-commit hook and the CI pin on the same ruff version",
+      "matchPackageNames": [
+        "ruff",
+        "astral-sh/ruff-pre-commit"
+      ],
+      "groupName": "ruff",
+      "labels": [
+        "automation"
+      ]
+    },
+    {
+      "matchPackageNames": [
+        "!ruff",
+        "!astral-sh/ruff-pre-commit"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions used in CI workflows (#708): one grouped PR on the same Monday schedule",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "enabled": true,
+      "groupName": "github-actions",
+      "labels": [
+        "automation"
+      ]
+    }
+  ]
+}

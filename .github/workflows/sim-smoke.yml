@@ -1,0 +1,125 @@
+name: Simulation smoke
+
+# #752: export the synthetic e2e model (seed 101), build it into an OSM with
+# openstudio-standards' DOE prototype template and run a full year of
+# EnergyPlus on Chicago TMY3. Fails only when the simulation does not complete,
+# has severe errors or has no conditioned area; an EUI outside the band in
+# sim/reference_eui.json is a warning and is reported, not auto-fixed.
+# Nightly rather than per PR: OpenStudio is a ~400 MB download (cached) and
+# the run takes a few minutes.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [develop]
+    paths:
+      - sim_smoke.py
+      - sim/**
+      - bem_export.py
+      - bem_layers.py
+      - bem_space_split.py
+      - bem_multistorey.py
+      - .github/workflows/sim-smoke.yml
+
+permissions:
+  contents: read
+
+env:
+  OS_VERSION: 3.11.0
+  OS_DEB: OpenStudio-3.11.0+241b8abb4d-Ubuntu-24.04-x86_64.deb
+  OS_URL: https://github.com/NatLabRockies/OpenStudio/releases/download/v3.11.0/OpenStudio-3.11.0%2B241b8abb4d-Ubuntu-24.04-x86_64.deb
+  WX_BASE: https://raw.githubusercontent.com/NREL/EnergyPlus/v25.2.0/weather
+  WX_NAME: USA_IL_Chicago-OHare.Intl.AP.725300_TMY3
+
+jobs:
+  simulate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package
+        run: pip install --no-cache-dir -e .
+
+      - name: Cache OpenStudio and weather
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/sim-cache
+          key: sim-openstudio-${{ env.OS_VERSION }}-wx-chicago-tmy3-v1
+      - name: Download OpenStudio and weather
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/sim-cache
+          curl -fsSL -o ~/sim-cache/"$OS_DEB" "$OS_URL"
+          for ext in epw ddy stat; do
+            curl -fsSL -o ~/sim-cache/"$WX_NAME.$ext" "$WX_BASE/$WX_NAME.$ext"
+          done
+      - name: Check weather files
+        run: |
+          cd ~/sim-cache
+          cat > wx.sha256 <<'SUMS'
+          3cc3dc0c7bcc93e7203e8d9aab657d384315f5a0c86cdede23f792d437a0309f  USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.epw
+          a71b855be70ec72d9e9f0673eeedc8501179c1a4d9ce762e3cd36d812ecc1ee0  USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.ddy
+          e26ffe4f2db90ab44fcbaa59974ed22b913a9f99374f8c2d122951463c556860  USA_IL_Chicago-OHare.Intl.AP.725300_TMY3.stat
+          SUMS
+          sed -i 's/^ *//' wx.sha256
+          sha256sum -c wx.sha256
+      - name: Install OpenStudio
+        run: |
+          sudo apt-get install -y --no-install-recommends ~/sim-cache/"$OS_DEB"
+          openstudio --version
+
+      - name: Export the synthetic model
+        run: python run_pipeline.py --seed 101 --climate-zone 5A --out-dir "$RUNNER_TEMP/pipe"
+      - name: Simulate
+        id: sim
+        run: |
+          python sim_smoke.py \
+            --gbxml "$RUNNER_TEMP/pipe/stage_06_bem/bldg_101.xml" \
+            --epw ~/sim-cache/"$WX_NAME.epw" \
+            --out-dir "$RUNNER_TEMP/sim" \
+            --openstudio "$(command -v openstudio)" \
+            --building-type SmallOffice --template 90.1-2019 --climate-zone 5A
+      - name: Summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path(os.environ["RUNNER_TEMP"]) / "sim" / "sim_smoke_report.json"
+          lines = ["## Simulation smoke (#752)", ""]
+          if not p.exists():
+              lines.append("No report written.")
+          else:
+              r = json.loads(p.read_text())
+              res, ref = r.get("result") or {}, r.get("reference") or {}
+              lines += [
+                  f"- status: **{r.get('status')}**",
+                  f"- site EUI: {res.get('site_eui_mj_m2')} MJ/m2 "
+                  f"(prototype {ref.get('site_eui_mj_m2')}, band {r.get('band_mj_m2')}, ratio {r.get('eui_ratio')})",
+                  f"- conditioned area: {res.get('conditioned_area_m2')} m2",
+                  f"- unmet occupied hours: heating {res.get('unmet_heating_h')}, cooling {res.get('unmet_cooling_h')}",
+                  f"- EnergyPlus: {r.get('err')}",
+              ]
+              lines += [f"- reason: {x}" for x in r.get("reasons", [])]
+              lines += [f"- note: {x}" for x in r.get("notes", [])]
+              if r.get("status") == "eui_out_of_band":
+                  print("::warning::" + "; ".join(r.get("notes", [])))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-smoke
+          path: |
+            ${{ runner.temp }}/sim/sim_smoke_report.json
+            ${{ runner.temp }}/sim/*.log
+            ${{ runner.temp }}/sim/run/eplusout.err
+          if-no-files-found: ignore

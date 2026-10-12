@@ -7,6 +7,8 @@ severity.
 """
 
 from building_model import (  # noqa: E402
+    BimElement,
+    BimOpening,
     BuildingModel,
     ComponentRef,
     EnvelopeWall,
@@ -240,6 +242,19 @@ def break_envelope_wall_provenance(m: BuildingModel):
 def break_zone_empty(m: BuildingModel):
     m.zones["L1-Z1"].diffusers.clear()
     m.zones["L1-Z1"].space_ids.clear()
+
+
+def break_hvac_space_dropped_from_zones(m: BuildingModel):
+    """#658: the space holding D1/VAV-1 is dropped from every zone (both sides)."""
+    m.zones["L1-Z1"].space_ids.remove("L1-101")
+    m.spaces["L1-101"].hvac.zone_ids.clear()
+
+
+def break_hvac_terminal_drift(m: BuildingModel):
+    """#658: the zone claims a diffuser that no served space holds."""
+    m.zones["L1-Z1"].diffusers.append(
+        ComponentRef(id="D9", type="diffuser", x_m=4.0, y_m=4.0, tag="D9", provenance=P())
+    )
 
 
 def break_lpd_absurd(m: BuildingModel):
@@ -524,24 +539,24 @@ def break_gbxml_wall_areas(m: BuildingModel):
         lines.append("        <Azimuth>0</Azimuth>")
         lines.append("        <Tilt>90</Tilt>")
         lines.append(
-            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append("      </RectangularGeometry>")
         lines.append("      <PlanarGeometry><Polygon>")
         lines.append(
-            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            "        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>{target_len:.6f}</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append(
-            f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"
+            f"        <CartesianPoint><Coordinate>0.0</Coordinate><Coordinate>0.0</Coordinate><Coordinate>{h:.6f}</Coordinate></CartesianPoint>"  # noqa: E501
         )
         lines.append("      </Polygon></PlanarGeometry>")
         lines.append("    </Surface>")
@@ -586,3 +601,341 @@ def break_room_number(m: BuildingModel):
     the conservation check does not filter by poly_type, so no error fires.
     """
     m.spaces["L1-101"].number = None
+
+
+# -------------------------------------------------------------------------------------------------
+# BEM conservation break helpers
+
+
+def break_convention_bias_implausible_thickness(m: BuildingModel):
+    """Exterior wall thickness lands outside the plausible band.
+
+    The realistic cause is a units slip: a 12 (inch) or 1.5 (foot) value
+    reaching a metre field, or a material-layer parse that summed the wrong
+    column. Either way the derived bias number is garbage and must say so
+    rather than silently biasing the exported volume.
+    """
+    _ensure_bim_wall(m, thickness_m=12.0)
+
+
+def break_convention_bias_large(m: BuildingModel):
+    """A thickness that is plausible per wall but biases volume over 10%."""
+    _ensure_bim_wall(m, thickness_m=1.1)
+
+
+def _ensure_bim_wall(m: BuildingModel, thickness_m: float, layers=None):
+    from building_model import BimElement
+
+    m.bim_elements = [
+        e
+        for e in m.bim_elements
+        if not str(getattr(e, "ifc_class", "")).lower().startswith("ifcwall")
+    ]
+    m.bim_elements.append(
+        BimElement(
+            global_id="W-BIAS-1",
+            ifc_class="IfcWall",
+            name="EXT-1",
+            level_id="L1",
+            thickness_m=thickness_m,
+            material_layers=layers or [],
+            provenance=P(method="ifc_import"),
+        )
+    )
+
+
+def _add_skylight(m: BuildingModel, sid: str, oid: str, w: float, h: float):
+    from building_model import SpaceOpening
+
+    m.spaces[sid].openings.append(
+        SpaceOpening(
+            id=oid,
+            tag="SK-1",
+            category="skylight",
+            width_m=w,
+            height_m=h,
+            host_facade="roof",
+            area_m2=w * h,
+            tilt_deg=0.0,
+            provenance=P(sheet="arch_A501", note="roof plan skylight"),
+            needs_review=False,
+        )
+    )
+
+
+def break_skylight_oversize(m: BuildingModel):
+    """Skylight bigger than the flat roof over its space (30 m^2 office).
+
+    The realistic cause is a dimension slip (feet read as metres) or a
+    skylight attached to the wrong, smaller space.
+    """
+    _add_skylight(m, "L1-101", "roof-SK-BIG", 8.0, 5.0)
+
+
+def break_skylight_below_top(m: BuildingModel):
+    """A skylight hosted by a space that is not on the top level.
+
+    Adds an empty L2 above L1 so L1 is no longer the roof level. Under the
+    flat-roof convention an L1 space has no roof to host glazing.
+    """
+    from building_model import Level
+
+    m.levels.append(Level(id="L2", name="Level 2", elevation_z_m=H, wall_height_m=H))
+    _add_skylight(m, "L1-101", "roof-SK-LOW", 1.2, 1.2)
+
+
+def _add_toplit(m: BuildingModel, sid: str, oid: str, cx: float, cy: float, ch: float = H):
+    """Add a positioned skylight and compute its daylight area (L1-101 is 5 x 6 m)."""
+    from daylight_skylights import compute_skylight_daylight
+
+    _add_skylight(m, sid, oid, 1.0, 1.0)
+    m.spaces[sid].openings[-1].plan_center_m = [cx, cy]
+    compute_skylight_daylight(m.spaces[sid], ch)
+
+
+def break_daylight_zone_outside(m: BuildingModel):
+    """A toplit zone polygon that runs past its space boundary.
+
+    Realistic cause: zones computed against an older room polygon, then the
+    room was re-traced smaller without recomputing daylight.
+    """
+    _add_toplit(m, "L1-101", "roof-SK-DL", 2.5, 3.0)
+    z = m.spaces["L1-101"].daylight.toplit[0]
+    z.polygon_m = [[x + 3.0, y] for x, y in z.polygon_m]
+
+
+def break_daylight_unplaced(m: BuildingModel):
+    """A skylight with no plan position: its daylight area is unknown."""
+    from daylight_skylights import compute_skylight_daylight
+
+    _add_skylight(m, "L1-101", "roof-SK-NOPOS", 1.0, 1.0)
+    compute_skylight_daylight(m.spaces["L1-101"], H)
+
+
+# -- roadmap item 6: wall constructions ------------------------------------
+
+
+def add_wall_constructions(m: BuildingModel):
+    """Two wall types over the clean model, assigned per space, rolled up.
+
+    L1-101 (west half) gets W-1 on its south/north/west share; L1-102 gets
+    W-2 on its south/north/east share. The clean model has one segment per
+    facade spanning both spaces, so the 10 m south and north runs are split
+    at x=5 into one segment per space.
+    """
+    from building_model import Construction, EnvelopeWall
+    from constructions import apply_wall_u_rollup
+
+    m.constructions["W-1"] = Construction(
+        id="W-1", name="brick cavity", u_value_w_m2k=0.35, provenance=P(method="wall_type_legend")
+    )
+    m.constructions["W-2"] = Construction(
+        id="W-2",
+        name="curtain wall spandrel",
+        u_value_w_m2k=0.60,
+        provenance=P(method="wall_type_legend"),
+    )
+    split = []
+    for w in m.envelope:
+        if w.facade in ("south", "north"):
+            a, b = w.from_m, w.to_m
+            mid = [5.0, a[1]]
+            for k, (p0, p1) in enumerate(((a, mid), (mid, b))):
+                west = min(p0[0], p1[0]) < 5.0
+                split.append(
+                    EnvelopeWall(
+                        id=f"{w.id}{'ab'[k]}",
+                        facade=w.facade,
+                        from_m=list(p0),
+                        to_m=list(p1),
+                        length_m=5.0,
+                        height_m=w.height_m,
+                        area_m2=5.0 * w.height_m,
+                        provenance=w.provenance,
+                        construction_id="W-1" if west else "W-2",
+                        space_id="L1-101" if west else "L1-102",
+                    )
+                )
+        else:
+            west = w.facade == "west"
+            w.construction_id = "W-1" if west else "W-2"
+            w.space_id = "L1-101" if west else "L1-102"
+            split.append(w)
+    m.envelope[:] = split
+    apply_wall_u_rollup(m)
+
+
+def break_wall_construction_dangling(m: BuildingModel):
+    """A segment names a wall type the legend never defines."""
+    add_wall_constructions(m)
+    m.envelope[0].construction_id = "W-9"
+
+
+def break_wall_construction_partial(m: BuildingModel):
+    """One segment's wall type was never read: partial coverage."""
+    add_wall_constructions(m)
+    m.envelope[-1].construction_id = ""
+    from constructions import apply_wall_u_rollup
+
+    apply_wall_u_rollup(m)
+
+
+def break_wall_u_rollup_drift(m: BuildingModel):
+    """A stored per-space U-value no longer matches its segments."""
+    add_wall_constructions(m)
+    m.constructions["W-2"].u_value_w_m2k = 1.20  # edited after the rollup ran
+
+
+# -- roadmap item 5: shading surfaces --------------------------------------
+
+
+def add_shading(m: BuildingModel):
+    """A 0.6 m overhang over the south windows and a 0.4 m fin on the east wall."""
+    from building_model import ShadingSurface
+
+    south = next(w for w in m.envelope if w.facade == "south")
+    east = next(w for w in m.envelope if w.facade == "east")
+    m.shading.append(
+        ShadingSurface(
+            id="SH-OVH-1",
+            kind="overhang",
+            host_wall_id=south.id,
+            host_opening_id="south-W1",
+            along_m=0.5,
+            width_m=4.0,
+            z_m=2.2,
+            depth_m=0.6,
+            provenance=P(sheet="arch_A201", method="elevation_projection"),
+        )
+    )
+    m.shading.append(
+        ShadingSurface(
+            id="SH-FIN-1",
+            kind="fin",
+            host_wall_id=east.id,
+            along_m=3.0,
+            z_m=0.0,
+            depth_m=0.4,
+            height_m=east.height_m,
+            provenance=P(sheet="arch_A201", method="elevation_projection"),
+        )
+    )
+
+
+def break_shading_dangling_host(m: BuildingModel):
+    """An overhang hosted on a wall segment that does not exist."""
+    add_shading(m)
+    m.shading[0].host_wall_id = "L1-EW99"
+
+
+def break_shading_unhosted(m: BuildingModel):
+    """A projection read with no host wall: likely a detection error."""
+    add_shading(m)
+    m.shading[1].host_wall_id = ""
+
+
+def break_space_type_invalid(m: BuildingModel):
+    next(iter(m.spaces.values())).poly_type = "garage"
+
+
+def break_space_type_unassigned(m: BuildingModel):
+    next(iter(m.spaces.values())).poly_type = "unassigned"
+
+
+# -- #664: cross-level opening dedup ----------------------------------------
+
+
+def _add_l2_space(m: BuildingModel, sid: str = "L2-101") -> Space:
+    """An L2 copy of L1-101 directly above it (same facade frame)."""
+    from building_model import Level
+
+    if not any(lv.id == "L2" for lv in m.levels):
+        m.levels.append(Level(id="L2", name="Level 2", elevation_z_m=H, wall_height_m=H))
+    src = m.spaces["L1-101"]
+    sp = Space(
+        id=sid,
+        level_id="L2",
+        name=src.name,
+        number="201",
+        polygon_m=[list(p) for p in src.polygon_m],
+        area_m2=src.area_m2,
+    )
+    m.spaces[sid] = sp
+    return sp
+
+
+def two_storey_window_pair(sheet_lo="elev_A201", sheet_hi="elev_A202", s=6.0):
+    """One logical two-storey window seen as two cropped halves on adjacent sheets.
+
+    L1 half: sill 0.9 m up to the L2 floor line (3.0 m). L2 half: from the floor
+    line (sill 0.0) to 1.8 m. Same facade, tag, width and along-wall centre.
+    """
+    lo = SpaceOpening(
+        id="south-CW1-L1",
+        tag="CW",
+        category="window",
+        width_m=2.0,
+        height_m=H - 0.9,
+        sill_m=0.9,
+        head_m=H,
+        host_facade="south",
+        host_interval_m=[s - 1.0, s + 1.0],
+        s_center_m=s,
+        area_m2=2.0 * (H - 0.9),
+        provenance=P(sheet_lo, "grid_registration", 0.9),
+    )
+    hi = SpaceOpening(
+        id="south-CW1-L2",
+        tag="CW",
+        category="window",
+        width_m=2.0,
+        height_m=1.8,
+        sill_m=0.0,
+        head_m=1.8,
+        host_facade="south",
+        host_interval_m=[s - 1.0, s + 1.0],
+        s_center_m=s + 0.02,
+        area_m2=3.6,
+        provenance=P(sheet_hi, "grid_registration", 0.95),
+    )
+    return lo, hi
+
+
+def break_cross_level_duplicate(m: BuildingModel):
+    """A two-storey window kept twice: once on L1 and once on L2 (dedup skipped)."""
+    lo, hi = two_storey_window_pair(s=2.6)
+    m.spaces["L1-101"].openings.append(lo)
+    _add_l2_space(m).openings.append(hi)
+
+
+def break_opening_unattached(m: BuildingModel):
+    """An IFC wall window that Tier 1 attached to no space (#666)."""
+    m.bim_elements.append(
+        BimElement(
+            global_id="WALL-X",
+            ifc_class="IfcWall",
+            level_id="L1",
+            length_m=5.0,
+            placement_m=[0.0, 0.0, 0.0],
+            provenance=P(sheet="ifc", method="ifc_import:tier0"),
+            openings=[
+                BimOpening(
+                    id="OPEN-X",
+                    category="window",
+                    tag="A",
+                    width_m=1.0,
+                    height_m=1.0,
+                    s_center_m=2.5,
+                    provenance=P(sheet="ifc", method="ifc_import:tier0"),
+                )
+            ],
+        )
+    )
+    m.opening_attachment_summary.no_envelope_edge += 1
+
+
+def break_opening_unplaced(m: BuildingModel):
+    """A linked window with no along-wall position: dedup cannot confirm it."""
+    op = m.spaces["L1-101"].openings[0]
+    op.s_center_m = None
+    op.host_interval_m = None

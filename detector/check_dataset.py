@@ -7,7 +7,6 @@ import sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from classes import CLASS_IDS
 
 
 def main():
@@ -17,7 +16,6 @@ def main():
     ap.add_argument('--expect-classes', type=int, nargs='+', default=[0, 1])
     args = ap.parse_args()
 
-    n_classes = max(CLASS_IDS.values()) + 1
     errors = []
     stats = Counter()
     for split in args.splits:

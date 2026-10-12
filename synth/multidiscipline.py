@@ -112,6 +112,67 @@ def _layout(rng, open_office_span: bool):
     return W, D, n_zones, strips, named
 
 
+SERVICE_STRIP_M = 1.0  # width of the closet + shaft strip carved off a room
+SHAFT_DEPTH_M = 1.5  # shaft 1.0 x 1.5 = 1.5 m2 (< 2 m2, unnumbered -> shaft)
+DOOR_W_M = 0.9
+
+
+def _carve_service_rooms(rooms, seed):
+    """Carve one closet and one shaft off the east side of a room.
+
+    The strip (SERVICE_STRIP_M wide, full room depth) becomes an unnumbered
+    CLOSET (2-8 m2) with a SHAFT (1.5 m2) at its south end; the parent room
+    keeps its number and shrinks to a rectangle. The closet's door sits on
+    the face it shares with the parent. Uses its own RNG so the rest of the
+    building is generated exactly as without service rooms.
+
+    Returns (rooms, doors); doors are plan positions in meters.
+    """
+    rng = np.random.default_rng(seed + 7919)
+    ok = [
+        i
+        for i, r in enumerate(rooms)
+        if r["zone"] is not None
+        and (r["rect"][2] - r["rect"][0]) >= MIN_ROOM_M + SERVICE_STRIP_M
+        and 2.0 + SHAFT_DEPTH_M * SERVICE_STRIP_M <= (r["rect"][3] - r["rect"][1]) * SERVICE_STRIP_M
+        and (r["rect"][3] - r["rect"][1] - SHAFT_DEPTH_M) * SERVICE_STRIP_M < 8.0
+    ]
+    if not ok:
+        return rooms, []
+    i = ok[int(rng.integers(len(ok)))]
+    host = rooms[i]
+    x0, y0, x1, y1 = host["rect"]
+    xs = x1 - SERVICE_STRIP_M
+    ys = y1 - SHAFT_DEPTH_M
+    out = [dict(r) for r in rooms]
+    out[i] = {**host, "rect": (x0, y0, xs, y1)}
+    closet = {
+        "rect": (xs, y0, x1, ys),
+        "zone": host["zone"],
+        "name": "CLOSET",
+        "number": "",
+        "service": "closet",
+    }
+    shaft = {
+        "rect": (xs, ys, x1, y1),
+        "zone": host["zone"],
+        "name": "SHAFT",
+        "number": "",
+        "service": "shaft",
+    }
+    out += [closet, shaft]
+    door_y = float(rng.uniform(y0 + DOOR_W_M / 2 + 0.2, ys - DOOR_W_M / 2 - 0.2))
+    doors = [
+        {
+            "id": "DR1",
+            "plan_center_m": [round(xs, 6), round(door_y, 6)],
+            "width_m": DOOR_W_M,
+            "room_number": host["number"],  # GT only: the room the closet opens onto
+        }
+    ]
+    return out, doors
+
+
 def _grids(W, D):
     return ({"A": 0.0, "B": W / 3, "C": 2 * W / 3, "D": W}, {"1": 0.0, "2": D / 2, "3": D})
 
@@ -152,7 +213,7 @@ def _paste_lighting_glyph(img, glyph_fn, w_px, cpx, cpy, rng):
 # ---------------------------------------------------------------------------
 
 
-def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
+def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed, doors=None):
     ppm = PLAN_PX_PER_M
     ox, oy = 120, 150
     sw = int(ox + W * ppm + 90)
@@ -189,6 +250,30 @@ def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
         x0, y0, x1, y1 = r["rect"]
         d.rectangle([X(x0), Y(y0), X(x1), Y(y1)], outline=0, width=wt)
 
+    # doors: gap in the wall + leaf + quarter-circle swing (standard plan
+    # symbol). Doors sit on vertical walls; the leaf swings into the room
+    # east of the wall (the closet), hinged at the door's north jamb.
+    door_dets = []
+    for dr in doors or ():
+        cx, cy = dr["plan_center_m"]
+        half = dr["width_m"] / 2
+        xp, yh, ye = X(cx), Y(cy - half), Y(cy + half)
+        # shared walls are two outlines (one per room), so clear both
+        d.rectangle([xp - wt - 1, yh, xp + wt + 1, ye], fill=255)
+        r_px = ye - yh
+        d.line([xp, yh, xp + r_px, yh], fill=0, width=3)  # open leaf
+        d.arc([xp - r_px, yh - r_px, xp + r_px, yh + r_px], start=0, end=90, fill=0, width=2)
+        door_dets.append(
+            {
+                "id": dr["id"],
+                "category": "door",
+                "x_px": float(xp),  # opening centre, on the wall line
+                "y_px": float((yh + ye) / 2),
+                "bbox_px": [float(xp - 2), float(yh), float(xp + r_px), float(ye)],
+                "width_px": float(r_px),
+            }
+        )
+
     # windows on south facade: gap in wall + triple line marker
     for w in south_windows:
         x0p, x1p, yp = X(w["s0_m"]), X(w["s1_m"]), Y(D)
@@ -210,7 +295,7 @@ def _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed):
         d.text((X((x0 + x1) / 2) - tw / 2, Y((y0 + y1) / 2) - 20), text, fill=0, font=f)
 
     d.text((ox, 40), f"ARCH PLAN A101 -- bldg_{seed:03d}", fill=0, font=_font(30))
-    return sh_.finalize(), (ox, oy)
+    return sh_.finalize(), (ox, oy), door_dets
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +324,8 @@ def _render_lighting(rooms, W, D, rng):
     fixtures = []
     fi = 0
     for r in rooms:
+        if r.get("service"):
+            continue  # closets/shafts get no fixtures
         x0, y0, x1, y1 = r["rect"]
         fclass, m2_per, mn, mx = ROOM_FIXTURE_PLAN.get(r["name"], DEFAULT_PLAN)
         area = (x1 - x0) * (y1 - y0)
@@ -341,7 +428,7 @@ def _render_mech(rooms, strips, n_zones, W, D, rng):
         # rooms served: strip rooms + the spanning open office (both zones)
         for r in rooms:
             x0, y0, x1, y1 = r["rect"]
-            serves = (r["zone"] == zi) or (r["zone"] is None)
+            serves = ((r["zone"] == zi) or (r["zone"] is None)) and not r.get("service")
             if not serves:
                 continue
             # diffuser(s): office gets one per zone, in that zone's half
@@ -416,7 +503,17 @@ def _render_mech(rooms, strips, n_zones, W, D, rng):
 # ---------------------------------------------------------------------------
 
 
-def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: float = ELEV_PX_PER_M):
+def _render_elevation(
+    south_windows,
+    grids_v,
+    W,
+    with_grids: bool,
+    px_per_m: float = ELEV_PX_PER_M,
+    mirrored: bool = False,
+    title: str | None = None,
+):
+    """Render one elevation. ``mirrored`` draws it as seen from the north
+    (s measured from the west end runs right to left), per #702."""
     epm = px_per_m
     u0 = 60
     wall_w_px = W * epm
@@ -427,14 +524,14 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
     d = sh_.d
 
     def U(s):
-        return u0 + s * epm
+        return u0 + ((W - s) if mirrored else s) * epm
 
     def V(z):
         return v_ground - z * epm
 
     # ground line + wall
     d.line([u0 - 30, v_ground, u0 + wall_w_px + 30, v_ground], fill=0, width=3)
-    d.rectangle([U(0), V(WALL_H_M + PARAPET_M), U(W), V(0)], outline=0, width=4)
+    d.rectangle([u0, V(WALL_H_M + PARAPET_M), u0 + wall_w_px, V(0)], outline=0, width=4)
     # parapet cap line
     d.line([U(0), V(WALL_H_M + PARAPET_M), U(W), V(WALL_H_M + PARAPET_M)], fill=0, width=4)
 
@@ -455,12 +552,13 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
     for i, w in enumerate(south_windows):
         se = SCHED_BY_TAG[w["tag"]]
         h = se["height_m"]
-        d.rectangle([U(w["s0_m"]), V(SILL_M + h), U(w["s1_m"]), V(SILL_M)], outline=0, width=3)
-        d.line([U(w["s0_m"]), V(SILL_M + h / 2), U(w["s1_m"]), V(SILL_M + h / 2)], fill=0, width=1)
+        ua, ub = sorted((U(w["s0_m"]), U(w["s1_m"])))
+        d.rectangle([ua, V(SILL_M + h), ub, V(SILL_M)], outline=0, width=3)
+        d.line([ua, V(SILL_M + h / 2), ub, V(SILL_M + h / 2)], fill=0, width=1)
         # dimension line above the window (width in mm) -- thin clutter
         # the detector must ignore
         dy = V(SILL_M + h + 0.28)
-        d.line([U(w["s0_m"]), dy, U(w["s1_m"]), dy], fill=60, width=1)
+        d.line([ua, dy, ub, dy], fill=60, width=1)
         d.line([U(w["s0_m"]), dy - 4, U(w["s0_m"]), dy + 4], fill=60, width=1)
         d.line([U(w["s1_m"]), dy - 4, U(w["s1_m"]), dy + 4], fill=60, width=1)
         f = _font(14)
@@ -474,15 +572,16 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
             {
                 "id": wid,
                 "tag": w["tag"],
-                "u0_px": U(w["s0_m"]),
-                "u1_px": U(w["s1_m"]),
+                "u0_px": ua,
+                "u1_px": ub,
                 "v_sill_px": V(SILL_M),
                 "v_head_px": V(SILL_M + h),
             }
         )
 
     bubbles = [{"label": lab, "u_px": U(gx)} for lab, gx in grids_v.items()] if with_grids else []
-    title = "SOUTH ELEVATION A201 (grids)" if with_grids else "SOUTH ELEVATION A202 (no grids)"
+    if title is None:
+        title = "SOUTH ELEVATION A201 (grids)" if with_grids else "SOUTH ELEVATION A202 (no grids)"
     d.text((u0, 30), title, fill=0, font=_font(28))
     return (
         sh_.finalize(),
@@ -501,12 +600,14 @@ def _render_elevation(south_windows, grids_v, W, with_grids: bool, px_per_m: flo
 # ---------------------------------------------------------------------------
 
 
-def _south_windows(rooms, D, rng):
+def _south_windows(rooms, D, rng, edge="south"):
+    """Windows on the south wall (y=D); ``edge="north"`` uses the y=0 wall."""
     wins = []
     south_rooms = []
     for r in rooms:
         x0, y0, x1, y1 = r["rect"]
-        if abs(y1 - D) > 1e-6:
+        on_wall = abs(y0) <= 1e-6 if edge == "north" else abs(y1 - D) <= 1e-6
+        if not on_wall or r.get("service"):
             continue
         south_rooms.append(r)
         wdt = x1 - x0
@@ -546,11 +647,29 @@ def _south_windows(rooms, D, rng):
 # ---------------------------------------------------------------------------
 
 
-def generate_building(seed: int, open_office_span: bool = False) -> dict:
+def generate_building(
+    seed: int,
+    open_office_span: bool = False,
+    service_rooms: bool = False,
+    north_elevation: bool = False,
+) -> dict:
     """Generate one multi-discipline building. Returns the building dict
-    (images as uint8 arrays + GT)."""
+    (images as uint8 arrays + GT).
+
+    service_rooms: carve an unnumbered closet (with a door onto its parent
+    room) and a shaft off one room, so the closet/shaft merge rule runs end
+    to end. Off by default; with it off the building is unchanged.
+
+    north_elevation: add north-wall windows and two north elevations
+    (``elev_north`` with grids, ``elev_north_nogrid`` without), drawn as
+    seen from the north (#702). Uses its own RNG stream, so every other
+    sheet and the default building are unchanged.
+    """
     rng = np.random.default_rng(seed)
     W, D, n_zones, strips, rooms = _layout(rng, open_office_span)
+    doors: list = []
+    if service_rooms:
+        rooms, doors = _carve_service_rooms(rooms, seed)
     grids_v, grids_h = _grids(W, D)
     south_windows = _south_windows(rooms, D, rng)
 
@@ -566,16 +685,38 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
                 "polygon_m": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
                 "area_m2": round((x1 - x0) * (y1 - y0), 3),
                 "zone": r["zone"],
+                **({"service": r["service"]} if r.get("service") else {}),
             }
         )
 
-    arch_img, arch_origin = _render_arch(rooms, grids_v, grids_h, south_windows, W, D, rng, seed)
+    arch_img, arch_origin, door_dets = _render_arch(
+        rooms, grids_v, grids_h, south_windows, W, D, rng, seed, doors=doors
+    )
     light_img, light_origin, fixtures = _render_lighting(rooms, W, D, rng)
     mech_img, mech_origin, components, zones = _render_mech(rooms, strips, n_zones, W, D, rng)
     elev_g_img, elev_g_data = _render_elevation(south_windows, grids_v, W, True, px_per_m=40.0)
     # second elevation deliberately at a different scale (34 px/m):
     # dedup must merge observations in meters, not pixels
     elev_n_img, elev_n_data = _render_elevation(south_windows, grids_v, W, False, px_per_m=34.0)
+    north_windows: list = []
+    north_sheets: dict = {}
+    if north_elevation:
+        rng_n = np.random.default_rng([seed, 702])
+        north_windows = _south_windows(rooms, D, rng_n, edge="north")
+        for key, sid, grids, ppm in (
+            ("elev_north", "elev_A203", True, 40.0),
+            ("elev_north_nogrid", "elev_A204", False, 34.0),
+        ):
+            img, data = _render_elevation(
+                north_windows,
+                grids_v,
+                W,
+                grids,
+                px_per_m=ppm,
+                mirrored=True,
+                title=f"NORTH ELEVATION {sid[5:]} ({'grids' if grids else 'no grids'})",
+            )
+            north_sheets[key] = {"sid": sid, "image": img, "data": data}
 
     gt_links = {
         "fixture_room": {f["id"]: f["room_number"] for f in fixtures},
@@ -598,6 +739,10 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
             gt_links["sensor_zone"][s_["id"]] = zid
     for i, w in enumerate(south_windows):
         gt_links["window_room"][f"W{i + 1}"] = w["room_number"]
+    if north_elevation:
+        gt_links["window_room_north"] = {
+            f"W{i + 1}": w["room_number"] for i, w in enumerate(north_windows)
+        }
 
     def sheet_meta(sheet_id, discipline, origin, ppm):
         return {
@@ -616,13 +761,16 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
         "wall_height_m": WALL_H_M,
         "level_id": "L1",
         "open_office_span": open_office_span,
+        "service_rooms": service_rooms,
         "rooms": gt_rooms,
+        "doors": doors,
         "grids_v": grids_v,
         "grids_h": grids_h,
         "zones": zones,
         "components": components,
         "fixtures": fixtures,
         "south_windows": south_windows,
+        **({"north_windows": north_windows} if north_elevation else {}),
         "gt_links": gt_links,
         "window_schedule": SCHEDULE,
         "lighting_schedule": LIGHTING_SCHEDULE,
@@ -630,6 +778,9 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
             "arch": {
                 "image": arch_img,
                 "meta": sheet_meta("arch_A101", "arch_plan", arch_origin, PLAN_PX_PER_M),
+                # where each door symbol is drawn, in SHEET PIXELS: GT for scoring
+                # the image detector (door_detect.py); the linker never reads it
+                "doors": door_dets,
             },
             "lighting": {
                 "image": light_img,
@@ -661,6 +812,17 @@ def generate_building(seed: int, open_office_span: bool = False) -> dict:
             },
         },
     }
+    for key, ns in north_sheets.items():
+        bldg["sheets"][key] = {
+            "image": ns["image"],
+            "meta": {
+                **sheet_meta(ns["sid"], "elevation", (0, 0), ns["data"]["px_per_m"]),
+                "facade": "north",
+                "facade_ref_corner_m": [0.0, 0.0],
+                "facade_length_m": W,
+            },
+            "data": ns["data"],
+        }
     return bldg
 
 

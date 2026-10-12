@@ -10,6 +10,7 @@ from datasets_adapter import (
     TakeoffLine,
     TakeoffResult,
 )
+from validate import export_gate, run_checks
 
 
 def _make_scale():
@@ -216,3 +217,154 @@ def test_provenance_carried_through_export_boundary():
     assert len(bem_opening.history) == 1, "BEMOpeningUnit.history was dropped"
     assert bem_opening.history[0].sheet_id == "arch_A201"
     assert bem_opening.history[0].revision == 0
+
+
+def test_model_from_linked_model_drops_openings_with_missing_dimensions():
+    """Issue #481: Openings with missing dimensions must be recorded in skipped_openings.
+
+    model_from_linked_model silently dropped openings with width_m=None or
+    height_m=None. It must now record them in skipped_openings with a reason
+    and add a note to the BEMModel.
+    """
+    from run_pipeline import model_from_linked_model
+
+    opening_good = SpaceOpening(
+        id="op_good",
+        tag="W1",
+        category="window",
+        width_m=1.0,
+        height_m=2.0,
+        sill_m=0.9,
+        provenance=Provenance(
+            sheet_id="arch_A201",
+            revision=1,
+            method="elevation_extraction",
+            confidence=0.90,
+        ),
+    )
+    opening_bad = SpaceOpening(
+        id="op_bad",
+        tag="W2",
+        category="window",
+        width_m=None,
+        height_m=None,
+        sill_m=0.9,
+        provenance=Provenance(
+            sheet_id="arch_A201",
+            revision=1,
+            method="elevation_extraction",
+            confidence=0.90,
+        ),
+    )
+    space = Space(
+        id="L1-101",
+        level_id="L1",
+        polygon_m=[[0, 0], [10, 0], [10, 10], [0, 10]],
+        name="Office",
+        number="101",
+        openings=[opening_good, opening_bad],
+    )
+
+    class FakeLevel:
+        wall_height_m = 3.0
+
+    class FakeBuildingModel:
+        id = "TEST"
+        name = "Test Building"
+
+    model = FakeBuildingModel()
+    model.spaces = {"L1-101": space}
+
+    bem_model = model_from_linked_model(
+        model=model,
+        simplified_ring=[[0, 0], [10, 0], [10, 10], [0, 10]],
+        wall_height_m=3.0,
+        simplify_tolerance=0.01,
+    )
+
+    assert len(bem_model.skipped_openings) == 1, (
+        f"Expected 1 skipped opening, got {len(bem_model.skipped_openings)}"
+    )
+    skipped = bem_model.skipped_openings[0]
+    assert skipped["id"] == "op_bad"
+    assert skipped["tag"] == "W2"
+    assert skipped["category"] == "window"
+    assert skipped["reason"] == "dimensions missing"
+
+    assert len(bem_model.notes) == 1, f"Expected 1 note, got {len(bem_model.notes)}"
+    assert "dropped" in bem_model.notes[0].lower()
+    assert "missing dimensions" in bem_model.notes[0]
+
+
+class TestBEMExportRoundtripBATTERY:
+    """Equivalent roundtrip tests using run_checks with full BATTERY validation.
+
+    Issue #312: The existing test_write_gbxml_and_validate_gbxml_roundtrip uses
+    validate_gbxml which only validates against XSD schema. These tests use
+    run_checks which validates against the full BATTERY including conservation laws.
+    """
+
+    def test_pipeline_e2e_bem_export_battery(self, tmp_path):
+        """Full pipeline with BEMModel export validated with full BATTERY.
+
+        Creates a BuildingModel via build_model, converts to BEMModel,
+        exports to gbXML, then validates with run_checks full BATTERY.
+        This is the equivalent of test_write_gbxml_and_validate_gbxml_roundtrip
+        but using full BATTERY validation instead of just validate_gbxml (XSD).
+        """
+        from geometry_simplify import footprint_from_regions, simplify_ring
+        from link import build_model as link_build_model
+        from run_pipeline import model_from_linked_model
+        from synth.multidiscipline import generate_building
+
+        seed = 101
+        bldg = generate_building(seed, open_office_span=False)
+        model, _ = link_build_model(
+            bldg, elevation_key="elev_grid", building_name=bldg["building_id"]
+        )
+
+        sres = simplify_ring(
+            footprint_from_regions([sp.polygon_m for sp in model.spaces.values()]),
+            tol=0.02,
+            wall_height=model.levels[0].wall_height_m,
+        )
+
+        bem_model = model_from_linked_model(
+            model=model,
+            simplified_ring=sres.ring,
+            wall_height_m=model.levels[0].wall_height_m,
+            simplify_tolerance=2.0,
+        )
+
+        gbxml_path = tmp_path / f"seed_{seed}.xml"
+        write_gbxml(bem_model, gbxml_path)
+        assert gbxml_path.exists(), "gbXML file was not produced"
+
+        check_report = run_checks(model, sres=sres, gbxml_path=str(gbxml_path))
+        assert check_report.ok, f"BATTERY checks failed: {[e.message for e in check_report.errors]}"
+        assert export_gate(check_report), "export gate closed with BATTERY validation"
+
+
+# -- #804: gbXML 8.01 with the versionEnum fix --------------------------------
+UPSTREAM_801_SHA256 = "83f37b01e2cfe3a07f67bd6611d54efd1aa0c910e0e9ed64d85b6f71951381b3"
+
+
+def test_export_version_is_allowed_by_its_own_patched_8_01_schema():
+    """The published 8.01 xsd lists versionEnum only up to 6.01; our copy adds
+    7.03 and 8.01 and nothing else, and the export declares 8.01."""
+    import hashlib
+    import re
+
+    from bem_export import SCHEMA_PATH
+
+    s = SCHEMA_PATH.read_text(encoding="utf-8")
+    assert SCHEMA_PATH.name == "GreenBuildingXML_Ver8.01.xsd"
+    enum = s[s.index('name="versionEnum"') :]
+    enum = enum[: enum.index("</xsd:simpleType>")]
+    assert re.findall(r'value="([0-9.]+)"', enum)[-3:] == ["6.01", "7.03", "8.01"]
+    # undo the patch and the note: what is left is byte-identical to upstream
+    up = re.sub(r"\n<!-- matchline local patch:.*?-->", "", s, count=1, flags=re.S)
+    up = up.replace(
+        '\t\t\t<xsd:enumeration value="7.03"/>\n\t\t\t<xsd:enumeration value="8.01"/>\n', "", 1
+    )
+    assert hashlib.sha256(up.encode("utf-8")).hexdigest() == UPSTREAM_801_SHA256

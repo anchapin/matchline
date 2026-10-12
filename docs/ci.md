@@ -8,11 +8,13 @@ This document describes the automated gates that run on every PR and push.
 
 **Location:** `.github/workflows/ci.yml` — `Check test count` step
 
-**Expected test count:** 368 tests
+**Expected test count:** pinned as `EXPECTED_TEST_COUNT` in the `Check test count` step (see below)
+
+The `demo-smoke` job installs the package non-editable the way a fresh user would and runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753).
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (324), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3072), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**
@@ -38,3 +40,11 @@ This document describes the automated gates that run on every PR and push.
 - **Pytest:** `python -m pytest tests/ -q`
 
 All gates must be green before merging to `develop`.
+
+## Ruff version updates
+
+`ruff` is pinned to one exact version in two places that must agree: the `rev` in `.pre-commit-config.yaml` and the `ruff==X.Y.Z` install in `.github/workflows/ci.yml` (both jobs). Pre-commit requires `rev` to be an immutable tag, so a minor-version pin (`v0.16`) or a range is not possible there; a range in CI alone would let CI and local hooks drift apart.
+
+Instead, Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three pins together. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
+
+Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.

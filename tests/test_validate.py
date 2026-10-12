@@ -10,11 +10,21 @@ Conservation law correctness tests (Issue #263):
 - zone adjacency: every space references a zone and vice versa
 """
 
+import re
+from pathlib import Path
+
 import pytest
 
 from tests.model_factory import (
+    H,
+    _ensure_bim_wall,
     break_area,
+    break_convention_bias_implausible_thickness,
+    break_convention_bias_large,
+    break_cross_level_duplicate,
     break_dangling_zone,
+    break_daylight_unplaced,
+    break_daylight_zone_outside,
     break_dupe_fixture,
     break_elevation_placement_consistency,
     break_envelope_area_matches_perimeter,
@@ -26,6 +36,8 @@ from tests.model_factory import (
     break_gbxml_wall_areas,
     break_hvac_diffuser_provenance,
     break_hvac_sensor_provenance,
+    break_hvac_space_dropped_from_zones,
+    break_hvac_terminal_drift,
     break_hvac_terminal_unit_provenance,
     break_ifc_counts,
     break_lighting_fixture_provenance,
@@ -35,20 +47,31 @@ from tests.model_factory import (
     break_opening_oversize,
     break_opening_provenance,
     break_opening_schedule_join,
+    break_opening_unattached,
+    break_opening_unplaced,
     break_provenance,
     break_review_queue_acknowledged,
     break_review_queue_sound,
     break_revision_log_present,
     break_room_number,
+    break_shading_dangling_host,
+    break_shading_unhosted,
     break_sill_head_sanity,
     break_simplify_budget,
     break_simplify_invalid,
+    break_skylight_below_top,
+    break_skylight_oversize,
     break_space_core_provenance,
     break_space_id_hygiene,
+    break_space_type_invalid,
+    break_space_type_unassigned,
     break_space_volume_matches_area_height,
     break_takeoff_counts_reconcile,
     break_untagged_opening,
     break_volume_conservation,
+    break_wall_construction_dangling,
+    break_wall_construction_partial,
+    break_wall_u_rollup_drift,
     break_window_double_link,
     break_zone_empty,
     break_zone_provenance,
@@ -72,10 +95,111 @@ def test_clean_model_fully_green():
     assert _by_id(report, "volume_conservation").severity == "pass"
 
 
+_REPO = Path(__file__).resolve().parents[1]
+_VALIDATION_DOC = _REPO / "docs" / "validation.md"
+
+# Live orientation docs that state the battery size in prose. Each is asserted
+# against N_CHECKS, so the count cannot drift again in silence.
+_COUNT_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "QUALITY-SCORE.md",
+    "docs/README.md",
+    "docs/pipeline.md",
+)
+
+# Docs that must name the `validate/` package rather than the removed
+# `validate.py` file (split into a package by d48781c, #259).
+_PACKAGE_DOCS = (
+    "README.md",
+    "ARCHITECTURE.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "QUALITY-SCORE.md",
+    "ROADMAP.md",
+    ".github/ISSUE_TEMPLATE/feature_request.md",
+    "docs/CODE-REVIEW.md",
+    "docs/pipeline.md",
+    "docs/run_review.md",
+    "docs/validation.md",
+    "docs/ifc_import.md",
+    "docs/geometry_simplify.md",
+    "docs/design-docs/core-beliefs.md",
+)
+
+# Backticked tokens that appear in a catalog bullet but are not check ids.
+# A new one has to be reviewed and added here, not silently tolerated.
+_NON_CHECK_TOKENS = frozenset({"area_m2", "volume_m3", "lpd_w_ft2", "lpd_w_m2", "roof_u_factor"})
+
+
+def _emitted_check_ids() -> set[str]:
+    """Check ids the battery actually produces, from a real run.
+
+    Read off `run_checks` output rather than off `BATTERY` so that a check
+    listed in the battery but never wired in still registers as drift.
+    """
+    return {r.check_id for r in run_checks(make_clean_model()).results}
+
+
+def _documented_check_ids() -> set[str]:
+    """Backticked id-like tokens from the catalog bullets in validation.md."""
+    text = _VALIDATION_DOC.read_text(encoding="utf-8")
+    start = text.index("## The battery")
+    end = text.index("## How to add a check", start)
+    bullets = "\n".join(line for line in text[start:end].splitlines() if line.startswith("- "))
+    return set(re.findall(r"`([a-z][a-z_0-9]+)`", bullets))
+
+
 def test_battery_size_documented():
-    # keep docs/validation.md's check count honest; update the doc if this
-    # number changes intentionally.
-    assert N_CHECKS == 29
+    # Reads docs/validation.md. The previous version of this test asserted a
+    # bare literal while its name and comment promised a doc check it never
+    # performed, so the count in prose could drift freely and it stayed green.
+    text = _VALIDATION_DOC.read_text(encoding="utf-8")
+    stated = re.search(r"^## The battery \((\d+) checks\)", text, re.M)
+    assert stated, "docs/validation.md lost its '## The battery (N checks)' heading"
+    assert int(stated.group(1)) == N_CHECKS, (
+        f"docs/validation.md says {stated.group(1)} checks, battery has {N_CHECKS}"
+    )
+
+
+def test_every_check_is_documented():
+    # Forward: nothing the battery runs may lack a catalog bullet.
+    missing = sorted(_emitted_check_ids() - _documented_check_ids())
+    assert not missing, f"checks with no bullet in docs/validation.md: {missing}"
+
+
+def test_no_phantom_checks_documented():
+    # Reverse: the catalog may not promise a check that does not exist.
+    phantom = sorted(_documented_check_ids() - _emitted_check_ids() - _NON_CHECK_TOKENS)
+    assert not phantom, (
+        f"docs/validation.md names non-checks {phantom}; delete the bullet, or "
+        f"add the token to _NON_CHECK_TOKENS if it is a model field name"
+    )
+
+
+@pytest.mark.parametrize("relpath", _COUNT_DOCS)
+def test_check_count_matches_orientation_docs(relpath):
+    path = _REPO / relpath
+    stated = {
+        int(n)
+        for n in re.findall(r"(\d+)-check invariant battery", path.read_text(encoding="utf-8"))
+    }
+    assert stated, f"{relpath} no longer states a check count; confirm the prose still agrees"
+    assert stated == {N_CHECKS}, f"{relpath} states {sorted(stated)}, battery has {N_CHECKS}"
+
+
+def test_no_docs_reference_removed_validate_module():
+    # `validate.py` became the `validate/` package in d48781c (#259).
+    # `tests/test_validate.py` is a real filename and is not matched: the
+    # lookbehind excludes any preceding word character.
+    pattern = re.compile(r"(?<![A-Za-z0-9_])validate\.py")
+    stale = [
+        f"{rel}:{lineno}"
+        for rel in _PACKAGE_DOCS
+        for lineno, line in enumerate((_REPO / rel).read_text(encoding="utf-8").splitlines(), 1)
+        if pattern.search(line)
+    ]
+    assert not stale, f"stale `validate.py` references, use `validate/`: {stale}"
 
 
 @pytest.mark.parametrize(
@@ -84,6 +208,8 @@ def test_battery_size_documented():
         (break_area, "area_conservation", "error"),
         (break_provenance, "provenance_complete", "error"),
         (break_zone_empty, "zone_nonempty", "error"),
+        (break_hvac_space_dropped_from_zones, "hvac_zone_coverage", "error"),
+        (break_hvac_terminal_drift, "hvac_zone_coverage", "warn"),
         (break_lpd_absurd, "lpd_bounds", "warn"),
         (break_dangling_zone, "zone_space_referential", "error"),
         (break_dupe_fixture, "assignment_uniqueness", "error"),
@@ -91,11 +217,27 @@ def test_battery_size_documented():
         (break_negative_area, "no_negative_areas", "error"),
         (break_untagged_opening, "window_tag_coverage", "error"),
         (break_window_double_link, "window_double_link", "error"),
+        (break_cross_level_duplicate, "cross_level_dedup", "error"),
+        (break_opening_unplaced, "cross_level_dedup", "warn"),
+        (break_opening_unattached, "space_opening_attachment", "warn"),
         (break_fixture_no_schedule, "fixture_schedule_join", "error"),
         (break_fixture_no_schedule_flagged, "fixture_schedule_join", "warn"),
         (break_lpd_unit_slip, "lpd_unit_consistency", "error"),
         (break_space_volume_matches_area_height, "space_volume_matches_area_height", "warn"),
         (break_volume_conservation, "volume_conservation", "error"),
+        (break_convention_bias_implausible_thickness, "convention_bias", "warn"),
+        (break_convention_bias_large, "convention_bias", "warn"),
+        (break_skylight_oversize, "skylight_within_roof", "error"),
+        (break_skylight_below_top, "skylight_within_roof", "warn"),
+        (break_daylight_zone_outside, "daylight_zones", "error"),
+        (break_daylight_unplaced, "daylight_zones", "warn"),
+        (break_wall_construction_dangling, "wall_construction_coverage", "error"),
+        (break_wall_construction_partial, "wall_construction_coverage", "warn"),
+        (break_wall_u_rollup_drift, "wall_construction_coverage", "error"),
+        (break_shading_dangling_host, "shading_host_reference", "error"),
+        (break_shading_unhosted, "shading_host_reference", "warn"),
+        (break_space_type_invalid, "space_type_accounting", "error"),
+        (break_space_type_unassigned, "space_type_accounting", "warn"),
         (break_envelope_area_matches_perimeter, "envelope_area_matches_perimeter", "error"),
         (break_simplify_budget, "simplify_budget", "error"),
         (break_simplify_invalid, "simplify_budget", "error"),
@@ -399,3 +541,336 @@ class TestExportGateIntegration:
 
         assert not gbxml_called, "write_gbxml should not be called when export_gate blocks"
         assert not ifc_called, "write_ifc4 should not be called when export_gate blocks"
+
+
+def test_run_checks_exception_surfaces_to_cli():
+    """Regression test for issue #308: run_checks should print exceptions to stderr."""
+    import io
+    import sys
+
+    import validate
+    from tests.model_factory import make_clean_model
+    from validate import run_checks
+
+    original_check = validate._check_area_conservation
+
+    def raising_wrapper(model):
+        raise ValueError("deliberate test failure")
+
+    validate._check_area_conservation = raising_wrapper
+
+    _bat_index = None
+    for i, check in enumerate(validate.BATTERY):
+        if check.__name__ == "_check_area_conservation":
+            validate.BATTERY[i] = raising_wrapper
+            _bat_index = i
+            break
+
+    captured_stderr = io.StringIO()
+    old_stderr = sys.stderr
+    sys.stderr = captured_stderr
+    try:
+        m = make_clean_model()
+        report = run_checks(m)
+    finally:
+        sys.stderr = old_stderr
+        validate._check_area_conservation = original_check
+        if _bat_index is not None:
+            validate.BATTERY[_bat_index] = original_check
+
+    stderr_output = captured_stderr.getvalue()
+    assert "ERROR in check 'raising_wrapper': ValueError: deliberate test failure" in stderr_output
+    error_results = [r for r in report.results if r.severity == "error"]
+    assert len(error_results) == 1
+    assert "ValueError" in error_results[0].message
+    assert "deliberate test failure" in error_results[0].message
+
+
+class TestConfidenceThresholdValidation:
+    """Regression tests for issue #480: --confidence-threshold accepts out-of-range floats."""
+
+    def test_run_checks_rejects_min_review_confidence_above_1(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            run_checks(m, min_review_confidence=1.5)
+
+    def test_run_checks_rejects_min_review_confidence_below_0(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            run_checks(m, min_review_confidence=-0.1)
+
+    def test_run_checks_accepts_valid_min_review_confidence(self):
+        from tests.model_factory import make_clean_model
+
+        m = make_clean_model()
+        # Should not raise - valid range [0.0, 1.0]
+        report = run_checks(m, min_review_confidence=0.0)
+        assert report is not None
+        report = run_checks(m, min_review_confidence=0.5)
+        assert report is not None
+        report = run_checks(m, min_review_confidence=1.0)
+        assert report is not None
+
+    def test_export_gate_rejects_min_review_confidence_above_1(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            export_gate(report, model=m, min_review_confidence=1.5)
+
+    def test_export_gate_rejects_min_review_confidence_below_0(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        with pytest.raises(ValueError, match=r"min_review_confidence must be in \[0.0, 1.0\]"):
+            export_gate(report, model=m, min_review_confidence=-0.5)
+
+    def test_export_gate_accepts_valid_min_review_confidence(self):
+        from tests.model_factory import make_clean_model
+        from validate import ValidationReport
+
+        m = make_clean_model()
+        report = ValidationReport(building_name="test")
+        # Should not raise - valid range [0.0, 1.0]
+        result = export_gate(report, model=m, min_review_confidence=0.0)
+        assert result is not None
+        result = export_gate(report, model=m, min_review_confidence=0.5)
+        assert result is not None
+        result = export_gate(report, model=m, min_review_confidence=1.0)
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# convention_bias (roadmap item 1). A measurement, not a conservation law:
+# there is no "correct" value to fail against, so it never blocks export. The
+# tests below pin that intent, because a future refactor that quietly promotes
+# it to an error would start rejecting honest exports.
+# ---------------------------------------------------------------------------
+
+
+def _bias(m):
+    return _by_id(run_checks(m), "convention_bias")
+
+
+def test_convention_bias_skips_without_thickness():
+    # The clean model has no BIM walls, so no thickness exists. The check must
+    # say the bias is UNMEASURABLE, not report it as zero: a fabricated
+    # thickness would produce a fabricated bias.
+    r = _bias(make_clean_model())
+    assert r.severity == "skip"
+    assert "not zero" in r.message
+
+
+def test_convention_bias_measured_from_material_layers():
+    # Analytical path (roadmap item 1): IfcMaterialLayerSet sums to a true
+    # thickness, so the source must be named as analytical and preferred over
+    # a bare thickness_m on the same wall.
+    m = make_clean_model()
+    _ensure_bim_wall(
+        m,
+        thickness_m=0.9,  # decoy: layers must win
+        layers=[
+            {"material": "brick", "thickness_m": 0.1},
+            {"material": "insulation", "thickness_m": 0.05},
+            {"material": "gypsum", "thickness_m": 0.015},
+        ],
+    )
+    r = _bias(m)
+    assert r.severity == "pass"
+    assert "material_layers" in r.message and "analytical" in r.message
+    assert r.actual["thickness_m"] == pytest.approx(0.165)
+
+
+def test_convention_bias_falls_back_to_thickness_m():
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.15)
+    r = _bias(m)
+    assert r.actual["thickness_source"].startswith("thickness_m")
+    assert r.actual["thickness_m"] == pytest.approx(0.15)
+
+
+def test_convention_bias_exterior_face_is_always_larger():
+    # Directional by construction: spaces tile the interior, so offsetting the
+    # footprint outward can only grow the volume. A negative delta would mean
+    # the derivation is wrong, not that the building is unusual.
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.1)
+    per_level = _bias(m).actual["levels"]
+    assert per_level
+    for lid, v in per_level.items():
+        assert v["exterior_volume_m3"] > v["interior_volume_m3"], lid
+        assert v["delta_pct"] > 0
+
+
+def test_convention_bias_grows_with_thickness():
+    def frac(t):
+        m = make_clean_model()
+        _ensure_bim_wall(m, thickness_m=t)
+        lv = _bias(m).actual["levels"]["L1"]
+        return lv["delta_pct"]
+
+    assert frac(0.05) < frac(0.1) < frac(0.3)
+
+
+def test_convention_bias_never_blocks_export():
+    # Both warn paths, and the pass path, must leave the gate open.
+    for breaker in (
+        break_convention_bias_implausible_thickness,
+        break_convention_bias_large,
+    ):
+        m = make_clean_model()
+        breaker(m)
+        report = run_checks(m)
+        assert _by_id(report, "convention_bias").severity == "warn"
+        assert export_gate(report), f"{breaker.__name__} must not close the export gate"
+
+
+def test_convention_bias_names_the_units_slip():
+    # 12 metres is an inch value in a metre field. The message has to blame the
+    # number rather than the building, or the reader will chase the geometry.
+    m = make_clean_model()
+    break_convention_bias_implausible_thickness(m)
+    r = _bias(m)
+    assert "outside the plausible band" in r.message
+    assert "units slip" in r.message
+    assert "W-BIAS-1" in r.entities
+
+
+def test_convention_bias_reports_per_level_and_worst():
+    m = make_clean_model()
+    _ensure_bim_wall(m, thickness_m=0.2)
+    r = _bias(m)
+    assert set(r.actual["levels"]["L1"]) == {
+        "interior_volume_m3",
+        "exterior_volume_m3",
+        "delta_m3",
+        "delta_pct",
+        "perimeter_m",
+        "wall_height_m",
+    }
+    assert "worst level L1" in r.message
+    assert r.actual["convention"].startswith("interior_face")
+
+
+def test_convention_bias_ignores_non_wall_bim_elements():
+    from building_model import BimElement
+
+    m = make_clean_model()
+    m.bim_elements.append(
+        BimElement(global_id="S-1", ifc_class="IfcSlab", level_id="L1", thickness_m=0.3)
+    )
+    assert _bias(m).severity == "skip"
+
+
+# ---------------------------------------------------------------------------
+# skylight_within_roof (roadmap item 3). The model has no roof entity; the
+# check states the flat-roof convention the gbXML exporter already uses (roof
+# over a top-level space = its floor area) and holds skylights to it.
+# ---------------------------------------------------------------------------
+
+
+def _sky(m):
+    return _by_id(run_checks(m), "skylight_within_roof")
+
+
+def _skylight(m, sid="L1-101", oid="roof-SK-1", w=1.2, h=1.2, **kw):
+    from tests.model_factory import _add_skylight
+
+    _add_skylight(m, sid, oid, w, h)
+    o = m.spaces[sid].openings[-1]
+    for k, v in kw.items():
+        setattr(o, k, v)
+    return o
+
+
+def test_skylight_check_skips_without_skylights():
+    r = _sky(make_clean_model())
+    assert r.severity == "skip"
+
+
+def test_skylight_within_flat_roof_passes():
+    m = make_clean_model()
+    _skylight(m)
+    _skylight(m, oid="roof-SK-2")
+    r = _sky(m)
+    assert r.severity == "pass", r.message
+    assert "2 skylight(s)" in r.message and "2.88 m^2" in r.message
+
+
+def test_skylight_area_sums_per_space_not_per_opening():
+    # Two skylights, each smaller than the 30 m^2 roof, together larger.
+    m = make_clean_model()
+    _skylight(m, w=4.0, h=4.0)
+    _skylight(m, oid="roof-SK-2", w=4.0, h=4.0)
+    r = _sky(m)
+    assert r.severity == "error"
+    assert r.entities == ["L1-101"]
+    assert r.expected == 30.0 and abs(r.actual - 32.0) < 1e-9
+
+
+def test_skylight_area_falls_back_to_dims_then_schedule():
+    m = make_clean_model()
+    _skylight(m, w=8.0, h=5.0, area_m2=None)  # 40 m^2 from own dims
+    assert _sky(m).severity == "error"
+    m = make_clean_model()
+    _skylight(m, area_m2=None, width_m=None, height_m=None)
+    m.schedules["SK-1"] = {"width_m": 8.0, "height_m": 5.0}
+    assert _sky(m).severity == "error"
+
+
+def test_skylight_without_dims_is_named_not_zeroed():
+    m = make_clean_model()
+    _skylight(m, area_m2=None, width_m=None, height_m=None)
+    r = _sky(m)
+    assert r.severity == "pass"
+    assert "1 skylight(s) without dimensions left out" in r.message
+
+
+def test_skylight_below_top_level_warns_and_names_it():
+    m = make_clean_model()
+    break_skylight_below_top(m)
+    r = _sky(m)
+    assert r.severity == "warn"
+    assert r.entities == ["roof-SK-LOW"]
+    assert "atrium" in r.message
+
+
+def test_skylight_on_top_level_of_multi_level_model_passes():
+    from building_model import Level
+
+    m = make_clean_model()
+    m.levels.insert(0, Level(id="L0", name="Basement", elevation_z_m=-H, wall_height_m=H))
+    _skylight(m)
+    assert _sky(m).severity == "pass"
+
+
+def test_skylight_does_not_count_against_facade_closure():
+    # Roof glazing must not land on a phantom "roof" facade with zero wall
+    # area, which would close the export gate on an honest skylight.
+    m = make_clean_model()
+    _skylight(m, w=5.0, h=5.0)
+    r = _by_id(run_checks(m), "facade_opening_closure")
+    assert r.severity == "pass", r.message
+
+
+def test_skylight_round_trips_through_model_json():
+    from building_model import BuildingModel
+
+    m = make_clean_model()
+    _skylight(m, tilt_deg=0.0, azimuth_deg=180.0)
+    back = BuildingModel.from_dict(m.to_dict())
+    o = back.spaces["L1-101"].openings[-1]
+    assert (o.category, o.host_facade, o.tilt_deg, o.azimuth_deg) == (
+        "skylight",
+        "roof",
+        0.0,
+        180.0,
+    )

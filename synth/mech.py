@@ -100,6 +100,36 @@ def _draw_grille(d: ImageDraw.ImageDraw, cx, cy, lw: int = 3):
     d.line([cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2], fill=0, width=2)
 
 
+def _draw_diffuser_arrows(d, cx, cy, lw=3):
+    """Supply diffuser as a square with four-way throw arrows (no X)."""
+    s = DIF_S * PX_PER_M
+    h, a = s / 2, s / 7
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    for ux, uy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        tx, ty = cx + ux * (h - 5), cy + uy * (h - 5)
+        d.line([cx + ux * a * 0.6, cy + uy * a * 0.6, tx, ty], fill=0, width=2)
+        px, py = -uy, ux  # perpendicular
+        d.polygon(
+            [
+                (tx, ty),
+                (tx - ux * a + px * a / 2, ty - uy * a + py * a / 2),
+                (tx - ux * a - px * a / 2, ty - uy * a - py * a / 2),
+            ],
+            fill=0,
+        )
+
+
+def _draw_grille_hatched(d, cx, cy, lw=3):
+    """Return grille as a square with dense parallel blade lines (no diagonal)."""
+    s = GRI_S * PX_PER_M
+    h = s / 2
+    d.rectangle([cx - h, cy - h, cx + h, cy + h], outline=0, width=lw)
+    n = 5
+    for i in range(1, n + 1):
+        y = cy - h + i * s / (n + 1)
+        d.line([cx - h + 2, y, cx + h - 2, y], fill=0, width=1)
+
+
 def _draw_sensor(d: ImageDraw.ImageDraw, cx, cy, lw: int = 2):
     r = SEN_R * PX_PER_M
     d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=lw)
@@ -124,6 +154,12 @@ _GLYPH_FN = {
     "diffuser": _draw_diffuser,
     "grille": _draw_grille,
     "sensor": _draw_sensor,
+}
+# Other drafting conventions for the same terminal (#745): a supply diffuser
+# drawn with four throw arrows, a return grille drawn with parallel blades.
+_ALT_GLYPH_FN = {
+    "diffuser": _draw_diffuser_arrows,
+    "grille": _draw_grille_hatched,
 }
 # Tight symbol extents in meters (template windows / GT bboxes).
 _GLYPH_EXT = {
@@ -265,6 +301,80 @@ class _Net:
 # ---------------------------------------------------------------------------
 
 
+# Return-grille placement (#725). Real mechanical plans draw a return grille
+# at the end of its own branch duct, or alone for a plenum return: no other
+# duct runs through it (BSI Medical-Dental Clinic: 179 of 184 return terminals
+# sit on the end of a duct segment; TOSV first-level mechanical plan, Z-Group
+# Architects 2006: R1 grilles stand clear of every double-line duct). Placing
+# every grille at the same spot in each room stacked them on top of the return
+# main, the supply trunk, and the drops of the rooms above, where the outline
+# glyph vanished into the filled duct bar.
+GRI_CLEAR_M = 0.10
+
+
+def _comp_box(c):
+    return (
+        c["x_m"] - c["w_m"] / 2,
+        c["y_m"] - c["h_m"] / 2,
+        c["x_m"] + c["w_m"] / 2,
+        c["y_m"] + c["h_m"] / 2,
+    )
+
+
+def _piece_box(pc):
+    (x1, y1), (x2, y2) = pc["p1"], pc["p2"]
+    h = pc["w"] / 2
+    return (min(x1, x2) - h, min(y1, y2) - h, max(x1, x2) + h, max(y1, y2) + h)
+
+
+def _overlap(a, b, pad=0.0):
+    return a[0] - pad < b[2] and b[0] - pad < a[2] and a[1] - pad < b[3] and b[1] - pad < a[3]
+
+
+def _place_grille(net, boxes, rect, slot, y_ret):
+    """Deterministic grille spot in rect: its glyph clear of every duct and
+    symbol already placed, and its drop to the return main clear of every
+    vertical duct and symbol (crossing a horizontal duct is a normal,
+    gapped crossing). Rooms sharing a strip get staggered x slots so one
+    room's drop never runs through another room's grille. No RNG, so the
+    rest of the layout stream is unchanged."""
+    x0, y0, x1, y1 = rect
+    w, h = x1 - x0, y1 - y0
+    half = GRI_S / 2
+    xs = [x0 + 0.15 * w]
+    step = GRI_S + W_RDROP / 2 + GRI_CLEAR_M
+    for k in range(1, 12):
+        for sgn in (1, -1):
+            xs.append(x0 + 0.15 * w + sgn * k * step / 2)
+    xs = [x for x in xs if x0 + half + 0.2 <= x <= x1 - half - 0.2]
+    # the strip's k-th room starts from its own x slot
+    xs = xs[slot % len(xs) :] + xs[: slot % len(xs)] if slot else xs
+    y_pref = y0 + 0.75 * h
+    ys = sorted(
+        (y0 + half + 0.25 + i * 0.1 for i in range(int((h - 2 * half - 0.5) / 0.1) + 1)),
+        key=lambda y: abs(y - y_pref),
+    )
+    for gx in xs:
+        for gy in ys:
+            g = (gx - half, gy - half, gx + half, gy + half)
+            if any(_overlap(g, _piece_box(pc), GRI_CLEAR_M) for pc in net.pieces):
+                continue
+            if any(_overlap(g, b, GRI_CLEAR_M) for b in boxes):
+                continue
+            hd = W_RDROP / 2
+            drop = (gx - hd, min(gy, y_ret), gx + hd, max(gy, y_ret))
+            if any(
+                _overlap(drop, _piece_box(pc), GRI_CLEAR_M)
+                for pc in net.pieces
+                if pc["p1"][0] == pc["p2"][0] and pc["duct"] != "R-MAIN"
+            ):
+                continue
+            if any(_overlap(drop, b, GRI_CLEAR_M) for b in boxes):
+                continue
+            return gx, gy
+    return x0 + 0.15 * w, y0 + 0.75 * h  # no clear spot: legacy position
+
+
 def _layout_mech(rng):
     """Full plan description in meters. All randomness flows from rng."""
     W = float(rng.uniform(18, 26))
@@ -399,13 +509,15 @@ def _layout_mech(rng):
     net.add_piece(1.0, y_ret, W - 1.0, y_ret, W_RMAIN, "R-MAIN")
     net.add_piece(1.0, y_ret, 1.0, y_trunk, W_RDROP, "R-CONN")
     net.add_piece(1.0, y_trunk, 0.6, y_trunk, W_RDROP, "R-CONN")
+    placed_boxes = [_comp_box(c) for c in [ahu] + vavs + diffusers]
+    strip_slot: dict[float, int] = {}
     for r in room_info:
         gri_i += 1
         x0, y0, x1, y1 = r["rect_m"]
-        # near the left wall: clear of diffuser drops (which sit at
-        # cx +/- 0.22w or cx) so return and supply bars never merge
-        gx = x0 + 0.15 * (x1 - x0)
-        gy = r["cy"] + 0.25 * (y1 - y0)
+        k = strip_slot.get(x0, 0)
+        strip_slot[x0] = k + 1
+        gx, gy = _place_grille(net, placed_boxes, r["rect_m"], k, y_ret)
+        placed_boxes.append((gx - GRI_S / 2, gy - GRI_S / 2, gx + GRI_S / 2, gy + GRI_S / 2))
         grilles.append(
             {
                 "id": f"G{gri_i}",
@@ -553,7 +665,41 @@ def _m2px(x_m, y_m):
     return ((x_m + MARGIN_M) * PX_PER_M, (y_m + MARGIN_M) * PX_PER_M)
 
 
-def render_mech_sheet(net, gt, room_info):
+_TAG_TEXT = {"diffuser": ("SD-1", "SD-2", "CD-1"), "grille": ("RG-1", "RG-2", "EG-1")}
+
+
+def _realistic_overlay_plan(gt, rng):
+    """Per-terminal render tweaks for ``realistic=True`` (#721).
+
+    Real plans feed returns from the side, bring flex into supply diffusers
+    on a diagonal and print an air-device tag (type + airflow) beside each
+    terminal. Positions and topology are unchanged; only pixels differ.
+    Returns {terminal_id: {"entry": "side"|"flex"|None, "tag": str|None,
+    "tag_dx": float, "tag_dy": float}}.
+    """
+    plan = {}
+    for c in gt["components"]:
+        if c["type"] not in ("diffuser", "grille"):
+            continue
+        entry = None
+        if c["type"] == "grille" and rng.random() < 0.6:
+            entry = "side"
+        elif c["type"] == "diffuser" and rng.random() < 0.5:
+            entry = "flex"
+        tag = None
+        if rng.random() < 0.7:
+            tag = f"{_TAG_TEXT[c['type']][rng.integers(3)]} {int(rng.integers(6, 30)) * 10}"
+        plan[c["id"]] = {
+            "entry": entry,
+            "tag": tag,
+            "flex_side": float(rng.choice([-1.0, 1.0])),
+            "tag_dx": float(rng.uniform(0.35, 0.6)) * float(rng.choice([-1.0, 1.0])),
+            "tag_dy": float(rng.uniform(-0.5, 0.2)),
+        }
+    return plan
+
+
+def render_mech_sheet(net, gt, room_info, realistic_rng=None):
     W, D = gt["W_m"], gt["D_m"]
     img = Image.new(
         "L", (int((W + 2 * MARGIN_M) * PX_PER_M), int((D + 2 * MARGIN_M) * PX_PER_M)), 255
@@ -569,7 +715,42 @@ def render_mech_sheet(net, gt, room_info):
     # ducts: solid filled bars. Pad ONLY perpendicular to the duct axis:
     # padding along the axis would fill the crossing gaps that keep the
     # duct graph topologically honest.
+    plan = _realistic_overlay_plan(gt, realistic_rng) if realistic_rng is not None else {}
+    # terminal at a vertical drop's end -> (component, which end)
+    ends = {}
+    if plan:
+        for c in gt["components"]:
+            if plan.get(c["id"], {}).get("entry"):
+                ends[(round(c["x_m"], 4), round(c["y_m"], 4))] = c
+    segs = []
     for x1, y1, x2, y2, w in net.iter_draw():
+        c = ends.get((round(x2, 4), round(y2, 4))) if abs(x1 - x2) < 1e-6 else None
+        flip = False
+        if c is None and abs(x1 - x2) < 1e-6:
+            c = ends.get((round(x1, 4), round(y1, 4)))
+            flip = c is not None
+        if c is not None and abs(y2 - y1) > 1.0:
+            if flip:  # orient so (x2, y2) is the terminal end
+                x1, y1, x2, y2 = x2, y2, x1, y1
+            sgn = 1.0 if y2 > y1 else -1.0
+            jog = 0.7
+            ys = y2 - sgn * jog
+            segs.append((x1, y1, x2, ys, w))  # straight run stops short
+            info = plan[c["id"]]
+            half = c["w_m"] / 2
+            if info["entry"] == "side":
+                # duct jogs beside the grille and enters its side face
+                xo = x2 - (half + w / 2 + 0.15)
+                segs.append((x2, ys, xo, ys, w))
+                segs.append((xo, ys, xo, y2, w))
+                segs.append((xo, y2, x2 - half, y2, w))
+            else:  # flex: diagonal into a side face of the diffuser
+                fx = x2 + info["flex_side"] * half
+                (a, b), (e, f2) = _m2px(x2, ys), _m2px(fx, y2)
+                d.line([a, b, e, f2], fill=0, width=max(3, int(w * PX_PER_M * 0.7)))
+            continue
+        segs.append((x1, y1, x2, y2, w))
+    for x1, y1, x2, y2, w in segs:
         (px1, py1), (px2, py2) = _m2px(x1, y1), _m2px(x2, y2)
         hw = w * PX_PER_M / 2
         if abs(px1 - px2) >= abs(py1 - py2):  # horizontal
@@ -586,14 +767,28 @@ def render_mech_sheet(net, gt, room_info):
         _GLYPH_FN[c["type"]](d, cx, cy)
         if c["type"] in ("vav", "ahu"):
             _draw_tag(d, cx, cy, c["w_m"], c["h_m"], c["tag"])
+        info = plan.get(c["id"])
+        if info and info["tag"]:
+            tx = cx + info["tag_dx"] * PX_PER_M - (60 if info["tag_dx"] < 0 else 0)
+            ty = cy + info["tag_dy"] * PX_PER_M
+            d.text((tx, ty), info["tag"], fill=0, font=_font(14))
     return img
 
 
-def generate_mech_sheet(seed: int):
+def generate_mech_sheet(seed: int, realistic: bool = False):
+    """Synthetic mechanical sheet + ground truth.
+
+    realistic=True (#721) draws the same layout and ground truth with
+    real-plan habits: returns fed from the side, flex diagonals into
+    diffusers, air-device tags beside terminals. The tweaks use their own
+    RNG stream, so the layout for a seed never changes.
+    """
     rng = np.random.default_rng(seed)
     net, gt, room_info = _layout_mech(rng)
     gt["seed"] = seed
-    return render_mech_sheet(net, gt, room_info), gt
+    gt["realistic"] = realistic
+    rr = np.random.default_rng([seed, 721]) if realistic else None
+    return render_mech_sheet(net, gt, room_info, realistic_rng=rr), gt
 
 
 def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
@@ -611,8 +806,13 @@ def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-def render_template(cls: str, margin_px: int = 4, stubs: bool | None = None) -> np.ndarray:
+def render_template(
+    cls: str, margin_px: int = 4, stubs: bool | None = None, style: int = 0
+) -> np.ndarray:
     """Grayscale template of one symbol at sheet scale.
+
+    ``style`` 1 draws the class's other drafting convention (``_ALT_GLYPH_FN``)
+    instead of matchline's own glyph.
 
     With stubs=True (default per TEMPLATE_STUBS) the template includes the
     duct stubs that attach to the symbol on real sheets (spine through the
@@ -654,7 +854,8 @@ def render_template(cls: str, margin_px: int = 4, stubs: bool | None = None) -> 
             d.rectangle([0, cy - 7.5, cx, cy + 7.5], fill=0)  # return
         elif cls in ("diffuser", "grille"):
             d.rectangle([cx - 7.5, 0, cx + 7.5, H], fill=0)  # drop
-    _GLYPH_FN[cls](d, cx, cy)
+    fn = _ALT_GLYPH_FN[cls] if style == 1 and cls in _ALT_GLYPH_FN else _GLYPH_FN[cls]
+    fn(d, cx, cy)
     return np.asarray(img).astype(np.float64)
 
 
@@ -681,7 +882,115 @@ def detection_crop(gray: np.ndarray, cx_px: float, cy_px: float, cls: str) -> np
     return normalize_crop(crop.astype(np.float64))
 
 
-def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_sheet: int = 50):
+# Context augmentation (#719): real plans connect terminals from any side,
+# run flex ducts in on diagonals and print room labels next to symbols. The
+# synthetic sheets only ever show a vertical drop with clear space around the
+# glyph, so WiSARD learned "clean context" as part of the class.
+CONTEXT_CLASSES = ("diffuser", "grille")
+# Detector recipe (#719): 600 context crops per terminal class plus 600
+# cluttered background. 300 helped diffusers only; 600 with the default 1200
+# background collapsed VAV/AHU recall through class imbalance.
+CONTEXT_PER_CLASS = 600
+CONTEXT_BG = 600
+_CTX_LABELS = ("OFFICE", "EXAM", "CORRIDOR", "STORAGE", "TOILET", "LOUNGE", "WORK ROOM", "CLEAN U.")
+
+
+def _context_clutter(d: ImageDraw.ImageDraw, rng, side: int, keep_clear=None):
+    """Walls, duct bars (axis and diagonal) and a room label on a patch.
+
+    keep_clear: (x0, y0, x1, y1) box nothing is drawn through (the symbol).
+    """
+    c = side / 2
+    for _ in range(int(rng.integers(0, 3))):  # walls
+        if rng.random() < 0.5:
+            y = rng.uniform(0, side)
+            d.line([0, y, side, y], fill=0, width=3)
+        else:
+            x = rng.uniform(0, side)
+            d.line([x, 0, x, side], fill=0, width=3)
+    for _ in range(int(rng.integers(0, 3))):  # passing duct runs
+        w = rng.uniform(W_DROP, W_TRUNK) * PX_PER_M
+        if rng.random() < 0.7:
+            if rng.random() < 0.5:
+                y = rng.uniform(0, side)
+                d.rectangle([0, y - w / 2, side, y + w / 2], fill=0)
+            else:
+                x = rng.uniform(0, side)
+                d.rectangle([x - w / 2, 0, x + w / 2, side], fill=0)
+        else:
+            a = rng.uniform(0, math.pi)
+            ox, oy = rng.uniform(0, side, 2)
+            dx, dy = math.cos(a) * side, math.sin(a) * side
+            d.line([ox - dx, oy - dy, ox + dx, oy + dy], fill=0, width=int(w * 0.6))
+    if rng.random() < 0.6:  # room label
+        t = f"{rng.integers(1, 3)}{chr(65 + rng.integers(0, 5))}{rng.integers(1, 40)} "
+        t += _CTX_LABELS[rng.integers(len(_CTX_LABELS))]
+        d.text((rng.uniform(0, side * 0.6), rng.uniform(0, side * 0.8)), t, fill=0, font=_font(18))
+    if keep_clear is not None:
+        d.rectangle(keep_clear, fill=255)
+    return c
+
+
+def context_crops(n_per_class: int, seed: int = 0, bg_per_class: int | None = None):
+    """Glyph-in-context crops for CONTEXT_CLASSES plus cluttered background.
+
+    Each symbol patch gets 0-4 drops entering from random sides (straight or
+    a diagonal flex run), optional walls, passing ducts and a room label, then
+    the glyph over a white box, as on a real plan. Background patches get the
+    same clutter with no symbol. Returns (X, y) with background labelled
+    len(MECH_CLASSES), the same convention as training_crops_from_sheets.
+    """
+    rng = np.random.default_rng([seed, 719])
+    side = 240
+    X, y = [], []
+    bg_n = n_per_class * len(CONTEXT_CLASSES) if bg_per_class is None else bg_per_class
+    for cls in CONTEXT_CLASSES:
+        w_m, h_m = _GLYPH_EXT[cls]
+        sw, sh = w_m * PX_PER_M, h_m * PX_PER_M
+        for _ in range(n_per_class):
+            img = Image.new("L", (side, side), 255)
+            d = ImageDraw.Draw(img)
+            c = _context_clutter(d, rng, side)
+            sides = rng.permutation(4)[: int(rng.integers(0, 5))]
+            for k in sides:
+                wd = rng.uniform(0.2, W_DROP + 0.1) * PX_PER_M
+                ex, ey = [(0, c), (side, c), (c, 0), (c, side)][k]
+                if rng.random() < 0.3:  # flex: comes in on a diagonal
+                    ex += rng.uniform(-60, 60) if k >= 2 else 0
+                    ey += rng.uniform(-60, 60) if k < 2 else 0
+                d.line([ex, ey, c, c], fill=0, width=int(wd))
+            d.rectangle([c - sw / 2, c - sh / 2, c + sw / 2, c + sh / 2], fill=255)
+            _GLYPH_FN[cls](d, c, c)
+            jx, jy = rng.uniform(-6, 6, 2)
+            g = np.asarray(img).astype(np.float64)
+            X.append(detection_crop(g, c + jx, c + jy, cls))
+            y.append(MECH_CLASSES.index(cls))
+    for _ in range(bg_n):
+        img = Image.new("L", (side, side), 255)
+        d = ImageDraw.Draw(img)
+        c = _context_clutter(d, rng, side)
+        # a duct junction at the centre: the commonest confuser
+        if rng.random() < 0.5:
+            for k in rng.permutation(4)[: int(rng.integers(2, 5))]:
+                ex, ey = [(0, c), (side, c), (c, 0), (c, side)][k]
+                d.line([ex, ey, c, c], fill=0, width=int(rng.uniform(0.2, 0.5) * PX_PER_M))
+        g = np.asarray(img).astype(np.float64)
+        # only at terminal crop sizes: VAV boxes sit inline on ducts, so
+        # VAV-size cluttered crops taught "duct through a box" = background
+        size_cls = CONTEXT_CLASSES[rng.integers(len(CONTEXT_CLASSES))]
+        X.append(detection_crop(g, c + rng.uniform(-20, 20), c + rng.uniform(-20, 20), size_cls))
+        y.append(len(MECH_CLASSES))
+    return np.stack(X), np.asarray(y, dtype=np.int64)
+
+
+def training_crops_from_sheets(
+    n_per_class: int = 200,
+    seed: int = 0,
+    bg_per_sheet: int = 50,
+    context_per_class: int = 0,
+    context_bg: int | None = None,
+    realistic: bool = False,
+):
     """WiSARD training set cut from synthetic sheets at GT positions.
 
     ±6 px jitter on the crop center mirrors NCC proposal error so the
@@ -689,14 +998,16 @@ def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_she
     inference. A 6th "background" class is cut at random sheet positions
     (>= 60 px from any symbol) with randomly chosen symbol crop sizes;
     without it the forced 5-way choice confidently mislabels duct
-    junctions and wall corners as symbols. Returns (X, y, classes).
+    junctions and wall corners as symbols. context_per_class > 0 appends
+    ``context_crops`` (#719); 0 keeps the original training set exactly.
+    Returns (X, y, classes).
     """
     rng = np.random.default_rng(seed)
     X, y = [], []
     counts = {c: 0 for c in MECH_CLASSES}
     s = 0
     while min(counts.values()) < n_per_class:
-        img, gt = generate_mech_sheet(1000 + s)
+        img, gt = generate_mech_sheet(1000 + s, realistic=realistic)
         s += 1
         W, H = img.size
         gray = np.asarray(img).astype(np.float64)
@@ -733,6 +1044,9 @@ def training_crops_from_sheets(n_per_class: int = 200, seed: int = 0, bg_per_she
                 made += 1
     X = np.stack(X)
     y = np.asarray(y, dtype=np.int64)
+    if context_per_class:
+        cx_, cy_ = context_crops(context_per_class, seed=seed, bg_per_class=context_bg)
+        X, y = np.concatenate([X, cx_]), np.concatenate([y, cy_])
     perm = rng.permutation(len(y))
     classes = MECH_CLASSES + ["background"]
     return X[perm], y[perm], classes

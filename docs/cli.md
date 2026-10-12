@@ -26,6 +26,22 @@ Validation battery demo using two synthetic buildings (`bldg_3room`, `bldg_open_
 
 ---
 
+## `matchline demo`
+
+The whole pipeline on a bundled sample project, one command (#753):
+
+```bash
+matchline demo                 # fixed sample seed, output in matchline-demo/
+matchline demo --seed 11 --out demo-b/ --no-open
+```
+
+Runs the same stages as `matchline run --seed` (generate, link, validate, review
+and package) and prints where everything landed: `package/trust_report.html`,
+`review/review.html`, and the gbXML and IFC exports in `package/`. On an
+interactive terminal it opens the trust report in a browser unless you pass
+`--no-open`; non-interactive runs (CI) never open anything. Designed to finish
+in under five minutes on a laptop and exercised that way in CI.
+
 ## `matchline run`
 
 Unified pipeline: generate + link + validate + BEM export.
@@ -60,6 +76,7 @@ matchline run --seed 42 --config pipeline.yaml
   - `simplifyTolerance` (float): overrides `--simplify-tol`
   - `wallHeight` (float, metres): overrides level default
   - `reviewConfidence` (float): minimum confidence for review queue items
+  - `datasets` (mapping): OCR settings for schedule tags (`ocr_backend`, `ocr_pad_frac`, `ocr_min_conf`); see docs/datasets_adapter.md
 
   Example:
 
@@ -238,6 +255,8 @@ matchline review model.json
 matchline review model.json --show-all
 matchline review model.json --confirm RVW-001
 matchline review model.json --reject RVW-002 --enable-auto-triage
+matchline review model.json --report out/
+matchline review out/review/model.json --apply decisions.json
 ```
 
 `model`
@@ -247,10 +266,19 @@ matchline review model.json --reject RVW-002 --enable-auto-triage
 : Also show confirmed and rejected items (default: open items only).
 
 `--confirm ID`
-: Confirm a review item. Marks it confirmed, then re-runs validation.
+: Confirm a review item, exactly as the HTML review report's confirm does: `status confirmed`, `resolution accept`, `needs_review false`, `acknowledged true`, and a revision log entry. Works on a rejected item too; an item already confirmed is left alone. Then re-runs validation.
 
 `--reject ID`
-: Reject a review item. Marks it rejected, then re-runs validation.
+: Reject a review item, exactly as the HTML review report's reject does: `status rejected`, `resolution drop`, `needs_review false`, `acknowledged true`, and a revision log entry. Works on a confirmed item too; an item already rejected is left alone. Then re-runs validation.
+
+`--report DIR`
+: Write the HTML review report to `DIR/review` (model, decisions template, page). See [`review_report.md`](review_report.md).
+
+`--apply DECISIONS`
+: Replay a `decisions.json` exported from the review report, then re-run validation.
+
+`--out PATH`
+: With `--apply`: write the reviewed model to PATH instead of in place.
 
 `--enable-auto-triage`
 : Enable the auto-triage classifier when loading the model.

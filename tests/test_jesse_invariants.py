@@ -162,3 +162,26 @@ class TestSkeletonInvariantsSimpleGlyphs:
         inv = skeleton_invariants(zhang_suen(img))
         # This compound glyph has both T and X junctions → complex
         assert is_complex_invariant(inv)
+
+
+class TestTagDetections:
+    """jesse.tag_detections delegates to datasets_adapter.extract_with_tags (#682)."""
+
+    def test_fills_tag_in_place_via_shared_reader(self):
+        from datasets_adapter import Detection
+        from jesse import tag_detections
+
+        img = np.zeros((100, 100), dtype=np.uint8)
+        dets = [Detection(label="Window", tag="", score=1.0, bbox=(40, 40, 60, 60), source="t")]
+
+        def reader(crop):
+            return [("w-1", 0.95, (0, 0, 10, 10))]
+
+        out = tag_detections(dets, img, reader=reader)
+        assert out is dets
+        assert dets[0].tag == "W-1" and dets[0].tag_score == 0.95
+
+    def test_old_sliding_window_reader_is_gone(self):
+        import jesse
+
+        assert not hasattr(jesse, "sliding_window_tag_extract")

@@ -29,3 +29,7 @@ Many decisions are documented inline in the module docs rather than here:
 - `docs/ifc_import.md` — IFC Tier 0 vs Tier 1 boundaries
 - `docs/measurement_layer.md` — unit and uncertainty conventions
 - `docs/belief_derivation.md` — WiSARD belief normalization formula reconstruction
+
+## XML Security (XXE Protection)
+
+All XML parsing MUST use . Never import , , or bare  directly. The enforcement test is .

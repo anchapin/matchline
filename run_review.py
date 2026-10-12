@@ -1,10 +1,61 @@
 """Review queue CLI: list, confirm, or reject open review items.
 
+Overview
+--------
+The review queue holds extraction decisions that fall below the confidence
+threshold or that the pipeline could not auto-resolve. A review item
+captures the provenance (sheet, revision, method), the extraction kind
+(window_room_link, fixture_assignment, schedule_mismatch, extraction_type),
+the raw confidence, and any triage metadata (urgency, auto-resolution).
+
+Items pending review block BEM export via ``validate.py`` until they are
+confirmed or rejected.
+
 Usage:
     matchline review <model.json>                        # list open items
     matchline review <model.json> --show-all             # list all items
     matchline review <model.json> --confirm <id>         # confirm item
     matchline review <model.json> --reject <id>          # reject item
+
+Triage flow
+-----------
+Each open item is evaluated by a task-specific TypedDecider loaded from
+``.npz`` (never from ``.pkl``). The classifier returns a typed_decision
+(``CONFIRM`` or ``REJECT``) and a confidence score.
+
+Auto-triage resolves items automatically when:
+
+* ``model.auto_triage`` is True (set via ``--auto-triage`` flag), and
+* the item's ``needs_human`` value is less than 1.0, and
+* the classifier confidence meets or exceeds the confidence threshold
+  (default 0.75; also controllable via ``--confidence``).
+
+Auto-resolved items are marked ``status = "confirmed"`` or
+``status = "rejected"`` and carry ``auto_resolved = True`` with
+``resolution`` set to ``"CONFIRM"`` or ``"REJECT"``. Items that cannot be
+auto-resolved are left ``open`` for human review.
+
+Urgency
+~~~~~~~
+Items with ``urgency > 0`` are highlighted as higher-priority. When
+listing items, the sort key is ``(-urgency, auto_resolved)`` so that
+high-urgency items needing human attention appear first.
+
+Security model
+--------------
+Pickle deserialization is a supply-chain attack vector: a malicious
+``.pkl`` file can execute arbitrary code on load. For this reason,
+``run_review.py`` ships with ``_check_no_pkl_in_review_classifier()``,
+a startup guard that walks the ``review_classifier/`` directory and
+raises ``SecurityError`` if any ``.pkl`` files are present. Only
+``.npz`` (safe numpy archive) format is permitted for model files.
+``TypedDecider`` models are loaded via ``TypedDecider.from_npz()`` only.
+
+Exit codes
+----------
+:0: Success (list printed, item confirmed/rejected, or validation passed)
+:1: Error (file not found, validation failure, classifier error, or
+   SecurityError from a blocked pickle file)
 """
 
 from __future__ import annotations
@@ -33,6 +84,14 @@ _KIND_TO_TASK: dict[str, str] = {
     "fixture_assignment": "route_to_review",
     "schedule_mismatch": "schedule_match",
     "extraction_type": "extraction_type",
+    "lighting_extraction": "route_to_review",
+    "hvac_extraction": "route_to_review",
+    "room_label_extraction": "route_to_review",
+    "window_extraction": "route_to_review",
+    "elevation_extraction": "route_to_review",
+    "elevation_conflict": "route_to_review",
+    "window_reconciliation": "route_to_review",
+    "facade_takeoff": "route_to_review",
 }
 
 
@@ -87,7 +146,7 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     if npz_path.exists():
         try:
             return TypedDecider.from_npz(npz_path)
-        except Exception:
+        except (OSError, EOFError):
             return None
     return None
 
@@ -183,7 +242,7 @@ def list_review_items(
                 decision = decider.decide(example)
                 classifier_label = decision.label
                 classifier_conf = decision.confidence
-            except Exception:
+            except (ValueError, TypeError):
                 classifier_label = "(classifier error)"
                 classifier_conf = None
 
@@ -232,30 +291,24 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
+def _decide(model: BuildingModel, item_id: str, action: str) -> tuple[BuildingModel, str]:
+    """Same state and revision log entry as the HTML review report (#749)."""
+    from review_report import decide
+
+    done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
+    if decide(model, item_id, action):
+        return model, f"{done} {item_id}."
+    return model, f"{item_id} is already {done.lower()}; nothing changed."
+
+
 def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "confirmed"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Confirmed {item_id}."
+    return _decide(model, item_id, "confirm")
 
 
 def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    item = next((i for i in model.review_queue if i.id == item_id), None)
-    if item is None:
-        raise ValueError(f"Item {item_id} not found in review queue.")
-    if item.status != "open":
-        raise ValueError(f"Item {item_id} is already {item.status}.")
-    item.status = "rejected"
-    item.needs_review = False
-    item.acknowledged = True
-    return model, f"Rejected {item_id}."
+    return _decide(model, item_id, "reject")
 
 
 def _summarize_validation(report) -> str:
@@ -287,6 +340,35 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     if args.auto_triage:
         model.auto_triage = True
+
+    # --- Apply a decisions file from the HTML review report (#749) ---
+    if getattr(args, "apply", None):
+        import json
+
+        import review_report
+
+        try:
+            doc = json.loads(pathlib.Path(args.apply).read_text())
+            summary = review_report.apply_decisions(model, doc, review_report.sha256_text(raw))
+        except (OSError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        dest = pathlib.Path(getattr(args, "out", None) or model_path)
+        dest.write_text(model.to_json())
+        for w in summary["warnings"]:
+            print(f"Warning: {w}", file=sys.stderr)
+        print(review_report.summarize(summary))
+        print(f"Model saved: {dest}")
+        print(_summarize_validation(run_checks(model)))
+        return
+
+    # --- Write the HTML review report (#749) ---
+    if getattr(args, "report", None):
+        import review_report
+
+        d = review_report.write_review(pathlib.Path(args.report), model)
+        print(f"Review report: {d / 'review.html'}")
+        return
 
     # --- Confirm or Reject ---
     if args.confirm is not None or args.reject is not None:
@@ -398,6 +480,21 @@ def _build_argparser() -> argparse.ArgumentParser:
         choices=["text", "json"],
         default="text",
         help="Output format for --list (default: text)",
+    )
+    parser.add_argument(
+        "--apply",
+        metavar="DECISIONS",
+        help="Replay a decisions.json exported from the HTML review report",
+    )
+    parser.add_argument(
+        "--out",
+        metavar="PATH",
+        help="With --apply: write the reviewed model here instead of in place",
+    )
+    parser.add_argument(
+        "--report",
+        metavar="DIR",
+        help="Write the HTML review report to DIR/review (model, decisions template, page)",
     )
     return parser
 

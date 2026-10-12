@@ -1,7 +1,7 @@
 # BEM Export — `bem_export.py`
 
 Exports Jesse-Vision takeoff results to formats that building energy
-modeling (BEM) software can import: **gbXML 6.01** (primary) and **IFC4**
+modeling (BEM) software can import: **gbXML 8.01** (primary) and **IFC4**
 (via IfcOpenShell). Demo: `run_bem_export.py`.
 
 ## Pipeline position
@@ -19,10 +19,15 @@ geometry does. The simplifier's area-preservation report
 (`area_delta_pct`, tolerance) is carried through on the model and embedded
 in the gbXML file comment.
 
-## Schema choices (gbXML 6.01)
+## Schema choices (gbXML 8.01)
 
-- Validated with lxml against the real 6.01 XSD
-  (`schemas/GreenBuildingXML_Ver6.01.xsd`, fetched from gbxml.org).
+- Validated with lxml against the 8.01 XSD
+  (`schemas/GreenBuildingXML_Ver8.01.xsd`, fetched from gbxml.org), with one local
+  fix: the published 8.01 schema lists `versionEnum` values only up to 6.01, so a
+  file declaring `version="8.01"` fails its own schema. Our copy adds `7.03` and
+  `8.01` to that list and changes nothing else; a test checks that the rest is
+  byte-identical to the published file. Drop the fix once gbXML publishes a
+  corrected schema.
 - Structure: `gbXML > Campus > (Location, Building > (BuildingStorey,
   Space*), Surface*)`, plus root-level `Zone` and `Construction` elements.
   (Non-obvious per the XSD: `Space` is a child of `Building`, `Zone` is a
@@ -38,6 +43,13 @@ in the gbXML file comment.
   constructions (generic wall/roof/slab with nominal U-values 0.50/0.30/
   0.40 W/m²K). Real assemblies are a v2 enrichment — drawings don't carry
   them.
+- Per-space wall constructions (roadmap item 6): when a space carries an
+  area-weighted wall U (`Space.wall_u_value_w_m2k`, written by
+  `constructions.apply_wall_u_rollup`), the export adds a
+  `const-wall-<space id>` construction with that U-value and every exterior
+  wall assigned to the space references it. Spaces without one keep
+  `const-wall`. The IFC4 writer puts the same value on each wall as
+  `Pset_WallCommon.ThermalTransmittance`.
 - Spaces get a full closed `ShellGeometry` (floor + roof + wall quads with
   outward normals), `Area`, `Volume` (= area × wall height), and
   `CADObjectId` = room number. All spaces share one `Zone` ("Zone 1") —
@@ -49,7 +61,8 @@ in the gbXML file comment.
 |---|---|---|
 | Room (name, number, polygon, area) | `Space` (+ shell) | `IfcSpace` (+ `Qto_SpaceBaseQuantities.GrossFloorArea`) |
 | Simplified envelope edge | `ExteriorWall` surface | `IfcWall` (SweptSolid, 0.2 m thick) |
-| Roof / ground | `Roof` / `SlabOnGrade` | — (v1 gap) |
+| Roof / ground | `Roof` / `SlabOnGrade`, one per space when the spaces tile the footprint (#765) | — (v1 gap) |
+| Boundary two rooms share | `InteriorWall` (both spaces adjacent, `const-intwall`) (#765) | — |
 | Window/door unit (tag × schedule dims) | `Opening` (`FixedWindow` / `NonSlidingDoor` — the enum has no generic "Door") | `IfcOpeningElement` → `IfcRelVoidsElement` → `IfcWindow`/`IfcDoor` (`IfcRelFillsElement`) |
 | Storey | `BuildingStorey` | `IfcBuildingStorey` (+ Site/Building/Project hierarchy) |
 
@@ -64,6 +77,10 @@ but synthetic:
 
 1. Openings are apportioned to walls by **largest remainder** proportional
    to wall length, per category (window/door totals exact).
+   An opening that knows its space and facade goes only on that space's
+   share of that facade (so a facade split per room keeps each room's
+   windows on its own wall); with only a facade known it goes on that
+   facade's walls; with neither, on all walls.
 2. On a wall, units are evenly spaced (centers at (j+0.5)·L/k), sorted by
    (category, tag).
 3. Sills: windows 0.9 m, doors 0.0 m. Heights/widths clamped to fit the
@@ -78,7 +95,7 @@ midpoint (nearest-centroid fallback) for `AdjacentSpaceId`.
 ## Validation performed
 
 - **gbXML**: `validate_gbxml()` — lxml XSD validation against the official
-  6.01 schema, plus semantic checks the XSD can't express (id uniqueness,
+  8.01 schema, plus semantic checks the XSD can't express (id uniqueness,
   idRef integrity). Demo sheets 007/008/009: **PASS** (3/3).
 - **IFC4**: `validate_ifc4()` — round-trip parse; checks schema version,
   wall SweptSolid geometry, space aggregation under the storey, and that
@@ -96,27 +113,70 @@ Surface reduction from simplification: 60–67%. Outputs in `bem_out/`.
 
 ## Gaps (v2)
 
-1. **Interior partitions omitted** — spaces are bounded only by the
-   envelope; no `InteriorWall` surfaces between rooms. Fine for loads, wrong
-   for zoning/adjacency.
+1. **Interior walls (#765)**: every boundary two spaces share is an
+   `InteriorWall` with both spaces adjacent, normal from the first into the
+   second, using the DOE prototype partition (2 x G01 13 mm gypsum board,
+   openstudio-standards 0.8.5 "LargeHotel Interior Wall"). Exterior walls are
+   cut where the spaces behind them change, never through an opening, and the
+   roof and slab are cut per space when the spaces tile the footprint (else
+   they stay whole on the largest space, with a note). Sloped roofs still go
+   whole through the roof planes.
 2. **Single storey, uniform 3.0 m height** — no multi-storey or
-   floor-to-floor variation; roof/slab adjacency points at the largest
-   space (approximation).
-3. **Placeholder constructions** — generic U-values; real assemblies need
-   spec/schedule input.
+   floor-to-floor variation.
+3. **Placeholder constructions** — every opaque construction now also
+   carries one no-mass layer with R = 1/U minus the ASHRAE 90.1 Appendix A
+   air films (as openstudio-standards uses them), so the export imports into
+   OpenStudio and simulates (#765); the U-value is unchanged. Generic U-values unless a space has an
+   area-weighted wall U from its wall constructions. The roof uses the
+   model's `roof_construction_id` U-value when one is set (gbXML
+   `const-roof` "Exterior roof (from model)", IFC4
+   `Pset_SlabCommon.ThermalTransmittance` on the `IfcSlab ROOF`), else the
+   generic 0.30. The ground slab likewise uses `slab_construction_id` when
+   set (gbXML `const-slab` "Slab on grade (from model)", IFC4 `IfcSlab
+   BASESLAB` with `Pset_SlabCommon`), else the generic 0.40. Drawing-derived
+   assemblies still need spec/schedule input.
 4. **Opening positions are synthetic** (counts are real, positions are
    apportioned) — true positions need elevation-view parsing.
-5. **IFC roof/slab missing** — walls + spaces + openings only; roof as
-   `IfcSlab`/`IfcRoof` is straightforward to add.
+5. **IFC roof written only when it carries something**: an `IfcSlab ROOF`
+   is emitted when skylights need a host or the model has a roof U-value;
+   an `IfcSlab BASESLAB` (nominal 0.15 m, top at z=0) only when the model
+   has a ground slab U-value.
 6. **IfcSpace has no solid geometry** in v1 (placement + quantities only).
 7. Window/door opening areas are not yet reconciled against the simplified
    envelope (double-count risk noted in `docs/geometry_simplify.md`).
 
 ## Limitations
 
-- **Incomplete schema coverage**: The IDF template covers residential and small commercial U-values, window SHGC, and lighting power density only. Large commercial HVAC systems (VAV, RTU, chiller) are not yet templated.
-- **No load balancing or thermal zone network solving**: EnergyPlus is called in direct-simulation mode only; no iterative zone-balance passes are made.
-- **Geometry assumptions**: All spaces are treated as rectangular with uniform internal gains. Non-rectangular rooms, indentations, and re-entrant corners are approximated, which affects envelope area and aspect-ratio-dependent infiltration estimates.
-- **Weather data**: Simulations use a single representative climate file; mixed-mode or adaptive comfort strategies are not modeled.
-- **No occupancy schedule derivation**: Schedules are synthetic defaults; actual operational patterns are not extracted from drawings.
+- **Outputs are gbXML and IFC4 only**: there is no IDF or OSM writer. OpenStudio and EnergyPlus get the model by translating the gbXML, which the OpenStudio round-trip gate (#628) checks in CI.
+- **No HVAC systems**: zones and per-space loads are exported, but no air loops, plant or terminal equipment (VAV, RTU, chiller).
+- **No simulation, weather or infiltration**: matchline does not run EnergyPlus, pick a weather file, or export infiltration rates; those are set in the simulation tool.
+- **Geometry**: spaces export as their own polygons (not forced to rectangles), after the envelope simplification in `docs/geometry_simplify.md`; internal gains are uniform within a space.
+- **No occupancy schedule derivation**: schedules are not extracted from drawings. Missing per-room loads and schedules come from the DOE Commercial Prototype Building Models (ASHRAE 90.1-2019); see [space_use_defaults.md](space_use_defaults.md). gbXML and IFC4 carry them per space with their schedules (#691), including people heat gain from the prototype activity level (#693).
 - **Confidence reflects template fidelity, not ground truth**: A high-confidence envelope does not mean the BEM matches the as-built building—it means the extraction pipeline found sufficient inputs to populate the template.
+
+## OpenStudio round-trip gate (#628)
+
+`tests/test_openstudio_roundtrip.py` writes a flat, gable, hip and shed model, each with a window, a door, a skylight and an overhang. Each file goes through OpenStudio's gbXML reverse translator, and the test fails on any translation error, on a missing surface or sub-surface, on a space that is not an enclosed volume, or on a space volume that differs from ours. The only message allowed through is OpenStudio's note that a file of another version skips its 7.03 schema check; we validate against the 8.01 XSD ourselves. CI installs the `openstudio` extra (`pip install -e ".[test,openstudio]"`). Without it, the tests skip.
+
+The gate's first finding (#627): OpenStudio reads only `PlanarGeometry`, so walls written with `RectangularGeometry` alone were dropped together with their windows and doors. Every wall now carries a PolyLoop (its true outline under a sloped roof), and wall openings carry an absolute PolyLoop alongside their local rectangle.
+
+## Appendix G perimeter/core thermal blocks (#630)
+
+`thermal_zoning.py` splits a floor plate into ASHRAE 90.1 Appendix G (G3.1.1) thermal blocks for drawings that define no HVAC zones: perimeter zones 15 ft (4.572 m) deep, one per compass orientation of the exterior walls (north 315° to <45°, east 45° to <135°, and so on), plus a core.
+
+- Each wall claims the wedge between it and the angle bisectors at its two corners. Where two wedges overlap, the overlap goes to the wall whose line is nearer. This divides corners proportionately, gives triangles and a ridge on a plate too narrow for a core, and splits a reflex corner on its bisector.
+- Walls in the same bucket merge into one block. A plate with no wall facing a direction gets no block for it.
+- The blocks tile the plate exactly; `ZoningError` is raised if they don't.
+- `assign_spaces` gives each space its share of area in every block and its majority block (ties go to the block listed first).
+
+Exports are unchanged. Whether the gbXML `Zone` / IFC `IfcZone` output splits rooms on block lines (Appendix G's "divided proportionately") or assigns whole rooms to their majority block is still open.
+
+## Inter-story surfaces and shaft stacks (#632)
+
+`interstory.match_interstory(model)` matches the horizontal surfaces between consecutive levels (ordered by `Level.elevation_z_m`). Each overlap of a lower-level space with an upper-level space is one `interior` surface carrying both space ids, so the lower space's ceiling and the upper space's floor are the same surface. Parts of an upper space over no lower space are `exposed_floor` (over outdoor air), parts of a lower space under no upper space are `roof` at the top of that level, the lowest level's floors are `ground`, and the top level's ceilings are `roof`. Every space's floor pieces and ceiling pieces each sum to its plan area, or the step raises `InterstoryError`; overlapping spaces on one level also raise.
+
+Shafts and elevator cores on consecutive levels with footprint IoU >= 0.8 form one `ShaftStack`. A shaft that only partly lines up with a shaft on the next level, a stack that ends under or over an occupied room on an adjacent level, and a level that starts below the top of the level under it go to the review queue as `interstory` items. Nothing in the model is moved, merged or corrected. The single-storey writers do not use the result yet; it is the input for the multi-storey writer. Atria are out of scope until spaces carry a multi-storey flag.
+
+## Below-grade storeys and boundary types (#634)
+
+`Level.above_ground` is True or False only when a source states it; IFC import reads `Pset_BuildingStoreyCommon.AboveGround` (UNKNOWN or absent stays None, never inferred from elevation). `below_grade.boundary_types(model)` names a gbXML `surfaceType` for each envelope wall and each #632 horizontal surface: `UndergroundWall`/`ExteriorWall`; lowest floors `UndergroundSlab`/`SlabOnGrade`; between storeys `InteriorFloor`; floors over no lower space `UndergroundSlab` below grade, `RaisedFloor` above; roofs `Roof` above grade, `UndergroundCeiling` under another below-grade storey, and unresolved (review item) when a below-grade space has no storey over it, because only the drawings say whether that deck is earth-covered or open. Levels with the property unstated keep today's above-ground types; one sitting below 0 m or below a stated above-ground level is flagged as a possible basement, not reclassified. Walk-out (partially exposed) basement walls are out of scope.

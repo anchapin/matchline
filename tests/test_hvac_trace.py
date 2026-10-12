@@ -1,9 +1,13 @@
 """Tests for hvac_trace.py — HVAC zoning tracer and diffuser trace."""
 
 import numpy as np
+import pytest
 
 from hvac_trace import (
     PX_PER_M,
+    _assign_diffuser_room,
+    _room_depth,
+    _room_of,
     duct_skeleton,
     extract_zones,
     ncc_locate,
@@ -238,3 +242,104 @@ class TestTraceSheet:
         templates = {c: render_template(c) for c in MECH_CLASSES}
         result = trace_sheet(gray, gt, clf, templates)
         assert result["n_vav_suppressed"] >= 0
+
+
+class TestDiffuserRoomAssignment:
+    """Boundary / outside diffusers: duct connectivity, then nearest room (#684)."""
+
+    ROOMS = [
+        {"rect_m": (0.0, 0.0, 5.0, 10.0), "id": "R1"},
+        {"rect_m": (5.0, 0.0, 10.0, 10.0), "id": "R2"},
+    ]
+
+    def test_interior_diffuser_assigned_outright(self):
+        assert _assign_diffuser_room(8.0, 4.0, self.ROOMS)[:2] == ("R2", "interior")
+
+    def test_just_outside_goes_to_nearest_room_within_margin(self):
+        assert _assign_diffuser_room(10.3, 4.0, self.ROOMS)[:2] == ("R2", "nearest")
+
+    def test_far_outside_every_room_goes_to_review(self):
+        assert _assign_diffuser_room(12.0, 4.0, self.ROOMS)[:2] == (None, "outside")
+
+    def test_wall_line_resolved_by_duct_connectivity(self):
+        rid, how, cands = _assign_diffuser_room(4.98, 4.0, self.ROOMS, zone_rooms=("R2",))
+        assert (rid, how) == ("R2", "duct") and set(cands) == {"R1", "R2"}
+
+    def test_wall_line_without_duct_evidence_is_ambiguous(self):
+        assert _assign_diffuser_room(4.98, 4.0, self.ROOMS)[:2] == (None, "ambiguous")
+
+    # --- defect injection through extract_zones --------------------------------
+    # rooms in metres; sheet px = (m + 2) * PX_PER_M. Spine at y = 300 px from a
+    # VAV at x = 150 px; R2's diffuser nudged from x = 360 px (5.2 m, inside R2)
+    # onto the R1/R2 wall at x = 349 px (4.98 m, just inside R1).
+
+    def _sheet(self, diffuser_xs):
+        skel = np.zeros((700, 700), dtype=np.uint8)
+        skel[300, 120:580] = 1
+        dets = [{"cx": 150, "cy": 300, "label": "vav", "ncc": 0.9, "ncc_cls": "vav", "margin": 9}]
+        dets += [
+            {
+                "cx": x,
+                "cy": 310,
+                "label": "diffuser",
+                "ncc": 0.9,
+                "ncc_cls": "diffuser",
+                "margin": 5,
+            }
+            for x in diffuser_xs
+        ]
+        return extract_zones(skel, dets, self.ROOMS, px_per_m=PX_PER_M)[0]
+
+    def test_nudged_diffuser_follows_its_zone_not_the_first_room(self):
+        (z,) = self._sheet([500, 349])
+        assert z["diffuser_rooms"] == ["R2", "R2"]
+        assert z["rooms_served"] == ["R2"]
+        assert z["review"] == []
+
+    def test_nudged_diffuser_with_no_evidence_is_queued_not_guessed(self):
+        (z,) = self._sheet([349])
+        assert z["diffuser_rooms"] == [None]
+        assert z["rooms_served"] == []
+        (item,) = z["review"]
+        assert item["kind"] == "diffuser_room_ambiguous" and item["reason"] == "ambiguous"
+        assert set(item["candidates"]) == {"R1", "R2"}
+
+
+class TestPolygonRooms:
+    """Diffuser assignment uses room polygons when given, not bounding boxes (#697)."""
+
+    # L-shaped R1 (10 x 10 with the top-right 5 x 5 cut out); R2 fills the notch
+    L = [(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (5.0, 5.0), (5.0, 10.0), (0.0, 10.0)]
+    ROOMS = [
+        {"id": "R1", "rect_m": (0.0, 0.0, 10.0, 10.0), "polygon_m": L},
+        {"id": "R2", "rect_m": (5.0, 5.0, 10.0, 10.0)},
+    ]
+
+    def test_rect_depths_unchanged(self):
+        rect = (0.0, 0.0, 5.0, 10.0)
+        assert _room_depth(1.0, 4.0, rect) == pytest.approx(1.0)
+        assert _room_depth(5.0, 4.0, rect) == pytest.approx(0.0)
+        assert _room_depth(8.0, 13.0, rect) == pytest.approx(-(18**0.5))  # 3 m right, 3 m above
+        assert _room_depth(1.0, 4.0, {"rect_m": rect}) == pytest.approx(1.0)
+
+    def test_notch_diffuser_goes_to_the_room_that_fills_it(self):
+        assert _assign_diffuser_room(7.5, 7.5, self.ROOMS)[:2] == ("R2", "interior")
+        assert _room_depth(7.5, 7.5, self.ROOMS[0]) == pytest.approx(-2.5)
+
+    def test_room_of_follows_the_polygon(self):
+        assert _room_of(7.5, 7.5, self.ROOMS[:1]) is None
+        assert _room_of(2.0, 8.0, self.ROOMS[:1]) == "R1"
+
+    def test_angled_shared_wall_uses_polygon_edges(self):
+        rooms = [
+            {"id": "A", "rect_m": (0.0, 0.0, 10.0, 10.0), "polygon_m": [(0, 0), (10, 0), (0, 10)]},
+            {
+                "id": "B",
+                "rect_m": (0.0, 0.0, 10.0, 10.0),
+                "polygon_m": [(10, 0), (10, 10), (0, 10)],
+            },
+        ]
+        # 3 cm off the diagonal wall: a tie unless the ducts settle it
+        assert _assign_diffuser_room(4.98, 4.98, rooms)[:2] == (None, "ambiguous")
+        assert _assign_diffuser_room(4.98, 4.98, rooms, zone_rooms=("A",))[:2] == ("A", "duct")
+        assert _assign_diffuser_room(2.0, 2.0, rooms)[:2] == ("A", "interior")

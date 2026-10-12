@@ -1,0 +1,354 @@
+"""Validation package.
+
+Public API:
+    run_checks(model, ...) -> ValidationReport
+    export_gate(report) -> bool
+    validate_bem_conservation(bem) -> list[CheckResult]
+    CheckResult, ValidationReport  # from validate.types
+"""
+
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from .types import CheckResult, ValidationReport
+
+if TYPE_CHECKING:
+    from building_model import BuildingModel
+
+try:
+    from geometry_simplify import footprint_from_regions
+
+    _HAS_SIMPLIFY = True
+except Exception:
+    _HAS_SIMPLIFY = False
+
+try:
+    from datasets_adapter import polygon_area_px2
+except Exception:
+    polygon_area_px2 = None
+
+# ---------------------------------------------------------------------------
+# Import check functions from submodules (before _Ctx to satisfy E402)
+# ---------------------------------------------------------------------------
+
+from .ashrae90_1 import (
+    _check_hvac_efficiency,
+    _check_lighting_power_density,
+    _check_roof_u_factor,
+    _check_wall_u_factor,
+    _check_window_u_factor,
+)
+from .conservation import (
+    _check_area_conservation,
+    _check_bem_area_conservation,
+    _check_bem_volume_conservation,
+    _check_convention_bias,
+    _check_daylight_zones,
+    _check_envelope_area_matches_perimeter,
+    _check_roof_plan_coverage,
+    _check_roof_solar_aperture,
+    _check_shading_host_reference,
+    _check_skylight_within_roof,
+    _check_space_area_matches_polygon,
+    _check_space_type_accounting,
+    _check_space_volume_matches_area_height,
+    _check_volume_conservation,
+    _check_wall_construction_coverage,
+    area_closure,
+    envelope_closure,
+    validate_bem_conservation,
+    volume_closure,
+)
+from .export import (
+    _check_assignment_uniqueness,
+    _check_elevation_placement_consistency,
+    _check_provenance_complete,
+    _check_review_queue_acknowledged,
+    _check_review_queue_sound,
+    _check_revision_log_present,
+    _check_space_id_hygiene,
+    _check_window_double_link,
+    _check_window_tag_coverage,
+    _check_zone_nonempty,
+    _check_zone_space_referential,
+)
+from .gbxml import (
+    _check_gbxml_opening_refs,
+    _check_gbxml_spaces,
+    _check_gbxml_wall_areas,
+    _check_ifc_counts,
+)
+from .invariants import (
+    _check_cross_level_dedup,
+    _check_facade_opening_closure,
+    _check_fixture_schedule_join,
+    _check_hvac_zone_coverage,
+    _check_lpd_bounds,
+    _check_lpd_unit_consistency,
+    _check_no_negative_areas,
+    _check_opening_schedule_join,
+    _check_sill_head_sanity,
+    _check_simplify_budget,
+    _check_space_opening_attachment,
+    _check_takeoff_counts_reconcile,
+)
+
+# ---------------------------------------------------------------------------
+# Check context: derived quantities shared across checks
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Ctx:
+    model: BuildingModel
+    tol_area: float = 0.03
+    tol_volume: float = 0.03
+    tol_envelope: float = 0.01
+    lpd_warn_max: float = 25.0
+    opening_eps: float = 0.005
+    hvac_unzoned_warn_frac: float = 0.05
+    cross_level_dedup_warn_frac: float = 0.01
+    opening_attachment_warn_frac: float = 0.0
+    sres: object = None
+    gbxml_path: object = None
+    ifc_path: object = None
+    level_of: dict = field(default_factory=dict)
+    footprint_area: dict = field(default_factory=dict)
+    wall_height: dict = field(default_factory=dict)
+
+
+def _build_ctx(model: BuildingModel, **kw) -> _Ctx:
+    ctx = _Ctx(model=model, **kw)
+    if ctx.sres is None:
+        ctx.sres = getattr(model, "_sres", None)
+    if ctx.gbxml_path is None:
+        ctx.gbxml_path = getattr(model, "_gbxml_path", None)
+    if ctx.ifc_path is None:
+        ctx.ifc_path = getattr(model, "_ifc_path", None)
+    for sid, sp in model.spaces.items():
+        ctx.level_of.setdefault(sp.level_id, []).append(sp)
+    for lvl in model.levels:
+        ctx.wall_height[lvl.id] = lvl.wall_height_m
+    if _HAS_SIMPLIFY:
+        for lid, spaces in ctx.level_of.items():
+            ring = footprint_from_regions([sp.polygon_m for sp in spaces])
+            ctx.footprint_area[lid] = polygon_area_px2(ring) if (ring and polygon_area_px2) else 0.0
+    return ctx
+
+
+def _rel_err(actual: float, expected: float) -> float:
+    if expected == 0:
+        return 0.0 if actual == 0 else float("inf")
+    return abs(actual - expected) / abs(expected)
+
+
+# ---------------------------------------------------------------------------
+# Battery
+# ---------------------------------------------------------------------------
+
+BATTERY = [
+    _check_space_area_matches_polygon,
+    _check_area_conservation,
+    _check_space_volume_matches_area_height,
+    _check_volume_conservation,
+    _check_convention_bias,
+    _check_skylight_within_roof,
+    _check_roof_plan_coverage,
+    _check_roof_solar_aperture,
+    _check_daylight_zones,
+    _check_wall_construction_coverage,
+    _check_shading_host_reference,
+    _check_space_type_accounting,
+    _check_envelope_area_matches_perimeter,
+    _check_simplify_budget,
+    _check_facade_opening_closure,
+    _check_takeoff_counts_reconcile,
+    _check_fixture_schedule_join,
+    _check_opening_schedule_join,
+    _check_no_negative_areas,
+    _check_lpd_bounds,
+    _check_lpd_unit_consistency,
+    _check_sill_head_sanity,
+    _check_assignment_uniqueness,
+    _check_zone_nonempty,
+    _check_zone_space_referential,
+    _check_hvac_zone_coverage,
+    _check_space_id_hygiene,
+    _check_elevation_placement_consistency,
+    _check_window_tag_coverage,
+    _check_window_double_link,
+    _check_cross_level_dedup,
+    _check_space_opening_attachment,
+    _check_provenance_complete,
+    _check_review_queue_sound,
+    _check_review_queue_acknowledged,
+    _check_revision_log_present,
+    _check_gbxml_spaces,
+    _check_gbxml_opening_refs,
+    _check_gbxml_wall_areas,
+    _check_ifc_counts,
+    _check_wall_u_factor,
+    _check_roof_u_factor,
+    _check_window_u_factor,
+    _check_lighting_power_density,
+    _check_hvac_efficiency,
+]
+
+CONSERVATION_BATTERY = [
+    area_closure,
+    volume_closure,
+    envelope_closure,
+]
+
+N_CHECKS = len(BATTERY) + len(CONSERVATION_BATTERY)
+
+
+def run_checks(
+    model,
+    gbxml_path=None,
+    ifc_path=None,
+    sres=None,
+    tol_area: float = 0.03,
+    tol_volume: float = 0.03,
+    tol_envelope: float = 0.01,
+    lpd_warn_max: float = 25.0,
+    opening_eps: float = 0.005,
+    min_review_confidence: float | None = None,
+    hvac_unzoned_warn_frac: float = 0.05,
+    cross_level_dedup_warn_frac: float = 0.01,
+    opening_attachment_warn_frac: float = 0.0,
+) -> ValidationReport:
+    if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
+        raise ValueError(
+            f"min_review_confidence must be in [0.0, 1.0], got {min_review_confidence!r}"
+        )
+    ctx = _build_ctx(
+        model,
+        tol_area=tol_area,
+        tol_volume=tol_volume,
+        tol_envelope=tol_envelope,
+        lpd_warn_max=lpd_warn_max,
+        opening_eps=opening_eps,
+        hvac_unzoned_warn_frac=hvac_unzoned_warn_frac,
+        cross_level_dedup_warn_frac=cross_level_dedup_warn_frac,
+        opening_attachment_warn_frac=opening_attachment_warn_frac,
+        sres=sres,
+        gbxml_path=gbxml_path,
+        ifc_path=ifc_path,
+    )
+    report = ValidationReport(building_name=getattr(model, "name", "unknown") or "(unnamed)")
+    for check in BATTERY:
+        try:
+            result = check(ctx)
+            if isinstance(result, CheckResult):
+                report.results.append(result)
+            elif isinstance(result, dict):
+                report.results.append(CheckResult(**result))
+            else:
+                report.results.append(
+                    CheckResult(
+                        check.__name__,
+                        check.__name__,
+                        "error",
+                        f"check returned unexpected type {type(result).__name__}",
+                    )
+                )
+        except Exception as e:
+            report.results.append(
+                CheckResult(
+                    check.__name__,
+                    check.__name__,
+                    "error",
+                    f"check itself raised {type(e).__name__}: {e}",
+                )
+            )
+            print(f"ERROR in check '{check.__name__}': {type(e).__name__}: {e}", file=sys.stderr)
+    for check in CONSERVATION_BATTERY:
+        try:
+            result = check(model)
+            if isinstance(result, CheckResult):
+                report.results.append(result)
+            elif isinstance(result, dict):
+                report.results.append(CheckResult(**result))
+            else:
+                report.results.append(
+                    CheckResult(
+                        check.__name__,
+                        check.__name__,
+                        "error",
+                        f"check returned unexpected type {type(result).__name__}",
+                    )
+                )
+        except Exception as e:
+            report.results.append(
+                CheckResult(
+                    check.__name__,
+                    check.__name__,
+                    "error",
+                    f"check itself raised {type(e).__name__}: {e}",
+                )
+            )
+            print(f"ERROR in check '{check.__name__}': {type(e).__name__}: {e}", file=sys.stderr)
+    report.model = model
+    return report
+
+
+def export_gate(
+    report: ValidationReport,
+    model: BuildingModel | None = None,
+    min_review_confidence: float | None = None,
+) -> bool:
+    if min_review_confidence is not None and not (0.0 <= min_review_confidence <= 1.0):
+        raise ValueError(
+            f"min_review_confidence must be in [0.0, 1.0], got {min_review_confidence!r}"
+        )
+    """May this model be exported to gbXML/IFC? Errors block; warnings don't.
+
+    Re-checks the review queue after auto-triage has run to ensure low-confidence
+    results that were not auto-resolved are caught.
+    """
+    if not report.ok:
+        return False
+    check_model = model if model is not None else getattr(report, "model", None)
+    if check_model is not None and hasattr(check_model, "area_delta_pct"):
+        try:
+            bem_results = validate_bem_conservation(check_model)  # type: ignore[arg-type]
+            for result in bem_results:
+                if not result.ok:
+                    return False
+        # Catch only BEM model structural errors (not all Exceptions) so that
+        # unexpected errors (KeyboardInterrupt, SystemExit, etc.) propagate.
+        except (AttributeError, TypeError):
+            return False
+    if check_model is not None:
+        unacknowledged = [
+            item
+            for item in check_model.review_queue
+            if item.needs_review
+            and not item.acknowledged
+            and item.status not in ("confirmed", "rejected")
+            and (min_review_confidence is None or (item.confidence or 1.0) >= min_review_confidence)
+        ]
+        if unacknowledged:
+            return False
+    return True
+
+
+__all__ = [
+    "run_checks",
+    "export_gate",
+    "N_CHECKS",
+    "validate_bem_conservation",
+    "_check_bem_area_conservation",
+    "_check_bem_volume_conservation",
+    "CheckResult",
+    "ValidationReport",
+    "BATTERY",
+    "CONSERVATION_BATTERY",
+    "area_closure",
+    "volume_closure",
+    "envelope_closure",
+]

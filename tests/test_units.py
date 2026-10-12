@@ -1,9 +1,18 @@
 """Unit tests for the geometry / registration / schedule / rollup primitives
 the validation layer depends on."""
 
+import random
+
 import pytest
 
-from datasets_adapter import Detection, ScheduleEntry, polygon_area_px2, rollup_takeoff
+from datasets_adapter import (
+    Detection,
+    ScheduleEntry,
+    normalize_tag,
+    parse_schedule_csv,
+    polygon_area_px2,
+    rollup_takeoff,
+)
 from geometry_simplify import simplify_ring
 from registration import (
     Affine2D,
@@ -131,6 +140,75 @@ def test_rollup_unmatched_reported_not_dropped():
     assert len(res.unmatched) == 1 and not res.lines
 
 
+def _det(label="Window", tag="A", tag_score=None):
+    return Detection(
+        label=label, tag=tag, score=1.0, bbox=(0, 0, 10, 10), source="t", tag_score=tag_score
+    )
+
+
+def test_normalize_tag_strips_whitespace_and_uppercases():
+    assert normalize_tag(" w - 1 ") == "W-1"
+    assert normalize_tag("W\t1") == "W1"
+    assert normalize_tag(None) == ""
+    assert normalize_tag("   ") == ""
+
+
+def test_rollup_joins_lowercase_and_spaced_tags_to_schedule():
+    sched = {"W-1": ScheduleEntry(tag="W-1", category="window", width_m=1.0, height_m=2.0)}
+    res = rollup_takeoff([_det(tag="w-1"), _det(tag="W -1"), _det(tag="W-1")], sched)
+    assert res.unmatched == []
+    assert [(ln.tag, ln.count) for ln in res.lines] == [("W-1", 3)]
+    assert res.area_m2["window"] == pytest.approx(6.0)
+
+
+def test_rollup_normalizes_schedule_keys_too():
+    sched = {"d 2": ScheduleEntry(tag="d 2", category="door", width_m=0.9, height_m=2.1)}
+    res = rollup_takeoff([_det(label="Door", tag="D2")], sched)
+    assert res.counts == {"door": 1} and res.unmatched == []
+
+
+def test_parse_schedule_csv_uses_normalize_tag():
+    import io
+
+    sched = parse_schedule_csv(io.StringIO("tag,category,width_m,height_m\n w-1 ,window,1,2\n"))
+    assert list(sched) == ["W-1"]
+
+
+def test_rollup_untagged_counted_per_label_not_unmatched():
+    sched = {"A": ScheduleEntry(tag="A", category="window", width_m=1.5, height_m=1.2)}
+    dets = [_det(tag=""), _det(tag="  "), _det(label="Door", tag=""), _det(tag="A")]
+    res = rollup_takeoff(dets, sched)
+    assert res.unmatched == []
+    assert len(res.untagged) == 3
+    assert res.untagged_counts == {"Window": 2, "Door": 1}
+    assert res.counts == {"window": 1}
+
+
+def test_rollup_unmatched_holds_only_tagged_detections():
+    res = rollup_takeoff([_det(tag="ZZZ"), _det(tag="")], {})
+    assert [d.tag for d in res.unmatched] == ["ZZZ"]
+    assert res.untagged_counts == {"Window": 1}
+
+
+def test_detection_tag_score_defaults_to_none():
+    assert _det().tag_score is None
+
+
+def test_rollup_low_confidence_tags_counted_and_flagged():
+    sched = {"A": ScheduleEntry(tag="A", category="window", width_m=1.0, height_m=1.0)}
+    low = _det(tag="a", tag_score=0.3)
+    dets = [low, _det(tag="A", tag_score=0.9), _det(tag="A")]
+    res = rollup_takeoff(dets, sched)
+    assert res.lines[0].count == 3
+    assert res.tag_review == [low]
+    assert rollup_takeoff(dets, sched, tag_review_below=0.95).tag_review == dets[:2]
+
+
+def test_rollup_low_confidence_unmatched_tag_not_double_reported():
+    res = rollup_takeoff([_det(tag="Q9", tag_score=0.1)], {})
+    assert len(res.unmatched) == 1 and res.tag_review == []
+
+
 # --- LPD computation via the real linker ----------------------------------
 
 
@@ -155,11 +233,85 @@ def test_simplify_ring_rectangle_zero_delta():
     assert res.valid
 
 
-def test_simplify_ring_respects_budget():
-    import random
+def test_simplify_ring_convex_only():
+    ring = [
+        (0, 0),
+        (3, 0),
+        (3, 1),
+        (2, 1),
+        (2, 2),
+        (1, 2),
+        (1, 1),
+        (0, 1),
+    ]
+    res = simplify_ring(ring, tol=0.02)
+    assert res.valid, "simplification should be valid"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}%"
+    )
 
+
+def test_simplify_ring_concave_protected():
+    """Small-notch polygon: concave vertex removal cost << single_cap so the
+    concave-protection check is the only thing preventing its removal.
+
+    Bug (inverted _signed_tri_area): convex check skips concave → concave
+    removed → area grows → INVALID or area_delta_pct > 0.
+    Fix: concave vertex is identified correctly and protected."""
+    ring = [
+        (0, 0),
+        (3, 0),
+        (3, 0.01),
+        (2.99, 0.01),
+        (2.99, 0.99),
+        (3, 0.99),
+        (3, 1),
+        (0, 1),
+    ]
+    res = simplify_ring(ring, tol=0.1)
+    assert res.valid, "concave vertex should be protected; result should be valid"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}%"
+    )
+    skipped_concave = [r for r in res.skipped if "concave" in r["reason"]]
+    assert len(skipped_concave) >= 1, (
+        "expected at least 1 concave-skip (the notch); "
+        f"got {len(skipped_concave)}: {skipped_concave}"
+    )
+
+
+def test_simplify_rectangle_area_never_grows():
+    """Regression: noisy rectangle simplification must never grow polygon area.
+
+    The original concave-vertex sign-inversion bug caused convex jitter vertices to be
+    incorrectly removed (since they appeared concave under the inverted formula),
+    causing area to grow by up to 0.79%.
+    """
     rng = random.Random(7)
-    # noisy rectangle: jittered vertices in perimeter order (simple polygon)
+    corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
+    ring = []
+    per_edge = 10
+    for i in range(4):
+        x0, y0 = corners[i]
+        x1, y1 = corners[(i + 1) % 4]
+        for k in range(per_edge):
+            t = k / per_edge
+            ring.append(
+                (
+                    x0 + (x1 - x0) * t + rng.uniform(-0.05, 0.05),
+                    y0 + (y1 - y0) * t + rng.uniform(-0.05, 0.05),
+                )
+            )
+    res = simplify_ring(ring, tol=0.1)
+    assert res.valid, "simplified polygon must be valid (area within MAX_GROWTH)"
+    assert res.area_delta_pct <= 0.0 + 1e-9, (
+        f"area should not grow; got delta={res.area_delta_pct:.4f}"
+    )
+    assert res.simplified_count < res.original_count, "jitter vertices should be removed"
+
+
+def test_simplify_ring_respects_budget():
+    rng = random.Random(7)
     corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
     ring = []
     per_edge = 10

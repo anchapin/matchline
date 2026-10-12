@@ -79,6 +79,24 @@ class TestArgumentParsing:
         r = _run(["review"])
         assert r.returncode == 2
 
+    def test_confidence_threshold_rejects_value_above_1(self):
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "1.5"])
+        assert r.returncode == 2
+        assert "out of range" in r.stderr or "range" in r.stderr.lower()
+
+    def test_confidence_threshold_rejects_value_below_0(self):
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "-0.5"])
+        assert r.returncode == 2
+        assert "out of range" in r.stderr or "range" in r.stderr.lower()
+
+    def test_confidence_threshold_accepts_valid_edge_values(self):
+        # Test boundary values 0.0 and 1.0 are accepted
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "0.0"])
+        # Should not fail due to range (may fail for other reasons like missing deps)
+        assert "out of range" not in r.stderr.lower()
+        r = _run(["run", "--seed", "101", "--confidence-threshold", "1.0"])
+        assert "out of range" not in r.stderr.lower()
+
 
 class TestValidateExitCode:
     def test_validate_exits_zero_on_clean_run(self, tmp_path, monkeypatch):
@@ -302,3 +320,29 @@ class TestSmokeSubcommands:
         assert r.returncode == 0
         assert "rq-open" in r.stdout
         assert "rq-confirmed" not in r.stdout
+
+
+# --- config wall_height: one height or per level (#821) ---------------------
+
+
+@pytest.mark.parametrize(
+    "v,ok",
+    [(None, True), (3.5, True), (4, True), ({"L1": 4.5, "L2": 3.6}, True), (0, False),
+     (-1.0, False), ("tall", False), (True, False), ({}, False), ({"L1": "x"}, False)],
+)  # fmt: skip
+def test_check_wall_height(v, ok):
+    from cli import _check_wall_height
+
+    assert (_check_wall_height(v) == "") is ok
+
+
+def test_set_storey_height_flag_then_config():
+    from types import SimpleNamespace
+
+    from run_pipeline import _set_storey_height
+
+    assert _set_storey_height(SimpleNamespace(storey_height=3.3), {"wall_height": 4.0}) == 3.3
+    assert _set_storey_height(SimpleNamespace(storey_height=None), {"wall_height": {"L2": 4}}) == {
+        "L2": 4
+    }
+    assert _set_storey_height(SimpleNamespace(), None) is None

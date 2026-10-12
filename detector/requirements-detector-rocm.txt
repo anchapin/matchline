@@ -1,0 +1,27 @@
+# Pinned detector-track ROCm/GPU dependencies.
+#
+# VENV PURPOSE: .venv-det-rocm is for GPU training ONLY. It does NOT include
+# pytest, pymupdf, or lxml — the converters (convert_cubicasa.py etc.) require
+# the CPU venv (.venv-det). See detector/README.md "Environments" section.
+#
+# Recreate with:
+#   python3 -m venv detector/.venv-det-rocm
+#   detector/.venv-det-rocm/bin/pip install \
+#       --index-url https://download.pytorch.org/whl/rocm7.2 \
+#       torch==2.14.0+rocm7.2 \
+#       torchvision==0.29.0+rocm7.2 \
+#       'ultralytics>=8.4.155,<8.5'
+#
+# NOTE: The generic rocm7.2 wheel ships gfx1030 (RX 6600 XT) kernels — no
+# AMD per-arch --extra-index-url for device-gfx1030 is needed. Verified on
+# RX 6600 XT / ROCm 7.2.3.
+#
+# NOTE: This file was created from issue #510. The venv was not present in
+# this checkout, so the pins are taken from the ROCm 7.2.3 / gfx1030 setup
+# documented in the issue and in detector/run_ab_eca.sh. To refresh: activate
+# the venv and run pip freeze, then update this file.
+#
+# --- Core pins ---
+torch==2.14.0+rocm7.2
+torchvision==0.29.0+rocm7.2
+ultralytics>=8.4.155,<8.5

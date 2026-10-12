@@ -63,7 +63,8 @@ def train_task(
     Args:
         task: The task to train (``route_to_review``, ``schedule_match``, ``extraction_type``).
         synthetic_n: Number of synthetic examples to generate.
-        corpus_examples: Real-drawing examples (optional). If None, loaded from ``DEFAULT_CORPUS_DIR``.
+        corpus_examples: Real-drawing examples (optional). If None, loaded from
+            ``DEFAULT_CORPUS_DIR``.
         out_path: Path to save the trained model (optional).
         seed: Random seed for synthetic data generation.
         verbose: If True, print training info and accuracy metrics.

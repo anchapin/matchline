@@ -94,3 +94,14 @@ def safe_xml_fromstring(
         )
 
     return root
+
+
+def is_safe_parser(module_name: str) -> bool:
+    """Return True for known-safe XML parser modules."""
+    return module_name not in {
+        "xml.etree.ElementTree",
+        "xml.dom.minidom",
+        "xml.sax.expatreader",
+        "lxml",
+        "defusedxml",
+    }

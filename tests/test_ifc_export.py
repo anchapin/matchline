@@ -9,6 +9,8 @@ Happy path: export produces a valid IFC with correct entity counts.
 Defect injection: model mismatch triggers _check_ifc_counts error.
 """
 
+import pytest
+
 from building_model import (
     BuildingModel,
     EnvelopeWall,
@@ -17,10 +19,13 @@ from building_model import (
     Space,
     SpaceLighting,
 )
+from datasets_adapter import polygon_area_px2
 from ifc_export import _export_ifc
+from tests.conftest import _linked
 from validate import _build_ctx, _check_ifc_counts, run_checks
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
+
 _ensure_ifc()
 import ifcopenshell  # noqa: E402
 
@@ -160,3 +165,65 @@ def test_export_runs_validation_with_ifc_path(tmp_path):
 
     ifc_result = next(r for r in report.results if r.check_id == "ifc_entity_counts")
     assert ifc_result.severity == "pass"
+
+
+def test_ifc_export_blocks_invalid_bem_conservation(tmp_path):
+    """Regression: ifc-export must block invalid BEM data per conservation laws.
+
+    See: https://github.com/.../issues/478
+    """
+    # Create a valid model, then violate space-area conservation
+    # by setting space.area_m2 15% above its true polygon area.
+    bldg, model, _report = _linked(101, False, "elev_grid")
+    sp = model.spaces["L1-101"]
+    true_area = polygon_area_px2(sp.polygon_m)
+    sp.area_m2 = true_area * 1.15  # violate conservation
+
+    ifc_path = tmp_path / "invalid_conservation.ifc"
+
+    # Must raise ValueError before writing any IFC
+    with pytest.raises(ValueError, match="Conservation-law validation failed"):
+        _export_ifc(model, str(ifc_path))
+
+    # File must not be created
+    assert not ifc_path.exists()
+
+
+def test_skylights_export_as_ifcwindow_skylight_on_a_roof_slab(tmp_path):
+    # Roadmap item 3, wave 2b: a skylight leaves as IfcWindow
+    # PredefinedType=SKYLIGHT voiding a roof IfcSlab, never as a wall door.
+    from building_model import SpaceOpening
+    from ifc_export import _bem_from_model
+
+    m = _simple_model(n_spaces=1)
+    before = _export_ifc(m, tmp_path / "before.ifc")
+    fb = ifcopenshell.open(str(before))
+    doors_before = len(fb.by_type("IfcDoor"))
+    assert not fb.by_type("IfcSlab")  # no skylights, no roof slab: unchanged output
+    sid = next(iter(m.spaces))
+    m.spaces[sid].openings.append(
+        SpaceOpening(
+            id="roof-SK-1",
+            tag="SK-1",
+            category="skylight",
+            width_m=1.2,
+            height_m=1.2,
+            host_facade="roof",
+            area_m2=1.44,
+            tilt_deg=0.0,
+        )
+    )
+    bem = _bem_from_model(m)
+    sky = [u for u in bem.openings if u.category == "skylight"]
+    assert [(u.tag, u.space_sid) for u in sky] == [("SK-1", sid)]
+    after = _export_ifc(m, tmp_path / "after.ifc")
+    f = ifcopenshell.open(str(after))
+    assert len(f.by_type("IfcDoor")) == doors_before
+    assert not any("SK-1" in (d.Name or "") for d in f.by_type("IfcDoor"))
+    slabs = f.by_type("IfcSlab")
+    assert len(slabs) == 1 and slabs[0].PredefinedType == "ROOF"
+    skys = [w for w in f.by_type("IfcWindow") if w.PredefinedType == "SKYLIGHT"]
+    assert len(skys) == 1 and "SK-1" in skys[0].Name
+    (fill_rel,) = skys[0].FillsVoids
+    (void_rel,) = fill_rel.RelatingOpeningElement.VoidsElements
+    assert void_rel.RelatingBuildingElement == slabs[0]

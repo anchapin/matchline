@@ -8,7 +8,7 @@ A recurring theme: several of these introduce *known, directional bias*
 (overestimated air volume, overestimated floor area). The project's answer is
 the same everywhere — don't pretend the bias is zero; measure it, attribute it
 to the convention that caused it, and report it. The validation battery
-(`validate.py`) is the natural home for these "convention bias" numbers.
+(`validate/`) is the natural home for these "convention bias" numbers.
 
 ## 1. Wall thickness → planar BEM surfaces
 
@@ -91,7 +91,7 @@ Candidate approaches:
   - the validation battery gets a conservation check: absorbed areas must sum
     exactly to the unassigned-polygon areas — no square foot vanishes.
 - Shaft splitting needs an adjacency graph (shared wall segments between
-  polygons) — a natural extension of the wall-segment work in `link.py`.
+  polygons) — a natural extension of the wall-segment work in `link/`.
 - Open question: should shafts be split by *adjacent wall length* weighting,
   or is there a better rule? Worth asking a mechanical engineer, not guessing.
 
@@ -117,7 +117,7 @@ U-value is per space, area-weighted over its wall segments.
 Candidate approaches:
 - Schema: every exterior wall segment carries a `construction_id`; each
   space's envelope references its segments (segments already exist in
-  `link.py` — this extends them).
+  `link/` — this extends them).
 - Per-space area-weighted U-value: Σ(Uᵢ × Aᵢ) / ΣAᵢ, computed in the takeoff
   layer and exported per space.
 - Detection: wall-type legends on elevations are usually **hatch patterns** —
@@ -136,7 +136,7 @@ Candidate approaches:
   "convention report" emitted with every export: volume bias %, absorbed-area
   table, area-budget drift — all in one place, all auditable.
 - Items 2, 5, 6 all need the wall/roof *segment* as a first-class entity with
-  attributes (construction, tilt, host). The segment work in `link.py` is the
+  attributes (construction, tilt, host). The segment work in `link/` is the
   foundation; it should be promoted from an internal detail to a schema-level
   concept.
 - Item 4's classifier is the only one here that needs real labeled data before
@@ -293,3 +293,91 @@ Candidate approaches:
   backend under the same F1-at-IoU-0.50 protocol; report per-backend deltas in
   the audit artifact. Backend disagreement becomes a cross-check, not just a
   number.
+
+# Part II — Future directions
+
+A categorized backlog from an eight-persona review (legal, marketing, product
+design, project management, software architecture, MEP engineering, energy
+modeling, incumbent vendor) on 2026-09-19. These are *not* sequenced or
+numbered: they are directions to pull into the numbered roadmap as priorities
+crystallize. Items marked with multiple-persona support independently came up
+in more than one review.
+
+## Trust, legal, professional
+
+- Professional-use disclaimer and E&O framing ★
+- Stampable, dated sign-off report with source/revision traceability ★
+- Versioned data-contribution agreement for the flywheel ★
+- Training-data license ledger and quarantine for noncommercial data/weights ★
+- CLA or DCO for code contributions
+- Privacy/security-sensitive-building policy and guaranteed local-only mode
+- GUI/service terms governing liability and data retention/deletion
+- Defensive publication of novel methods
+- Legal review of professional-licensure / "practicing engineering" risk
+
+## Product/UX and drawing-set reality
+
+- Drawing-set ingestion via cover-sheet index/title-block parsing
+- Revision/addenda tracking and takeoff diffs
+- Match lines, split sheets, and enlarged-plan deduplication
+- Per-project legend/tag/convention learning ★
+- SD/DD/CD design-phase awareness
+- Explicit area definitions: GSF, BOMA rentable, program/assignable
+- Worst-first, keyboard-first review queue with bulk actions
+- Correction history, undo, and revert-to-automatic output
+- Loud, specific failure modes for bad inputs
+- Progressive takeoff mode vs full-BEM mode
+- Export package: model + one-page trust report + editable decisions file + share-back preview ★
+
+## BEM last mile
+
+- ASHRAE 90.1 Appendix G perimeter/core thermal zoning
+- Below-grade detection and correct ground/outdoor boundaries
+- Space-use classification to cited load/schedule templates
+- Versioned construction library with cited U-values; never fabricate missing values
+- Blocking OpenStudio importer round-trip gate
+- Inter-story surface matching and atrium/shaft consistency
+- Split rooms at Appendix G block lines, pieces joined by air walls (#638)
+- Multi-storey gbXML/IFC export (#639)
+- Atria handled automatically, not just flagged for review (#640)
+- Walk-out basements: exterior walls split at grade, not just flagged for review (#641)
+
+## MEP
+
+- Mechanical schedule parsing and system-type classification
+- Engineering reconciliation gates and discipline-specific accuracy bars
+- Lighting controls and control zones
+- Riser/one-line topology parsing
+- First-class system entities linked to rooms
+- Plumbing fixture takeoffs and service-water-heating inputs
+- Architect-facing plan-vs-schedule coordination QA
+
+## Go-to-market
+
+- Positioning: "auditable extraction, not AI magic"; feed incumbents rather than replace them
+- Real-building benchmark on 3–5 commercial buildings ★
+- Five-minute demo, bundled sample project, results gallery ★
+- Quiet beta with friendly firms before public launch
+- Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
+- Visible monthly flywheel/model changelog
+- Rename before public launch because WiSARD is not the production detector
+
+## Strategy
+
+- Revit/AutoCAD plugin
+- Enterprise trust package: SSO, audit logs, isolation, SOC 2 story, air-gapped/on-prem mode
+- Standalone BIM import health score
+- Platform-risk hedge: keep IFC and web GUI first-class
+- Deliberate open-core commercial model
+- Publish validation checks as an industry benchmark
+
+## Process
+
+- Define Monday validation exit criteria before fine-tuning
+- Define v0.1.0 scope and release cadence
+- Maintain an in-repo risk register
+- Add a dependency/sequencing map
+- Add explicit non-goals and parked ideas
+- Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
+
+★ = raised independently by multiple personas — highest signal.

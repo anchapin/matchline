@@ -6,6 +6,7 @@ from building_model import (
     BuildingModel,
     FixtureInstance,
     Provenance,
+    SymbolLinkage,
 )
 from registration import (
     Affine2D,
@@ -67,6 +68,7 @@ def _link_lighting(
                     confidence=0.5,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                 ),
+                target={"kind": "fixture", "id": fid},
             )
         if sid is None:
             report.fixtures_unassigned += 1
@@ -81,6 +83,20 @@ def _link_lighting(
                     confidence=0.4,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                 ),
+                target={
+                    "kind": "fixture",
+                    "id": fid,
+                    "field": "space_id",
+                    # everything an assignment edit needs to create the
+                    # FixtureInstance the linker never wrote (#799)
+                    "fixture": {
+                        "tag": f["tag"],
+                        "fixture_class": f["class"],
+                        "x_m": x_m,
+                        "y_m": y_m,
+                        "watts": watts,
+                    },
+                },
             )
             continue
         report.fixtures_assigned += 1
@@ -100,6 +116,21 @@ def _link_lighting(
                     confidence=0.95,
                     bbox=[f["x_px"], f["y_px"], f["x_px"], f["y_px"]],
                     note=f"centroid in space {sid}",
+                ),
+            )
+        )
+        model.symbol_linkages.append(
+            SymbolLinkage(
+                symbol_id=fid,
+                symbol_tag=f["tag"],
+                category="lighting",
+                schedule_entry=entry,
+                confidence=0.95,
+                provenance=Provenance(
+                    sheet_id=meta["sheet_id"],
+                    revision=meta["revision"],
+                    method="schedule_join",
+                    confidence=0.95,
                 ),
             )
         )

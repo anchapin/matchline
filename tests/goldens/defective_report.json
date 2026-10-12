@@ -2,11 +2,11 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 29,
-  "errors": 3,
-  "warnings": 3,
-  "passes": 18,
-  "skipped": 5
+  "n_checks": 48,
+  "errors": 5,
+  "warnings": 4,
+  "passes": 23,
+  "skipped": 16
  },
  "results": [
   {
@@ -46,6 +46,62 @@
    ],
    "expected": 180.0,
    "actual": 150.0
+  },
+  {
+   "check_id": "convention_bias",
+   "name": "Convention bias (interior vs exterior face)",
+   "severity": "skip",
+   "message": "no exterior wall thickness available (no wall carries material_layers or thickness_m); volume bias is unmeasurable, not zero",
+   "entities": []
+  },
+  {
+   "check_id": "skylight_within_roof",
+   "name": "Skylight within roof",
+   "severity": "skip",
+   "message": "no skylights in model",
+   "entities": []
+  },
+  {
+   "check_id": "roof_plan_coverage",
+   "name": "Roof plan coverage",
+   "severity": "skip",
+   "message": "no roof planes (flat roof at wall height)",
+   "entities": []
+  },
+  {
+   "check_id": "roof_solar_aperture",
+   "name": "Roof solar aperture",
+   "severity": "skip",
+   "message": "roof not simplified (no source roof planes)",
+   "entities": []
+  },
+  {
+   "check_id": "daylight_zones",
+   "name": "Daylight zones",
+   "severity": "skip",
+   "message": "no daylight zones in model",
+   "entities": []
+  },
+  {
+   "check_id": "wall_construction_coverage",
+   "name": "Wall construction coverage",
+   "severity": "skip",
+   "message": "no wall constructions in model",
+   "entities": []
+  },
+  {
+   "check_id": "shading_host_reference",
+   "name": "Shading host reference",
+   "severity": "skip",
+   "message": "no shading surfaces in model",
+   "entities": []
+  },
+  {
+   "check_id": "space_type_accounting",
+   "name": "Space type accounting",
+   "severity": "pass",
+   "message": "all 2 spaces are rooms",
+   "entities": []
   },
   {
    "check_id": "envelope_area_matches_perimeter",
@@ -145,6 +201,13 @@
    "entities": []
   },
   {
+   "check_id": "hvac_zone_coverage",
+   "name": "HVAC zone coverage",
+   "severity": "pass",
+   "message": "1 HVAC space(s) reachable from 1 zone(s); terminal counts reconcile",
+   "entities": []
+  },
+  {
    "check_id": "space_id_hygiene",
    "name": "Space id hygiene",
    "severity": "pass",
@@ -170,6 +233,20 @@
    "name": "Window double-link detection",
    "severity": "pass",
    "message": "2 tagged window(s): no double-links detected",
+   "entities": []
+  },
+  {
+   "check_id": "cross_level_dedup",
+   "name": "Cross-level opening deduplication",
+   "severity": "pass",
+   "message": "2 wall opening(s) on 1 level(s): no cross-level duplicates",
+   "entities": []
+  },
+  {
+   "check_id": "space_opening_attachment",
+   "name": "IFC opening space attachment",
+   "severity": "skip",
+   "message": "no IFC wall openings",
    "entities": []
   },
   {
@@ -247,6 +324,73 @@
    "severity": "skip",
    "message": "no IFC path given",
    "entities": []
+  },
+  {
+   "check_id": "ashrae_wall_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Wall U-factor",
+   "severity": "skip",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_roof_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Roof U-factor",
+   "severity": "skip",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_window_u_factor",
+   "name": "ASHRAE 90.1-2019 Table 5.5-N: Window U-factor & SHGC",
+   "severity": "skip",
+   "message": "no climate zone on the model (--climate-zone); none is assumed",
+   "entities": []
+  },
+  {
+   "check_id": "ashrae_lighting_power_density",
+   "name": "ASHRAE 90.1-2019 Table 9.5.1 \u2014 Lighting Power Density",
+   "severity": "warn",
+   "message": "LPD violations: L1-101 (office): 200.0 > 10.5 W/m\u00b2 (limit=0.98 W/ft\u00b2)",
+   "entities": [
+    "L1-101",
+    "L1-102"
+   ]
+  },
+  {
+   "check_id": "ashrae_hvac_efficiency",
+   "name": "ASHRAE 90.1-2019 Tables 6.8.1-6.8.3 \u2014 HVAC efficiency",
+   "severity": "pass",
+   "message": "All 1 space(s) comply",
+   "entities": [
+    "L1-101"
+   ]
+  },
+  {
+   "check_id": "area_closure",
+   "name": "Area closure",
+   "severity": "error",
+   "message": "room areas sum to 50.00 m^2 vs footprint 60.00 m^2 (error 16.7%, tol 3%)",
+   "entities": [],
+   "expected": 60.0,
+   "actual": 50.0
+  },
+  {
+   "check_id": "volume_closure",
+   "name": "Volume closure",
+   "severity": "error",
+   "message": "room volumes sum to 150.00 m^3 vs expected 180.00 m^3 (error 16.7%, tol 5%)",
+   "entities": [],
+   "expected": 180.0,
+   "actual": 150.0
+  },
+  {
+   "check_id": "envelope_closure",
+   "name": "Envelope closure",
+   "severity": "pass",
+   "message": "openings 3.60 m^2 fit in facade 96.00 m^2 (4% glazed; solid wall 92.40 m^2)",
+   "entities": [],
+   "expected": 96.0,
+   "actual": 92.4
   }
  ]
 }

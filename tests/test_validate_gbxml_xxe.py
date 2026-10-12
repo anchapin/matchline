@@ -11,7 +11,7 @@ from bem_export import validate_gbxml
 
 XXML_WITH_DOCTYPE = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
-<gbXML temperatureUnit="C" lengthUnit="Meters" areaUnit="SquareMeters" volumeUnit="CubicMeters" version="6.01" useSIUnitsForResults="true" xmlns="http://www.gbxml.org/schema">
+<gbXML temperatureUnit="C" lengthUnit="Meters" areaUnit="SquareMeters" volumeUnit="CubicMeters" version="8.01" useSIUnitsForResults="true" xmlns="http://www.gbxml.org/schema">
   <Campus id="campus-1">
     <Name>Test Building</Name>
     <Location>
@@ -40,7 +40,7 @@ XXML_ENTITY_EXPANSION_BOMB = """<?xml version="1.0" encoding="UTF-8"?>
   <!ENTITY x "THIS_IS_A_TEST_ENTITY">
   <!ENTITY y "&x;&x;&x;&x;&x;&x;&x;&x;">
 ]>
-<gbXML temperatureUnit="C" lengthUnit="Meters" areaUnit="SquareMeters" volumeUnit="CubicMeters" version="6.01" useSIUnitsForResults="true" xmlns="http://www.gbxml.org/schema">
+<gbXML temperatureUnit="C" lengthUnit="Meters" areaUnit="SquareMeters" volumeUnit="CubicMeters" version="8.01" useSIUnitsForResults="true" xmlns="http://www.gbxml.org/schema">
   <Campus id="campus-1">
     <Name>Test Building&y;</Name>
   </Campus>

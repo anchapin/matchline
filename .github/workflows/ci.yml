@@ -15,10 +15,150 @@ permissions:
   pull-requests: write
 
 jobs:
+  no-empty-commits:
+    name: detect empty commits
+    runs-on: ubuntu-latest
+    outputs:
+      is_empty: ${{ steps.check.outputs.is_empty }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect empty commits
+        id: check
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_REF="${{ github.base_ref }}"
+            HEAD_REF="${{ github.head_ref }}"
+            echo "Checking PR: head=$HEAD_REF base=$BASE_REF"
+            # Fetch base from origin
+            git fetch origin "$BASE_REF:$BASE_REF" 2>/dev/null || true
+            # For fork PRs, fetch head from the fork's repo via github.event.pull_request.head.repo.full_name
+            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+              echo "Fork PR detected - fetching head from ${{ github.event.pull_request.head.repo.full_name }}"
+              git fetch "${{ github.event.pull_request.head.repo.full_name }}" "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
+            else
+              git fetch origin "$HEAD_REF:refs/heads/$HEAD_REF" 2>/dev/null || true
+            fi
+            HEAD_LOCAL_REF="refs/heads/$HEAD_REF"
+            COMPARE_REF="$BASE_REF"
+          else
+            # For push events, compare against github.event.before
+            echo "Checking push to ${{ github.ref }}"
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE_SHA" ]; then
+              echo "First push on branch - cannot detect empty commit (no previous sha)"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            COMPARE_REF="$BEFORE_SHA"
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Loop per-commit to catch empty commits bundled with real ones
+            EMPTY_COMMITS=""
+            for SHA in $(git log --no-merges --format=%H "$COMPARE_REF..$HEAD_LOCAL_REF"); do
+              if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
+                echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
+                EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
+              fi
+            done
+            if [ -n "$EMPTY_COMMITS" ]; then
+              echo "Empty commits found:$EMPTY_COMMITS"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              exit 1
+            else
+              echo "No empty commits detected"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Loop per-commit for push events
+            EMPTY_COMMITS=""
+            for SHA in $(git log --no-merges --format=%H "$COMPARE_REF..${{ github.ref }}"); do
+              if [ -z "$(git diff-tree --no-commit-id --name-only -r "$SHA")" ]; then
+                echo "Empty commit detected: $(git log -1 --format='%h %s' "$SHA")"
+                EMPTY_COMMITS="$EMPTY_COMMITS $(git log -1 --format='%h %s' "$SHA")"
+              fi
+            done
+            if [ -n "$EMPTY_COMMITS" ]; then
+              echo "Empty commits found:$EMPTY_COMMITS"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              exit 1
+            else
+              echo "No empty commits detected"
+              echo "is_empty=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  # detector-lint: lint-only coverage for the detector track.
+  #
+  # IMPORTANT: This job runs ruff on detector/*.py. It does NOT run the
+  # detector test suite (detector/tests/test_eca.py), which requires torch +
+  # ultralytics and the detector venv. Changes to detector code are verified
+  # for lint cleanliness but NOT for runtime correctness in CI. The detector
+  # tests must be run locally with:
+  #   detector/.venv-det/bin/python -m pytest detector/tests -q
+  # See issue #507 for context.
+  detector-lint:
+    name: detector ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install --no-cache-dir "ruff==0.16.10" && ruff --version
+
+      - name: Run ruff check on detector/
+        run: ruff check detector/
+
+  review-page-browser:
+    # #802: drive review.html in headless Chromium (keys, edit prompt, layer
+    # toggle, sheet highlight, export -> matchline review --apply).
+    name: review page in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and Playwright Chromium
+        run: |
+          pip install --no-cache-dir -e ".[test,openstudio]" "playwright>=1.48,<2"
+          python -m playwright install --with-deps chromium
+
+      - name: Run browser test
+        env:
+          MATCHLINE_BROWSER_TESTS: "1"  # a missing browser fails instead of skipping
+        run: python -m pytest tests/test_review_page_browser.py -q -rs
+
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,7 +171,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install package
-        run: pip install -e ".[test]" ruff
+        run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.16.10" && ruff --version
 
       - name: Run ruff check
         run: ruff check .
@@ -39,12 +179,20 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check .
 
+      - name: Check licenses (ledger, committed artifacts, built wheel)
+        # #751: nothing trained on non-commercial or copyleft data may ship
+        run: |
+          pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
+          python scripts/check_release_licenses.py "$RUNNER_TEMP"/dist/*.whl
+
       - name: Run pytest
-        run: python -m pytest tests/ -q
+        # pytest-xdist spreads the suite across the runner's cores; pytest was
+        # ~88% of this merge-gating job when it ran on one core.
+        run: python -m pytest tests/ -q -n auto
 
       - name: Check test count
         run: |
-          EXPECTED_TEST_COUNT=636
+          EXPECTED_TEST_COUNT=3072  # +7 vestibule: Alex's vestibule rule marks matching rooms (#747)
           # Count tests using --collect-only (fast path)
           COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
@@ -59,3 +207,32 @@ jobs:
               exit 1
             fi
           fi
+
+  demo-smoke:
+    # #753: fresh-clone install + matchline demo, the quickstart path
+    name: fresh install + matchline demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package (non-editable, as a fresh user would)
+        run: pip install --no-cache-dir .
+
+      - name: Run matchline demo
+        run: |
+          start=$SECONDS
+          matchline demo --no-open
+          took=$(( SECONDS - start ))
+          echo "demo took ${took}s"
+          test -f matchline-demo/package/trust_report.html
+          test -f matchline-demo/review/review.html
+          test "$took" -lt 300

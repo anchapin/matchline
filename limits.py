@@ -55,3 +55,12 @@ class _NodeCountingParser:
 def make_node_counting_parser(max_nodes: int) -> _NodeCountingParser:
     """Create a node-counting parser for XML complexity validation."""
     return _NodeCountingParser(max_nodes)
+
+
+# PDF drawing sets (#737). Large-format sheets reach 48x72 in (3456x5184 pt);
+# a dense CAD export can carry a few hundred thousand path objects per sheet.
+MAX_PDF_SIZE_MB: int = int(os.environ.get("MATCHLINE_MAX_PDF_SIZE_MB", 500))
+MAX_PDF_PAGES: int = int(os.environ.get("MATCHLINE_MAX_PDF_PAGES", 500))
+MAX_PDF_PAGE_SIDE_PT: float = float(os.environ.get("MATCHLINE_MAX_PDF_PAGE_SIDE_PT", 7200))
+MAX_PDF_PAGE_OBJECTS: int = int(os.environ.get("MATCHLINE_MAX_PDF_PAGE_OBJECTS", 1_000_000))
+MAX_PDF_RASTER_MPX: float = float(os.environ.get("MATCHLINE_MAX_PDF_RASTER_MPX", 150))

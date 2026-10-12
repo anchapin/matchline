@@ -13,7 +13,7 @@ labels: enhancement
 
 ## Which module(s) does this touch?
 
-(e.g. `geometry_simplify.py`, `validate.py`, a new module)
+(e.g. `geometry_simplify.py`, `validate/`, a new module)
 
 ## Provenance / review-queue implications
 

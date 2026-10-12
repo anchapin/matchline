@@ -20,7 +20,6 @@ Run with the venv python (needs cv2):
 from __future__ import annotations
 
 import math
-from typing import Any
 
 from building_model import BuildingModel  # noqa: E402
 from elevation_windows import (  # noqa: E402
@@ -90,7 +89,7 @@ def _register(bldg, key):
     return reg
 
 
-def score_detection(bldg) -> dict[str, dict[str, Any]]:
+def score_detection(bldg):
     """Per-elevation detection error vs GT (meters)."""
     gt = _gt_windows_m(bldg)
     rows = {}
@@ -152,7 +151,7 @@ def _dist_to_poly(pt, poly):
     return dmin
 
 
-def check_daylighting(model, bldg, params: DaylightParams) -> tuple[int, int, list[str]]:
+def check_daylighting(model, bldg, params: DaylightParams):
     """Zone polygons inside the right room; depths per the params."""
     D = bldg["D_m"]
     bad = []
@@ -184,7 +183,7 @@ def check_daylighting(model, bldg, params: DaylightParams) -> tuple[int, int, li
     return n_p, n_s, bad
 
 
-def test_reconciliation_flags() -> None:
+def test_reconciliation_flags():
     """Injected mismatches must land in the review queue."""
     from building_model import BuildingModel as BM
 
@@ -290,7 +289,7 @@ def test_reconciliation_flags() -> None:
     return ok, [f["description"] for f in flags]
 
 
-def test_dedup_conflict() -> bool:
+def test_dedup_conflict():
     """Overlapping-but-disagreeing observations -> conflict, not merge."""
     from building_model import Provenance
     from elevation_windows import FacadeWindow
@@ -330,7 +329,7 @@ def test_dedup_conflict() -> bool:
     return len(merged) == 2 and len(conflicts) == 1 and conflicts[0]["delta_center_m"] == 0.5
 
 
-def main() -> None:
+def main():
     params = DaylightParams()
     all_ok = True
     for seed, span in [(201, False), (202, True), (203, False)]:

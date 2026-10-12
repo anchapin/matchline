@@ -15,14 +15,22 @@ python3 -m venv detector/.venv-det
 
 ### 2. Install dependencies
 
+The `+cpu` local version tags on torch/torchvision exist only on the PyTorch CPU
+index, so `--extra-index-url` is **required**:
+
 ```bash
-. detector/.venv-det/bin/pip install -r detector/requirements-detector.txt
+detector/.venv-det/bin/pip install \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    -r detector/requirements-detector.txt
 ```
 
-> **Note:** The requirements include a stub `torchvision==0.29.0+cpu.stub` because
-> the standard torchvision C++ extension fails to load in some environments. On
-> real hardware with a working GPU or proper torch build, prefer the stock
-> `torchvision` package. See `detector/README.md` for details.
+> **Note (2026-09-28):** the old `torchvision==0.29.0+cpu.stub` pin is gone. It
+> was a hand-written pure-torch NMS shim, needed only because the *original*
+> sandbox's torchvision C++ extension failed to load, and it was never
+> published to any index — so this requirements file could not actually be
+> installed on a fresh machine. Stock `torchvision==0.29.0+cpu` is verified
+> working here, `torchvision.ops.nms` included. See `detector/README.md`.
+
 
 ## Dataset Preparation
 
@@ -34,6 +42,17 @@ conversion scripts are provided:
 | CubiCasa5K | `convert_cubicasa.py` | Primary training set; door/window leaf groups from SVG |
 | AEC Geometric Bench | `convert_aec.py` | Zero-shot eval set; PDF + CVAT XML |
 | FloorPlanCAD | `convert_floorplancad.py` | Eval set; parquet → PNG |
+
+Datasets live under `~/workspace/datasets/` per the convention below. Point the
+run somewhere else with the `MATCHLINE_DATASETS` env var — `train.py` resolves
+`configs/*.yaml` against it, so no machine path is ever written into the repo:
+
+```bash
+MATCHLINE_DATASETS=/data/datasets detector/.venv-det/bin/python detector/train.py ...
+```
+
+If the dataset root is missing, `train.py` exits with the path it tried and how
+to override it, rather than failing later inside Ultralytics.
 
 ### CubiCasa5K
 
@@ -98,10 +117,23 @@ Training outputs go to `~/workspace/datasets/detector_runs/` (never committed).
 ### Full training run
 
 ```bash
-. detector/.venv-det/bin/python detector/train.py \
+detector/.venv-det/bin/python detector/train.py \
     --data detector/configs/cubicasa.yaml \
     --epochs 25 \
     --name cubi_yolo11n
+```
+
+### ECA A/B (#500)
+
+Both arms use `--model` + `--pretrained` so they start from identical COCO
+weights. `--pretrained` is **not** Ultralytics' name-based `load()`: inserting
+ECA rows shifts every later layer index, so names stop corresponding and a plain
+load would leave the ECA arm training from scratch. See `detector/README.md`.
+
+```bash
+COMMON="--data detector/configs/cubicasa.yaml --epochs 25 --seed 0 --pretrained yolo11n.pt"
+detector/.venv-det/bin/python detector/train.py --model detector/configs/yolo11n_baseline.yaml $COMMON --name eca_base
+detector/.venv-det/bin/python detector/train.py --model detector/configs/yolo11n_eca.yaml     $COMMON --name eca_eca
 ```
 
 ### Resuming a run
