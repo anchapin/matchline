@@ -83,25 +83,29 @@ def transform_rows(rows, size, scale, dx, dy, orig_w, orig_h):
 def untransform_boxes(boxes, size, scale, dx, dy, orig_w, orig_h):
     """Reverse of transform_rows for inference output.
 
-    boxes: iterable of (cls, cx, cy, w, h) in size-normalized units.
-    Returns (cls, x0, y0, w, h) normalized to the orig sheet.
+    boxes: iterable of (cls, cx, cy, w, h) in size-normalized units, or
+    decode-emission rows (cls, score, cx, cy, w, h). A score travels through
+    unchanged so callers never re-align boxes against a parallel row list
+    (the #940 duck finding 2): the return matches the input shape, either
+    (cls, x0, y0, w, h) or (cls, score, x0, y0, w, h), normalized to the
+    orig sheet.
     """
     out = []
     for b in boxes:
         if len(b) == 6:  # decode emission: (cls, score, cx, cy, w, h)
-            b = (b[0], b[2], b[3], b[4], b[5])
-        cls, cx, cy, w, h = b
+            cls, score, cx, cy, w, h = b
+        else:
+            cls, cx, cy, w, h = b
+            score = None
         px_cx, px_cy = (cx * size - dx) / scale, (cy * size - dy) / scale
         px_w, px_h = w * size / scale, h * size / scale
-        out.append(
-            (
-                int(cls),
-                (px_cx - px_w / 2) / orig_w,
-                (px_cy - px_h / 2) / orig_h,
-                px_w / orig_w,
-                px_h / orig_h,
-            )
+        row = (
+            (px_cx - px_w / 2) / orig_w,
+            (px_cy - px_h / 2) / orig_h,
+            px_w / orig_w,
+            px_h / orig_h,
         )
+        out.append((int(cls), score, *row) if score is not None else (int(cls), *row))
     return out
 
 
@@ -619,7 +623,13 @@ def main():
     if args.eval_only:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         names = load_names(args.data)
-        ckpt = torch.load(args.ckpt, map_location=device, weights_only=False)
+        try:
+            ckpt = torch.load(args.ckpt, map_location=device, weights_only=True)
+        except Exception:
+            # legacy checkpoints pickle non-whitelisted objects; those only
+            # come from workflows we control, so keep the permissive load
+            # as a fallback (#743 hardening)
+            ckpt = torch.load(args.ckpt, map_location=device, weights_only=False)
         cfg = ckpt["config"]
         model = ScratchNet(
             num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"]
