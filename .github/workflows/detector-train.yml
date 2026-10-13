@@ -43,6 +43,10 @@ on:
         description: run name
         required: true
         default: scratch-synth
+      eval_clinic:
+        description: eval the trained checkpoint on Clinic sheets (downloads the BSI Clinic IFC, CC BY 4.0)
+        required: true
+        default: "false"
 
 concurrency:
   group: detector-train
@@ -122,6 +126,50 @@ jobs:
             --name "${{ github.event.inputs.name }}" \
             --device cuda \
             --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+
+      - name: Eval on Clinic sheets
+        if: github.event.inputs.eval_clinic == 'true'
+        run: |
+          OUT="$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+          VPY="$HOME/workspace/venvs/det-rocm/bin/python"
+          # the eval needs torch (the provider) plus IFC and geometry readers;
+          # install into the training venv once, idempotently
+          "$VPY" -c "import ifcopenshell, shapely" 2>/dev/null || \
+            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely
+          # The BSI Clinic IFC is a Git LFS object in the community sample
+          # repo (CC BY 4.0): the raw file is only a pointer, so resolve the
+          # real blob through the LFS batch API. Eval only, never committed
+          # to matchline (DATASETS.md).
+          P="IFC%202.3.0.1%20(IFC%202x3)/Medical-Dental%20Clinic/Clinic_Architectural.ifc"
+          PTR="$RUNNER_TEMP/clinic_ptr"
+          curl -s "https://raw.githubusercontent.com/buildingsmart-community/Community-Sample-Test-Files/HEAD/$P" > "$PTR"
+          OID=$(sed -n 's/^oid sha256://p' "$PTR")
+          SZ=$(sed -n 's/^size //p' "$PTR")
+          curl -s -X POST \
+            "https://github.com/buildingsmart-community/Community-Sample-Test-Files.git/info/lfs/objects/batch" \
+            -H "Accept: application/vnd.git-lfs+json" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Content-Type: application/vnd.git-lfs+json" \
+            -d "{\"operation\":\"download\",\"objects\":[{\"oid\":\"$OID\",\"size\":$SZ}]}" \
+            > "$RUNNER_TEMP/clinic_batch"
+          URL=$("$VPY" -c "import json;print(json.load(open('$RUNNER_TEMP/clinic_batch'))['objects'][0]['actions']['download']['href'])")
+          IFC="$RUNNER_TEMP/Clinic_Architectural.ifc"
+          curl -sL "$URL" -o "$IFC"
+          "$VPY" scripts/eval_clinic_detector.py "$IFC" \
+            --weights "$OUT/ckpt.pt" \
+            --json "$OUT/clinic_eval.json" \
+            --png-dir "$OUT/clinic_eval_png"
+          cat "$OUT/clinic_eval.json"
+
+      - name: Upload Clinic eval
+        if: always() && github.event.inputs.eval_clinic == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
+          path: |
+            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/clinic_eval.json
+            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/clinic_eval_png/
+          if-no-files-found: error
 
       - name: Upload metrics
         if: always()
