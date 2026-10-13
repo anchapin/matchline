@@ -177,9 +177,13 @@ def test_tile_conversion_remaps_labels_and_split_follows_sheet(tmp_path):
     rows = (out / "labels" / "train" / "sheet_0_t0x1.txt").read_text().splitlines()
     door = [r for r in rows if r.startswith("0 ")][0]
     _, cx, cy, w, h = door.split()
-    assert (float(cx), float(cy), float(w), float(h)) == pytest.approx(
-        (((420 + 480) / 2 - 300) / 400, ((280 + 320) / 2) / 400, (480 - 420) / 400, (320 - 280) / 400)
+    exp = (
+        ((420 + 480) / 2 - 300) / 400,
+        ((280 + 320) / 2) / 400,
+        (480 - 420) / 400,
+        (320 - 280) / 400,
     )
+    assert (float(cx), float(cy), float(w), float(h)) == pytest.approx(exp)
 
     # empty tiles are background when --include-empty, and there is no val tree
     assert summary["tiles_kept_empty"] == len(x_starts) * len(y_starts) - 2
