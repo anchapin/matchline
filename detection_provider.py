@@ -7,6 +7,7 @@ which backend ran. Which provider runs is a config value, not code:
 
     {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger path>"}
     {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger path>"}
+    {"provider": "scratch", "weights": "ckpt.pt", "artifact": "<ledger path>"}
     {"provider": "door_swing"}
     {"provider": "vector_glazing"}
     {"provider": "combined", "providers": [{"provider": "door_swing"},
@@ -179,6 +180,91 @@ class YoloSahiProvider(DetectionProvider):
             return detections_from_yolo_json(f.name, sheet_id)
         finally:
             os.unlink(f.name)
+
+
+class ScratchProvider(DetectionProvider):
+    """From-scratch detector (``detector/train_scratch.py``), whole-sheet.
+
+    Loads the ``ckpt.pt`` training writes, which carries its own config
+    (num_classes, width, imgsz, names), so the model shape never lives in the
+    detector config. One grayscale pass over the full sheet, no tiling; torch
+    is imported only inside :meth:`detect`, so the rest of matchline never
+    needs it. Training data is matchline's synthetic generators
+    (BSD-3-Clause), so a ledger-listed ``scratch-synth`` checkpoint is
+    permissive and may ship (#743).
+    """
+
+    name = "scratch"
+
+    def __init__(
+        self,
+        weights: Union[str, Path],
+        artifact: str = "",
+        conf: float = 0.25,
+        device: str = "cpu",
+        **kw,
+    ):
+        super().__init__(artifact or str(weights), **kw)
+        self.weights = str(weights)
+        self.conf = conf
+        self.device = device
+        self._net = None
+        self._cfg: Optional[dict] = None
+        self._torch = None
+
+    def _model(self):
+        import torch
+
+        from detector.train_scratch import ScratchNet
+
+        ckpt = torch.load(self.weights, map_location=self.device, weights_only=False)
+        cfg = ckpt["config"]
+        model = ScratchNet(num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"])
+        model.load_state_dict(ckpt["model"])
+        model.to(self.device)
+        model.eval()
+        self._cfg = cfg
+        self._torch = torch
+        return model
+
+    def detect(self, image_path, sheet_id):
+        import numpy as np
+        from PIL import Image
+
+        from detector.train_scratch import (
+            decode,
+            letterbox_image,
+            letterbox_params,
+            untransform_boxes,
+        )
+
+        if self._net is None:
+            self._net = self._model()
+        cfg = self._cfg
+        img = np.asarray(Image.open(image_path).convert("L"))
+        oh, ow = img.shape
+        size = cfg["imgsz"]
+        scale, dx, dy = letterbox_params(ow, oh, size)
+        lb = letterbox_image(img, size, scale, dx, dy)
+        x = self._torch.from_numpy(lb / 255.0).unsqueeze(0).unsqueeze(0)
+        with self._torch.no_grad():
+            preds = self._net(x)
+        rows = decode(preds, num_classes=cfg["num_classes"], conf=self.conf)[0]
+        boxes = untransform_boxes(rows, size, scale, dx, dy, ow, oh)
+        names = list(cfg.get("names") or [])
+        out = []
+        for (c, score, *_), (_, x0n, y0n, wn, hn) in zip(rows, boxes):
+            out.append(
+                Detection(
+                    label=names[c] if c < len(names) else str(c),
+                    tag="",  # tag extraction is a separate OCR step (DET-02/DET-03)
+                    score=float(score),
+                    bbox=(x0n * ow, y0n * oh, (x0n + wn) * ow, (y0n + hn) * oh),
+                    source=sheet_id,
+                    drawing_type="floor_plan",
+                )
+            )
+        return out
 
 
 class DoorSwingProvider(DetectionProvider):
@@ -456,10 +542,15 @@ PROVIDERS: Dict[str, type] = {
     "door_swing": DoorSwingProvider,
     "none": NoneProvider,
     "precomputed": PrecomputedProvider,
+    "scratch": ScratchProvider,
     "vector_glazing": VectorGlazingProvider,
     "yolo_sahi": YoloSahiProvider,
 }
-_REQUIRED = {"precomputed": ("dir",), "yolo_sahi": ("weights",)}
+_REQUIRED = {
+    "precomputed": ("dir",),
+    "scratch": ("weights",),
+    "yolo_sahi": ("weights",),
+}
 
 
 def provider_from_config(
@@ -523,6 +614,7 @@ __all__ = [
     "VectorGlazingProvider",
     "NoneProvider",
     "PrecomputedProvider",
+    "ScratchProvider",
     "YoloSahiProvider",
     "ProviderInfo",
     "ProviderConfigError",

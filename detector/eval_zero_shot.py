@@ -17,7 +17,10 @@ import sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from classes import CLASS_NAMES
+try:  # package import: python -m detector.eval_zero_shot, pytest
+    from detector.classes import CLASS_NAMES
+except ImportError:  # direct script execution from inside detector/
+    from classes import CLASS_NAMES
 
 
 def iou(a, b):
