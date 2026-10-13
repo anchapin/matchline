@@ -47,6 +47,10 @@ on:
         description: eval the trained checkpoint on Clinic sheets (downloads the BSI Clinic IFC, CC BY 4.0)
         required: true
         default: "false"
+      eval_only_ckpt:
+        description: run dir with an existing ckpt.pt; skips dataset prep and training, evals it (implies eval_clinic)
+        required: true
+        default: ""
 
 concurrency:
   group: detector-train
@@ -63,6 +67,7 @@ jobs:
         run: rocm-smi || true
 
       - name: Prepare synth dataset
+        if: github.event.inputs.eval_only_ckpt == ''
         run: |
           DATA="${{ github.event.inputs.data }}"
           if [ ! -f "$DATA/data.yaml" ]; then
@@ -97,6 +102,7 @@ jobs:
           "$VENV/bin/python" -c "import torch; print('venv torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
 
       - name: Loss device smoke
+        if: github.event.inputs.eval_only_ckpt == ''
         run: |
           # Fast-fail guard: a CPU/CUDA mix in ScratchLoss killed run
           # 38311804719 eight seconds into Train, after venv setup. This
@@ -115,6 +121,7 @@ jobs:
           PY
 
       - name: Train
+        if: github.event.inputs.eval_only_ckpt == ''
         run: |
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
@@ -128,9 +135,13 @@ jobs:
             --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
 
       - name: Eval on Clinic sheets
-        if: github.event.inputs.eval_clinic == 'true'
+        if: github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != ''
         run: |
-          OUT="$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+          if [ -n "${{ github.event.inputs.eval_only_ckpt }}" ]; then
+            OUT="${{ github.event.inputs.eval_only_ckpt }}"
+          else
+            OUT="$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+          fi
           VPY="$HOME/workspace/venvs/det-rocm/bin/python"
           # the eval needs torch (the provider) plus IFC and geometry readers;
           # install into the training venv once, idempotently
@@ -162,7 +173,7 @@ jobs:
           cat "$OUT/clinic_eval.json"
 
       - name: Upload Clinic eval
-        if: always() && github.event.inputs.eval_clinic == 'true'
+        if: always() && (github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != '')
         uses: actions/upload-artifact@v4
         with:
           name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
