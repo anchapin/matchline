@@ -52,7 +52,11 @@ def glyph_single_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, 
     """Plan door: wall line with gap, leaf + quarter swing arc below."""
     wt = max(6, int(w * 0.22))  # wall thickness
     if wall:  # wall stubs across the canvas
-        d.line([0, cy, CANVAS, cy], fill=0, width=wt)
+        if lw <= 1:  # hairline: outline band, the way a 1:100 plan reads
+            d.line([0, cy - wt / 2, CANVAS, cy - wt / 2], fill=0, width=1)
+            d.line([0, cy + wt / 2, CANVAS, cy + wt / 2], fill=0, width=1)
+        else:
+            d.line([0, cy, CANVAS, cy], fill=0, width=wt)
         d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
     hx, hy = cx - w / 2, cy  # hinge at left jamb
     ang = math.radians(58)
@@ -64,7 +68,11 @@ def glyph_single_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, 
 def glyph_double_door(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, rng=None):
     wt = max(6, int(w * 0.22))
     if wall:
-        d.line([0, cy, CANVAS, cy], fill=0, width=wt)
+        if lw <= 1:  # hairline: outline band, the way a 1:100 plan reads
+            d.line([0, cy - wt / 2, CANVAS, cy - wt / 2], fill=0, width=1)
+            d.line([0, cy + wt / 2, CANVAS, cy + wt / 2], fill=0, width=1)
+        else:
+            d.line([0, cy, CANVAS, cy], fill=0, width=wt)
         d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
     ang = math.radians(58)
     for sgn, hx in ((-1, cx - w / 2), (1, cx + w / 2)):
@@ -82,11 +90,11 @@ def glyph_window_plan(d: ImageDraw.ImageDraw, cx, cy, w, lw, wall: bool = True, 
     """Plan window: double wall line, 3 glass lines + end caps in the gap."""
     wt = max(8, int(w * 0.30))
     if wall:
-        d.line([0, cy - wt / 2, CANVAS, cy - wt / 2], fill=0, width=max(3, lw))
-        d.line([0, cy + wt / 2, CANVAS, cy + wt / 2], fill=0, width=max(3, lw))
+        d.line([0, cy - wt / 2, CANVAS, cy - wt / 2], fill=0, width=max(1, lw))
+        d.line([0, cy + wt / 2, CANVAS, cy + wt / 2], fill=0, width=max(1, lw))
         d.rectangle([cx - w / 2, cy - wt / 2 - 2, cx + w / 2, cy + wt / 2 + 2], fill=255)
     for yy in (cy - wt / 2, cy, cy + wt / 2):
-        d.line([cx - w / 2, yy, cx + w / 2, yy], fill=0, width=max(2, lw - 1))
+        d.line([cx - w / 2, yy, cx + w / 2, yy], fill=0, width=max(1, lw - 1))
     d.line([cx - w / 2, cy - wt / 2, cx - w / 2, cy + wt / 2], fill=0, width=lw)
     d.line([cx + w / 2, cy - wt / 2, cx + w / 2, cy + wt / 2], fill=0, width=lw)
 
@@ -200,7 +208,7 @@ def render_symbol(
     d = ImageDraw.Draw(img)
     s = rng.uniform(0.85, 1.12)
     w = 84.0 * s  # fill the frame: tight crops match real ann. boxes
-    lw = int(rng.choice([3, 4, 5]))
+    lw = int(rng.choice([1, 2, 3, 4, 5]))  # hairline..bold, both regimes
     cx = CANVAS / 2 + rng.uniform(-7, 7)
     cy = CANVAS / 2 + rng.uniform(-7, 7)
     glyph_map[label](

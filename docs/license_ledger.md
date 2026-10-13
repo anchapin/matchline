@@ -22,11 +22,13 @@ An artifact takes the most restrictive class among its datasets.
 | `facade_priors.json` | CMP Facade | share_alike | yes, with `NOTICE.md` |
 | `review_classifier/trained_model_*.npz` (3) | synthetic + review corpus | permissive | yes |
 | YOLO11n door/window weights (`~/workspace/datasets/detector_runs/yolo11n_{baseline,eca}_s*/`) | CubiCasa5K + YOLO11n COCO weights | copyleft (and noncommercial) | no |
+| from-scratch detector checkpoints (`~/workspace/datasets/detector_runs/scratch-synth-*/ckpt.pt`) | matchline synthetic generators | permissive | no (produced by the `detector-train.yml` workflow) |
 
-The current detector weights are evaluation-only twice over: CubiCasa5K is
-non-commercial, and the YOLO11n starting weights are AGPL-3.0. A shippable
-detector (#743) needs both permissive training data and a permissively licensed
-model and starting weights. `detection_provider.py` reads this ledger to mark a
+The YOLO11n detector weights are evaluation-only twice over: CubiCasa5K is
+non-commercial, and the YOLO11n starting weights are AGPL-3.0. The from-scratch
+synthetic checkpoints are the first detector weights that may ship: permissive
+training data, no pretrained starting weights (they train from random
+initialization on synthetic sheets only). `detection_provider.py` reads this ledger to mark a
 detector's output evaluation only (see `docs/detection_provider.md`).
 
 ## The quarantine rule

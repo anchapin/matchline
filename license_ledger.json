@@ -149,6 +149,15 @@
       ],
       "committed": true,
       "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write (prototype EUI from sim_smoke.py --reference-only)"
+    },
+    {
+      "path": "*/detector_runs/scratch-synth-*/ckpt.pt",
+      "kind": "weights",
+      "datasets": [
+        "matchline_synthetic"
+      ],
+      "committed": false,
+      "produced_by": "gh workflow detector-train.yml (from-scratch training on matchline synthetic sheets only)"
     }
   ]
 }
