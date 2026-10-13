@@ -49,12 +49,33 @@ def test_letterbox_transform_roundtrip():
     # rebuild in decode-emission shape (cls, score, cx, cy, w, h)
     dets = [(c, 0.9, cx, cy, w, h) for c, cx, cy, w, h in lb]
     rev = untransform_boxes(dets, size, scale, dx, dy, ow, oh)
-    for (c, cx, cy, w, h), (c2, x0, y0, w2, h2) in zip(rows, rev):
+    for (c, cx, cy, w, h), (c2, s2, x0, y0, w2, h2) in zip(rows, rev):
         assert c == c2
+        assert s2 == pytest.approx(0.9)
         assert cx - w / 2 == pytest.approx(x0, abs=1e-4)
         assert cy - h / 2 == pytest.approx(y0, abs=1e-4)
         assert w == pytest.approx(w2, abs=1e-4)
         assert h == pytest.approx(h2, abs=1e-4)
+
+
+def test_untransform_keeps_score_with_its_box():
+    # scores must travel with their own boxes, so callers never re-align two
+    # parallel lists (#940 duck finding 2): two similar boxes, distinct scores
+    size, ow, oh = 640, 640, 640
+    dets = [  # (cls, score, cx, cy, w, h): similar boxes, distinct scores
+        (1, 0.10, 0.10, 0.10, 0.20, 0.20),
+        (1, 0.90, 0.10, 0.10, 0.20, 0.20),
+    ]
+    out = untransform_boxes(dets, size, 1.0, 0.0, 0.0, ow, oh)
+    assert out[0] == pytest.approx((1, 0.10, 0.0, 0.0, 0.20, 0.20))
+    assert out[1] == pytest.approx((1, 0.90, 0.0, 0.0, 0.20, 0.20))
+
+
+def test_untransform_without_score_stays_5_tuple():
+    # pre-#940 callers pass (cls, cx, cy, w, h); output shape matches input
+    size, ow, oh = 640, 640, 640
+    out = untransform_boxes([(0, 0.5, 0.5, 0.1, 0.1)], size, 1.0, 0.0, 0.0, ow, oh)
+    assert out == [(0, 0.45, 0.45, 0.10, 0.10)]
 
 
 def test_nms_suppresses_overlap_keeps_distinct():
