@@ -217,7 +217,13 @@ class ScratchProvider(DetectionProvider):
 
         from detector.train_scratch import ScratchNet
 
-        ckpt = torch.load(self.weights, map_location=self.device, weights_only=False)
+        try:
+            ckpt = torch.load(self.weights, map_location=self.device, weights_only=True)
+        except Exception:
+            # legacy checkpoints pickle non-whitelisted objects; those only
+            # come from workflows we control, so keep the permissive load
+            # as a fallback (#743 hardening)
+            ckpt = torch.load(self.weights, map_location=self.device, weights_only=False)
         cfg = ckpt["config"]
         model = ScratchNet(num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"])
         model.load_state_dict(ckpt["model"])
@@ -250,10 +256,12 @@ class ScratchProvider(DetectionProvider):
         with self._torch.no_grad():
             preds = self._net(x)
         rows = decode(preds, num_classes=cfg["num_classes"], conf=self.conf)[0]
+        # decode-emission rows go in; scores come back out with their boxes,
+        # so there is no parallel list to re-align (#940 duck finding 2)
         boxes = untransform_boxes(rows, size, scale, dx, dy, ow, oh)
         names = list(cfg.get("names") or [])
         out = []
-        for (c, score, *_), (_, x0n, y0n, wn, hn) in zip(rows, boxes):
+        for c, score, x0n, y0n, wn, hn in boxes:
             out.append(
                 Detection(
                     label=names[c] if c < len(names) else str(c),
