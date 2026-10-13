@@ -227,8 +227,28 @@ def main():
         action="store_true",
         help="keep sheets with zero mapped boxes as background images",
     )
+    ap.add_argument(
+        "--tile-size",
+        type=int,
+        default=0,
+        help="cut sheets into tile_size px square tiles (0 = whole sheets)",
+    )
+    ap.add_argument(
+        "--stride",
+        type=int,
+        default=512,
+        help="tile stride in px (used when --tile-size > 0)",
+    )
     args = ap.parse_args()
-    summary = convert(args.in_dir, args.out, args.val_fraction, args.seed, args.include_empty)
+    summary = convert(
+        args.in_dir,
+        args.out,
+        args.val_fraction,
+        args.seed,
+        args.include_empty,
+        args.tile_size,
+        args.stride,
+    )
     for k, v in summary.items():
         print(f"{k}: {v}")
 
