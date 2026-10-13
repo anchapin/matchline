@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from PIL import Image
 from shapely.geometry import Polygon
 
 from datasets_adapter import Detection
@@ -106,3 +107,48 @@ def test_summarize_averages_the_storeys_that_have_truth(loaded):
 
 def test_px_per_pt_follows_px_per_m():
     assert PX_PER_M * M_PER_PT == pytest.approx(8.0 * 100 * 0.0254 / 72)
+
+
+def test_tile_starts_cover_the_tail():
+    from scripts.eval_clinic_detector import tile_starts
+
+    assert tile_starts(1500, 640, 512) == [0, 512, 860], "the last tile covers the edge"
+    assert tile_starts(600, 640, 512) == [0], "an axis smaller than the tile is one pass"
+    assert tile_starts(1500, 0, 512) == [0], "tile_px 0 means the old whole-sheet pass"
+
+
+def test_nms_dedupe_folds_overlap_keeps_best_score():
+    from scripts.eval_clinic_detector import nms_dedupe
+
+    dets = [
+        {"label": "window", "score": 0.6, "bbox": (0, 0, 100, 100)},
+        {"label": "window", "score": 0.9, "bbox": (5, 5, 105, 105)},
+        {"label": "window", "score": 0.7, "bbox": (500, 500, 600, 600)},
+        {"label": "door", "score": 0.5, "bbox": (0, 0, 100, 100)},
+    ]
+    keep = nms_dedupe(dets, iou=0.5)
+    assert [d["score"] for d in keep if d["label"] == "window"] == [0.9, 0.7], (
+        "the duplicate folds into the best-scoring box, the far one stays"
+    )
+    assert any(d["label"] == "door" for d in keep), "labels never suppress each other"
+
+
+def test_detect_tiled_remaps_to_sheet_pixels():
+    from datasets_adapter import Detection
+    from scripts.eval_clinic_detector import detect_tiled, tile_starts
+
+    class FixedProvider:
+        def detect(self, image_path, sheet_id):
+            return [
+                Detection(label="window", tag="", score=0.8, bbox=(10, 20, 60, 70), source="test")
+            ]
+
+    img = Image.new("L", (1300, 700), 255)
+    dets = detect_tiled(FixedProvider(), img, "First Floor", tile_px=640, stride=512)
+    xs = tile_starts(1300, 640, 512)
+    ys = tile_starts(700, 640, 512)
+    assert len(dets) == len(xs) * len(ys), "one detection per tile"
+    got = {d["bbox"] for d in dets}
+    for y0 in ys:
+        for x0 in xs:
+            assert (10 + x0, 20 + y0, 60 + x0, 70 + y0) in got, "box at its own offset"
