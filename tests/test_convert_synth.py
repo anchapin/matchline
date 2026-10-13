@@ -20,7 +20,7 @@ from PIL import Image
 DETECTOR = Path(__file__).resolve().parents[1] / "detector"
 sys.path.insert(0, str(DETECTOR))
 
-from convert_synth import _rows_from_symbols, convert  # noqa: E402
+from convert_synth import _assign_to_tiles, _rows_from_symbols, convert  # noqa: E402
 
 W, H = 1000, 800
 
@@ -205,3 +205,50 @@ def test_tile_conversion_without_include_empty_drops_empty_tiles(tmp_path):
     )
     assert summary["tiles_written"] == 1, "only the tile holding the symbol survives"
     assert summary["boxes_written"] == 1
+
+
+def test_assign_prefers_a_tile_that_fully_contains_the_symbol():
+    """A symbol straddling the claiming tile's edge is labelled unclipped in
+    the neighbouring tile that shows all of it (#743)."""
+    x_starts = [0, 512, 760]  # _tile_starts(1400, 640, 512)
+    y_starts = [0]
+    # Centre 635 falls in the x0=0 tile, whose view ends at 640: the old
+    # centre-claim rule wrote a 60 px sliver label here and left the 512
+    # tile's fully visible copy unlabeled.
+    symbols = [_sym("Window", [580, 100, 690, 160])]
+    tiles = _assign_to_tiles(symbols, 640, x_starts, y_starts)
+    assert tiles == {(0, 1): [(1, 580.0, 100.0, 690.0, 160.0, 512, 0)]}
+
+
+def test_assign_falls_back_to_the_max_visible_tile_for_oversized_symbols():
+    """A symbol too big for any single view keeps exactly one clipped label."""
+    symbols = [_sym("Window", [50, 100, 950, 160])]  # 900 px wide > 640 view
+    tiles = _assign_to_tiles(symbols, 640, [0, 512, 760], [0])
+    ((cls, bx0, by0, bx1, by1, x0, y0),) = tiles[(0, 0)]
+    assert (bx0, bx1) == (50.0, 950.0), "the box passes through unclipped"
+    assert x0 == 0, "tile x0=0 shows the most of it (590 px vs 438 vs 190)"
+
+
+def test_convert_tiled_labels_border_symbols_unclipped(tmp_path):
+    """End to end: a border-straddling symbol gets one full-size label."""
+    in_dir = tmp_path / "sheets"
+    in_dir.mkdir()
+    symbols = [
+        _sym("Window", [580, 100, 690, 160]),
+        _sym("Single Swing Door", [50, 300, 150, 380]),
+    ]
+    _write_sheet(in_dir, "sheet_1", symbols, size=(1400, 700))
+    out = tmp_path / "yolo"
+    convert(str(in_dir), str(out), val_fraction=0.0, tile_size=640, stride=512)
+    rows = [
+        line
+        for p in sorted((out / "labels" / "train").glob("*.txt"))
+        for line in p.read_text().splitlines()
+        if line
+    ]
+    by_cls = {}
+    for r in rows:
+        cls, _cx, _cy, w, h = r.split()
+        by_cls.setdefault(cls, []).append((float(w), float(h)))
+    assert by_cls["1"] == [(pytest.approx(110 / 640), pytest.approx(60 / 640))]
+    assert by_cls["0"] == [(pytest.approx(100 / 640), pytest.approx(80 / 640))]
