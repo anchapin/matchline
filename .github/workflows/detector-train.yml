@@ -1,7 +1,7 @@
 # From-scratch detector training on the self-hosted GPU runner (#743).
 #
 # Dispatch-only: nothing here runs on push/PR. The runner is Alex's Linux PC
-# (label manamind-train). A concurrency group queues runs behind each other,
+# (custom label gpu-train). A concurrency group queues runs behind each other,
 # so at most one job is active and the runner never sees more than the
 # disclosed load. Training data and outputs stay on the runner; only the
 # small metrics files are uploaded as artifacts.
@@ -23,6 +23,18 @@ on:
         description: input size (multiple of 8)
         required: true
         default: "640"
+      tile_size:
+        description: synth conversion tile size in px (0 = whole sheets)
+        required: true
+        default: "0"
+      stride:
+        description: tile stride in px (used when tile_size > 0)
+        required: true
+        default: "512"
+      window_px_per_m:
+        description: zoom for the window eval pass in px/m (0 = same as --px-per-m)
+        required: true
+        default: "0"
       epochs:
         description: training epochs
         required: true
@@ -43,6 +55,14 @@ on:
         description: run name
         required: true
         default: scratch-synth
+      eval_clinic:
+        description: eval the trained checkpoint on Clinic sheets (downloads the BSI Clinic IFC, CC BY 4.0)
+        required: true
+        default: "false"
+      eval_only_ckpt:
+        description: run dir with an existing ckpt.pt; skips dataset prep and training, evals it (implies eval_clinic)
+        required: false
+        default: ""
 
 concurrency:
   group: detector-train
@@ -50,7 +70,7 @@ concurrency:
 
 jobs:
   train:
-    runs-on: [self-hosted, manamind-train]
+    runs-on: [self-hosted, gpu-train]
     timeout-minutes: 720
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +79,7 @@ jobs:
         run: rocm-smi || true
 
       - name: Prepare synth dataset
+        if: github.event.inputs.eval_only_ckpt == ''
         run: |
           DATA="${{ github.event.inputs.data }}"
           if [ ! -f "$DATA/data.yaml" ]; then
@@ -69,14 +90,54 @@ jobs:
               --out "$RAW"
             python3 -m detector.convert_synth \
               --in "$RAW/sheets" --out "$DATA" \
-              --seed "${{ github.event.inputs.seed }}" --include-empty
+              --seed "${{ github.event.inputs.seed }}" --include-empty \
+              --tile-size "${{ github.event.inputs.tile_size }}" \
+              --stride "${{ github.event.inputs.stride }}"
           else
             echo "using existing YOLO dataset at $DATA"
           fi
 
-      - name: Train
+      - name: Ensure ROCm venv
         run: |
-          python3 detector/train_scratch.py \
+          VENV="$HOME/workspace/venvs/det-rocm"
+          # runner-system python3 has a broken torch (imports, no torch.nn; seen
+          # in run 38309458858), so training always runs from this venv. The
+          # rocm7.2 wheels are the pins from detector/requirements-detector-rocm.txt
+          # (verified on RX 6600 XT / ROCm 7.2.3). pip caches, so a recreate is
+          # a one-time download.
+          python3 -c "import torch; print('system torch:', torch.__file__)" || true
+          if [ ! -x "$VENV/bin/python" ]; then
+            python3 -m venv "$VENV"
+            "$VENV/bin/pip" install \
+              --index-url https://download.pytorch.org/whl/rocm7.2 \
+              torch==2.14.0+rocm7.2 torchvision==0.29.0+rocm7.2
+            "$VENV/bin/pip" install 'ultralytics>=8.4.155,<8.5' numpy pillow
+          fi
+          "$VENV/bin/python" -c "import torch; print('venv torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
+
+      - name: Loss device smoke
+        if: github.event.inputs.eval_only_ckpt == ''
+        run: |
+          # Fast-fail guard: a CPU/CUDA mix in ScratchLoss killed run
+          # 38311804719 eight seconds into Train, after venv setup. This
+          # catches that class of bug in about three seconds.
+          "$HOME/workspace/venvs/det-rocm/bin/python" - <<'PY'
+          import torch
+
+          from detector.train_scratch import ScratchLoss
+
+          preds = torch.randn(2, 7, 8, 8, device="cuda")
+          targets = [torch.tensor([[0.0, 0.5, 0.5, 0.2, 0.2]]), torch.zeros((0, 5))]
+          loss, parts = ScratchLoss(num_classes=2)(preds, targets)
+          assert torch.isfinite(loss), loss
+          assert all(isinstance(v, float) for v in parts.values()), parts
+          print("loss device smoke ok:", parts)
+          PY
+
+      - name: Train
+        if: github.event.inputs.eval_only_ckpt == ''
+        run: |
+          "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
             --imgsz "${{ github.event.inputs.imgsz }}" \
             --epochs "${{ github.event.inputs.epochs }}" \
@@ -87,8 +148,64 @@ jobs:
             --device cuda \
             --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
 
+      - name: Resolve run dir
+        id: outdir
+        run: |
+          if [ -n "${{ github.event.inputs.eval_only_ckpt }}" ]; then
+            echo "out_dir=${{ github.event.inputs.eval_only_ckpt }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "out_dir=$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Eval on Clinic sheets
+        if: github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != ''
+        run: |
+          OUT="${{ steps.outdir.outputs.out_dir }}"
+          VPY="$HOME/workspace/venvs/det-rocm/bin/python"
+          # the eval needs torch (the provider) plus IFC and geometry readers;
+          # install into the training venv once, idempotently
+          "$VPY" -c "import scripts.eval_clinic_detector" 2>/dev/null || \
+            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely lxml pyyaml scipy
+          # The BSI Clinic IFC is a Git LFS object in the community sample
+          # repo (CC BY 4.0): the raw file is only a pointer, so resolve the
+          # real blob through the LFS batch API. Eval only, never committed
+          # to matchline (DATASETS.md).
+          P="IFC%202.3.0.1%20(IFC%202x3)/Medical-Dental%20Clinic/Clinic_Architectural.ifc"
+          PTR="$RUNNER_TEMP/clinic_ptr"
+          curl -s "https://raw.githubusercontent.com/buildingsmart-community/Community-Sample-Test-Files/HEAD/$P" > "$PTR"
+          OID=$(sed -n 's/^oid sha256://p' "$PTR")
+          SZ=$(sed -n 's/^size //p' "$PTR")
+          curl -s -X POST \
+            "https://github.com/buildingsmart-community/Community-Sample-Test-Files.git/info/lfs/objects/batch" \
+            -H "Accept: application/vnd.git-lfs+json" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Content-Type: application/vnd.git-lfs+json" \
+            -d "{\"operation\":\"download\",\"objects\":[{\"oid\":\"$OID\",\"size\":$SZ}]}" \
+            > "$RUNNER_TEMP/clinic_batch"
+          URL=$("$VPY" -c "import json;print(json.load(open('$RUNNER_TEMP/clinic_batch'))['objects'][0]['actions']['download']['href'])")
+          IFC="$RUNNER_TEMP/Clinic_Architectural.ifc"
+          curl -sL "$URL" -o "$IFC"
+          WINPPM="${{ github.event.inputs.window_px_per_m }}"
+          WARGS=""
+          if [ "$WINPPM" != "0" ]; then WARGS="--window-px-per-m $WINPPM"; fi
+          "$VPY" scripts/eval_clinic_detector.py "$IFC" \
+            --weights "$OUT/ckpt.pt" \
+            --json "$OUT/clinic_eval.json" \
+            --png-dir "$OUT/clinic_eval_png" $WARGS
+          cat "$OUT/clinic_eval.json"
+
+      - name: Upload Clinic eval
+        if: always() && (github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
+          path: |
+            ${{ steps.outdir.outputs.out_dir }}/clinic_eval.json
+            ${{ steps.outdir.outputs.out_dir }}/clinic_eval_png/
+          if-no-files-found: error
+
       - name: Upload metrics
-        if: always()
+        if: always() && github.event.inputs.eval_only_ckpt == ''
         uses: actions/upload-artifact@v4
         with:
           name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}

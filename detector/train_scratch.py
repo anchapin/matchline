@@ -171,7 +171,10 @@ def ciou_loss(pred, target):
     cw = (ex1 - ex0).clamp(min=1e-9)
     ch = (ey1 - ey0).clamp(min=1e-9)
     rho = ((px - tx) ** 2 + (py - ty) ** 2) / (cw * cw + ch * ch)
-    v = (4 / math.pi**2) * (tw / th).atan().sub((pw / ph).atan()).pow(2).clamp(max=4 / math.pi**2)
+    v = (
+        (4 / math.pi**2)
+        * (tw / th.clamp(min=1e-9)).atan().sub((pw / ph.clamp(min=1e-9)).atan()).pow(2)
+    ).clamp(max=4 / math.pi**2)
     with torch.no_grad():
         alpha = v / (1 - iou + v + 1e-9)
     return (1.0 - iou + rho + alpha * v).mean()
@@ -205,6 +208,11 @@ class ScratchLoss(nn.Module):
         for b, t in enumerate(targets):
             if t.numel() == 0:
                 continue
+            # targets arrive on CPU from the dataloader; move once so every
+            # derived index shares preds' device (mixed-device indexing raised
+            # "indices should be either on cpu or on the same device" in run
+            # 38311804719 on CUDA)
+            t = t.to(device)
             cls, cx, cy, w, h = t.unbind(-1)
             gi = (cy * G).long().clamp(0, G - 1)
             gj = (cx * G).long().clamp(0, G - 1)
@@ -217,14 +225,20 @@ class ScratchLoss(nn.Module):
                     first[k] = False
                 else:
                     seen[key] = True
+            # slice the box values too: leaving cx/cy/w/h at full length made
+            # box_t[b, gi, gj] = ... a [n,4]-into-[k,4] scatter that crashed
+            # whenever two GT centers shared a cell
             gi, gj, cls = gi[first], gj[first], cls[first]
+            cx, cy, w, h = cx[first], cy[first], w[first], h[first]
             obj_t[b, gi, gj] = 1.0
             cls_t[b, gi, gj, cls.long()] = 1.0
-            # box targets are cell-relative: tx/ty in [0, 1) within the cell,
-            # plus raw w/h. Easier to learn than absolute image coords.
-            tx = cx * G - gj
-            ty = cy * G - gi
-            box_t[b, gi, gj] = torch.stack([tx, ty, w, h], -1)
+            # box targets stay image-normalized ((cx, cy, w, h) straight from
+            # the labels) so every CIoU term shares one coordinate frame; the
+            # prediction side re-derives cell-relative centers below. The old
+            # mixed frame (cell-relative centers vs image-normalized sizes)
+            # made IoU ~0 for almost any prediction, pinning box loss at ~1.0
+            # and mean F1 at 0.0 through training run 38317139729.
+            box_t[b, gi, gj] = torch.stack([cx, cy, w, h], -1)
             pos_mask[b, gi, gj] = True
 
         pos_idx = pos_mask.nonzero(as_tuple=False)
@@ -246,7 +260,20 @@ class ScratchLoss(nn.Module):
         if len(pos_idx):
             bi, gi, gj = pos_idx.unbind(-1)
             cls_loss = F.binary_cross_entropy_with_logits(cls_raw[bi, gi, gj], cls_t[bi, gi, gj])
-            box_loss = ciou_loss(box_raw[bi, gi, gj].sigmoid(), box_t[bi, gi, gj])
+            # (tx, ty) sigmoid to cell-relative offsets; (w, h) stay linear
+            # image-normalized fractions. Boxes span 1.2-5.3 cells in the
+            # synthetic sheets, so a sigmoid on w/h can never represent them.
+            bp = box_raw[bi, gi, gj]
+            pred_xywh = torch.stack(
+                [
+                    (gj.float() + bp[:, 0].sigmoid()) / G,
+                    (gi.float() + bp[:, 1].sigmoid()) / G,
+                    bp[:, 2].clamp(0.0, 1.0),
+                    bp[:, 3].clamp(0.0, 1.0),
+                ],
+                -1,
+            )
+            box_loss = ciou_loss(pred_xywh, box_t[bi, gi, gj])
         else:
             cls_loss = torch.zeros((), device=device)
             box_loss = torch.zeros((), device=device)
@@ -290,7 +317,7 @@ def decode(preds, num_classes=2, conf=0.25):
     C = num_classes
     cls_prob = preds[:, :C].sigmoid().permute(0, 2, 3, 1)  # (B, G, G, C)
     obj_prob = preds[:, C].sigmoid()  # (B, G, G)
-    box = preds[:, C + 1 :].sigmoid().permute(0, 2, 3, 1)  # (B, G, G, 4)
+    box = preds[:, C + 1 :].permute(0, 2, 3, 1)  # (B, G, G, 4) raw
     score = cls_prob * obj_prob.unsqueeze(-1)
     out = []
     for b in range(B):
@@ -299,11 +326,13 @@ def decode(preds, num_classes=2, conf=0.25):
         for c in range(C):
             yi, xj = keep[..., c].nonzero(as_tuple=True)
             for i, j in zip(yi.tolist(), xj.tolist()):
-                # cells: i indexes y, j indexes x; box is (tx, ty, w, h)
-                tx, ty, w, h = box[b, i, j].tolist()
-                cx = (j + tx) / G
-                cy = (i + ty) / G
-                rows.append((c, float(score[b, i, j, c]), cx, cy, w, h))
+                # cells: i indexes y, j indexes x; (tx, ty) are cell-relative
+                # sigmoid offsets, (w, h) linear image-normalized fractions
+                txy = box[b, i, j, :2].sigmoid().tolist()
+                wh = box[b, i, j, 2:].clamp(0.0, 1.0).tolist()
+                cx = (j + txy[0]) / G
+                cy = (i + txy[1]) / G
+                rows.append((c, float(score[b, i, j, c]), cx, cy, wh[0], wh[1]))
         out.append(nms(rows))
     return out
 
@@ -441,6 +470,43 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
+def init_box_head_bias(model, labels_dir, num_classes=2):
+    """Set box-channel head biases from dataset label stats.
+
+    tx/ty targets are uniform in [0, 1), so bias 0 puts their sigmoid at
+    0.5; w/h are linear image-normalized fractions around 0.03-0.13, so
+    their biases start at the label means. The box channels' conv weights
+    are zeroed too: with random weights the trunk contribution (std ~0.3
+    for width-16 heads) swamps the bias and the head starts tens of pixels
+    wide again, which is what pinned box loss at ~1.0 and mean F1 at 0.0
+    through training run 38317139729. Reads train labels once.
+
+    Returns (mean_w, mean_h, n_boxes), or None when no labels exist.
+    """
+    root = Path(labels_dir)
+    ws, hs = [], []
+    for f in sorted(root.glob("*.txt")):
+        for line in f.read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 5:
+                ws.append(float(parts[3]))
+                hs.append(float(parts[4]))
+    if not ws:
+        return None
+    mean_w = sum(ws) / len(ws)
+    mean_h = sum(hs) / len(hs)
+
+    head = model.head[-1]
+    with torch.no_grad():
+        head.weight[num_classes + 1 : num_classes + 5].zero_()
+        bias = head.bias
+        bias[num_classes + 1] = 0.0  # tx: targets uniform in [0, 1)
+        bias[num_classes + 2] = 0.0  # ty
+        bias[num_classes + 3] = mean_w
+        bias[num_classes + 4] = mean_h
+    return mean_w, mean_h, len(ws)
+
+
 def train(args):
     device = torch.device(
         args.device
@@ -463,6 +529,14 @@ def train(args):
         device
     )
     criterion = ScratchLoss(num_classes=model.num_classes)
+    init = init_box_head_bias(
+        model, Path(args.data) / "labels" / "train", num_classes=model.num_classes
+    )
+    if init:
+        print(
+            f"box head bias init: mean w {init[0]:.4f} h {init[1]:.4f} from {init[2]} train boxes",
+            flush=True,
+        )
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
