@@ -152,3 +152,31 @@ def test_detect_tiled_remaps_to_sheet_pixels():
     for y0 in ys:
         for x0 in xs:
             assert (10 + x0, 20 + y0, 60 + x0, 70 + y0) in got, "box at its own offset"
+
+
+class SizingProvider:
+    """Records each image's size, then claims the whole sheet."""
+
+    def __init__(self):
+        self.sizes = []
+
+    def detect(self, image_path, sheet_id):
+        self.sizes.append(Image.open(image_path).size)
+        box = (0, 0, 10_000, 10_000)
+        return [
+            Detection(label="window", tag="", score=1.0, bbox=box, source="test"),
+            Detection(label="door", tag="", score=1.0, bbox=box, source="test"),
+        ]
+
+
+def test_score_storeys_window_zoom_rasters_windows_larger(loaded):
+    """--window-px-per-m rescales only the window pass; doors keep DOOR_PPM."""
+    base = SizingProvider()
+    score_storeys(loaded, base, px_per_m=50.0, tile_px=0)
+    zoom = SizingProvider()
+    score_storeys(loaded, zoom, px_per_m=50.0, tile_px=0, window_px_per_m=80.0)
+    # the provider sees, per storey: the window png first, then the door png
+    base_win, base_door = base.sizes[0], base.sizes[1]
+    zoom_win, zoom_door = zoom.sizes[0], zoom.sizes[1]
+    assert zoom_win[0] == pytest.approx(base_win[0] * 80.0 / 50.0, rel=0.01)
+    assert zoom_door == base_door, "the door pass keeps its own scale"

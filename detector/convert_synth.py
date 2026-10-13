@@ -72,11 +72,14 @@ def _tile_starts(n, tile_size, stride):
 
 
 def _assign_to_tiles(symbols, tile_size, x_starts, y_starts):
-    """Map each symbol to the FIRST tile whose window holds its centre.
+    """Map each symbol to the tile that shows it best.
 
-    Overlapping strides can put a centre inside two windows, so the first
-    (smallest origin) tile claims it; the neighbour sees the fragment without
-    a label, the standard sliding-window convention.
+    A symbol that fits fully inside some tile's view is labelled there,
+    unclipped; symbols smaller than the stride always fit in the overlap
+    band of a neighbouring tile. Only a symbol too large for any single
+    view falls back to the tile showing the most of it, labelled clipped.
+    The old centre-claim rule wrote sliver labels the model cannot learn
+    and left border fragments unlabeled in the overlap band.
     """
     tiles = {}
     for sym in symbols:
@@ -86,16 +89,29 @@ def _assign_to_tiles(symbols, tile_size, x_starts, y_starts):
         bx0, by0, bx1, by1 = sym["bbox_px"]
         bx0, bx1 = sorted((float(bx0), float(bx1)))
         by0, by1 = sorted((float(by0), float(by1)))
-        cx, cy = (bx0 + bx1) / 2.0, (by0 + by1) / 2.0
+        full_area = (bx1 - bx0) * (by1 - by0)
+        placement = None
+        fallback = None  # (visible_area, r, c, x0, y0); first max wins
         for r, y0 in enumerate(y_starts):
-            placed = False
             for c, x0 in enumerate(x_starts):
-                if x0 <= cx < x0 + tile_size and y0 <= cy < y0 + tile_size:
-                    tiles.setdefault((r, c), []).append((cls, bx0, by0, bx1, by1, x0, y0))
-                    placed = True
+                vx0, vy0 = max(bx0, x0), max(by0, y0)
+                vx1, vy1 = min(bx1, x0 + tile_size), min(by1, y0 + tile_size)
+                va = max(0.0, vx1 - vx0) * max(0.0, vy1 - vy0)
+                if va <= 0.0:
+                    continue
+                if va >= full_area:
+                    placement = (r, c, x0, y0)
                     break
-            if placed:
+                if fallback is None or va > fallback[0]:
+                    fallback = (va, r, c, x0, y0)
+            if placement is not None:
                 break
+        if placement is None:
+            if fallback is None:
+                continue  # symbol sits outside every tile view
+            placement = fallback[1:]
+        r, c, x0, y0 = placement
+        tiles.setdefault((r, c), []).append((cls, bx0, by0, bx1, by1, x0, y0))
     return tiles
 
 

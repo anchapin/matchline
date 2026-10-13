@@ -168,7 +168,13 @@ def _png(img, kind, storey, png_dir, tmp):
 
 
 def score_storeys(
-    loaded, provider, px_per_m=PX_PER_M, png_dir=None, tile_px=TILE_PX, stride=TILE_STRIDE
+    loaded,
+    provider,
+    px_per_m=PX_PER_M,
+    png_dir=None,
+    tile_px=TILE_PX,
+    stride=TILE_STRIDE,
+    window_px_per_m=0.0,
 ):
     """Per storey: window and door scores of the provider's pixel detections.
 
@@ -182,9 +188,13 @@ def score_storeys(
     out = {}
     with tempfile.TemporaryDirectory() as tmp:
         for st in PLAN_STOREYS:
-            px_per_pt = px_per_m * M_PER_PT
+            # Window pass: --window-px-per-m > 0 rasters just the window
+            # sheet at a higher zoom (small symbols render larger inside the
+            # same 640 px tile); the door pass draws at DOOR_PPM regardless.
+            win_ppm = window_px_per_m if window_px_per_m > 0 else px_per_m
+            win_px_per_pt = win_ppm * M_PER_PT
             sheet, off = sheet_for(walls[st], rooms[st], glazing=windows[st])
-            img = raster_sheet(sheet, px_per_pt)
+            img = raster_sheet(sheet, win_px_per_pt)
             if tile_px > 0:
                 wdets = [
                     _Det(d["label"], d["bbox"])
@@ -192,7 +202,7 @@ def score_storeys(
                 ]
             else:
                 wdets = provider.detect(_png(img, "windows", st, png_dir, tmp), st)
-            win = match_windows(windows[st], wdets, sheet["height_pt"], px_per_pt, off)
+            win = match_windows(windows[st], wdets, sheet["height_pt"], win_px_per_pt, off)
             dimg, to_px = door_sheet(walls[st], doors[st], px_per_m=DOOR_PPM)
             dimg_img = Image.fromarray(dimg)
             if tile_px > 0:
@@ -237,6 +247,12 @@ def main(argv=None):
     ap.add_argument("--px-per-m", type=float, default=TILE_PX_PER_M)
     ap.add_argument("--tile-px", type=int, default=TILE_PX, help="0 = old whole-sheet pass")
     ap.add_argument("--stride", type=int, default=TILE_STRIDE)
+    ap.add_argument(
+        "--window-px-per-m",
+        type=float,
+        default=0.0,
+        help="zoom for the window pass in px/m (0 = same as --px-per-m)",
+    )
     ap.add_argument("--json", type=Path, help="write the summary and per-storey scores here")
     ap.add_argument("--png-dir", type=Path, help="keep the rendered eval sheets here")
     args = ap.parse_args(argv)
@@ -244,7 +260,9 @@ def main(argv=None):
         ap.error("pass --provider CONFIG.json or --weights CKPT.pt")
     prov = provider_from_config(args.provider or {"provider": "scratch", "weights": args.weights})
     loaded = load(args.arch, with_windows=True, with_doors=True)
-    out = score_storeys(loaded, prov, args.px_per_m, args.png_dir, args.tile_px, args.stride)
+    out = score_storeys(
+        loaded, prov, args.px_per_m, args.png_dir, args.tile_px, args.stride, args.window_px_per_m
+    )
     print(json.dumps(summarize(out), indent=2))
     for st, row in out.items():
         print(st, json.dumps(row))
@@ -259,6 +277,7 @@ def main(argv=None):
                         "px_per_m": args.px_per_m,
                         "tile_px": args.tile_px,
                         "stride": args.stride,
+                        "window_px_per_m": args.window_px_per_m,
                     },
                 },
                 indent=2,
