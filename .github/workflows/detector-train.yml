@@ -57,7 +57,7 @@ on:
         default: "false"
       eval_only_ckpt:
         description: run dir with an existing ckpt.pt; skips dataset prep and training, evals it (implies eval_clinic)
-        required: true
+        required: false
         default: ""
 
 concurrency:
