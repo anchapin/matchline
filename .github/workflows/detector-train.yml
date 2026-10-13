@@ -23,6 +23,14 @@ on:
         description: input size (multiple of 8)
         required: true
         default: "640"
+      tile_size:
+        description: synth conversion tile size in px (0 = whole sheets)
+        required: true
+        default: "0"
+      stride:
+        description: tile stride in px (used when tile_size > 0)
+        required: true
+        default: "512"
       epochs:
         description: training epochs
         required: true
@@ -78,7 +86,9 @@ jobs:
               --out "$RAW"
             python3 -m detector.convert_synth \
               --in "$RAW/sheets" --out "$DATA" \
-              --seed "${{ github.event.inputs.seed }}" --include-empty
+              --seed "${{ github.event.inputs.seed }}" --include-empty \
+              --tile-size "${{ github.event.inputs.tile_size }}" \
+              --stride "${{ github.event.inputs.stride }}"
           else
             echo "using existing YOLO dataset at $DATA"
           fi
