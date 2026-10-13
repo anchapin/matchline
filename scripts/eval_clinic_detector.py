@@ -12,6 +12,12 @@ so this measures the detector on real geometry, not a real set's drafting.
 ``--provider CONFIG.json`` runs any detection_provider config instead of the
 scratch backend. The IFC is never committed; the development machine runs
 this, CI never sees the file.
+
+Known limits (the scores are honest within these): the scratch provider reads
+a whole sheet in one letterboxed pass, so a 1 m door shrinks to a few pixels
+at the model's input size, and ``raster_sheet`` draws no text. Both are
+provider/rendering design, not detector quality; point ``--provider`` at a
+tiling config to compare.
 """
 
 from __future__ import annotations
