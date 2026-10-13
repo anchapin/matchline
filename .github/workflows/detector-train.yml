@@ -151,7 +151,7 @@ jobs:
           # the eval needs torch (the provider) plus IFC and geometry readers;
           # install into the training venv once, idempotently
           "$VPY" -c "import scripts.eval_clinic_detector" 2>/dev/null || \
-            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely lxml pyyaml
+            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely lxml pyyaml scipy
           # The BSI Clinic IFC is a Git LFS object in the community sample
           # repo (CC BY 4.0): the raw file is only a pointer, so resolve the
           # real blob through the LFS batch API. Eval only, never committed
