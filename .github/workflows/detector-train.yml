@@ -134,19 +134,24 @@ jobs:
             --device cuda \
             --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
 
+      - name: Resolve run dir
+        id: outdir
+        run: |
+          if [ -n "${{ github.event.inputs.eval_only_ckpt }}" ]; then
+            echo "out_dir=${{ github.event.inputs.eval_only_ckpt }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "out_dir=$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Eval on Clinic sheets
         if: github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != ''
         run: |
-          if [ -n "${{ github.event.inputs.eval_only_ckpt }}" ]; then
-            OUT="${{ github.event.inputs.eval_only_ckpt }}"
-          else
-            OUT="$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
-          fi
+          OUT="${{ steps.outdir.outputs.out_dir }}"
           VPY="$HOME/workspace/venvs/det-rocm/bin/python"
           # the eval needs torch (the provider) plus IFC and geometry readers;
           # install into the training venv once, idempotently
-          "$VPY" -c "import ifcopenshell, shapely" 2>/dev/null || \
-            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely
+          "$VPY" -c "import scripts.eval_clinic_detector" 2>/dev/null || \
+            "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely lxml pyyaml
           # The BSI Clinic IFC is a Git LFS object in the community sample
           # repo (CC BY 4.0): the raw file is only a pointer, so resolve the
           # real blob through the LFS batch API. Eval only, never committed
@@ -178,12 +183,12 @@ jobs:
         with:
           name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
           path: |
-            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/clinic_eval.json
-            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/clinic_eval_png/
+            ${{ steps.outdir.outputs.out_dir }}/clinic_eval.json
+            ${{ steps.outdir.outputs.out_dir }}/clinic_eval_png/
           if-no-files-found: error
 
       - name: Upload metrics
-        if: always()
+        if: always() && github.event.inputs.eval_only_ckpt == 
         uses: actions/upload-artifact@v4
         with:
           name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
