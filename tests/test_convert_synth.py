@@ -140,3 +140,64 @@ def test_no_sheets_raises(tmp_path):
     src.mkdir()
     with pytest.raises(FileNotFoundError):
         convert(src, tmp_path / "ds")
+
+
+def test_tile_conversion_remaps_labels_and_split_follows_sheet(tmp_path):
+    """Tiles carry remapped normalized labels; one sheet's tiles share its split."""
+    sheets = tmp_path / "sheets"
+    sheets.mkdir()
+    syms = [
+        _sym("Window", (70, 70, 130, 130)),  # centre (100, 100): tile r0x0
+        _sym("Single Swing Door", (420, 280, 480, 320)),  # centre (450, 300): first tile at x0=300
+    ]
+    _write_sheet(sheets, "sheet_0", syms, size=(800, 600))
+    out = tmp_path / "out"
+    summary = convert(
+        tmp_path / "sheets",
+        out,
+        val_fraction=0.0,
+        seed=0,
+        include_empty=True,
+        tile_size=400,
+        stride=300,
+    )
+
+    x_starts = [0, 300, 400]  # 800 wide, tail tile covers the edge
+    y_starts = [0, 200]  # 600 tall
+    assert summary["tiles_written"] == len(x_starts) * len(y_starts)
+    assert summary["boxes_written"] == 2, "each symbol lands on exactly one tile"
+
+    # the window: whole box inside tile r0x0 (0,0,400,400)
+    rows = (out / "labels" / "train" / "sheet_0_t0x0.txt").read_text().splitlines()
+    win = [r for r in rows if r.startswith("1 ")][0]
+    _, cx, cy, w, h = win.split()
+    assert (float(cx), float(cy), float(w), float(h)) == (0.25, 0.25, 0.15, 0.15)
+
+    # the door: centre (450, 300) claimed by the first containing tile (x0=300, y0=0)
+    rows = (out / "labels" / "train" / "sheet_0_t0x1.txt").read_text().splitlines()
+    door = [r for r in rows if r.startswith("0 ")][0]
+    _, cx, cy, w, h = door.split()
+    assert (float(cx), float(cy), float(w), float(h)) == pytest.approx(
+        (((420 + 480) / 2 - 300) / 400, ((280 + 320) / 2) / 400, (480 - 420) / 400, (320 - 280) / 400)
+    )
+
+    # empty tiles are background when --include-empty, and there is no val tree
+    assert summary["tiles_kept_empty"] == len(x_starts) * len(y_starts) - 2
+    assert not (out / "images" / "val").exists() or not any((out / "images" / "val").iterdir())
+
+
+def test_tile_conversion_without_include_empty_drops_empty_tiles(tmp_path):
+    (tmp_path / "sheets").mkdir()
+    _write_sheet(tmp_path / "sheets", "sheet_0", [_sym("Window", (70, 70, 130, 130))])
+    out = tmp_path / "out"
+    summary = convert(
+        tmp_path / "sheets",
+        out,
+        val_fraction=0.0,
+        seed=0,
+        include_empty=False,
+        tile_size=400,
+        stride=300,
+    )
+    assert summary["tiles_written"] == 1, "only the tile holding the symbol survives"
+    assert summary["boxes_written"] == 1
