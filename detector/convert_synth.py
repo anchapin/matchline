@@ -6,7 +6,8 @@ Input: a synth out/ tree as produced by ``python -m synth.make_dataset``
 
 Output (default ~/workspace/datasets/detector_yolo/synth/):
   images/{train,val}/sheet_<seed>.png          (whole sheets, --tile-size 0)
-  images/{train,val}/sheet_<seed>_t<r>x<c>.png (tiles, --tile-size N)
+  images/{train,val}/sheet_<seed>[_s<pxm>]_t<r>x<c>.png (tiles, --tile-size N;
+      the _s<pxm> suffix marks multi-scale renders of the same layout)
   labels/{train,val}/sheet_<seed>[_t<r>x<c>].txt   (YOLO rows: cls cx cy w h, normalized)
   data.yaml                             (Ultralytics dataset spec)
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -143,15 +145,20 @@ def convert(
     if not sheets:
         raise FileNotFoundError(f"no sheet_*.gt.json under {in_dir}")
 
-    # Deterministic split: fixed-seed shuffle of sorted sheet stems.
+    # Deterministic split: fixed-seed shuffle of sorted sheet stems. Sheets
+    # rendered at several scales (multi-scale training, stem suffix _s<N>)
+    # are the same building, so the split groups by base stem: every scale of
+    # a seed stays on one side, no cross-scale leakage.
     stems = [p.name[: -len(".gt.json")] for p in sheets]
-    order = np.random.default_rng(seed).permutation(len(stems))
-    n_val = int(round(val_fraction * len(stems)))
-    val_stems = {stems[i] for i in order[:n_val]}
+    bases = sorted({re.sub(r"_s\d+$", "", s) for s in stems})
+    order = np.random.default_rng(seed).permutation(len(bases))
+    n_val = int(round(val_fraction * len(bases)))
+    val_bases = {bases[i] for i in order[:n_val]}
 
     for sub in ("images/train", "images/val", "labels/train", "labels/val"):
         (out_dir / sub).mkdir(parents=True, exist_ok=True)
 
+    scales_seen = set()
     summary = {
         "sheets_total": len(sheets),
         "sheets_train": 0,
@@ -171,8 +178,9 @@ def convert(
             summary["sheets_skipped_missing_png"] += 1
             continue
         gt = json.loads(js.read_text())
+        scales_seen.add(gt.get("scale_px_per_m"))
         sheet_w, sheet_h = gt["sheet_size_px"]
-        split = "val" if stem in val_stems else "train"
+        split = "val" if re.sub(r"_s\d+$", "", stem) in val_bases else "train"
         if tile_size > 0:
             from PIL import Image
 
@@ -228,6 +236,7 @@ def convert(
         f"val: images/val\n"
         f"names:\n" + "".join(f"  {i}: {n}\n" for n, i in names)
     )
+    summary["scales"] = sorted(x for x in scales_seen if x is not None)
     summary["data_yaml"] = str(yaml_path)
     return summary
 
