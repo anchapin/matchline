@@ -92,6 +92,13 @@
       "class": "permissive",
       "source": "https://www.eia.gov/consumption/commercial/data/2018/index.php?view=microdata",
       "use": "weighted site-EUI percentiles for the simulation smoke test band (sim/cbecs_band.py); the CSV is downloaded, never committed"
+    },
+    {
+      "id": "gni_18",
+      "name": "TUM GNI BIM Dataset model_18 (IFC2X3, single-discipline student submission)",
+      "license": "CC BY 4.0",
+      "class": "permissive",
+      "source": "zenodo.org/records/19722012 (DOI 10.5281/zenodo.19722012); held out, never committed"
     }
   ],
   "artifacts": [
