@@ -55,7 +55,7 @@ def test_missing_building_is_reported_not_skipped(tmp_path: Path) -> None:
     assert row.status == "missing"
     assert "DATASETS.md" in row.detail
     md = render_scoreboard([row], openstudio=False)
-    assert "| ghost | missing |" in md
+    assert "| ghost |  | missing |" in md
     assert "OpenStudio column skipped" in md
 
 
@@ -74,12 +74,13 @@ def test_scoreboard_renders_a_scored_row() -> None:
         terminals_correct=29,
         cross_frontend="ok",
         openstudio="pass",
+        schema="IFC4",
     )
     md = render_scoreboard([row], openstudio=True)
     assert "42 / 41" in md
     assert "3.1%" in md
     assert "29/30" in md
-    assert "| ok-building | ok |" in md
+    assert "| ok-building | IFC4 | ok |" in md
     assert "OpenStudio column skipped" not in md
 
 
@@ -103,5 +104,22 @@ def test_scoreboard_leaves_doors_empty_without_a_count() -> None:
     row = Row(name="no-doors")
     md = render_scoreboard([row], openstudio=False)
     # two adjacent empty cells: no doors, no window area error
-    assert "| no-doors | ok |" in md
+    assert "| no-doors |  | ok |" in md
     assert "17" not in md
+
+
+def test_raw_entity_counts_reads_the_file_not_the_model(tmp_path: Path) -> None:
+    """Truth windows/doors come from the entity table, independent of import."""
+    import ifcopenshell
+
+    path = tmp_path / "raw.ifc"
+    f = ifcopenshell.file(schema_identifier="IFC4")
+    for i in range(3):
+        f.create_entity("IfcWindow", GlobalId=f"w{i}", OverallHeight=1.0, OverallWidth=1.0)
+    for i in range(2):
+        f.create_entity("IfcDoor", GlobalId=f"d{i}", OverallHeight=2.0, OverallWidth=0.9)
+    f.write(str(path))
+
+    from scripts.benchmark import _raw_entity_counts
+
+    assert _raw_entity_counts(path) == {"windows": 3, "doors": 2}

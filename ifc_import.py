@@ -3062,6 +3062,13 @@ def _upgrade_ifc2x3_to_ifc4(f):
     (entity, error) pairs the migrator could not map (IFC4 dropped a small
     number of IFC2X3 entities). The caller keeps the skip count visible on
     the model instead of losing those elements silently.
+
+    The migrator prints one line per IFC4-only attribute it cannot fill
+    (PredefinedType, LongName, ...) -- tens of thousands on a real building.
+    Those attributes are optional and default to $; the printed noise
+    carries no signal, so both streams are suppressed around the migrate
+    loop (the vendored migrator print()s to stdout). Entities the migrator
+    *raises* on still land in ``skipped``.
     """
     import ifcopenshell
     from ifcopenshell.util.schema import Migrator
@@ -3069,11 +3076,16 @@ def _upgrade_ifc2x3_to_ifc4(f):
     migrator = Migrator()
     new_file = ifcopenshell.file(schema_identifier="IFC4")
     skipped = []
-    for element in f:
-        try:
-            migrator.migrate(element, new_file)
-        except Exception as exc:  # noqa: BLE001 - keep going, collect for review
-            skipped.append((element, exc))
+    import contextlib
+    import io
+
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        for element in f:
+            try:
+                migrator.migrate(element, new_file)
+            except Exception as exc:  # noqa: BLE001 - keep going, collect for review
+                skipped.append((element, exc))
     return new_file, skipped
 
 
