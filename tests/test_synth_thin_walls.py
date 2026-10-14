@@ -15,7 +15,7 @@ from synth.sheets import (
     wall_thickness_by_line,
 )
 
-_THIN = (0.04, 0.09, 0.12, 0.15)
+_THIN = (0.09, 0.12, 0.15)
 
 
 def _map_for(seed):
@@ -33,8 +33,8 @@ def test_exterior_lines_keep_full_thickness():
                 assert t[e["key"]] == WALL_T_M
 
 
-def test_interior_lines_draw_thin_mostly():
-    thin_seen = set()
+def test_interior_lines_draw_thin():
+    thin_seen, thick_seen = set(), 0
     for seed in range(40):
         edges = _classify_edges(_layout_footprint(np.random.default_rng(seed))[1])
         t = _map_for(seed)
@@ -44,7 +44,10 @@ def test_interior_lines_draw_thin_mostly():
                 assert v == WALL_T_M or v in _THIN
                 if v != WALL_T_M:
                     thin_seen.add(v)
+                else:
+                    thick_seen += 1
     assert thin_seen, "no thin interior walls across 40 sheets"
+    assert thick_seen, "no full-thickness interior walls across 40 sheets"
 
 
 def test_every_line_has_one_thickness():

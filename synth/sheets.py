@@ -172,15 +172,15 @@ def _classify_edges(rooms):
 # the synth window glyph's glass-line spacing. Drawing most interior walls thin
 # gives the detector hard negatives: a continuous pair with no glass triplet,
 # no gap and no end caps is a wall, not a window.
-_THIN_WALL_T_M = (0.04, 0.09, 0.12, 0.15)
-_THIN_WALL_WEIGHTS = (0.2, 0.3, 0.25, 0.25)
+_THIN_WALL_T_M = (0.09, 0.12, 0.15)
+_THIN_WALL_WEIGHTS = (0.4, 0.3, 0.3)
 
 
 def wall_thickness_by_line(edges, rng):
     """Thickness in metres per wall line.
 
-    Exterior lines keep ``WALL_T_M``; interior lines draw thin (40-150 mm) with
-    probability 0.9, staying at ``WALL_T_M`` otherwise. Both rooms sharing a
+    Exterior lines keep ``WALL_T_M``; interior lines draw thin (90-150 mm) with
+    probability 0.5, staying at ``WALL_T_M`` otherwise. Both rooms sharing a
     wall line get the same thickness, so the render stays consistent.
     """
     kinds = {}
@@ -190,7 +190,7 @@ def wall_thickness_by_line(edges, rng):
             kinds[e["key"]] = e["kind"]
     out = {}
     for key, kind in kinds.items():
-        if kind == "exterior" or rng.random() < 0.10:
+        if kind == "exterior" or rng.random() < 0.50:
             out[key] = WALL_T_M
         else:
             out[key] = float(rng.choice(_THIN_WALL_T_M, p=_THIN_WALL_WEIGHTS))
