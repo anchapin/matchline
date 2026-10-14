@@ -50,6 +50,15 @@ def test_noncommercial_and_agpl_weights_are_evaluation_only(ledger):
         assert ds[nc] == "noncommercial"
 
 
+def test_tiled_synthetic_checkpoints_are_permissive_too(ledger):
+    # the tile-trained runs (scratch-tile640*) train on the same synthetic
+    # sheets, listed run by run so a future run on other data cannot inherit
+    # the class by name (#743)
+    det = [a for a in ledger["artifacts"] if "scratch-tile" in a["path"]]
+    assert len(det) == 4
+    assert all(C.artifact_class(ledger, a) == "permissive" for a in det)
+
+
 def _wheel(tmp_path, members):
     p = tmp_path / "matchline-0.0.0-py3-none-any.whl"
     with zipfile.ZipFile(p, "w") as z:

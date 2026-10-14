@@ -23,6 +23,7 @@ An artifact takes the most restrictive class among its datasets.
 | `review_classifier/trained_model_*.npz` (3) | synthetic + review corpus | permissive | yes |
 | YOLO11n door/window weights (`~/workspace/datasets/detector_runs/yolo11n_{baseline,eca}_s*/`) | CubiCasa5K + YOLO11n COCO weights | copyleft (and noncommercial) | no |
 | from-scratch detector checkpoints (`~/workspace/datasets/detector_runs/scratch-synth-*/ckpt.pt`) | matchline synthetic generators | permissive | no (produced by the `detector-train.yml` workflow) |
+| tiled from-scratch checkpoints (`~/workspace/datasets/detector_runs/scratch-tile640v{3,4,5,6ms}-<run id>/ckpt.pt`) | matchline synthetic generators (tiled) | permissive | no (produced by the `detector-train.yml` workflow; listed run by run) |
 
 The YOLO11n detector weights are evaluation-only twice over: CubiCasa5K is
 non-commercial, and the YOLO11n starting weights are AGPL-3.0. The from-scratch
