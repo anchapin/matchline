@@ -167,6 +167,37 @@ def _classify_edges(rooms):
 
 
 # ---------------------------------------------------------------------------
+# Wall thickness mix (#743): real plans vary partition thickness, and hairline
+# renders turn thin partitions into tight parallel line pairs that sit right at
+# the synth window glyph's glass-line spacing. Drawing most interior walls thin
+# gives the detector hard negatives: a continuous pair with no glass triplet,
+# no gap and no end caps is a wall, not a window.
+_THIN_WALL_T_M = (0.04, 0.09, 0.12, 0.15)
+_THIN_WALL_WEIGHTS = (0.2, 0.3, 0.25, 0.25)
+
+
+def wall_thickness_by_line(edges, rng):
+    """Thickness in metres per wall line.
+
+    Exterior lines keep ``WALL_T_M``; interior lines draw thin (40-150 mm) with
+    probability 0.9, staying at ``WALL_T_M`` otherwise. Both rooms sharing a
+    wall line get the same thickness, so the render stays consistent.
+    """
+    kinds = {}
+    for e in edges:
+        cur = kinds.get(e["key"])
+        if cur is None or e["kind"] == "exterior":
+            kinds[e["key"]] = e["kind"]
+    out = {}
+    for key, kind in kinds.items():
+        if kind == "exterior" or rng.random() < 0.10:
+            out[key] = WALL_T_M
+        else:
+            out[key] = float(rng.choice(_THIN_WALL_T_M, p=_THIN_WALL_WEIGHTS))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Opening placement (doors/windows) with conflict tracking on wall lines
 # ---------------------------------------------------------------------------
 
@@ -265,9 +296,9 @@ def generate_sheet(seed: int):
     wall_lw = int(rng.integers(1, 3))  # hairline wall stroke: 1 or 2 px
     glyph_lw = 1 if hairline else 4  # symbol strokes follow the wall regime
     S = PX_PER_M
-    wt_px = int(round(WALL_T_M * S))
     rects, rooms = _layout_footprint(rng)
     edges = _classify_edges(rooms)
+    t_m_by_line = wall_thickness_by_line(edges, rng)
     placer = OpeningPlacer()
 
     # ---- plan pixel frame -------------------------------------------------
@@ -291,11 +322,13 @@ def generate_sheet(seed: int):
     # ---- walls --------------------------------------------------------------
     for r in rooms:
         for (ax, ay), (bx, by) in _rect_edges(r):
+            key = ("h", round(ay, 6)) if abs(ay - by) < 1e-9 else ("v", round(ax, 6))
+            wt = max(2, int(round(t_m_by_line[key] * S)))
             x0, y0, x1, y1 = X(ax), Y(ay), X(bx), Y(by)
             if abs(y0 - y1) < 1e-9:  # horizontal
-                box = [min(x0, x1), y0 - wt_px / 2, max(x0, x1), y0 + wt_px / 2]
+                box = [min(x0, x1), y0 - wt / 2, max(x0, x1), y0 + wt / 2]
             else:  # vertical
-                box = [x0 - wt_px / 2, min(y0, y1), x0 + wt_px / 2, max(y0, y1)]
+                box = [x0 - wt / 2, min(y0, y1), x0 + wt / 2, max(y0, y1)]
             if hairline:
                 d.rectangle(box, outline=0, width=wall_lw)
             else:
