@@ -224,6 +224,16 @@ is not on disk shows as `missing`.
   by the Clinic gate, same terms)
 - AEC-Bench 15-sheet release, <http://aec-bench.github.io/> (CC BY-NC,
   evaluation only; see the AEC-Bench section above)
+- Esplanades architectural IFC, real multi-storey building (Estonian project),
+  <https://github.com/buildingsmart-community/Community-Sample-Test-Files> (CC
+  BY 4.0, repo-level license; no per-file README). Verified 2026-10-14: 12.1 MB
+  IFC2X3, 7 storeys, 285 IfcSpaces, 846 walls, 211 doors, 297 windows. No HVAC
+  IFC or drawing set; quantity sets sit on non-space elements.
+- Duplex Apartment architectural IFC, same repo (CC BY 4.0). Verified
+  2026-10-14: 2.4 MB IFC2X3, 4 storeys, 21 spaces each with area
+  BaseQuantities, 57 walls, 14 doors, 24 windows; a separate rooms-and-spaces
+  model (37 spaces) and MEP/plumbing/electrical files sit alongside. No HVAC
+  IFC or drawing set.
 
 **Setup:**
 
@@ -233,6 +243,9 @@ mkdir -p ~/workspace/datasets/matchline-bench/
 #   arch.ifc        ground-truth architectural IFC with IfcSpaces
 #   hvac.ifc        optional HVAC IFC (terminals)
 #   drawings.pdf    optional drawing set for the cross-frontend check
+# Esplanades and the Duplex Apartment come from the buildingSMART community
+# sample repo (git LFS): clone it with git lfs installed and copy the .ifc
+# files, or fetch the blobs through the LFS batch API.
 ```
 
 **Config format** (passed to `--config`; relative paths resolve against the
@@ -253,4 +266,4 @@ config file):
 }
 ```
 
-Run: `python scripts/benchmark.py --config benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`
+Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in starter config lists the three adopted buildings (bsi-clinic, esplanades, duplex); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`.

@@ -65,6 +65,20 @@
       "source": "buildingSMART sample files; held out, never committed"
     },
     {
+      "id": "bsi_esplanades",
+      "name": "buildingSMART Esplanades architectural IFC (IFC2X3)",
+      "license": "CC BY 4.0",
+      "class": "permissive",
+      "source": "buildingSMART community sample files; held out, never committed"
+    },
+    {
+      "id": "bsi_duplex",
+      "name": "buildingSMART Duplex Apartment architectural IFC (IFC2X3)",
+      "license": "CC BY 4.0",
+      "class": "permissive",
+      "source": "buildingSMART community sample files; held out, never committed"
+    },
+    {
       "id": "ultralytics_yolo11n",
       "name": "Ultralytics YOLO11n COCO-pretrained weights (yolo11n.pt)",
       "license": "AGPL-3.0 (or an Ultralytics enterprise license)",

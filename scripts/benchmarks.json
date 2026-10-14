@@ -1,0 +1,28 @@
+{
+  "buildings": [
+    {
+      "name": "bsi-clinic",
+      "source_url": "https://github.com/buildingsmart-community/Community-Sample-Test-Files",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/bsi-clinic/arch.ifc",
+      "hvac_ifc": "~/workspace/datasets/matchline-bench/bsi-clinic/hvac.ifc",
+      "drawing_set": null
+    },
+    {
+      "name": "esplanades",
+      "source_url": "https://github.com/buildingsmart-community/Community-Sample-Test-Files",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/esplanades/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "duplex",
+      "source_url": "https://github.com/buildingsmart-community/Community-Sample-Test-Files",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/duplex/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    }
+  ]
+}
