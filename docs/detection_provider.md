@@ -64,7 +64,7 @@ release=True)` refuses an evaluation-only provider outright.
 Two trained door/window backends work through this interface today. The
 CubiCasa5K YOLO11n runs the ledger classes as noncommercial (and copyleft through
 the YOLO11n starting weights): evaluation, never a release. The from-scratch
-synthetic checkpoints (`scratch-synth-*`) are permissive and may ship, at a
+synthetic checkpoints (`scratch-synth-*`, `scratch-tile*`) are permissive and may ship, at a
 detector quality that still lags the CubiCasa baseline (mean F1 0.58 at 30 epochs
 on the synthetic val split, still climbing).
 

@@ -193,8 +193,8 @@ class ScratchProvider(DetectionProvider):
     detector config. One grayscale pass over the full sheet, no tiling; torch
     is imported only inside :meth:`detect`, so the rest of matchline never
     needs it. Training data is matchline's synthetic generators
-    (BSD-3-Clause), so a ledger-listed ``scratch-synth`` checkpoint is
-    permissive and may ship (#743).
+    (BSD-3-Clause), so a ledger-listed ``scratch-synth`` or ``scratch-tile``
+    checkpoint is permissive and may ship (#743).
     """
 
     name = "scratch"

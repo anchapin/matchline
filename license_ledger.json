@@ -158,6 +158,42 @@
       ],
       "committed": false,
       "produced_by": "gh workflow detector-train.yml (from-scratch training on matchline synthetic sheets only)"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/scratch-tile640v3-38442234997/ckpt.pt",
+      "kind": "weights",
+      "datasets": [
+        "matchline_synthetic"
+      ],
+      "committed": false,
+      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/scratch-tile640v4-38503747552/ckpt.pt",
+      "kind": "weights",
+      "datasets": [
+        "matchline_synthetic"
+      ],
+      "committed": false,
+      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/scratch-tile640v5-38515813872/ckpt.pt",
+      "kind": "weights",
+      "datasets": [
+        "matchline_synthetic"
+      ],
+      "committed": false,
+      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+    },
+    {
+      "path": "~/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt",
+      "kind": "weights",
+      "datasets": [
+        "matchline_synthetic"
+      ],
+      "committed": false,
+      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
     }
   ]
 }
