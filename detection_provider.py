@@ -12,6 +12,9 @@ which backend ran. Which provider runs is a config value, not code:
     {"provider": "vector_glazing"}
     {"provider": "combined", "providers": [{"provider": "door_swing"},
                                            {"provider": "vector_glazing"}]}
+    {"provider": "combined", "providers": [
+        {"provider": "scratch", "weights": "window.pt", "labels": ["window"]},
+        {"provider": "scratch", "weights": "door.pt", "labels": ["door"]}]}
     {"provider": "none"}
 
 ``door_swing`` finds door swings (leaf plus quarter arc) by rule
@@ -495,6 +498,42 @@ def _glass_pieces(op: dict) -> List[tuple]:
     return [(at(lo), at(hi)) for lo, hi in pieces]
 
 
+class LabeledProvider(DetectionProvider):
+    """A provider kept to the labels its config declares (``labels``).
+
+    The specialist freeze runs one trained checkpoint per class: windows from
+    the multi-scale checkpoint, doors from the single-scale one (#743). Two
+    full detectors joined would fire each one's other class into the other's
+    candidate pool, so a part may declare the labels it is kept to and every
+    detection outside them is dropped. The wrapper delegates the run and
+    keeps the inner provider's artifact, license class and eval-only flag:
+    filtering labels trains nothing and ships nothing new.
+    """
+
+    name = "labeled"
+
+    def __init__(self, inner: DetectionProvider, labels: List[str]):
+        self.inner = inner
+        self.labels = list(labels)
+        self.artifact = inner.artifact
+        self.info = inner.info
+        self.needs_scale = getattr(inner, "needs_scale", False)
+        self.needs_walls = getattr(inner, "needs_walls", False)
+        self.runs_without_scale = getattr(inner, "runs_without_scale", False)
+
+    def has(self, image_path) -> bool:
+        return not hasattr(self.inner, "has") or self.inner.has(image_path)
+
+    def detect(self, image_path, sheet_id, plan: Optional[dict] = None, px_per_m=None):
+        kw: dict = {}
+        if self.needs_walls:
+            kw["plan"] = plan
+        if self.needs_scale:
+            kw["px_per_m"] = px_per_m
+        rows = self.inner.detect(image_path, sheet_id, **kw)
+        return [d for d in rows if d.label in self.labels]
+
+
 class CombinedProvider(DetectionProvider):
     """Several providers on one set, their detections joined per sheet.
 
@@ -573,6 +612,15 @@ def provider_from_config(
     elif not isinstance(cfg, dict):
         cfg = json.loads(Path(cfg).read_text())
     cfg = dict(cfg)
+    labels = cfg.pop("labels", None)
+    if labels is not None and (
+        not isinstance(labels, list)
+        or not labels
+        or not all(isinstance(lb, str) and lb for lb in labels)
+    ):
+        raise ProviderConfigError(
+            "detector provider 'labels' must be a non-empty list of label names"
+        )
     name = cfg.pop("provider", None)
     if name == "combined":
         return _combined_from_config(cfg, release)
@@ -588,6 +636,8 @@ def provider_from_config(
         prov = PROVIDERS[name](**cfg)
     except TypeError as e:
         raise ProviderConfigError(f"detector provider {name!r}: {e}") from e
+    if labels is not None:
+        prov = LabeledProvider(prov, labels)
     if release and prov.info.eval_only:
         raise ProviderLicenseError(f"{prov.info.note()}; not allowed in a release")
     return prov
@@ -619,6 +669,7 @@ __all__ = [
     "CombinedProvider",
     "DetectionProvider",
     "DoorSwingProvider",
+    "LabeledProvider",
     "VectorGlazingProvider",
     "NoneProvider",
     "PrecomputedProvider",
