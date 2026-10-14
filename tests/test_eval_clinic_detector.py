@@ -133,6 +133,44 @@ def test_nms_dedupe_folds_overlap_keeps_best_score():
     assert any(d["label"] == "door" for d in keep), "labels never suppress each other"
 
 
+def test_detect_tiled_nms_iou_parameter():
+    """The tiled pass folds overlapping detections at --nms-iou (sweep: 0.3)."""
+    from datasets_adapter import Detection
+    from scripts.eval_clinic_detector import detect_tiled, tile_starts
+
+    class PairProvider:
+        def detect(self, image_path, sheet_id):
+            return [
+                Detection(label="window", tag="", score=0.9, bbox=(0, 0, 100, 100), source="t"),
+                Detection(label="window", tag="", score=0.6, bbox=(25, 25, 125, 125), source="t"),
+            ]
+
+    img = Image.new("L", (1300, 700), 255)
+    xs, ys = tile_starts(1300, 640, 512), tile_starts(700, 640, 512)
+    dets = detect_tiled(PairProvider(), img, "First Floor", tile_px=640, stride=512)
+    assert len(dets) == len(xs) * len(ys), "IoU 0.39 folds at the 0.3 default"
+    wide = detect_tiled(PairProvider(), img, "First Floor", tile_px=640, stride=512, nms_iou=0.5)
+    assert len(wide) == 2 * len(xs) * len(ys), "IoU 0.5 keeps both"
+    best = {(d["bbox"], d["score"]) for d in wide if d["bbox"] == (0, 0, 100, 100)}
+    assert best == {((0, 0, 100, 100), 0.9)}, "folding keeps the best-scoring box"
+
+
+def test_score_storeys_threads_nms_iou(loaded, monkeypatch):
+    from scripts import eval_clinic_detector as ecd
+
+    seen = []
+
+    def spy(provider, img, sheet_id, tile_px, stride, nms_iou):
+        seen.append((sheet_id, nms_iou))
+        return []
+
+    monkeypatch.setattr(ecd, "detect_tiled", spy)
+    ecd.score_storeys(loaded, FakeProvider())
+    ecd.score_storeys(loaded, FakeProvider(), nms_iou=0.5)
+    assert all(n == 0.3 for _, n in seen[:4]), "default 0.3 reaches both passes"
+    assert all(n == 0.5 for _, n in seen[4:]), "the override reaches both passes"
+
+
 def test_detect_tiled_remaps_to_sheet_pixels():
     from datasets_adapter import Detection
     from scripts.eval_clinic_detector import detect_tiled, tile_starts

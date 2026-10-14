@@ -127,7 +127,7 @@ def _iou(a, b):
     return inter / area if area > 0 else 0.0
 
 
-def detect_tiled(provider, img, sheet_id, tile_px=TILE_PX, stride=TILE_STRIDE):
+def detect_tiled(provider, img, sheet_id, tile_px=TILE_PX, stride=TILE_STRIDE, nms_iou=0.3):
     """Run the provider over sliding tiles; detections back in sheet pixels."""
 
     w, h = img.size
@@ -138,7 +138,7 @@ def detect_tiled(provider, img, sheet_id, tile_px=TILE_PX, stride=TILE_STRIDE):
             th = min(tile_px, h - y0)
             tile = img.crop((x0, y0, x0 + tw, y0 + th))
             out.extend(_detect_tile(provider, tile, sheet_id, x0, y0))
-    return nms_dedupe(out)
+    return nms_dedupe(out, iou=nms_iou)
 
 
 def _detect_tile(provider, tile, sheet_id, x0, y0):
@@ -176,12 +176,16 @@ def score_storeys(
     stride=TILE_STRIDE,
     window_px_per_m=0.0,
     raw_out=None,
+    nms_iou=0.3,
 ):
     """Per storey: window and door scores of the provider's pixel detections.
 
     ``loaded`` is ``load(arch_path, with_windows=True, with_doors=True)``. With
     ``raw_out``, the raw detections (label, score, bbox) land there per storey
     so a conf sweep can rescore a dump offline without re-running the provider.
+    ``nms_iou`` is the tiled-detection overlap threshold: the 2026-10-13 dump
+    sweep showed recall 1.0 at every IoU while halving the false positives,
+    so the tiled pass folds at 0.3 by default.
     The
     provider sees the window sheet (walls with glass lines) and the door sheet
     (walls with swings) once each per storey.
@@ -200,7 +204,7 @@ def score_storeys(
             sheet, off = sheet_for(walls[st], rooms[st], glazing=windows[st])
             img = raster_sheet(sheet, win_px_per_pt)
             if tile_px > 0:
-                raw_w = detect_tiled(provider, img, st, tile_px, stride)
+                raw_w = detect_tiled(provider, img, st, tile_px, stride, nms_iou=nms_iou)
                 wdets = [_Det(d["label"], d["bbox"]) for d in raw_w]
             else:
                 wdets = provider.detect(_png(img, "windows", st, png_dir, tmp), st)
@@ -209,7 +213,7 @@ def score_storeys(
             dimg, to_px = door_sheet(walls[st], doors[st], px_per_m=DOOR_PPM)
             dimg_img = Image.fromarray(dimg)
             if tile_px > 0:
-                raw_d = detect_tiled(provider, dimg_img, st, tile_px, stride)
+                raw_d = detect_tiled(provider, dimg_img, st, tile_px, stride, nms_iou=nms_iou)
                 ddets = [_Det(d["label"], d["bbox"]) for d in raw_d]
             else:
                 ddets = provider.detect(_png(dimg_img, "doors", st, png_dir, tmp), st)
@@ -264,6 +268,12 @@ def main(argv=None):
         type=Path,
         help="write raw detections (label, score, bbox) per storey here",
     )
+    ap.add_argument(
+        "--nms-iou",
+        type=float,
+        default=0.3,
+        help="tiled-detection NMS IoU (0.5 restores the pre-sweep behavior)",
+    )
     args = ap.parse_args(argv)
     if not args.provider and not args.weights:
         ap.error("pass --provider CONFIG.json or --weights CKPT.pt")
@@ -279,6 +289,7 @@ def main(argv=None):
         args.stride,
         args.window_px_per_m,
         raw_out=raw_out,
+        nms_iou=args.nms_iou,
     )
     print(json.dumps(summarize(out), indent=2))
     for st, row in out.items():
@@ -295,6 +306,7 @@ def main(argv=None):
                         "tile_px": args.tile_px,
                         "stride": args.stride,
                         "window_px_per_m": args.window_px_per_m,
+                        "nms_iou": args.nms_iou,
                     },
                 },
                 indent=2,
