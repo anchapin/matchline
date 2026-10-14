@@ -188,7 +188,7 @@ extracted from the 2025 BIMfundamentals set; the full archives stay under
 
 **Environment variable:** None (paths passed via the benchmark `--config`)
 
-**What it is:** 224 anonymized IFC 4 building models (Technical University of Munich,
+**What it is:** 224 anonymized building models in a mix of IFC 2x3 and IFC 4 (Technical University of Munich,
 GNI research group), including commercial multi-storey office and school buildings
 with IfcSpaces, walls, windows and material layers.
 
@@ -200,6 +200,18 @@ with IfcSpaces, walls, windows and material layers.
   profiles)
 
 **Reference:** <https://zenodo.org/records/19722012> (CC BY 4.0)
+
+**Benchmark adoption (#929 acceptance):** `gni-18` (`model_18.ifc`, IFC2X3, 1.7 MB,
+from `2025_BIMfundamentals.zip`) is a benchmark row in `scripts/benchmarks.json`
+and licensed in `license_ledger.json` as `gni_18`. Scored on the #748 harness:
+15/15 rooms, 63/63 windows, 17/17 doors, 0.0% area error, via the in-memory
+IFC2X3 upgrade. To stage it:
+
+```bash
+curl -L -o /tmp/gni.zip "https://zenodo.org/api/records/19722012/files/2025_BIMfundamentals.zip/content"
+unzip -j /tmp/gni.zip "2025_BIMfundamentals/model_18.ifc" -d ~/workspace/datasets/matchline-bench/gni-18/
+mv ~/workspace/datasets/matchline-bench/gni-18/model_18.ifc ~/workspace/datasets/matchline-bench/gni-18/arch.ifc
+```
 
 ---
 

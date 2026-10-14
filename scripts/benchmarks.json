@@ -23,6 +23,14 @@
       "arch_ifc": "~/workspace/datasets/matchline-bench/duplex/arch.ifc",
       "hvac_ifc": null,
       "drawing_set": null
+    },
+    {
+      "name": "gni-18",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-18/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
     }
   ]
 }
