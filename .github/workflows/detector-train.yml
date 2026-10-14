@@ -71,6 +71,10 @@ on:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
         default: "0.25"
+      provider_cfg:
+        description: optional provider config (path inside the checkout) used instead of the hardcoded single-checkpoint scratch provider
+        required: false
+        default: ""
 
 concurrency:
   group: detector-train
@@ -173,7 +177,10 @@ jobs:
           VPY="$HOME/workspace/venvs/det-rocm/bin/python"
           # the eval needs torch (the provider) plus IFC and geometry readers;
           # install into the training venv once, idempotently
-          "$VPY" -c "import scripts.eval_clinic_detector" 2>/dev/null || \
+          # guard on the full import chain: hvac_trace needs scipy, which
+          # eval_clinic_detector alone does not import, so a fresh runner venv
+          # used to pass the guard and then die at the HVAC check (run 38331496223)
+          "$VPY" -c "import scripts.eval_clinic_detector, hvac_trace, scipy, ifcopenshell, shapely, lxml, yaml" 2>/dev/null || \
             "$HOME/workspace/venvs/det-rocm/bin/pip" install ifcopenshell shapely lxml pyyaml scipy
           # The BSI Clinic IFC is a Git LFS object in the community sample
           # repo (CC BY 4.0): the raw file is only a pointer, so resolve the
@@ -197,12 +204,21 @@ jobs:
           WINPPM="${{ github.event.inputs.window_px_per_m }}"
           WARGS=""
           if [ "$WINPPM" != "0" ]; then WARGS="--window-px-per-m $WINPPM"; fi
-          # conf comes through a provider config; --weights stays for local use
-          CONF="${{ github.event.inputs.conf }}"
-          printf '{"provider":"scratch","weights":"%s","conf":%s}' "$OUT/ckpt.pt" "${CONF:-0.25}" \
-            > "$RUNNER_TEMP/provider_cfg.json"
+          # conf comes through a provider config; --weights stays for local use.
+          # provider_cfg (a path inside the checkout, e.g.
+          # configs/detector_specialists.json) replaces the hardcoded
+          # single-checkpoint scratch provider; weights then come from the
+          # config itself, so $OUT is only where outputs land.
+          if [ -n "${{ github.event.inputs.provider_cfg }}" ]; then
+            CFG="${{ github.event.inputs.provider_cfg }}"
+          else
+            CONF="${{ github.event.inputs.conf }}"
+            printf '{"provider":"scratch","weights":"%s","conf":%s}' "$OUT/ckpt.pt" "${CONF:-0.25}" \
+              > "$RUNNER_TEMP/provider_cfg.json"
+            CFG="$RUNNER_TEMP/provider_cfg.json"
+          fi
           "$VPY" scripts/eval_clinic_detector.py "$IFC" \
-            --provider "$RUNNER_TEMP/provider_cfg.json" \
+            --provider "$CFG" \
             --json "$OUT/clinic_eval.json" \
             --dump "$OUT/detections.json" \
             --png-dir "$OUT/clinic_eval_png" $WARGS
