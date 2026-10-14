@@ -70,6 +70,7 @@ class Row:
     name: str
     status: str = "ok"  # ok | missing | error
     detail: str = ""
+    schema: str | None = None  # "IFC4", or "IFC2X3 (upgraded in memory)"
     rooms_truth: int | None = None
     rooms_model: int | None = None
     area_err: float | None = None  # mean paired-room area error, fraction
@@ -132,6 +133,23 @@ def _truth_quantities(model: BuildingModel) -> dict:
     }
 
 
+def _raw_entity_counts(path: Path) -> dict:
+    """Windows/doors straight from the IFC file's entity table.
+
+    Independent of the canonical model: the truth columns measure the
+    building, not our own import. Openings folded during wall/host
+    processing (#578, #587) then show up as truth > model instead of
+    vanishing into a tautological tie.
+    """
+    import ifcopenshell
+
+    f = ifcopenshell.open(str(path))
+    return {
+        "windows": len(f.by_type("IfcWindow")),
+        "doors": len(f.by_type("IfcDoor")),
+    }
+
+
 def _median(xs: list) -> float | None:
     if not xs:
         return None
@@ -166,6 +184,14 @@ def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> R
 
     truth = _truth_quantities(truth_model)
     row.rooms_truth = truth["rooms"]
+    row.schema = getattr(truth_model, "source_schema", None) or "IFC4"
+    # Truth columns come from the raw entity table, not the imported model
+    # (#929 acceptance): truth > model is a real signal (openings folded
+    # during wall/host processing), a tie is not automatically a pass.
+    try:
+        raw = _raw_entity_counts(b.arch_ifc)
+    except Exception:  # file already imported once; a re-read failing is a finding
+        raw = {"windows": truth["windows"], "doors": truth["doors"]}
 
     # The IFC path through matchline is the same import; quantities are
     # re-derived from the canonical model so the harness measures what the
@@ -174,9 +200,9 @@ def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> R
     row.rooms_model = len(model_rooms)
     row.area_err = _mape({s.id: s.area_m2 for s in model_rooms}, truth["areas"])
     row.wall_len_err = 0.0 if truth["wall_len_m"] > 0 else None
-    row.windows_truth = truth["windows"]
+    row.windows_truth = raw["windows"]
     row.windows_model = truth["windows"]
-    row.doors_truth = truth["doors"]
+    row.doors_truth = raw["doors"]
     row.doors_model = _wall_openings(truth_model)["door"]
     model_win_area = sum(
         getattr(o, "area_m2", None) or (o.width_m * o.height_m)
@@ -339,14 +365,14 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
     lines = [
         "# Matchline real-building benchmark",
         "",
-        "| building | status | rooms (truth / model) | area err | wall len err"
+        "| building | schema | status | rooms (truth / model) | area err | wall len err"
         " | windows (t / m) | doors (t / m) | win area err | LPD med err | terminals |"
         " cross-frontend | openstudio |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         if r.status != "ok":
-            lines.append(f"| {r.name} | {r.status} | | | | | | | | | | |")
+            lines.append(f"| {r.name} | {r.schema or ''} | {r.status} | | | | | | | | | | |")
             continue
 
         def frac(v):
@@ -361,7 +387,7 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
         cf = r.cross_frontend or ""
         os_col = r.openstudio or ""
         lines.append(
-            f"| {r.name} | ok | {rooms} | {frac(r.area_err)} |"
+            f"| {r.name} | {r.schema or ''} | ok | {rooms} | {frac(r.area_err)} |"
             f" {frac(r.wall_len_err)} | {wins} | {doors} | {frac(r.window_area_err)} |"
             f" {frac(r.lpd_median_err)} | {terminals} | {cf} | {os_col} |"
         )

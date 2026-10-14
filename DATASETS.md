@@ -235,6 +235,14 @@ is not on disk shows as `missing`.
   model (37 spaces) and MEP/plumbing/electrical files sit alongside. No HVAC
   IFC or drawing set.
 
+**IFC2X3 datasets (#929):** Esplanades and Duplex import via the in-memory
+IFC2X3 -> IFC4 schema upgrade (`model.source_schema` says "IFC2X3"; the
+scoreboard's schema column shows it). On the scoreboard, windows and doors
+truth counts come from the raw IFC entity table (`by_type`), not the imported
+model, so a model count below truth means openings were folded during
+wall/host processing. Esplanades' import is dominated by the upgrade (~450 s
+for 189k entities).
+
 **Setup:**
 
 ```bash
