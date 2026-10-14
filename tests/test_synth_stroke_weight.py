@@ -27,10 +27,20 @@ def _probe_runs(img, y_line, x0, x1, step=7, half=20):
     return float(np.median(runs))
 
 
-def _top_wall_median(img, gt):
-    poly = gt["rooms"][0]["polygon_px"]
-    y_line = int(poly[0][1])
-    xs = [p[0] for p in poly]
+def _edge_wall_median(img, gt, top: bool):
+    """Median dark run through the footprint's top/bottom wall.
+
+    Interior walls draw thin since #743 (their strokes may merge), so the
+    stroke-regime probes key on exterior edges, which keep full thickness.
+    """
+    rooms = gt["rooms"]
+    if top:
+        i = int(np.argmin([min(p[1] for p in r["polygon_px"]) for r in rooms]))
+        y_line = int(rooms[i]["polygon_px"][0][1])
+    else:
+        i = int(np.argmax([max(p[1] for p in r["polygon_px"]) for r in rooms]))
+        y_line = int(rooms[i]["polygon_px"][2][1])
+    xs = [p[0] for p in rooms[i]["polygon_px"]]
     return _probe_runs(img, y_line, int(min(xs)) + 5, int(max(xs)) - 5)
 
 
@@ -39,7 +49,7 @@ def test_sheet_styles_span_filled_and_hairline():
     for seed in range(20):
         img, gt = generate_sheet(seed)
         assert gt["symbols"], "every sheet carries symbols"
-        medians.append(_top_wall_median(img, gt))
+        medians.append(_edge_wall_median(img, gt, top=True))
     assert any(m > 15 for m in medians), "no filled-wall sheets drawn"
     assert any(m <= 5 for m in medians), "no hairline sheets drawn"
 
@@ -47,11 +57,12 @@ def test_sheet_styles_span_filled_and_hairline():
 def test_hairline_sheet_walls_are_thin():
     for seed in range(20):
         img, gt = generate_sheet(seed)
-        if _top_wall_median(img, gt) <= 5:
-            # hairline confirmed: probe a second room's wall too
-            poly = gt["rooms"][-1]["polygon_px"]
-            xs = [p[0] for p in poly]
-            m = _probe_runs(img, int(poly[0][1]), int(min(xs)) + 5, int(max(xs)) - 5)
+        if _edge_wall_median(img, gt, top=True) <= 5:
+            # hairline confirmed: probe the footprint's bottom edge too. It is
+            # exterior, so it keeps full wall thickness and measures the pure
+            # stroke width; interior walls now draw thin (#743) and their
+            # strokes may merge into short solid runs by design.
+            m = _edge_wall_median(img, gt, top=False)
             assert m <= 5, f"wall stroke too thick on hairline sheet {seed}: {m}"
             return
     raise AssertionError("no hairline sheet among seeds 0..19")
