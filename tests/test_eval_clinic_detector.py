@@ -180,3 +180,23 @@ def test_score_storeys_window_zoom_rasters_windows_larger(loaded):
     zoom_win, zoom_door = zoom.sizes[0], zoom.sizes[1]
     assert zoom_win[0] == pytest.approx(base_win[0] * 80.0 / 50.0, rel=0.01)
     assert zoom_door == base_door, "the door pass keeps its own scale"
+
+
+def test_score_storeys_collects_raw_detections(loaded):
+    raw = {}
+    score_storeys(loaded, FakeProvider(), raw_out=raw)
+    ff = raw["First Floor"]
+    assert sorted(d["label"] for d in ff["windows"]) == ["door", "window"], (
+        "the dump keeps every detection with its label"
+    )
+    assert all(d["score"] == 1.0 for d in ff["windows"])
+    assert all(len(d["bbox"]) == 4 for d in ff["windows"])
+    # the door sheet reports too, and keys exist even when nothing is found
+    assert set(raw["Second Floor"]) == {"windows", "doors"}
+
+
+def test_score_storeys_raw_out_leaves_scores_untouched(loaded):
+    raw = {}
+    out = score_storeys(loaded, FakeProvider(), raw_out=raw)
+    assert out["First Floor"]["windows"]["recall"] == 1.0
+    assert out["First Floor"]["doors"]["recall"] == 1.0

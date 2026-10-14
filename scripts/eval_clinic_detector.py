@@ -175,10 +175,14 @@ def score_storeys(
     tile_px=TILE_PX,
     stride=TILE_STRIDE,
     window_px_per_m=0.0,
+    raw_out=None,
 ):
     """Per storey: window and door scores of the provider's pixel detections.
 
-    ``loaded`` is ``load(arch_path, with_windows=True, with_doors=True)``. The
+    ``loaded`` is ``load(arch_path, with_windows=True, with_doors=True)``. With
+    ``raw_out``, the raw detections (label, score, bbox) land there per storey
+    so a conf sweep can rescore a dump offline without re-running the provider.
+    The
     provider sees the window sheet (walls with glass lines) and the door sheet
     (walls with swings) once each per storey.
     """
@@ -196,22 +200,22 @@ def score_storeys(
             sheet, off = sheet_for(walls[st], rooms[st], glazing=windows[st])
             img = raster_sheet(sheet, win_px_per_pt)
             if tile_px > 0:
-                wdets = [
-                    _Det(d["label"], d["bbox"])
-                    for d in detect_tiled(provider, img, st, tile_px, stride)
-                ]
+                raw_w = detect_tiled(provider, img, st, tile_px, stride)
+                wdets = [_Det(d["label"], d["bbox"]) for d in raw_w]
             else:
                 wdets = provider.detect(_png(img, "windows", st, png_dir, tmp), st)
+                raw_w = [{"label": d.label, "score": d.score, "bbox": list(d.bbox)} for d in wdets]
             win = match_windows(windows[st], wdets, sheet["height_pt"], win_px_per_pt, off)
             dimg, to_px = door_sheet(walls[st], doors[st], px_per_m=DOOR_PPM)
             dimg_img = Image.fromarray(dimg)
             if tile_px > 0:
-                ddets = [
-                    _Det(d["label"], d["bbox"])
-                    for d in detect_tiled(provider, dimg_img, st, tile_px, stride)
-                ]
+                raw_d = detect_tiled(provider, dimg_img, st, tile_px, stride)
+                ddets = [_Det(d["label"], d["bbox"]) for d in raw_d]
             else:
                 ddets = provider.detect(_png(dimg_img, "doors", st, png_dir, tmp), st)
+                raw_d = [{"label": d.label, "score": d.score, "bbox": list(d.bbox)} for d in ddets]
+            if raw_out is not None:
+                raw_out[st] = {"windows": raw_w, "doors": raw_d}
             out[st] = {
                 "windows": win,
                 "doors": match_doors(
@@ -255,13 +259,26 @@ def main(argv=None):
     )
     ap.add_argument("--json", type=Path, help="write the summary and per-storey scores here")
     ap.add_argument("--png-dir", type=Path, help="keep the rendered eval sheets here")
+    ap.add_argument(
+        "--dump",
+        type=Path,
+        help="write raw detections (label, score, bbox) per storey here",
+    )
     args = ap.parse_args(argv)
     if not args.provider and not args.weights:
         ap.error("pass --provider CONFIG.json or --weights CKPT.pt")
     prov = provider_from_config(args.provider or {"provider": "scratch", "weights": args.weights})
     loaded = load(args.arch, with_windows=True, with_doors=True)
+    raw_out = {} if args.dump else None
     out = score_storeys(
-        loaded, prov, args.px_per_m, args.png_dir, args.tile_px, args.stride, args.window_px_per_m
+        loaded,
+        prov,
+        args.px_per_m,
+        args.png_dir,
+        args.tile_px,
+        args.stride,
+        args.window_px_per_m,
+        raw_out=raw_out,
     )
     print(json.dumps(summarize(out), indent=2))
     for st, row in out.items():
@@ -279,6 +296,23 @@ def main(argv=None):
                         "stride": args.stride,
                         "window_px_per_m": args.window_px_per_m,
                     },
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+    if args.dump:
+        args.dump.parent.mkdir(parents=True, exist_ok=True)
+        args.dump.write_text(
+            json.dumps(
+                {
+                    "config": {
+                        "px_per_m": args.px_per_m,
+                        "tile_px": args.tile_px,
+                        "stride": args.stride,
+                        "window_px_per_m": args.window_px_per_m,
+                    },
+                    "storeys": raw_out,
                 },
                 indent=2,
             )

@@ -63,6 +63,10 @@ on:
         description: run dir with an existing ckpt.pt; skips dataset prep and training, evals it (implies eval_clinic)
         required: false
         default: ""
+      conf:
+        description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
+        required: true
+        default: "0.25"
 
 concurrency:
   group: detector-train
@@ -188,9 +192,14 @@ jobs:
           WINPPM="${{ github.event.inputs.window_px_per_m }}"
           WARGS=""
           if [ "$WINPPM" != "0" ]; then WARGS="--window-px-per-m $WINPPM"; fi
+          # conf comes through a provider config; --weights stays for local use
+          CONF="${{ github.event.inputs.conf }}"
+          printf '{"provider":"scratch","weights":"%s","conf":%s}' "$OUT/ckpt.pt" "${CONF:-0.25}" \
+            > "$RUNNER_TEMP/provider_cfg.json"
           "$VPY" scripts/eval_clinic_detector.py "$IFC" \
-            --weights "$OUT/ckpt.pt" \
+            --provider "$RUNNER_TEMP/provider_cfg.json" \
             --json "$OUT/clinic_eval.json" \
+            --dump "$OUT/detections.json" \
             --png-dir "$OUT/clinic_eval_png" $WARGS
           cat "$OUT/clinic_eval.json"
 
@@ -201,6 +210,7 @@ jobs:
           name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
           path: |
             ${{ steps.outdir.outputs.out_dir }}/clinic_eval.json
+            ${{ steps.outdir.outputs.out_dir }}/detections.json
             ${{ steps.outdir.outputs.out_dir }}/clinic_eval_png/
           if-no-files-found: error
 
