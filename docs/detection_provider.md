@@ -112,6 +112,8 @@ pool.
   {"provider": "scratch", "weights": "door_ckpt.pt", "labels": ["door"]}]}
 ```
 
+`configs/detector_specialists.json` is that config checked in with the real checkpoints: the multi-scale window run and the single-scale door run, both ledger-permissive (#959). `matchline run --set ... --detector-config configs/detector_specialists.json` runs it, and a release accepts it.
+
 `labels` works on any provider, alone or as a combined part. A labeled part
 keeps the inner provider's artifact, license class and eval-only flag:
 filtering labels trains nothing, so a release refuses the combined config when

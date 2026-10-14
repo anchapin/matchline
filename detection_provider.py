@@ -208,7 +208,8 @@ class ScratchProvider(DetectionProvider):
         **kw,
     ):
         super().__init__(artifact or str(weights), **kw)
-        self.weights = str(weights)
+        # the checked-in configs write home-relative paths, so expand ~ here
+        self.weights = os.path.expanduser(str(weights))
         self.conf = conf
         self.device = device
         self._net = None

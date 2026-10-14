@@ -358,6 +358,18 @@ def test_labels_filter_works_on_a_lone_provider_too(tmp_path):
     assert [x.label for x in out] == ["window"]
 
 
+def test_the_checked_in_specialist_config_is_shippable():
+    path = Path(dp.__file__).parent / "configs" / "detector_specialists.json"
+    cfg = json.loads(path.read_text())
+    prov = dp.provider_from_config(cfg, release=True)
+    assert isinstance(prov, dp.CombinedProvider)
+    assert [p.labels for p in prov.parts] == [["window"], ["door"]]
+    assert all(p.info.license_class == "permissive" and not p.info.eval_only for p in prov.parts)
+    assert prov.info.license_class == "permissive"
+    # home-relative weights are expanded so the config runs as written
+    assert all(not p.inner.weights.startswith("~") for p in prov.parts)
+
+
 def test_labels_config_is_checked():
     for bad in ([], "door", [""], [1], {"door": 1}):
         with pytest.raises(dp.ProviderConfigError, match="non-empty list"):
