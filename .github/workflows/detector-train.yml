@@ -31,6 +31,10 @@ on:
         description: tile stride in px (used when tile_size > 0)
         required: true
         default: "512"
+      px_per_m_list:
+        description: comma list of sheet scales in px/m (e.g. 40,50,65) for multi-scale training tiles
+        required: true
+        default: "50"
       window_px_per_m:
         description: zoom for the window eval pass in px/m (0 = same as --px-per-m)
         required: true
@@ -91,6 +95,7 @@ jobs:
             echo "no YOLO dataset at $DATA, generating synthetic data first"
             python3 -m synth.make_dataset \
               --sheets 200 --crops-per-class 200 --seed "${{ github.event.inputs.seed }}" \
+              --px-per-m-list "${{ github.event.inputs.px_per_m_list }}" \
               --out "$RAW"
             python3 -m detector.convert_synth \
               --in "$RAW/sheets" --out "$DATA" \

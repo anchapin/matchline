@@ -286,8 +286,14 @@ def _draw_window_glyph(d, c_px, w_px, wt_px, lw, orient):
             d.line([cx - wt_px / 2, yy, cx + wt_px / 2, yy], fill=0, width=lw)
 
 
-def generate_sheet(seed: int):
-    """Render one synthetic sheet. Returns (image uint8 (H,W), gt dict)."""
+def generate_sheet(seed: int, px_per_m: float = PX_PER_M):
+    """Render one synthetic sheet. Returns (image uint8 (H,W), gt dict).
+
+    ``px_per_m`` overrides the sheet scale (default 50 px/m). Multi-scale
+    training renders the same seed at several scales; when it differs from
+    ``PX_PER_M`` the sheet id gains a ``_s<int>`` suffix so every scale of a
+    seed is a distinct file (#743).
+    """
     rng = np.random.default_rng(seed)
     # stroke-weight regime: filled (thick poché walls) or hairline (thin
     # outline walls with 1-2 px strokes, matching a 1:100 vector sheet like
@@ -295,7 +301,7 @@ def generate_sheet(seed: int):
     hairline = bool(rng.random() < 0.5)
     wall_lw = int(rng.integers(1, 3))  # hairline wall stroke: 1 or 2 px
     glyph_lw = 1 if hairline else 4  # symbol strokes follow the wall regime
-    S = PX_PER_M
+    S = float(px_per_m)
     rects, rooms = _layout_footprint(rng)
     edges = _classify_edges(rooms)
     t_m_by_line = wall_thickness_by_line(edges, rng)
@@ -520,7 +526,7 @@ def generate_sheet(seed: int):
         exp["counts"][s["tag"]] = exp["counts"].get(s["tag"], 0) + 1
 
     gt = {
-        "sheet_id": f"sheet_{seed:03d}",
+        "sheet_id": f"sheet_{seed:03d}" + (f"_s{int(S)}" if S != PX_PER_M else ""),
         "seed": seed,
         "scale_px_per_m": S,
         "sheet_size_px": [sheet_w, sheet_h],
@@ -534,11 +540,11 @@ def generate_sheet(seed: int):
     return np.asarray(img), gt
 
 
-def save_sheet(seed: int, outdir: str | Path):
+def save_sheet(seed: int, outdir: str | Path, px_per_m: float = PX_PER_M):
     """Render one sheet: PNG + GT JSON. Returns (png_path, json_path)."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    img, gt = generate_sheet(seed)
+    img, gt = generate_sheet(seed, px_per_m=px_per_m)
     png = outdir / f"{gt['sheet_id']}.png"
     js = outdir / f"{gt['sheet_id']}.gt.json"
     Image.fromarray(img.astype(np.uint8)).save(png)
