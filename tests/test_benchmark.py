@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.benchmark import (  # noqa: E402
     Building,
     Row,
+    _hvac_columns,
     _mape,
     _median,
     evaluate_building,
@@ -123,3 +124,25 @@ def test_raw_entity_counts_reads_the_file_not_the_model(tmp_path: Path) -> None:
     from scripts.benchmark import _raw_entity_counts
 
     assert _raw_entity_counts(path) == {"windows": 3, "doors": 2}
+
+
+def test_hvac_columns_read_evaluate_shape(tmp_path, monkeypatch) -> None:
+    """The HVAC columns come from evaluate()'s per-storey summarize shape.
+
+    #964: the harness treated evaluate()'s return as the CLI report dict
+    (KeyError: terminals_scored) and this code path had never run against a
+    real hvac_ifc because the clinic row was missing locally.
+    """
+    hvac = tmp_path / "hvac.ifc"
+    hvac.write_text("x")
+    monkeypatch.setattr(
+        "scripts.validate_clinic_hvac.load",
+        lambda p: ({"L1": []}, [1, 2, 3, 4, 5]),
+    )
+    monkeypatch.setattr(
+        "scripts.validate_clinic_hvac.evaluate",
+        lambda rooms, terminals: {"L1": {"correct": 3}, "L2": {"correct": 1}},
+    )
+    scored, correct = _hvac_columns(hvac)
+    assert scored == 5
+    assert correct == 4

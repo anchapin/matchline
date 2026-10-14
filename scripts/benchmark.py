@@ -150,6 +150,22 @@ def _raw_entity_counts(path: Path) -> dict:
     }
 
 
+def _hvac_columns(hvac_ifc: Path) -> tuple[int, int]:
+    """(terminals_scored, terminals_correct) from the HVAC-terminal check.
+
+    ``validate_clinic_hvac.evaluate`` returns the per-storey ``summarize()``
+    shape (terminals/correct/wrong/review keyed by storey), not the CLI's
+    flat report; the scored count is the terminal list length and the
+    correct count sums across storeys. (#964 regression: the harness had
+    only ever run with no hvac_ifc on disk, so the mismatch was never hit.)
+    """
+    from scripts.validate_clinic_hvac import evaluate, load
+
+    rooms, terminals = load(str(hvac_ifc))
+    per_storey = evaluate(rooms, terminals)
+    return len(terminals), sum(v["correct"] for v in per_storey.values())
+
+
 def _median(xs: list) -> float | None:
     if not xs:
         return None
@@ -223,12 +239,7 @@ def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> R
     )
 
     if b.hvac_ifc is not None and b.hvac_ifc.exists():
-        from scripts.validate_clinic_hvac import evaluate, load
-
-        rooms, terminals = load(str(b.hvac_ifc))
-        res = evaluate(rooms, terminals)
-        row.terminals_scored = res["terminals_scored"]
-        row.terminals_correct = res.get("correct", res.get("terminals_correct"))
+        row.terminals_scored, row.terminals_correct = _hvac_columns(b.hvac_ifc)
     elif b.hvac_ifc is not None:
         row.extras["hvac"] = "missing"
 
