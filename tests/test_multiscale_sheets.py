@@ -65,9 +65,7 @@ def test_convert_split_groups_all_scales_of_a_seed(tmp_path):
     for base in ("sheet_000", "sheet_001", "sheet_002", "sheet_003"):
         for scale in (40, 50, 65):
             _write_sheet(sheets, f"{base}_s{scale}", scale=float(scale))
-    summary = convert(
-        sheets, tmp_path / "out", val_fraction=0.5, seed=0, include_empty=True
-    )
+    summary = convert(sheets, tmp_path / "out", val_fraction=0.5, seed=0, include_empty=True)
     assert summary["sheets_total"] == 12
     assert summary["scales"] == [40.0, 50.0, 65.0]
     seen: dict = {}
