@@ -29,6 +29,13 @@ def test_ledger_classes_cubicasa_weights_as_eval_only():
     assert dp.license_class(YOLO_RUN) == "noncommercial"
     assert dp.license_class("review_classifier/trained_model_route_to_review.npz") == "permissive"
     assert dp.license_class("somewhere/new.pt") == "unknown"
+    # the tiled runs are listed run by run in the ledger (#743)
+    assert (
+        dp.license_class(
+            "/home/alex/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt"
+        )
+        == "permissive"
+    )
 
 
 def test_provider_is_chosen_by_config(tmp_path):
