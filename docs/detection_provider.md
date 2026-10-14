@@ -98,6 +98,25 @@ reader hands each part only what it asks for. It is evaluation only when any
 part is, so a release refuses a combined config with an eval-only part. A
 combined config cannot hold `none` or another `combined`.
 
+## The specialist freeze: one checkpoint per class
+
+A part may declare `labels`, the class names it is kept to: every detection
+outside them is dropped. That is the specialist freeze (#743): the multi-scale
+window checkpoint and the single-scale door checkpoint run side by side,
+without either detector's other class firing into the other side's candidate
+pool.
+
+```json
+{"provider": "combined", "providers": [
+  {"provider": "scratch", "weights": "window_ckpt.pt", "labels": ["window"]},
+  {"provider": "scratch", "weights": "door_ckpt.pt", "labels": ["door"]}]}
+```
+
+`labels` works on any provider, alone or as a combined part. A labeled part
+keeps the inner provider's artifact, license class and eval-only flag:
+filtering labels trains nothing, so a release refuses the combined config when
+any inner provider is evaluation only.
+
 ## Vector door swings
 
 Vector plan sheets do not need a trained detector to find doors: the swing

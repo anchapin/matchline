@@ -298,6 +298,99 @@ def test_combined_runs_a_part_that_needs_no_scale_where_the_others_find_nothing(
     assert [x.label for x in out] == ["door"]
 
 
+def test_labels_freeze_one_checkpoint_per_class(tmp_path):
+    (tmp_path / "w").mkdir()
+    (tmp_path / "d").mkdir()
+    win = _preds(
+        tmp_path / "w",
+        "sheet_001",
+        [
+            {"cls": 1, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4},
+            {"cls": 0, "conf": 0.8, "x0": 5, "y0": 6, "x1": 7, "y1": 8},
+        ],
+    )
+    door = _preds(
+        tmp_path / "d", "sheet_001", [{"cls": 0, "conf": 0.7, "x0": 9, "y0": 8, "x1": 11, "y1": 12}]
+    )  # noqa: E501
+    p = dp.provider_from_config(
+        {
+            "provider": "combined",
+            "providers": [
+                {"provider": "precomputed", "dir": str(win), "labels": ["window"]},
+                {"provider": "precomputed", "dir": str(door), "labels": ["door"]},
+            ],
+        }
+    )
+    out = p.detect(win / "sheet_001.png", "s")
+    # the window side's stray door fire stays out of the door side's pool
+    assert [d.label for d in out] == ["window", "door"]
+    # without labels, both checkpoints' full output joins: three detections
+    plain = dp.provider_from_config(
+        {
+            "provider": "combined",
+            "providers": [
+                {"provider": "precomputed", "dir": str(win)},
+                {"provider": "precomputed", "dir": str(door)},
+            ],
+        }
+    )
+    assert len(plain.detect(win / "sheet_001.png", "s")) == 3
+
+
+def test_labels_filter_works_on_a_lone_provider_too(tmp_path):
+    d = _preds(
+        tmp_path,
+        "sheet_001",
+        [
+            {"cls": 1, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4},
+            {"cls": 0, "conf": 0.8, "x0": 5, "y0": 6, "x1": 7, "y1": 8},
+        ],
+    )
+    p = dp.provider_from_config({"provider": "precomputed", "dir": str(d), "labels": ["window"]})
+    out = p.detect(d / "sheet_001.png", "s")
+    assert [x.label for x in out] == ["window"]
+
+
+def test_labels_config_is_checked():
+    for bad in ([], "door", [""], [1], {"door": 1}):
+        with pytest.raises(dp.ProviderConfigError, match="non-empty list"):
+            dp.provider_from_config({"provider": "none", "labels": bad})
+
+
+def test_a_labeled_part_keeps_the_inner_provider_license_and_asks(tmp_path):
+    mixed = {
+        "provider": "combined",
+        "providers": [
+            {"provider": "door_swing", "labels": ["door"]},
+            {"provider": "yolo_sahi", "weights": YOLO_RUN, "labels": ["window"]},
+        ],
+    }
+    c = dp.provider_from_config(mixed)
+    assert c.info.eval_only and "noncommercial" in c.info.license_class
+    # the wrapper hands the combined provider the inner part's needs
+    assert c.needs_scale and c.needs_walls and c.runs_without_scale
+    with pytest.raises(dp.ProviderLicenseError, match="noncommercial"):
+        dp.provider_from_config(mixed, release=True)
+
+
+def test_a_labeled_part_hands_the_inner_provider_what_it_asks_for():
+    seen = []
+
+    class Glass(dp.VectorGlazingProvider):
+        def detect(self, image_path, sheet_id, plan=None):
+            seen.append(plan)
+            return [
+                dp.Detection(label="window", tag="", score=0.5, bbox=(0, 0, 1, 1), source=sheet_id),
+                dp.Detection(label="door", tag="", score=0.5, bbox=(2, 2, 3, 3), source=sheet_id),
+            ]
+
+    inner = dp.LabeledProvider(Glass(), ["window"])
+    assert inner.needs_walls and not inner.needs_scale
+    out = inner.detect("x.png", "s", plan={"walls": {}})
+    assert seen == [{"walls": {}}]
+    assert [d.label for d in out] == ["window"]
+
+
 def test_a_door_in_a_storefront_cuts_the_window_box_into_glass_either_side():
     walls = {
         "m_per_pt": 0.01,
