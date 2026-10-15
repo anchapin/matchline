@@ -199,3 +199,47 @@ def test_simplify_budget_ring_offset_drift_fires():
     assert result.severity == "error", result.message
     assert "drifts" in result.message
     assert not export_gate(report)
+
+
+# --- #970: per-part simplify_budget (FootprintSimplifyResult) ---
+
+
+def _multi_sres_for(model):
+    """#970: wrap the model's own ring into a per-part FootprintSimplifyResult."""
+    from geometry_simplify import FootprintSimplifyResult
+
+    spaces = list(model.spaces.values())
+    h = model.levels[0].wall_height_m
+    ring = footprint_from_regions([sp.polygon_m for sp in spaces])
+    part = simplify_ring(ring, tol=0.02, wall_height=h)
+    return FootprintSimplifyResult(
+        parts=[part],
+        holes=[],
+        total_original_area=part.original_area,
+        total_simplified_area=part.simplified_area,
+        area_delta_pct=part.area_delta_pct,
+        tol=0.02,
+    )
+
+
+def test_simplify_budget_per_part_combined_budget_passes():
+    """#970: a per-part result passes with the combined-budget message."""
+    m = make_clean_model()
+    m._sres = _multi_sres_for(m)
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "pass", result.message
+    assert "per-part" in result.message
+
+
+def test_simplify_budget_per_part_ring_drift_fires():
+    """#970: a drifted wing ring in a per-part result is an error."""
+    m = make_clean_model()
+    sres = _multi_sres_for(m)
+    sres.parts[0].ring = [[x + 20.0, y] for x, y in sres.parts[0].ring]
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "drifts" in result.message
+    assert not export_gate(report)
