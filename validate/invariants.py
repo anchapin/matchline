@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from validate.types import _HAS_SIMPLIFY, CheckResult, _rel_err
 
 if TYPE_CHECKING:
@@ -24,6 +26,17 @@ except Exception:
     footprint_from_regions = None
 
 FT2_PER_M2 = 10.7639
+
+# Issue #971: bounded-offset bound for the simplified ring vs the raw
+# footprint, on top of the area budget. Catches catastrophic divergence
+# (wrong polygon attached, mirrored or mis-scaled geometry), i.e. anything
+# at building scale. Legitimate notch smoothing sits far below: a single
+# vertex removal displaces a wall by roughly 2 * tri_area / base_length,
+# with tri_area capped at 0.25% of envelope area per step. Drift under the
+# bound is reported in the pass message, not enforced, because the area
+# budget already bounds the physical error at that scale.
+SIMPLIFY_OFFSET_ABS_M = 2.0
+SIMPLIFY_OFFSET_REL = 0.10
 
 
 def _check_simplify_budget(ctx: _Ctx) -> CheckResult:
@@ -54,6 +67,7 @@ def _check_simplify_budget(ctx: _Ctx) -> CheckResult:
             expected=tol_pct,
             actual=delta,
         )
+    offset_reported = None
     if _HAS_SIMPLIFY:
         spaces_iter = (
             ctx.model.spaces.values() if hasattr(ctx.model.spaces, "values") else ctx.model.spaces
@@ -70,9 +84,9 @@ def _check_simplify_budget(ctx: _Ctx) -> CheckResult:
                     else None
                 )
                 fresh = simplify_ring(ring, tol=sres.tol if sres else 0.02, wall_height=wall_height)
-                sres_area = getattr(sres, "simplified_area", None)
+                sres_simplified_area = getattr(sres, "simplified_area", None)
                 orig_area = getattr(sres, "original_area", None)
-                if fresh.original_area and sres_area and orig_area and orig_area > 0:
+                if fresh.original_area and sres_simplified_area and orig_area and orig_area > 0:
                     if abs(fresh.original_area - orig_area) / orig_area * 100.0 > 0.1:
                         return CheckResult(
                             "simplify_budget",
@@ -84,11 +98,60 @@ def _check_simplify_budget(ctx: _Ctx) -> CheckResult:
                             expected=orig_area,
                             actual=fresh.original_area,
                         )
+                    # Issue #971: the re-run above verified only the stored
+                    # ORIGINAL area. Independently verify the simplified
+                    # result too: the area the simplifier actually produced
+                    # (budget-relative, robust to caller options the fresh
+                    # run does not repeat), then geometric closeness of the
+                    # simplified ring to the raw footprint.
+                    fresh_area = fresh.simplified_area
+                    area_err = abs(fresh_area - sres_simplified_area) / orig_area
+                    if area_err > sres.tol:
+                        return CheckResult(
+                            "simplify_budget",
+                            "Simplification within area budget",
+                            "error",
+                            f"simplified area re-verification failed: "
+                            f"fresh {fresh_area:.3f} m\u00b2 vs reported "
+                            f"{sres_simplified_area:.3f} m\u00b2 "
+                            f"({area_err:.3%} of original, budget {sres.tol:.1%})",
+                            expected=sres_simplified_area,
+                            actual=fresh_area,
+                        )
+                    simplified_ring = getattr(sres, "ring", None)
+                    if simplified_ring and len(simplified_ring) >= 3:
+                        from shapely.geometry import LineString
+
+                        raw_pts = np.asarray(ring, dtype=np.float64)
+                        raw_ls = LineString(np.vstack([raw_pts, raw_pts[:1]]))
+                        simp_pts = np.asarray([tuple(v) for v in simplified_ring], dtype=np.float64)
+                        simp_ls = LineString(np.vstack([simp_pts, simp_pts[:1]]))
+                        offset = raw_ls.hausdorff_distance(simp_ls)
+                        diag = float(np.hypot(*(raw_pts.max(axis=0) - raw_pts.min(axis=0))))
+                        offset_tol = max(SIMPLIFY_OFFSET_ABS_M, SIMPLIFY_OFFSET_REL * diag)
+                        if offset > offset_tol:
+                            return CheckResult(
+                                "simplify_budget",
+                                "Simplification within area budget",
+                                "error",
+                                f"simplified ring drifts {offset:.2f} m from the raw "
+                                f"footprint (tolerance {offset_tol:.2f} m = max "
+                                f"{SIMPLIFY_OFFSET_ABS_M:.1f} m or "
+                                f"{SIMPLIFY_OFFSET_REL:.0%} of the {diag:.1f} m bbox "
+                                f"diagonal): the simplified geometry no longer "
+                                f"matches the source footprint",
+                                expected=offset_tol,
+                                actual=offset,
+                            )
+                        offset_reported = offset
+    msg = f"area delta {delta:.3f}% within {tol_pct:.1f}% budget"
+    if offset_reported is not None:
+        msg += f", simplified ring offset {offset_reported:.2f} m from raw footprint"
     return CheckResult(
         "simplify_budget",
         "Simplification within area budget",
         "pass",
-        f"area delta {delta:.3f}% within {tol_pct:.1f}% budget",
+        msg,
     )
 
 

@@ -157,3 +157,45 @@ def test_floor_area_ratio_failure_path():
         f"Expected space_area_matches_polygon warn, got "
         f"{[r.severity for r in report.results if r.check_id == 'space_area_matches_polygon']}"
     )
+
+
+def _result_by_id(report, check_id):
+    return next(r for r in report.results if r.check_id == check_id)
+
+
+def test_simplify_budget_pass_reports_ring_offset():
+    """Clean model: the check passes and reports the measured ring offset."""
+    m = make_clean_model()
+    m._sres = _sres_for(m)
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "pass", result.message
+    assert "ring offset" in result.message
+
+
+def test_simplify_budget_simplified_area_reverification_fires():
+    """Issue #971: a wrong simplified area beyond the budget is an error,
+    even when the stored original area re-verifies cleanly."""
+    m = make_clean_model()
+    sres = _sres_for(m)
+    sres.simplified_area = sres.simplified_area * 1.05  # 5% drift vs 2% budget
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "simplified area re-verification failed" in result.message
+    assert not export_gate(report)
+
+
+def test_simplify_budget_ring_offset_drift_fires():
+    """Issue #971: a simplified ring that no longer matches the raw footprint
+    (here: translated 20 m, area preserved) is an error."""
+    m = make_clean_model()
+    sres = _sres_for(m)
+    sres.ring = [[x + 20.0, y] for x, y in sres.ring]
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "drifts" in result.message
+    assert not export_gate(report)
