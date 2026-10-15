@@ -85,7 +85,7 @@ jobs:
     runs-on: [self-hosted, gpu-train]
     timeout-minutes: 720
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show GPU
         run: rocm-smi || true
@@ -226,7 +226,7 @@ jobs:
 
       - name: Upload Clinic eval
         if: always() && (github.event.inputs.eval_clinic == 'true' || github.event.inputs.eval_only_ckpt != '')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: clinic-eval-${{ github.event.inputs.name }}-${{ github.run_id }}
           path: |
@@ -237,7 +237,7 @@ jobs:
 
       - name: Upload metrics
         if: always() && github.event.inputs.eval_only_ckpt == ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
           path: >
