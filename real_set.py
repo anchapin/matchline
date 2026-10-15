@@ -31,6 +31,8 @@ from typing import Dict, List, Optional
 
 from shapely.geometry import LineString, Point, Polygon
 
+import sheet_index
+
 SCHEMA = "matchline.set_report/1"
 DEFAULT_STOREY_HEIGHT_M = 3.0
 
@@ -58,6 +60,7 @@ class SetReport:
     detector: dict = field(default_factory=dict)
     elevations: List[dict] = field(default_factory=list)
     hvac_legends: List[dict] = field(default_factory=list)
+    dedup: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -74,6 +77,7 @@ class SetReport:
             "detector": self.detector,
             "elevations": self.elevations,
             "hvac_legends": self.hvac_legends,
+            "dedup": self.dedup,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -145,6 +149,7 @@ def build_set_model(
     {L2: 4.0}``) for those levels only; the rest come from the elevation level marks,
     then the default (#821).
     """
+    import matchlines
     from bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
     from drawing_scale import scale_sheets
@@ -381,6 +386,132 @@ def build_set_model(
     levels: List[Level] = []
     spaces: Dict[str, Space] = {}
     review: List[ReviewItem] = []
+
+    # ---- match lines, split sheets, enlarged-plan dedup (#994) -----------
+    hits = {}
+    for f in files:
+        kind = (entries.get(f, {}).get("type") or {}).get("value")
+        if kind not in sheet_index.PLAN_TYPES:
+            continue
+        hits[f] = matchlines.find_match_lines(json.loads((sheets_dir / f).read_text()), f)
+    level_of = {f: ((entries.get(f, {}).get("level") or {}).get("value")) for f in files}
+    dedup = matchlines.pair_match_lines(hits, level_of)
+    links = matchlines.link_enlarged_plans(entries, walls, scales, sheets_dir)
+    dedup.links, dedup.exclusions = links.links, links.exclusions
+    dedup.exclusions += matchlines.takeoff_exclusions(entries)
+    report.dedup = dedup.to_dict()
+
+    def _label(f: str) -> str:
+        return status[f].number or f.replace("sheet_", "").rstrip(".json").rstrip(".")
+
+    ex_by_file = {x["file"]: x for x in dedup.exclusions}
+    pair_of = {}
+    for pr in dedup.pairs:
+        for f in pr["files"]:
+            pair_of[f] = pr
+    for f, x in ex_by_file.items():
+        kv = {k: v for k, v in x.items() if k in ("linked_to", "basis") and v}
+        status[f].mark("takeoff_dedup", "excluded", x["reason"], **kv)
+    for f, pr in pair_of.items():
+        other = next(g for g in pr["files"] if g != f)
+        status[f].mark(
+            "takeoff_dedup", "ok", f"split pair with {_label(other)} at match line {pr['key']}"
+        )
+    for c in dedup.conflicts:
+        sheets_desc = ", ".join(_label(f) for f in c["files"])
+        review.append(
+            ReviewItem(
+                id=f"matchline-conflict-{c['key']}",
+                kind="match_line_conflict",
+                target={"kind": "sheet", "id": c["files"][0]},
+                description=(
+                    f"match line {c['key']} appears on {sheets_desc} of level "
+                    f"{c['level'] or '?'}; a space may be taken off more than once"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(c["files"][0]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    seen_nokey: set = set()
+    for u in dedup.unpaired:
+        if not u["key"] and u["file"] in seen_nokey:
+            continue
+        if not u["key"]:
+            seen_nokey.add(u["file"])
+        review.append(
+            ReviewItem(
+                id=f"matchline-unpaired-{u['file']}-{u['key'] or 'nokey'}",
+                kind="match_line_unpaired",
+                target={"kind": "sheet", "id": u["file"]},
+                description=(
+                    f"match line {u['key'] or 'without a key'} on {_label(u['file'])}: "
+                    f"{u['reason']}"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(u["file"]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    for pr in dedup.pairs:
+        if not all(pair_of.get(f) for f in pr["files"]):
+            continue
+        if not all(
+            status[f].stages.get("walls_rooms", {}).get("status") != "skipped" for f in pr["files"]
+        ):
+            continue
+        review.append(
+            ReviewItem(
+                id=f"matchline-pair-{pr['key']}",
+                kind="match_line_pair",
+                target={"kind": "sheet", "id": pr["files"][0]},
+                description=(
+                    f"{_label(pr['files'][0])} and {_label(pr['files'][1])} share match line "
+                    f"{pr['key']}: rooms crossing it may appear as partial spaces on both "
+                    "sheets; stitching is not supported yet"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(pr["files"][0]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    for link in dedup.links:
+        if link["basis"] in ("title_reference", "content_overlap"):
+            continue
+        review.append(
+            ReviewItem(
+                id=f"enlarged-link-{link['file']}",
+                kind="enlarged_plan_link",
+                target={"kind": "sheet", "id": link["file"]},
+                description=(
+                    f"enlarged plan {_label(link['file'])} could not be linked to a base "
+                    f"plan: {link.get('reason', 'no title reference found')}"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(link["file"]),
+                    revision=0,
+                    method="enlarged_plan_link",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
     envelope: List[EnvelopeWall] = []
     plan_of_level: Dict[str, tuple] = {}
     z = 0.0
