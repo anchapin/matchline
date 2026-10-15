@@ -38,8 +38,10 @@ dependencies = [
 ocr = ["rapidocr_onnxruntime"]
 # Optional second OCR backend for schedule tags (#668); needs the tesseract binary
 ocr-tesseract = ["pytesseract"]
+# COBie workbook reader for mechanical schedules (#974); lazy import
+mech = ["openpyxl"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow"]
+test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
@@ -78,6 +80,7 @@ py-modules = [
     "construction_library_prm_data",
     "constructions",
     "convention_report",
+    "mech_schedule",
     "datasets_adapter",
     "daylight_skylights",
     "detection_provider",

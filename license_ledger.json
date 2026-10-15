@@ -106,6 +106,13 @@
       "license": "CC BY 4.0",
       "class": "permissive",
       "source": "buildingSMART community sample files; held out, never committed"
+    },
+    {
+      "id": "bsi_clinic_cobie",
+      "name": "buildingSMART Medical-Dental Clinic design workbook (COBie 2.4 xlsx, #974 fixture)",
+      "license": "CC BY 4.0",
+      "class": "permissive",
+      "source": "github.com/buildingsmart-community/Community-Sample-Test-Files (IFC 2.3.0.1 (IFC 2x3)/Medical-Dental Clinic)"
     }
   ],
   "artifacts": [
