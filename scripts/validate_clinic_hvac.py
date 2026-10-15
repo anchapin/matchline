@@ -90,6 +90,33 @@ def _storey_of(e):
     return None
 
 
+def dedupe_duplicate_rooms(raw_rooms, gt_ids):
+    """One room per identical footprint per storey.
+
+    Some real MEP IFCs carry each space twice: the architectural copy and an
+    MEP copy with regenerated GlobalIds and identical geometry (the duplex
+    bench file names them A101 and A101-M). Point-in-polygon assignment then
+    ties between the two copies for every terminal, and everything lands in
+    review (#1008). Collapse each identical-footprint group to one room,
+    preferring the copy the terminals' ground truth references, and remap the
+    dropped copies' GlobalIds onto the kept one so scoring still matches
+    truth. Keys use the sorted vertex multiset rounded to 1 mm, so vertex
+    order and float noise between the copies do not defeat the match.
+    """
+    groups = defaultdict(list)
+    for r in raw_rooms:
+        pts = sorted((round(x, 3), round(y, 3)) for x, y in r["polygon_m"])
+        groups[(r["storey"], tuple(pts))].append(r)
+    rooms, remap = [], {}
+    for members in groups.values():
+        kept = next((m for m in members if m["id"] in gt_ids), members[0])
+        rooms.append(dict(kept))
+        for m in members:
+            if m["id"] != kept["id"]:
+                remap[m["id"]] = kept["id"]
+    return rooms, remap
+
+
 def load(hvac_path):
     """(rooms by storey, terminals) from the HVAC IFC.
 
@@ -108,12 +135,14 @@ def load(hvac_path):
         fa = [tuple(g.faces[i : i + 3]) for i in range(0, len(g.faces), 3)]
         return v, fa
 
-    rooms = defaultdict(list)
+    raw_rooms = []
     for sp in f.by_type("IfcSpace"):
         v, fa = mesh(sp)
         poly = footprint([(x, y) for x, y, _ in v], fa)
         if len(poly) >= 3:
-            rooms[_storey_of(sp)].append({"id": sp.GlobalId, "name": sp.Name, "polygon_m": poly})
+            raw_rooms.append(
+                {"id": sp.GlobalId, "name": sp.Name, "polygon_m": poly, "storey": _storey_of(sp)}
+            )
 
     terminals = []
     for t in f.by_type("IfcFlowTerminal"):
@@ -141,6 +170,12 @@ def load(hvac_path):
                 "system": system,
             }
         )
+    rooms_list, remap = dedupe_duplicate_rooms(raw_rooms, {t["gt_space"] for t in terminals})
+    for t in terminals:
+        t["gt_space"] = remap.get(t["gt_space"], t["gt_space"])
+    rooms = defaultdict(list)
+    for r in rooms_list:
+        rooms[r["storey"]].append({k: v for k, v in r.items() if k != "storey"})
     return dict(rooms), terminals
 
 

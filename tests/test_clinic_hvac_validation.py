@@ -37,3 +37,24 @@ def test_clinic_assignment_exact_positions():
     rep = vch.evaluate(rooms, terminals, jitter_m=0.0)
     assert all(r["wrong"] == 0 for r in rep.values())
     assert sum(r["correct"] for r in rep.values()) == 437
+
+
+def test_dedupe_duplicate_rooms_collapses_identical_footprints_and_remaps_gt():
+    # #1008: the duplex MEP file carries each space twice (A101 and A101-M,
+    # identical geometry, regenerated GlobalIds), so point-in-polygon ties for
+    # every terminal. One room per identical footprint, gt referenced copy
+    # kept, dropped copies remapped so scoring still matches truth.
+    poly = [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)]
+    other = [(5.0, 0.0), (9.0, 0.0), (9.0, 3.0), (5.0, 3.0)]
+    raw = [
+        {"id": "aaa", "name": "A101", "polygon_m": poly, "storey": "L1"},
+        {"id": "bbb", "name": "A101-M", "polygon_m": poly, "storey": "L1"},
+        {"id": "ccc", "name": "A102", "polygon_m": other, "storey": "L1"},
+    ]
+    rooms, remap = vch.dedupe_duplicate_rooms(raw, {"bbb"})
+    assert sorted(r["id"] for r in rooms) == ["bbb", "ccc"]
+    assert remap == {"aaa": "bbb"}
+    assert remap.get("aaa", "aaa") == "bbb"  # terminal gt remap path
+    # no terminal references either copy: keep the first deterministically
+    rooms2, remap2 = vch.dedupe_duplicate_rooms(raw[:2], set())
+    assert [r["id"] for r in rooms2] == ["aaa"] and remap2 == {"bbb": "aaa"}
