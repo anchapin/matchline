@@ -28,6 +28,9 @@ matchline review model.json --show-all            # list all items including res
 matchline review model.json --list                 # list items to stdout, exit 0 immediately
 matchline review model.json --list --format json   # list items as JSON
 matchline review model.json --confirm RVW-001      # confirm an item, re-run validation
+matchline review model.json --undo 3               # undo the last 3 accepted corrections (#997)
+matchline review model.json --revert-to-auto opening:S-W1:width_m  # back to automatic (#997)
+matchline review model.json --corrections          # print the correction history (#997)
 matchline review model.json --reject RVW-002       # reject an item, re-run validation
 matchline review model.json --reject RVW-002 --auto-triage  # enable auto-triage on load
 ```

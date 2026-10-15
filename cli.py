@@ -578,6 +578,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="Write the HTML review report to DIR/review (model, decisions template, page)",
     )
+    p.add_argument(
+        "--undo",
+        metavar="N",
+        type=int,
+        help="Undo the last N accepted corrections (corrections.json, #997)",
+    )
+    p.add_argument(
+        "--revert-to-auto",
+        metavar="KEY",
+        help="Put one field back to the automatic output; KEY is KIND:ID:FIELD (#997)",
+    )
+    p.add_argument(
+        "--corrections",
+        action="store_true",
+        help="Print the correction history beside the model (#997)",
+    )
     p.set_defaults(func=cmd_review)
 
     p = sub.add_parser(
