@@ -33,8 +33,8 @@ LAUNCH_PORT = 7860
 # order. ``stage_06_bem`` is the export directory; a directory counts once it
 # holds anything. Written in user language on purpose: rooms, windows, doors.
 STAGE_WATCH: tuple[tuple[str, str], ...] = (
-    ("stage_00_set_report.json", "Reading the drawing set..."),
-    ("stage_01_building.json", "Reading the drawing set..."),
+    ("stage_00_set_report.json", "Opening the drawing set..."),
+    ("stage_01_building.json", "Reading the sheets: scale, walls, rooms..."),
     ("stage_02_model.json", "Finding rooms, walls, doors and windows..."),
     ("stage_03_simplified.json", "Simplifying the building outline..."),
     ("stage_03b_constructions.json", "Picking wall and roof assemblies..."),
