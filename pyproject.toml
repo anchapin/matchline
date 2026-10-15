@@ -47,9 +47,12 @@ datasets = ["pyarrow"]
 detector = ["torch", "ultralytics"]
 # OpenStudio round-trip gate (#628): CI installs it; tests skip without it
 openstudio = ["openstudio"]
+# One-page web app (#982): matchline-ui launches on 127.0.0.1:7860
+ui = ["gradio>=4.0"]
 
 [project.scripts]
 matchline = "cli:main"
+matchline-ui = "ui.app:main"
 
 [tool.setuptools]
 py-modules = [
@@ -146,6 +149,7 @@ packages = [
     "query",
     "sim",
     "synth",
+    "ui",
     "validate",
 ]
 

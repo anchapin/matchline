@@ -49,6 +49,21 @@ matchline multidiscipline       # 3 synthetic buildings
 matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
 ```
 
+## Web interface
+
+The same pipeline is reachable from a browser. The `ui` extra adds a one-page
+web app that shells out to `run_pipeline`, so its numbers match the CLI:
+
+```bash
+pip install "matchline[ui]"
+matchline-ui                 # opens http://127.0.0.1:7860
+```
+
+Drop a drawing-set PDF (or tick the demo box for a synthetic building), set
+how aggressively similar surfaces merge, press Run, and download the gbXML,
+the building model JSON, and the review page. The server binds to
+127.0.0.1 and keeps uploaded files on the machine that runs it.
+
 ## Pipeline
 
 ```
