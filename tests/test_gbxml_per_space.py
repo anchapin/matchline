@@ -204,3 +204,35 @@ def test_openstudio_import_gives_every_space_a_floor_and_layers(tmp_path):
     areas = sorted(round(sp.floorArea(), 3) for sp in model.getSpaces())
     assert areas == [120.0, 120.0, 120.0]
     assert all(c.numLayers() > 0 for c in model.getConstructions())
+
+
+# --- #984: courtyard holes and multi-ring shared walls ---
+
+
+class _S:
+    def __init__(self, sid, poly):
+        self.sid = sid
+        self.polygon_m = poly
+
+
+def test_covers_footprint_with_courtyard_hole():
+    outer = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    hole = [(4, 4), (6, 4), (6, 6), (4, 6)]
+    bands = [
+        _S("a", [(0, 0), (10, 0), (10, 4), (0, 4)]),
+        _S("b", [(0, 6), (10, 6), (10, 10), (0, 10)]),
+        _S("c", [(0, 4), (4, 4), (4, 6), (0, 6)]),
+        _S("d", [(6, 4), (10, 4), (10, 6), (6, 6)]),
+    ]
+    assert covers_footprint(outer, bands) is False
+    assert covers_footprint(outer, bands, holes=[hole]) is True
+
+
+def test_shared_walls_accepts_ring_list():
+    ring = [(0, 0), (10, 0), (10, 6), (0, 6)]
+    a = _S("a", [(0, 0), (5, 0), (5, 6), (0, 6)])
+    b = _S("b", [(5, 0), (10, 0), (10, 6), (5, 6)])
+    single = shared_walls([a, b], ring)
+    multi = shared_walls([a, b], [ring, [(20, 20), (21, 20), (21, 21), (20, 21)]])
+    assert len(single) > 0
+    assert len(multi) == len(single)

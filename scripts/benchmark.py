@@ -413,7 +413,7 @@ def _write_gbxml(
         # hardcoded simplified_ring=None / tolerance=0.1 bypassed it.
         bem = model_from_linked_model(
             model=model,
-            simplified_ring=sres.ring if sres is not None else None,
+            simplified_ring=sres,
             wall_height_m=wall_height,
             simplify_tolerance=simplify_tol,
         )

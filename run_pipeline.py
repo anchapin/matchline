@@ -191,30 +191,60 @@ def model_from_linked_model(
             f"(see skipped_openings)."
         )
 
-    # --- envelope ring ---------------------------------------------------
-    ring_ccw = _ensure_ccw(_north_up(simplified_ring))
+    # --- envelope ring(s) -------------------------------------------------
+    if hasattr(simplified_ring, "parts"):
+        # #984: per-part result (#970): every wing and every courtyard hole
+        # flows through to export. Wings wind CCW in the BEM frame; holes
+        # wind CW so the writers' outward-normal convention points into the
+        # courtyard void (outdoor air). ``ring_m`` stays the largest part's
+        # ring for every existing single-ring consumer.
+        rings_m = [
+            {
+                "ring": _ensure_ccw(_north_up(part.ring)),
+                "holes": [list(reversed(_ensure_ccw(_north_up(h.ring)))) for h in hs],
+            }
+            for part, hs in zip(simplified_ring.parts, simplified_ring.holes)
+        ]
 
-    # --- area delta from simplifier (approximate from ring change) ----------
-    # The simplifier reports relative area change; we pass it through
-    # Original ring area vs simplified ring area
-    orig_ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-    orig_area = 0.0
-    n = len(orig_ring)
-    for i in range(n):
-        x0, y0 = orig_ring[i]
-        x1, y1 = orig_ring[(i + 1) % n]
-        orig_area += x0 * y1 - x1 * y0
-    orig_area = abs(orig_area) / 2.0
+        def _abs_area(ring):
+            return abs(
+                sum(
+                    ring[i][0] * ring[(i + 1) % len(ring)][1]
+                    - ring[(i + 1) % len(ring)][0] * ring[i][1]
+                    for i in range(len(ring))
+                )
+            )
 
-    simp_area = 0.0
-    n = len(ring_ccw)
-    for i in range(n):
-        x0, y0 = ring_ccw[i]
-        x1, y1 = ring_ccw[(i + 1) % n]
-        simp_area += x0 * y1 - x1 * y0
-    simp_area = abs(simp_area) / 2.0
+        ring_ccw = max(rings_m, key=lambda r: _abs_area(r["ring"]))["ring"]
+        area_delta_pct = simplified_ring.area_delta_pct
+    else:
+        rings_m = []
+        if hasattr(simplified_ring, "ring"):
+            # plain SimplifyResult (single part, no holes): unwrap the ring
+            simplified_ring = simplified_ring.ring
+        ring_ccw = _ensure_ccw(_north_up(simplified_ring))
 
-    area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
+        # --- area delta from simplifier (approximate from ring change) ------
+        # The simplifier reports relative area change; we pass it through
+        # Original ring area vs simplified ring area
+        orig_ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
+        orig_area = 0.0
+        n = len(orig_ring)
+        for i in range(n):
+            x0, y0 = orig_ring[i]
+            x1, y1 = orig_ring[(i + 1) % n]
+            orig_area += x0 * y1 - x1 * y0
+        orig_area = abs(orig_area) / 2.0
+
+        simp_area = 0.0
+        n = len(ring_ccw)
+        for i in range(n):
+            x0, y0 = ring_ccw[i]
+            x1, y1 = ring_ccw[(i + 1) % n]
+            simp_area += x0 * y1 - x1 * y0
+        simp_area = abs(simp_area) / 2.0
+
+        area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
     from bem_shading import shades_from_model
 
@@ -239,6 +269,7 @@ def model_from_linked_model(
         # and takeoff adapters; before this the ring was written mirrored N-S
         ring_facades=_edge_facades(ring_ccw, y_north=True),
         ring_m=ring_ccw,
+        rings_m=rings_m,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
         simplify_tolerance=simplify_tolerance,
@@ -598,7 +629,7 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
     """Stage 6: Export BEM model to gbXML and IFC4 formats."""
     bem_model = model_from_linked_model(
         model=model,
-        simplified_ring=sres.ring,
+        simplified_ring=sres,
         wall_height_m=wall_height,
         simplify_tolerance=simplify_tol * 100.0,
     )
