@@ -266,6 +266,16 @@ is not on disk shows as `missing`.
   BIM student projects. Seven more (gni-49/50/54/74/115/136/149) joined the
   scoreboard 2026-10-15 alongside gni-18.
 
+  gni-49 window defect (documented 2026-10-15, #1009): the file's 71
+  `IfcWindow` elements carry no usable location - every placement resolves to
+  (0, 0, 0) - while the 61 wall voids are placed properly and no
+  `IfcRelFillsElement` links exist, so there is nothing to adopt geometrically.
+  The window rows are defective in the file itself: `OverallWidth` reads
+  0.1795 against a name stating 1800/2100 (mm), so even the attributes are
+  untrustworthy. The scoreboard's window column therefore reads 71 / 0 for
+  this building by design; the model reports no windows it cannot locate, and
+  never guesses positions. Doors are genuinely absent (0 `IfcDoor`).
+
 **Rejected candidates (2026-10-15 licensed-data search):** Schependomlaan
 as-planned IFCs (same community repo, CC BY 4.0) carry no IfcSpaces (no
 ground truth); the Krijnen & Hesselink balcony models
