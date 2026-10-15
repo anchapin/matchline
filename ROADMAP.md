@@ -246,6 +246,17 @@ Candidate approaches:
   and report our numbers on the same protocol plus our own drawing-set
   results.
 
+**Spike outcome (2026-10-15, #973).** Real legacy plan sheets expose rich
+vector primitives (8k+ lines on a single plan page), and rooms parse directly
+from them (flood-fill prototype: 22 and 31 plausible rooms on two plan pages).
+The shipped vector pipeline's blocker on legacy sets is sheet routing, not
+extraction (no sheet number in 2006-era title blocks; follow-up #1016).
+VecFormer stays deferred: it is a symbol spotter, not a wall parser, and would
+enter through the R2 DetectionProvider interface if ever needed. Full write-up
+in docs/r1_vector_spike.md. Decision: raster YOLO+SAHI stays the production
+path; vector-native geometry stays an open research track, unblocked by the
+routing fix; the meet-or-beat-0.929 F1 target waits on a labeled evaluation set.
+
 ### R2. Modular detection-provider interface
 
 Context: detection backends are currently hard-wired (YOLOv11+SAHI). If R1
