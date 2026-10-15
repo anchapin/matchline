@@ -21,7 +21,7 @@
       "source_url": "https://github.com/buildingsmart-community/Community-Sample-Test-Files",
       "license": "CC BY 4.0",
       "arch_ifc": "~/workspace/datasets/matchline-bench/duplex/arch.ifc",
-      "hvac_ifc": null,
+      "hvac_ifc": "~/workspace/datasets/matchline-bench/duplex-mep/hvac.ifc",
       "drawing_set": null
     },
     {
@@ -29,6 +29,70 @@
       "source_url": "https://zenodo.org/records/19722012",
       "license": "CC BY 4.0",
       "arch_ifc": "~/workspace/datasets/matchline-bench/gni-18/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-49",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-49/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-50",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-50/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-54",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-54/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-74",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-74/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-115",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-115/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-136",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-136/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "gni-149",
+      "source_url": "https://zenodo.org/records/19722012",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/gni-149/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "molio",
+      "source_url": "https://github.com/buildingsmart-community/Community-Sample-Test-Files",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/molio/arch.ifc",
       "hvac_ifc": null,
       "drawing_set": null
     }
