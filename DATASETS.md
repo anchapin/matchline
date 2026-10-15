@@ -247,8 +247,14 @@ is not on disk shows as `missing`.
   model (37 spaces) and MEP/plumbing/electrical files sit alongside. The MEP
   discipline file (`Duplex_MEP_20110907.ifc`, 17.9 MB, 105 IfcFlowTerminal of
   which 103 are space-bound) is wired as the duplex `hvac_ifc` since
-  2026-10-15; the scoreboard currently assigns 0/103 terminals from it (under
-  investigation). No drawing set.
+  2026-10-15. The MEP file carries each IfcSpace twice under different
+  GlobalIds with identical footprints (named e.g. `A101` and `A101-M`; 42
+  spaces, 21 distinct footprints, terminals reference only the plain copies),
+  which tied point-in-polygon assignment for every terminal. The HVAC loader
+  now collapses identical footprints per storey and remaps ground-truth ids
+  onto the kept copy (#1008, 2026-10-15): the scoreboard assigns 73/103, the
+  remaining 30 are honestly ambiguous (on boundaries) and go to review. No
+  drawing set.
 
 - Molio building IFC, same repo (CC BY 4.0, repo-level license). Verified
   2026-10-15: 73.9 MB IFC2X3, 10 storeys, 117 IfcSpaces each with
@@ -312,6 +318,7 @@ Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scorebo
 
 **2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
 score; rooms, area, window and door counts match ground truth everywhere
-except gni-49 windows (truth 71 / model 0) and the duplex MEP terminals
-(0/103). gni-74's gbXML export raises `float division by zero` (noted as a
-defect, row still scores).
+except gni-49 windows (truth 71 / model 0, #1009). Two defects found by the
+first run are fixed: gni-74's gbXML export no longer divides by zero on
+sub-0.1 m walls (#1011), and the duplex MEP terminals score 73/103 after the
+loader collapses the file's duplicated spaces (#1008).
