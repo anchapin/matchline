@@ -79,3 +79,22 @@ This closes the gap between structural export checks and semantic verification.
 - `validate.py:_check_simplify_budget`
 - `validate.py:_check_gbxml_wall_areas`
 - `docs/validation.md` — Conservation laws section
+
+
+## Amendment 2026-10-15 (issue #971)
+
+`simplify_budget` re-ran the simplifier but verified only the stored
+*original* area; the simplified result itself was never independently
+checked, and no geometric comparison existed. The check now also:
+
+1. Re-verifies the **simplified** area against a fresh run
+   (budget-relative tolerance, robust to caller options the fresh run
+   does not repeat, e.g. `dp_eps`).
+2. Compares the simplified ring to the raw footprint by Hausdorff
+   distance: an offset above `max(2 m, 10% of the bbox diagonal)` is an
+   error (wrong-polygon-scale divergence); anything under is reported in
+   the pass message.
+
+The offset bound is deliberately a catastrophe bound: legitimate notch
+smoothing displaces walls by feature scale, and the area budget already
+bounds the physical error for anything smaller.

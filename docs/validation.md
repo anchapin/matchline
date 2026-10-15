@@ -337,7 +337,12 @@ block export but surface code-compliance issues for human review.
   is roadmap item 6.
 - **`simplify_budget`** re-runs the simplifier from the raw footprint
   to verify the self-reported delta. If the re-verified original area
-  differs from the stored value by more than 0.1 m², an error is raised.
+  differs from the stored value by more than 0.1%, an error is raised.
+  The re-run also independently verifies the simplified area the
+  simplifier produced (budget-relative tolerance) and the geometric
+  closeness of the simplified ring to the raw footprint: a Hausdorff
+  offset above max(2 m, 10% of the bbox diagonal) is an error, anything
+  under it is reported in the pass message.
 - **`gbxml_wall_areas`** (new) verifies that gbXML-exported wall areas
   match the canonical model's envelope wall areas. Cross-pipeline numeric
   reconciliation closes the gap between structural-only export checks and
@@ -348,6 +353,6 @@ block export but surface code-compliance issues for human review.
 - **Conservation laws are not checked for HVAC, plumbing, or electrical**: Only envelope, lighting, and vertical transport are validated. HVAC sizing, duct/pipe routing, and electrical load conservation are out of scope.
 - **Tolerance thresholds are not calibrated against real buildings**: The 3% area/volume, 1% envelope, and 25 W/m² LPD thresholds are based on ASHRAE standards and engineering judgment, not validated against a corpus of real buildings.
 - **No cross-sheet reconciliation**: `area_conservation` and `volume_conservation` validate sheets independently; errors that cancel across sheets are not detected.
-- **Simplification delta is checked only against itself**: `simplify_budget` verifies the simplified polygon against itself; it does not verify that the simplified polygon is geometrically close to the original un-simplified polygon.
+- **Simplification offset is a divergence bound, not a fidelity guarantee**: the Hausdorff check catches wrong-polygon-scale divergence (translated, mirrored, or mis-scaled geometry); drift within the bound is reported but accepted, because the area budget already bounds the physical error at that scale.
 - **gbXML export must exist for `gbxml_wall_areas`**: The check requires a prior `bem-export --format gbxml` run; if that step is skipped, the check silently passes.
 - **No validation of occupancy or operational schedules**: The validator does not check whether occupancy schedules, internal gain profiles, or setpoint schedules are realistic or compliant.
