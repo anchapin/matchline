@@ -173,10 +173,17 @@ def build_set_model(
         st = status[f]
         st.number, st.title = _val(e, "number"), _val(e, "title")
         st.discipline, st.level = _val(e, "discipline"), _val(e, "level")
+        routed = bool(e.get("use_for_takeoff")) and not st.number
         st.mark(
             "sheet_index",
-            "ok" if st.number else "failed",
-            "" if st.number else "no sheet number found in the title block",
+            "ok" if (st.number or routed) else "failed",
+            ""
+            if st.number
+            else (
+                "no sheet number in the title block; routed by geometry fallback (needs review)"
+                if routed
+                else "no sheet number found in the title block"
+            ),
             use_for_takeoff=bool(e.get("use_for_takeoff")),
             sheet_type=_val(e, "type"),
         )
@@ -196,7 +203,18 @@ def build_set_model(
         sheets_dir, {f: status[f].number for f in files if status[f].number}
     )
     plan_files = [f for f in files if entries.get(f, {}).get("use_for_takeoff")]
-    arch_plans = [f for f in plan_files if _discipline(status[f]) in ("architectural", None)]
+
+    def _fallback_plan(e: dict) -> bool:
+        t = (e or {}).get("type")
+        return isinstance(t, dict) and t.get("source") == "geometry_fallback"
+
+    # a geometry-fallback plan's discipline is unverified (the number may be a
+    # label); geometry saying "plan" outranks a suspect number (#1016)
+    arch_plans = [
+        f
+        for f in plan_files
+        if _discipline(status[f]) in ("architectural", None) or _fallback_plan(entries.get(f, {}))
+    ]
     for f in files:
         if f not in plan_files:
             status[f].mark("walls_rooms", "skipped", "not a floor plan for takeoff")
