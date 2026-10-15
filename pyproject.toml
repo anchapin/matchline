@@ -56,6 +56,7 @@ matchline-ui = "ui.app:main"
 
 [tool.setuptools]
 py-modules = [
+    "area_definitions",
     "air_loops",
     "atria",
     "below_grade",

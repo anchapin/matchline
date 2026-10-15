@@ -109,7 +109,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate/` | 48-check invariant battery; errors block export |
+| `validate/` | 49-check invariant battery; errors block export |
 
 ## Quickstart
 

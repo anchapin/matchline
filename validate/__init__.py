@@ -43,6 +43,7 @@ from .ashrae90_1 import (
 )
 from .conservation import (
     _check_area_conservation,
+    _check_area_definitions,
     _check_bem_area_conservation,
     _check_bem_volume_conservation,
     _check_convention_bias,
@@ -201,6 +202,7 @@ CONSERVATION_BATTERY = [
     area_closure,
     volume_closure,
     envelope_closure,
+    _check_area_definitions,
 ]
 
 N_CHECKS = len(BATTERY) + len(CONSERVATION_BATTERY)
