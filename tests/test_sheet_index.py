@@ -288,6 +288,7 @@ def test_index_sheets_and_cli(tmp_path, capsys):
 
 # ------------------------------------------------- geometry fallback (#1016)
 
+
 def _fallback_plan_body() -> str:
     """12 double-lined rooms plus a filler band: plan-like geometry density."""
     out = ""
@@ -345,7 +346,9 @@ def test_geometry_fallback_flags_a_suspect_sheet_number(tmp_path):
 
 def test_geometry_fallback_leaves_a_sparse_notes_sheet_alone(tmp_path):
     notes = (
-        text(1500, 220, "PROJECT", 14) + text(1500, 150, "NOTES", 12) + text(1500, 60, "1. DO STUFF", 8)
+        text(1500, 220, "PROJECT", 14)
+        + text(1500, 150, "NOTES", 12)
+        + text(1500, 60, "1. DO STUFF", 8)
     )
     idx, _ = _index_of(tmp_path, [notes])
     e = idx.sheets[0]
