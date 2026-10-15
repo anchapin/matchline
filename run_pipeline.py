@@ -318,6 +318,12 @@ def parse_args():
         dest="set_pdf",
         help="real PDF drawing set (#741): ingest, index, scale, walls/rooms, then the model",
     )
+    g.add_argument(
+        "--ifc",
+        type=Path,
+        dest="ifc_path",
+        help="IFC model (#988): import, then the same simplify/validate/export stages",
+    )
     ap.add_argument(
         "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
     )
@@ -385,6 +391,88 @@ def parse_args():
 # ---------------------------------------------------------------------------
 
 
+def _merge_pdfs(pdfs: list[Path], out: Path) -> Path:
+    """Concatenate PDFs in order into one multi-sheet set PDF.
+
+    pdfium (pypdfium2, Apache-2.0/BSD-3) is already the set backend
+    (``pdf_ingest``); no second PDF library is added for this (#988).
+    """
+    import pypdfium2 as pdfium
+
+    dest = pdfium.PdfDocument.new()
+    try:
+        for pdf in pdfs:
+            try:
+                src = pdfium.PdfDocument(pdf)
+            except Exception as e:  # corrupt or not a PDF after all
+                raise StageError(
+                    "Stage 1: drawing set",
+                    1,
+                    f"{pdf.name} could not be read as a PDF: {e}",
+                    hint="Re-zip the set without the unreadable file, or run --set "
+                    "on the PDFs directly.",
+                ) from e
+            try:
+                dest.import_pages(src)
+            finally:
+                src.close()
+        dest.save(out)
+    finally:
+        dest.close()
+    return out
+
+
+def _drawing_set_pdf(args, out_dir: Path) -> Path:
+    """Resolve ``--set`` to the PDF the set stages ingest (#988).
+
+    A PDF passes straight through. A ``.zip`` is unpacked into
+    ``out_dir/_sets/``: a single member PDF passes through unchanged, several
+    are concatenated in filename order into one multi-sheet set so the rest of
+    the set stages keep seeing one drawing set.
+    """
+    import zipfile
+
+    pdf = Path(args.set_pdf)
+    if pdf.suffix.lower() != ".zip":
+        return pdf
+    staging = out_dir / "_sets"
+    staging.mkdir(parents=True, exist_ok=True)
+    members: list[Path] = []
+    staged: dict[str, Path] = {}
+    try:
+        with zipfile.ZipFile(pdf) as zf:
+            for info in sorted(zf.infolist(), key=lambda i: i.filename):
+                if info.is_dir() or Path(info.filename).suffix.lower() != ".pdf":
+                    continue
+                name = Path(info.filename).name
+                if name in staged:  # two members share a basename: order would lie
+                    raise StageError(
+                        "Stage 1: drawing set",
+                        1,
+                        f"{pdf.name} holds two PDFs both named {name} (in "
+                        f"{Path(info.filename).parent} and "
+                        f"{Path(staged[name].stem).parent or '.'})",
+                        hint="Rename one of them inside the zip so sheets stay in order.",
+                    )
+                dest = staging / name
+                with zf.open(info) as src, open(dest, "wb") as dst:
+                    dst.write(src.read())
+                members.append(dest)
+                staged[name] = dest
+    except zipfile.BadZipFile as e:
+        raise StageError("Stage 1: drawing set", 1, f"{pdf.name} is not a readable zip: {e}") from e
+    if not members:
+        raise StageError(
+            "Stage 1: drawing set",
+            1,
+            f"{pdf.name} holds no PDF files",
+            hint="Zip the drawing-set PDFs, or run --set on the PDF itself.",
+        )
+    if len(members) == 1:
+        return members[0]
+    return _merge_pdfs(members, staging / f"{pdf.stem}.pdf")
+
+
 def _set_storey_height(args, config: dict | None):
     """Storey height for a drawing-set run: ``--storey-height`` first, then the run
     config's ``wall_height`` (a number for every level, or ``{level: metres}``) (#821).
@@ -410,10 +498,11 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
         )
         from real_set import SetError, build_set_model
 
+        set_pdf = _drawing_set_pdf(args, out_dir)  # unpacks a zip (#988)
         try:
             provider = provider_from_config(getattr(args, "detector_config", None))
             model, set_report = build_set_model(
-                args.set_pdf,
+                set_pdf,
                 out_dir,
                 storey_height_m=_set_storey_height(args, config),
                 provider=provider,
@@ -449,6 +538,21 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 f"(reasons in {out_dir / 'stage_00_set_report.json'})",
                 file=sys.stderr,
             )
+        return model, None, None
+    if getattr(args, "ifc_path", None):  # IFC input path (#988)
+        # Lazy import: ifc_import imports this module's StageError.
+        from ifc_import import import_ifc
+
+        model = import_ifc(str(args.ifc_path))
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.ifc_path),
+                "schema": getattr(model, "source_schema", None) or "IFC4",
+                "n_levels": len(model.levels),
+                "n_spaces": len(model.spaces),
+            },
+        )
         return model, None, None
     if getattr(args, "image", None):  # cli Namespace carries no --image (#753)
         dets = detections_from_yolo_json(getattr(args, "detections", None), args.image.stem)
@@ -684,6 +788,7 @@ def _run_inputs(args, config: dict | None) -> list:
         ("detections", "detections"),
         ("schedule csv", "schedule_csv"),
         ("aec-bench", "aec_bench"),
+        ("ifc model", "ifc_path"),
         ("detector config", "detector_config"),
     ):
         v = getattr(args, attr, None)
@@ -731,7 +836,8 @@ def main(args, config: dict | None = None) -> None:
                 1,
                 str(e),
                 hint="Check input data format. For --aec-bench ensure dataset path is valid. "
-                "For --seed ensure the seed is an integer.",
+                "For --seed ensure the seed is an integer. "
+                "For --ifc ensure the file is a readable IFC.",
             ) from e
 
         # --- Stage 2: build model --------------------------------------------

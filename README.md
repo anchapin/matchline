@@ -59,10 +59,18 @@ pip install "matchline[ui]"
 matchline-ui                 # opens http://127.0.0.1:7860
 ```
 
-Drop a drawing-set PDF (or tick the demo box for a synthetic building), set
-how aggressively similar surfaces merge, press Run, and download the gbXML,
-the building model JSON, and the review page. The server binds to
-127.0.0.1 and keeps uploaded files on the machine that runs it.
+Drop a drawing set (one PDF, or a zip of PDFs that is unpacked and read in
+filename order), an IFC model, or a single sheet image, or tick the demo box
+for a synthetic building. Set how aggressively similar surfaces merge, press
+Run, and download the gbXML, the building model JSON, and the review page.
+A sheet image is labeled honestly in the app: it yields symbols and a takeoff
+only, never walls or rooms, and the pipeline says so instead of exporting a
+half model. IFC runs go through the same stages as a drawing set; validation
+findings (review items and conservation checks) block export exactly as they
+do for any other input, with the review page written so you can work through
+them (`matchline review out/stage_02_model.json --confirm <id>`, then re-run).
+The server binds to 127.0.0.1 and keeps uploaded files on the machine that
+runs it.
 
 ## Pipeline
 

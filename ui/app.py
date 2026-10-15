@@ -2,9 +2,12 @@
 
 The app shells out to ``run_pipeline`` (the same stages, the same defaults)
 so web-app numbers and command-line numbers can never drift. One screen,
-plain language: drop a drawing-set PDF, pick how aggressively similar
-surfaces merge, press Run, and download the gbXML, the building model JSON,
-and the review page.
+plain language: drop a drawing set (one PDF, a zip of PDFs) or an IFC model,
+pick how aggressively similar surfaces merge, press Run, and download the
+gbXML, the building model JSON, and the review page. A single sheet image is
+accepted and labeled honestly: it yields symbols and a takeoff only, never
+walls or rooms (raster wall finding is not built), so the pipeline says so
+instead of exporting a half model.
 
 Launch with ``matchline-ui`` (installed via the ``ui`` extra)::
 
@@ -51,8 +54,19 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def build_command(pdf_path: Path | None, seed: int | None, tol: float, out_dir: Path) -> list[str]:
-    """The exact command the UI runs, derived the same way the CLI does it."""
+IFC_SUFFIXES = frozenset({".ifc", ".ifcxml"})
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"})
+
+
+def build_command(
+    input_path: Path | None, seed: int | None, tol: float, out_dir: Path
+) -> list[str]:
+    """The exact command the UI runs, derived the same way the CLI does it.
+
+    The input's extension picks the pipeline mode (#988): a PDF or a zip of
+    PDFs runs ``--set``, an IFC runs ``--ifc``, a sheet image runs ``--image``
+    (symbols only; the pipeline says so in its own error).
+    """
     cmd = [
         sys.executable,
         "-m",
@@ -62,11 +76,27 @@ def build_command(pdf_path: Path | None, seed: int | None, tol: float, out_dir: 
         "--simplify-tol",
         f"{float(tol):g}",
     ]
-    if pdf_path is not None:
-        cmd += ["--set", str(pdf_path)]
+    if input_path is not None:
+        suffix = input_path.suffix.lower()
+        if suffix in IFC_SUFFIXES:
+            cmd += ["--ifc", str(input_path)]
+        elif suffix in IMAGE_SUFFIXES:
+            cmd += ["--image", str(input_path)]
+        else:
+            cmd += ["--set", str(input_path)]
     else:
         cmd += ["--seed", str(int(seed))]
     return cmd
+
+
+def input_kind(path: Path) -> str:
+    """Which of the three inputs this is, for the opening line and the checks."""
+    suffix = path.suffix.lower()
+    if suffix in IFC_SUFFIXES:
+        return "ifc"
+    if suffix in IMAGE_SUFFIXES:
+        return "image"
+    return "set"
 
 
 def next_stage_lines(out_dir: Path, emitted: set[str]) -> list[tuple[str, str]]:
@@ -154,14 +184,23 @@ def run_flow(pdf, use_demo: bool, seed_val, tol):
     tol = DEFAULT_SIMPLIFY_TOL if tol is None else float(tol)
     if pdf is not None:
         pdf_path = Path(pdf.name if hasattr(pdf, "name") else pdf)
-        opening = "Running matchline on your drawing set..."
+        kind = input_kind(pdf_path)
+        if kind == "ifc":
+            opening = "Reading your IFC model..."
+        elif kind == "image":
+            opening = (
+                "Reading the sheet image... a single image gives symbols only, "
+                "not walls or rooms; a full model needs a drawing-set PDF or an IFC."
+            )
+        else:
+            opening = "Running matchline on your drawing set..."
         seed = None
     elif use_demo:
         seed = int(seed_val) if seed_val not in (None, "") else random.randint(1, 9999)
         pdf_path = None
         opening = f"Running a demo building (number {seed})..."
     else:
-        yield "Drop a drawing-set PDF first, or tick the demo box.", "", None, None, None
+        yield "Drop a drawing set, an IFC, or tick the demo box first.", "", None, None, None
         return
 
     workdir = Path(tempfile.mkdtemp(prefix="matchline-ui-"))
@@ -180,10 +219,7 @@ def run_flow(pdf, use_demo: bool, seed_val, tol):
             pick(outputs["review_html"]),
         )
 
-    if pdf_path is not None:
-        cmd = build_command(pdf_path, None, tol, out_dir)
-    else:
-        cmd = build_command(None, seed, tol, out_dir)
+    cmd = build_command(pdf_path, seed if pdf_path is None else None, tol, out_dir)
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -227,12 +263,27 @@ def build_demo():
     with gr.Blocks(title="Matchline") as demo:
         gr.Markdown(
             "# Drawings in, energy model out\n"
-            "Drop a drawing-set PDF, then press Run. Matchline reads the "
-            "sheets, finds the rooms and openings, and writes a gbXML model "
-            "plus a review page."
+            "Drop a drawing set (a PDF, or a zip of PDFs) or an IFC model, then "
+            "press Run. Matchline reads the sheets, finds the rooms and "
+            "openings, and writes a gbXML model plus a review page. A single "
+            "sheet image runs too, but it yields symbols only: walls and rooms "
+            "need a drawing-set PDF or an IFC."
         )
         with gr.Row():
-            pdf = gr.File(label="Drawing-set PDF", file_types=[".pdf"])
+            pdf = gr.File(
+                label="Drawing set (PDF or zip), IFC model, or sheet image",
+                file_types=[
+                    ".pdf",
+                    ".zip",
+                    ".ifc",
+                    ".ifcxml",
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".tif",
+                    ".tiff",
+                ],
+            )
             with gr.Column():
                 use_demo = gr.Checkbox(label="Try a demo building instead", value=False)
                 seed_val = gr.Number(label="Demo building number (blank = random)", precision=0)
