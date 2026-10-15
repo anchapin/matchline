@@ -7,7 +7,9 @@ Used by ``bem_export.write_gbxml`` when the model carries more than one
   shelled from that level's elevation to elevation + wall height;
 * each level's exterior wall loops become walls at that level's height,
   ``UndergroundWall`` on a stated below-grade level, openings spread over the
-  walls of their own space's level; with a site terrain (#641) each wall is
+  walls of their own space's level, and each wall split between the spaces it
+  encloses with no cut through an opening (#765, as the single-storey writer
+  does); with a site terrain (#641) each wall is
   typed by the ground along it instead, and a part-buried wall is cut at
   grade into underground and exterior parts (openings stay on exterior parts,
   a window below grade becoming its own exposed part, as in a window well);
@@ -46,6 +48,7 @@ from bem_helpers import (
 )
 from bem_levels import hole_free
 from bem_loads import write_schedules, write_space_loads
+from bem_space_split import keep_openings_whole, split_edge
 from grade import GRADE_TOL_M, Terrain
 
 MIN_PIECE_M2 = 1e-4
@@ -299,6 +302,11 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
     n_edges = 0
     for lv, edges, assign, owner in level_walls(model, levels, space_level, notes):
         n_edges += len(edges)
+        lsp = [
+            sp
+            for sp in model.spaces
+            if space_level.get(sp.sid) is lv or lv.id in (getattr(sp, "spans", None) or [])
+        ]
         for i, (p0, p1) in enumerate(edges):
             if math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 1e-6:
                 continue
@@ -315,7 +323,7 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
             pieces = _grade_pieces(
                 terrain, bl, br, L, lv.elevation_m, lv.height_m, [o[1:] for o in ops]
             )
-            plan.append((lv, i, wid, p0, p1, owner[i], bl, br, L, az, ops, pieces))
+            plan.append((lv, i, wid, p0, p1, owner[i], bl, br, L, az, ops, pieces, lsp))
     if terrain:
         used = {t for e in plan if e[11] for t, _ in e[11]} | {
             e[0].wall_type for e in plan if e[11] is None
@@ -388,24 +396,66 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
         return CONSTRUCTION_OF[stype]
 
     n_split = 0
-    for lv, i, wid, p0, p1, sp, bl, br, L, az, ops, pieces in plan:
+    n_space_split = 0
+    for lv, i, wid, p0, p1, sp, bl, br, L, az, ops, pieces, lsp in plan:
         if pieces is None or len(pieces) == 1:
             stype = lv.wall_type if pieces is None else pieces[0][0]
-            surf_count += 1
-            su, bl, br, L = _write_wall(
-                campus,
-                wid,
-                f"Wall {lv.id} {i + 1}",
-                stype,
-                cons_of(stype, sp),
-                sp.sid,
-                p0,
-                p1,
-                lv.elevation_m,
-                lv.height_m,
-            )
-            for u, s0, s1, sill, top in ops:
-                write_opening(su, u, s0, s1, sill, top, 0.0, 0.0, bl, br, L, lv.elevation_m)
+            # one piece per space the wall encloses (#765, as the single-storey
+            # writer); a cut never splits an opening. A grade-cut wall (#641)
+            # stays whole: its pieces are already per ground type.
+            spans_p0 = [(s0, s1) if bl == p0 else (L - s1, L - s0) for _, s0, s1, _, _ in ops]
+            parts = [(0.0, L, sp)] if pieces is not None else split_edge(p0, p1, lsp, sp)
+            parts = keep_openings_whole(parts, spans_p0)
+            if len(parts) == 1:
+                surf_count += 1
+                su, bl, br, L = _write_wall(
+                    campus,
+                    wid,
+                    f"Wall {lv.id} {i + 1}",
+                    stype,
+                    cons_of(stype, sp),
+                    sp.sid,
+                    p0,
+                    p1,
+                    lv.elevation_m,
+                    lv.height_m,
+                )
+                for u, s0, s1, sill, top in ops:
+                    write_opening(su, u, s0, s1, sill, top, 0.0, 0.0, bl, br, L, lv.elevation_m)
+                continue
+            n_space_split += 1
+            uvec = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
+            for k, (t0, t1, psp) in enumerate(parts):
+                q0 = p0 if t0 <= 1e-9 else (p0[0] + uvec[0] * t0, p0[1] + uvec[1] * t0)
+                q1 = p1 if L - t1 <= 1e-9 else (p0[0] + uvec[0] * t1, p0[1] + uvec[1] * t1)
+                qbl, qbr = (q0, q1) if bl == p0 else (q1, q0)
+                Lp = math.hypot(qbr[0] - qbl[0], qbr[1] - qbl[1])
+                if Lp < 1e-6:
+                    continue
+                suf = chr(97 + k)
+                surf_count += 1
+                su, _, _, _ = _write_wall(
+                    campus,
+                    f"{wid}{suf}",
+                    f"Wall {lv.id} {i + 1}{suf}",
+                    stype,
+                    cons_of(stype, psp),
+                    psp.sid,
+                    qbl,
+                    qbr,
+                    lv.elevation_m,
+                    lv.height_m,
+                )
+                last = k == len(parts) - 1
+                for (u, s0, s1, sill, top), (a0, a1) in zip(ops, spans_p0):
+                    mid = (a0 + a1) / 2.0
+                    if not (t0 <= mid < t1 or (last and mid == t1)):
+                        continue
+                    if bl == p0:
+                        s0, s1 = a0 - t0, a1 - t0
+                    else:
+                        s0, s1 = t1 - a1, t1 - a0
+                    write_opening(su, u, s0, s1, sill, top, 0.0, 0.0, qbl, qbr, Lp, lv.elevation_m)
             continue
         n_split += 1
         left = list(ops)
@@ -438,6 +488,8 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
             )
     if n_split:
         notes.append(f"{n_split} wall(s) split at grade from the site terrain")
+    if n_space_split:
+        notes.append(f"{n_space_split} wall(s) split between the spaces they enclose")
 
     # floors, ceilings and roofs between and around the storeys
     semiext_floors = {}  # frozenset(space below, space above) -> construction (#900)
