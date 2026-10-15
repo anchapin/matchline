@@ -8,7 +8,10 @@
 - ``trust_report.html``: one page, rendered from that JSON, offline (inline
   CSS, no external assets); ``trust_report.pdf``, the same content on
   one page, drawn with reportlab from the same JSON;
-- ``DISCLAIMER.txt`` and ``manifest.json`` (file names and SHA-256).
+- ``DISCLAIMER.txt`` and ``manifest.json`` (file names and SHA-256);
+- a dated sign-off block (#976): when the report was generated, the tool
+  version, and blank preparer/reviewer/stamp lines for the professional
+  to fill and stamp.
 
 The report only reads what the run already wrote: inputs and their hashes,
 what was extracted, the convention biases, the validation summary, the open
@@ -26,6 +29,7 @@ import html
 import json
 import math
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
@@ -194,10 +198,22 @@ def build_trust_report(
         for k, v in block.items():
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 biases.append(_num(f"{label}: {k}", v, f"convention_report.json {key}.{k}"))
+    signoff = {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "tool_version": _tool_version(),
+        # left blank on purpose: the professional fills these in and stamps the
+        # report; matchline never signs anything (#976).
+        "prepared_by": "",
+        "prepared_date": "",
+        "reviewed_by": "",
+        "reviewed_date": "",
+        "stamp": "",
+    }
     return {
         "schema": SCHEMA,
         "building": model.name,
         "disclaimer": DISCLAIMER,
+        "signoff": signoff,
         "inputs": _inputs(inputs),
         "extracted": extracted,
         "convention_biases": biases,
@@ -219,6 +235,16 @@ table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:2px 6px;
 border-bottom:1px solid #eee;vertical-align:top}th{color:#555;font-weight:600}
 .src{color:#777;font-size:9px}.mono{font-family:Menlo,Consolas,monospace;font-size:9px}
 """
+
+
+def _tool_version() -> str:
+    """This matchline's version, for the sign-off block's traceability."""
+    try:
+        from importlib.metadata import version
+
+        return version("matchline")
+    except Exception:  # noqa: BLE001  (not installed; fall through)
+        return "(unknown)"
 
 
 def _e(x) -> str:
@@ -313,6 +339,17 @@ def render_html(tr: dict) -> str:
         f"<p>{more} more in stage_02_model.json review_queue.</p>" if more > 0 else "",
         f"<h2>Defaults used: {len(tr['defaults'])}</h2>",
         _table(["where", "source"], dfl) or "<p>no defaults used</p>",
+        "<h2>Sign-off</h2>",
+        "<p>Report generated "
+        + _e(tr["signoff"]["generated_at"])
+        + " by matchline "
+        + _e(tr["signoff"]["tool_version"])
+        + ". Source/revision traceability: the "
+        "Inputs table above carries each file's SHA-256; the extracted and defaults "
+        "tables name the field each number was read from.</p>",
+        "<table><tr><th></th><th>name</th><th>date</th><th>stamp / seal</th></tr>"
+        "<tr><td>Prepared by</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>"
+        "<tr><td>Reviewed by</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></table>",
         "<h2>Review decisions</h2>",
         f"<p>{_e(_dnote(tr))}</p>",
         "</body></html>",
@@ -398,6 +435,15 @@ def write_pdf(tr: dict, path: Path) -> None:
         table(["where", "source"], [[d["where"], d["source"]] for d in tr["defaults"]],
               (0.45, 0.55))
         or Paragraph("no defaults used", body),
+        Paragraph("Sign-off", h2),
+        Paragraph(
+            f"Report generated {tr['signoff']['generated_at']} by matchline "
+            f"{tr['signoff']['tool_version']}. Source/revision traceability: the "
+            "Inputs table carries each file's SHA-256; the extracted and defaults "
+            "tables name the field each number was read from.", body),
+        table(["", "name", "date", "stamp / seal"],
+              [["Prepared by", "", "", ""], ["Reviewed by", "", "", ""]],
+              (0.18, 0.30, 0.22, 0.30)),
         Paragraph("Review decisions", h2),
         Paragraph(html.escape(_dnote(tr)), body),
         Spacer(1, 2),
