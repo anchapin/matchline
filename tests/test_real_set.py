@@ -1151,6 +1151,29 @@ def test_a_provider_that_needs_the_scale_gets_it_per_sheet(tmp_path):
     assert by["sheet_001.json"]["stages"]["symbols"]["provider"] == "door_swing"
 
 
+def test_single_dimension_scale_produces_rooms_on_a_legacy_plan(tmp_path):
+    """#1019: a legacy plan sheet with no scale note or bar, one dimension
+    string, still produces rooms, flagged for review."""
+    # 10'-0" written over 90 pt drawn: exactly 1:96
+    dim = (
+        line(100, 52, 138, 52)
+        + line(152, 52, 190, 52)
+        + line(100, 48, 100, 56)
+        + line(190, 48, 190, 56)
+        + text(139, 50, "10'-0\"", 8)
+    )
+    body = _outline(_mass(SHELL + PARTITION, [DOOR])) + _labels(1)
+    page = text(1500, 150, "LEVEL ONE", 12) + dim + body + _fallback_plan_body()
+    pdf = _set(tmp_path, [page])
+    model, report = real_set.build_set_model(pdf, tmp_path / "out")
+    st = report.sheets[0].stages
+    assert st["scale"]["status"] == "ok" and "estimated" in st["scale"]["note"]
+    assert st["walls_rooms"]["status"] == "ok"
+    assert st["walls_rooms"]["review"] >= 1  # the scale_estimated review item
+    ids = {s.id for s in model.spaces.values() if s.level_id == "LX1"}
+    assert {"LX1-101", "LX1-102"} <= ids
+
+
 def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     """#743: door and window providers run together on one set; the set reader
     hands the combined provider each plan's walls and its px per metre."""

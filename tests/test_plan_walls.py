@@ -259,6 +259,33 @@ def test_walls_for_sheets_uses_scale_and_index(tmp_path):
     assert not (out / "walls_002.json").exists()
 
 
+def test_walls_for_sheets_flags_an_estimated_scale(tmp_path):
+    """#1019: a needs_review dimension-estimated scale still reads walls, and
+    the review rides on the walls output instead of blocking the sheet."""
+    content = _outline(_mass(SHELL + PARTITION, [DOOR]))
+    pdf = write_pdf(tmp_path / "s.pdf", [PageSpec(width=PAGE_W, height=PAGE_H, content=content)])
+    out = tmp_path / "o"
+    P.ingest_pdf(pdf, out_dir=out, dpi=18)
+    (out / "scale.json").write_text(
+        json.dumps(
+            {
+                "sheet_001.json": {
+                    "m_per_pt": M_PER_PT,
+                    "needs_review": True,
+                    "source": "single_dimension",
+                    "reason": "estimated from 1 dimension; no scale note or bar on the sheet",
+                }
+            }
+        )
+    )
+    res = W.walls_for_sheets(out)
+    kinds = [r["kind"] for r in res["sheet_001.json"]["review"]]
+    assert "scale_estimated" in kinds
+    data = json.loads((out / "walls_001.json").read_text())
+    assert any(r["kind"] == "scale_estimated" for r in data["review"])
+    assert data["rooms"]  # walls still read on the estimated scale
+
+
 def test_cli_walls(tmp_path, capsys):
     pdf = write_pdf(
         tmp_path / "s.pdf",

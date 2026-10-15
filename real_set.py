@@ -192,7 +192,10 @@ def build_set_model(
     for f in files:
         sc = scales.get(f, {})
         if sc.get("m_per_pt"):
-            status[f].mark("scale", "ok", m_per_pt=sc["m_per_pt"], method=sc.get("method"))
+            kv = {"m_per_pt": sc["m_per_pt"], "method": sc.get("source")}
+            if sc.get("needs_review"):
+                kv["note"] = "scale estimated from dimensions; review before trusting areas"
+            status[f].mark("scale", "ok", **kv)
         elif entries.get(f, {}).get("use_for_takeoff"):
             status[f].mark("scale", "failed", "no drawing scale found on a takeoff sheet")
         else:

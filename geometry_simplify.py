@@ -554,6 +554,21 @@ class FootprintSimplifyResult:
         return max(self.parts, key=lambda r: r.original_area).ring
 
     @property
+    def original_count(self) -> int:
+        """Total original edge count across every part and hole, the shape
+        the single-ring ``SimplifyResult`` exposes (#1019)."""
+        return sum(r.original_count for r in self.parts) + sum(
+            h.original_count for hs in self.holes for h in hs
+        )
+
+    @property
+    def simplified_count(self) -> int:
+        """Total simplified edge count across every part and hole."""
+        return sum(r.simplified_count for r in self.parts) + sum(
+            h.simplified_count for hs in self.holes for h in hs
+        )
+
+    @property
     def rings(self) -> list:
         return [r.ring for r in self.parts]
 

@@ -1503,7 +1503,9 @@ def _thin_gaps(
     return out
 
 
-def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
+def extract_walls(
+    sheet, m_per_pt: Optional[float], scale_review: Optional[dict] = None
+) -> PlanWalls:
     if not m_per_pt:
         return PlanWalls([], [], [], [{"kind": "no_scale", "reason": "sheet has no scale"}], None)
     k = 1.0 / m_per_pt  # points per metre
@@ -1516,6 +1518,8 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     bands = _pair_bands(segs, t_min, t_max, MIN_WALL_LEN_M * k)
     bands += [_band_from_rect(a, b, t) for _, a, b, t in rects]
     review: List[dict] = []
+    if scale_review:
+        review.append(dict(scale_review))
 
     def to_m(p: Pt) -> Pt:
         return (round(p[0] * m_per_pt, 4), round((H - p[1]) * m_per_pt, 4))
@@ -1874,7 +1878,19 @@ def walls_for_sheets(sheet_dir) -> Dict[str, dict]:
         if keep is not None and p.name not in keep:
             continue
         sc = scales.get(p.name, {})
-        res = extract_walls(json.loads(p.read_text()), sc.get("m_per_pt"))
+        est = None
+        if (
+            sc.get("m_per_pt")
+            and sc.get("needs_review")
+            and sc.get("source") in ("single_dimension", "dimensions")
+        ):
+            # an estimated scale's areas are provisional until a human confirms (#1019)
+            est = {
+                "kind": "scale_estimated",
+                "source": sc.get("source"),
+                "reason": sc.get("reason", ""),
+            }
+        res = extract_walls(json.loads(p.read_text()), sc.get("m_per_pt"), scale_review=est)
         name = p.name.replace("sheet_", "walls_")
         (d / name).write_text(json.dumps(res.to_dict(), indent=2))
         out[p.name] = res.to_dict()
