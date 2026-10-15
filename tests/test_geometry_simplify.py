@@ -666,3 +666,19 @@ class TestSimplifyFootprint:
     def test_empty_parts_raises(self):
         with pytest.raises(ValueError):
             gs.simplify_footprint([])
+
+
+def test_multi_part_result_carries_total_edge_counts():
+    """#1019: a multi-ring footprint result exposes original_count and
+    simplified_count like the single-ring result, summed over parts + holes."""
+    parts = [
+        gs.FootprintPart(ring=[(0, 0), (10, 0), (10, 10), (0, 10)], holes=[], footprint_area=100.0),
+        gs.FootprintPart(
+            ring=[(20, 0), (40, 0), (40, 10), (20, 10)], holes=[], footprint_area=200.0
+        ),
+    ]
+    res = gs.simplify_footprint(parts, tol=0.02)
+    assert res.parts and res.holes == [[], []]
+    assert res.original_count == sum(r.original_count for r in res.parts)
+    assert res.simplified_count == sum(r.simplified_count for r in res.parts)
+    assert res.simplified_count <= res.original_count

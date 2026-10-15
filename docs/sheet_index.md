@@ -63,3 +63,7 @@ as its own level (`LX<n>`). When a number *was* found but the type stayed
 unclassified, the fallback also flags that the number may be a label rather
 than the sheet number. A real classification (title text or NCS type digit) is
 never overridden.
+
+A sheet routed this way still needs a scale before walls read: with no scale
+note or bar, one or two agreeing dimensions estimate it, flagged for
+review (#1019).

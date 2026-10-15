@@ -16,7 +16,7 @@ matchline scale sheets/        # writes sheets/scale.json
 |---|---|---|
 | Scale note | `1/8" = 1'-0"`, `3/32" = 1'-0"`, `1" = 20'-0"`, `1:100` | ratio = real length / paper length |
 | Scale bar | a row of numeric labels from 0, linear in position, with a unit (`FEET`, `FT`, `'`, `M`) | labels without a unit are ignored |
-| Dimension strings | `12'-6"`, `12'-6 1/2"`, `3600 mm`, ... centred on a dimension line | needs 3 or more agreeing (within 1%) to stand alone |
+| Dimension strings | `12'-6"`, `12'-6 1/2"`, `3600 mm`, ... centred on a dimension line | needs 3 or more agreeing (within 1%) to stand alone; one dimension, or two agreeing ones, on a sheet with no note or bar *estimates* the scale, flagged for review (#1019) |
 
 `NTS`, `N.T.S.` and `NOT TO SCALE` mark a sheet that gives no areas.
 `SCALE: AS NOTED` defers to the per-view notes.
@@ -30,7 +30,13 @@ matchline scale sheets/        # writes sheets/scale.json
    cross-check it; agreement raises confidence, a disagreement over 1% sets
    `needs_review` and says which source gave what.
 3. No note: the scale bar, then dimensions.
-4. Nothing: `m_per_pt` is `None` with the reason and `needs_review`. Never a
+4. Legacy sheets state no scale at all (#1019): one dimension, or two
+   agreeing ones, estimates the scale from the written length over its drawn
+   length. The estimate snaps to a standard architectural scale within 3%
+   (and says so), gets a low confidence and `needs_review: true`, and names
+   the dimension text it came from in its warning. Two dimensions that
+   disagree give no estimate. `NTS` still blocks this fallback.
+5. Nothing: `m_per_pt` is `None` with the reason and `needs_review`. Never a
    guess.
 
 Every candidate is kept in `evidence` (source, text, box, ratio), so a reviewer

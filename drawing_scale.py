@@ -33,6 +33,41 @@ INCH_M = 0.0254
 PT_M = INCH_M / 72.0  # one sheet point on paper, in metres
 AGREE_TOL = 0.01  # sources agree within 1%
 MIN_DIMENSIONS = 3  # dimension strings needed before they can stand alone
+SNAP_TOL = 0.03  # a dimension estimate this close to a standard scale snaps to it
+# standard ratios (real / paper): architectural inches-per-foot, engineering
+# and metric ratio scales
+STANDARD_RATIOS = (
+    8,
+    12,
+    16,
+    20,
+    24,
+    25,
+    32,
+    40,
+    48,
+    50,
+    64,
+    75,
+    96,
+    100,
+    120,
+    128,
+    150,
+    192,
+    200,
+    240,
+    250,
+    300,
+    360,
+    384,
+    400,
+    480,
+    500,
+    600,
+    720,
+    1000,
+)
 
 Box = Tuple[float, float, float, float]
 
@@ -351,6 +386,12 @@ def _agree(a: float, b: float) -> bool:
     return abs(a - b) <= AGREE_TOL * max(a, b)
 
 
+def _nearest_standard(ratio: float) -> Tuple[float, float]:
+    """The standard scale nearest a ratio and how far off it is (fraction)."""
+    best = min(STANDARD_RATIOS, key=lambda s: abs(s - ratio) / s)
+    return float(best), abs(best - ratio) / best
+
+
 def _distinct(ratios: List[float]) -> List[float]:
     out: List[float] = []
     for r in ratios:
@@ -409,6 +450,42 @@ def sheet_scale(sheet) -> SheetScale:
     elif len(dim_agree) >= MIN_DIMENSIONS and len(dim_agree) >= 0.6 * len(dim_ratios):
         primary = statistics.median(dim_agree)
         source, conf = "dimensions", 0.8 * len(dim_agree) / len(dim_ratios)
+    elif (
+        dim_ratios
+        and not nts
+        and (len(dim_ratios) == 1 or (len(dim_ratios) == 2 and len(dim_agree) == 2))
+    ):
+        # Legacy sheets often state no scale at all (#1019): the dimensions
+        # that are there still pin one, but never silently.
+        agreeing = [e for e in dims if e.ratio and _agree(e.ratio, statistics.median(dim_agree))]
+        names = ", ".join(e.text for e in agreeing)
+        if len(agreeing) >= 2 and len({e.text for e in agreeing}) >= 2:
+            primary, source, conf = statistics.median(dim_agree), "dimensions", 0.5
+        else:
+            primary, source, conf = dim_ratios[0], "single_dimension", 0.4
+        near, off = _nearest_standard(primary)
+        if off <= SNAP_TOL:
+            snapped = near
+            primary = near
+            conf = min(0.55, conf + 0.05)
+            warnings.append(
+                f"no scale note or bar; {source} estimate 1:{snapped:.4g} from "
+                f"{len(agreeing)} dimension(s) ({names}) snapped to standard 1:{near:.4g} "
+                f"({off:.1%} off); review before trusting areas"
+            )
+        else:
+            warnings.append(
+                f"no scale note or bar; scale estimated from {len(agreeing)} dimension(s) "
+                f"({names}) as 1:{primary:.4g}, nearest standard 1:{near:.4g} is {off:.1%} "
+                f"away; review before trusting areas"
+            )
+        return done(
+            primary,
+            source,
+            conf,
+            True,
+            f"estimated from {len(agreeing)} dimension(s); no scale note or bar on the sheet",
+        )
     elif nts:
         return done(None, None, 0.0, False, "sheet is marked not to scale; no areas from it")
     else:
