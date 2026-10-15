@@ -361,6 +361,9 @@ in more than one review.
 - Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
 - Visible monthly flywheel/model changelog
 - Rename before public launch because WiSARD is not the production detector
+  (done: production docs name the YOLO detector; the one surviving "WiSARD" in
+  hvac_trace.py is jesse.py's research classifier inside its cascade, noted in
+  its docstring — #979)
 
 ## Strategy
 
