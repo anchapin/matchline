@@ -1683,3 +1683,62 @@ def _check_space_type_accounting(ctx: _Ctx) -> CheckResult:
         f"{len(non_room)} non-room space(s) kept as their own spaces: {breakdown}",
         entities=non_room[:20],
     )
+
+
+# ---------------------------------------------------------------------------
+# #975: area definitions reconcile
+# ---------------------------------------------------------------------------
+
+
+def _check_area_definitions(model: BuildingModel) -> CheckResult:
+    """#975: gross >= rentable and assignable <= rentable must hold.
+
+    These are invariants of the area definitions themselves (#975), so a
+    violation means broken geometry or classification, not an unusual
+    building. A violation within the battery's area tolerance (3%, the same
+    tol_area the conservation checks hardcode) warns; beyond it errors. The
+    deltas are attributed in the payload. Unavailable inputs (no thickness,
+    no space-union ring) leave a relation unverified with its reason, never
+    failed and never zero.
+    """
+    check_id = "area_definitions_reconcile"
+    name = "Area definitions reconcile (#975)"
+    if not list(getattr(model, "spaces", {}).values()):
+        return CheckResult(check_id, name, "skip", "model has no spaces on any level")
+    from types import SimpleNamespace
+
+    from area_definitions import compute as _compute_area_defs
+
+    thickness, source, _evidence = _exterior_thickness_m(SimpleNamespace(model=model))
+    out = _compute_area_defs(model, thickness=thickness, thickness_source=source)
+    warns: list[str] = []
+    errors: list[str] = []
+    for key, rel in out["reconciliation"].items():
+        constr = (
+            out["totals"].get("construction_union_m2")
+            if key == "total"
+            else out["per_level"].get(key, {}).get("construction_union_m2")
+        )
+        for rel_id, entry in rel.items():
+            if entry.get("verified") is not False:
+                continue
+            d = entry["delta_m2"] or 0.0
+            rel_err = abs(d) / constr if constr else None
+            if rel_err is not None and rel_err <= 0.03:  # battery tol_area
+                warns.append(
+                    f"{key}: {rel_id} off by {d:.3f} m2 ({rel_err:.1%} of construction, tol 3%)"
+                )
+            else:
+                errors.append(f"{key}: {rel_id} off by {d:.3f} m2")
+    payload = {"reconciliation": out["reconciliation"], "totals": out["totals"]}
+    if errors:
+        return CheckResult(check_id, name, "error", "; ".join(errors), actual=payload)
+    if warns:
+        return CheckResult(check_id, name, "warn", "; ".join(warns), actual=payload)
+    return CheckResult(
+        check_id,
+        name,
+        "pass",
+        "gross >= rentable and assignable <= rentable hold on every level and in total",
+        actual=payload,
+    )

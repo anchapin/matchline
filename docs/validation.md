@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (48 checks)
+## The battery (49 checks)
 
 ### Conservation laws (error)
 
@@ -157,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 45 + 3 = 48.
+and are run in addition to it, so `N_CHECKS` = 45 + 4 = 49.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -296,6 +296,15 @@ block export but surface code-compliance issues for human review.
   the minimums for the equipment type (ASHRAE 90.1-2019 Tables
   6.8.1-6.8.3). Walks zones → `space_ids` → `space.hvac`. Skipped when no
   zones or no conditioned spaces carry HVAC data.
+- `area_definitions_reconcile` — **the #975 ordering invariants between the
+  area definitions.** gross >= rentable and assignable <= rentable must hold
+  on every level and in total: they are invariants of the definitions
+  themselves, so a violation means broken geometry or classification, not an
+  unusual building. A violation within the 3% area tolerance warns, beyond
+  it errors, matching the conservation checks. Thickness comes from the
+  same evidence chain as `convention_bias`; with no thickness or no
+  space-union ring the affected relations are unverified with a reason,
+  never failed and never zero.
 
 ## How to add a check
 
