@@ -392,11 +392,6 @@ def _nearest_standard(ratio: float) -> Tuple[float, float]:
     return float(best), abs(best - ratio) / best
 
 
-def _snap_standard(ratio: float) -> float:
-    near, off = _nearest_standard(ratio)
-    return near if off <= SNAP_TOL else ratio
-
-
 def _distinct(ratios: List[float]) -> List[float]:
     out: List[float] = []
     for r in ratios:
@@ -464,7 +459,7 @@ def sheet_scale(sheet) -> SheetScale:
         # that are there still pin one, but never silently.
         agreeing = [e for e in dims if e.ratio and _agree(e.ratio, statistics.median(dim_agree))]
         names = ", ".join(e.text for e in agreeing)
-        if len(agreeing) >= 2:
+        if len(agreeing) >= 2 and len({e.text for e in agreeing}) >= 2:
             primary, source, conf = statistics.median(dim_agree), "dimensions", 0.5
         else:
             primary, source, conf = dim_ratios[0], "single_dimension", 0.4

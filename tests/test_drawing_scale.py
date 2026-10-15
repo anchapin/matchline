@@ -152,6 +152,14 @@ def test_two_agreeing_dimensions_estimate_a_legacy_scale(tmp_path):
     assert sc.needs_review and sc.confidence < 0.6
 
 
+def test_duplicated_dimension_text_does_not_boost_confidence(tmp_path):
+    """One dimension string drawn twice is one reading, not two (#1019 duck)."""
+    dims = _dim(100, 400, 180, "20'-0\"") + _dim(100, 300, 180, "20'-0\"")
+    sc = S.sheet_scale(_sheet(tmp_path, dims))
+    assert sc.source == "single_dimension" and sc.confidence < 0.5
+    assert sc.needs_review
+
+
 def test_two_disagreeing_dimensions_do_not_estimate(tmp_path):
     # 20'-0" at 1:96 is 180 pt; at 1:48 it is 360 pt
     dims = _dim(100, 400, 180, "20'-0\"") + _dim(100, 300, 360, "20'-0\"")
