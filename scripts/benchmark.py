@@ -25,9 +25,12 @@ Per building with data present:
 - cross-frontend consistency, when a drawing-set PDF is configured, runs the
   unified pipeline (``run_pipeline`` as a subprocess, ``--set``) and compares
   the drawing-path model with the IFC-path model within ``CONSIST_TOL``;
-- the gbXML path writes the IFC-path model's gbXML and, with ``--openstudio``
-  and the OpenStudio CLI on PATH, checks the export imports cleanly
-  (``openstudio gbxml --translate``); without it the column reads ``skipped``.
+- the gbXML path writes the IFC-path model's gbXML on every run and reports
+  the simplifier's surface counts (#972): envelope segments in/out, roof
+  facets in/out, exported surfaces. ``--simplify-tol`` sets the envelope area
+  budget (default 0.02, matching ``run_pipeline``). With ``--openstudio`` and
+  the OpenStudio CLI on PATH it also checks the export imports cleanly
+  (``openstudio gbxml --translate``); without it that column reads ``skipped``.
 
 Writes a markdown scoreboard plus the raw JSON. ``DATASETS.md`` records the
 candidates, licenses and source URLs; the benchmark itself never commits data.
@@ -48,6 +51,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from building_model import BuildingModel  # noqa: E402
+from geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
 from ifc_import import import_ifc  # noqa: E402
 
 # Rooms whose id/number match are paired; area error is mean |a_model - a_truth|
@@ -85,6 +89,11 @@ class Row:
     terminals_correct: int | None = None
     cross_frontend: str | None = None  # "ok" | "<n> metrics out of tol" | None
     openstudio: str | None = None  # "pass" | "fail" | "skipped"
+    walls_in: int | None = None  # envelope segments before simplification (#972)
+    walls_out: int | None = None  # envelope segments after simplification
+    roof_in: int | None = None  # roof facets before simplification
+    roof_out: int | None = None  # roof facets after simplification
+    surfaces_out: int | None = None  # <Surface> elements in the exported gbXML
     extras: dict = field(default_factory=dict)
 
 
@@ -185,7 +194,9 @@ def _mape(model_vals: dict, truth_vals: dict) -> float | None:
     return sum(errs) / len(errs) if errs else None
 
 
-def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> Row:
+def evaluate_building(
+    b: Building, out_dir: Path, openstudio: bool = False, simplify_tol: float = 0.02
+) -> Row:
     row = Row(name=b.name)
     if b.arch_ifc is None or not b.arch_ifc.exists():
         row.status = "missing"
@@ -248,7 +259,15 @@ def evaluate_building(b: Building, out_dir: Path, openstudio: bool = False) -> R
     elif b.drawing_set is not None:
         row.extras["drawing_set"] = "missing"
 
-    row.openstudio = _openstudio_check(b, out_dir) if openstudio else "skipped"
+    simp = _simplify_model(truth_model, simplify_tol)
+    row.walls_in = simp["walls_in"]
+    row.walls_out = simp["walls_out"]
+    row.roof_in = simp["roof_in"]
+    row.roof_out = simp["roof_out"]
+    gbxml = _write_gbxml(b, out_dir, truth_model, simp["sres"], simp["wall_height"], simplify_tol)
+    if gbxml is not None:
+        row.surfaces_out = _gbxml_surface_counts(gbxml)
+    row.openstudio = _openstudio_check(b, out_dir, gbxml) if openstudio else "skipped"
     return row
 
 
@@ -307,12 +326,62 @@ def _cross_frontend(b: Building, out_dir: Path) -> str:
     return "ok" if not outs else "; ".join(outs)
 
 
-def _openstudio_check(b: Building, out_dir: Path) -> str:
+def _simplify_model(model: BuildingModel, simplify_tol: float) -> dict:
+    """Envelope + roof simplification on an imported model (#972).
+
+    Returns counts for the scoreboard's surface columns plus the
+    SimplifyResult and wall height the gbXML export reuses. Counts are None
+    when the model has no usable footprint or no roof facets.
+    """
+    out: dict = {
+        "walls_in": None,
+        "walls_out": None,
+        "roof_in": None,
+        "roof_out": None,
+        "sres": None,
+        "wall_height": None,
+    }
+    try:
+        polys = [sp.polygon_m for sp in model.spaces.values() if getattr(sp, "polygon_m", None)]
+        wall_h = getattr(model.levels[0], "wall_height_m", None) if model.levels else None
+        ring = footprint_from_regions(polys)
+        if ring and len(ring) >= 3:
+            sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_h)
+            out.update(
+                walls_in=sres.original_count,
+                walls_out=sres.simplified_count,
+                sres=sres,
+                wall_height=wall_h,
+            )
+    except Exception as e:  # a building that cannot simplify is a finding
+        print(f"simplification failed: {type(e).__name__}: {e}", file=sys.stderr)
+    try:
+        from roof_simplify import apply_roof_simplification
+
+        rres = apply_roof_simplification(model)
+        if rres is not None and rres.n_before:
+            out["roof_in"], out["roof_out"] = rres.n_before, rres.n_after
+    except Exception as e:
+        print(f"roof simplification unavailable: {type(e).__name__}: {e}", file=sys.stderr)
+    return out
+
+
+def _gbxml_surface_counts(path: Path) -> int | None:
+    """Total <Surface> elements in an exported gbXML file (#972)."""
+    import xml.etree.ElementTree as ET
+
+    try:
+        tree = ET.parse(str(path))
+    except Exception:
+        return None
+    return sum(1 for el in tree.iter() if el.tag.split("}")[-1] == "Surface")
+
+
+def _openstudio_check(b: Building, out_dir: Path, gbxml: Path | None) -> str:
     """Import the IFC-path model's gbXML with the OpenStudio CLI, pass/fail."""
     cli = shutil.which("openstudio")
     if cli is None:
         return "skipped"
-    gbxml = _write_gbxml(b, out_dir)
     if gbxml is None:
         return "skipped"
     try:
@@ -327,14 +396,26 @@ def _openstudio_check(b: Building, out_dir: Path) -> str:
     return "pass" if proc.returncode == 0 else "fail"
 
 
-def _write_gbxml(b: Building, out_dir: Path) -> Path | None:
+def _write_gbxml(
+    b: Building,
+    out_dir: Path,
+    model: BuildingModel,
+    sres=None,
+    wall_height: float | None = None,
+    simplify_tol: float = 0.02,
+) -> Path | None:
     try:
         from bem_export import write_gbxml
         from run_pipeline import model_from_linked_model
 
-        model = import_ifc(str(b.arch_ifc))
+        # #972: the export exercises the real stage-3 simplification (the
+        # caller's already-imported model, no second IFC read); the old
+        # hardcoded simplified_ring=None / tolerance=0.1 bypassed it.
         bem = model_from_linked_model(
-            model=model, simplified_ring=None, wall_height_m=None, simplify_tolerance=0.1
+            model=model,
+            simplified_ring=sres.ring if sres is not None else None,
+            wall_height_m=wall_height,
+            simplify_tolerance=simplify_tol,
         )
         out = out_dir / f"{b.name}-gbxml" / "model.gbxml"
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -378,12 +459,12 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
         "",
         "| building | schema | status | rooms (truth / model) | area err | wall len err"
         " | windows (t / m) | doors (t / m) | win area err | LPD med err | terminals |"
-        " cross-frontend | openstudio |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        " envelope (in / out) | roof (in / out) | surfaces | cross-frontend | openstudio |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         if r.status != "ok":
-            lines.append(f"| {r.name} | {r.schema or ''} | {r.status} | | | | | | | | | | |")
+            lines.append(f"| {r.name} | {r.schema or ''} | {r.status} | | | | | | | | | | | | | |")
             continue
 
         def frac(v):
@@ -395,12 +476,16 @@ def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
         terminals = (
             f"{r.terminals_correct}/{r.terminals_scored}" if r.terminals_scored is not None else ""
         )
+        env = f"{r.walls_in} / {r.walls_out}" if r.walls_in is not None else ""
+        roof = f"{r.roof_in} / {r.roof_out}" if r.roof_in is not None else ""
+        surf = str(r.surfaces_out) if r.surfaces_out is not None else ""
         cf = r.cross_frontend or ""
         os_col = r.openstudio or ""
         lines.append(
             f"| {r.name} | {r.schema or ''} | ok | {rooms} | {frac(r.area_err)} |"
             f" {frac(r.wall_len_err)} | {wins} | {doors} | {frac(r.window_area_err)} |"
-            f" {frac(r.lpd_median_err)} | {terminals} | {cf} | {os_col} |"
+            f" {frac(r.lpd_median_err)} | {terminals} | {env} | {roof} | {surf}"
+            f" | {cf} | {os_col} |"
         )
     if not openstudio:
         lines.append("")
@@ -418,6 +503,13 @@ def main(argv=None) -> int:
         action="store_true",
         help="run the OpenStudio import check when the CLI is on PATH",
     )
+    ap.add_argument(
+        "--simplify-tol",
+        dest="simplify_tol",
+        type=float,
+        default=0.02,
+        help="envelope simplification area budget, fraction (default 0.02, matches run_pipeline)",
+    )
     args = ap.parse_args(argv)
 
     buildings = load_config(Path(args.config))
@@ -425,7 +517,7 @@ def main(argv=None) -> int:
         print("config lists no buildings", file=sys.stderr)
         return 2
     out_dir = Path(args.out).resolve().parent
-    rows = [evaluate_building(b, out_dir, args.openstudio) for b in buildings]
+    rows = [evaluate_building(b, out_dir, args.openstudio, args.simplify_tol) for b in buildings]
     md = render_scoreboard(rows, args.openstudio)
     Path(args.out).write_text(md)
     print(md)

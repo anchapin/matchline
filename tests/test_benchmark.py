@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.benchmark import (  # noqa: E402
     Building,
     Row,
+    _gbxml_surface_counts,
     _hvac_columns,
     _mape,
     _median,
@@ -146,3 +147,36 @@ def test_hvac_columns_read_evaluate_shape(tmp_path, monkeypatch) -> None:
     scored, correct = _hvac_columns(hvac)
     assert scored == 5
     assert correct == 4
+
+
+def test_scoreboard_surface_count_columns() -> None:
+    """#972: the scoreboard carries envelope/roof/surface simplification columns."""
+    row = Row(
+        name="x",
+        status="ok",
+        walls_in=120,
+        walls_out=34,
+        roof_in=9,
+        roof_out=6,
+        surfaces_out=214,
+    )
+    md = render_scoreboard([row], openstudio=False)
+    assert "envelope (in / out)" in md
+    assert "roof (in / out)" in md
+    assert "surfaces" in md
+    assert "| 120 / 34 |" in md
+    assert "| 9 / 6 |" in md
+    assert "| 214 |" in md
+    blank = render_scoreboard([Row(name="y", status="ok")], openstudio=False)
+    assert "| y |  | ok |" in blank
+
+
+def test_gbxml_surface_counts(tmp_path: Path) -> None:
+    """#972: surfaces counted from the exported file, namespace-agnostic."""
+    p = tmp_path / "m.gbxml"
+    p.write_text(
+        '<?xml version="1.0"?><gbXML xmlns="http://www.gbxml.org/schema">'
+        '<Surface id="1"/><Surface id="2"/><Opening id="1"/></gbXML>'
+    )
+    assert _gbxml_surface_counts(p) == 2
+    assert _gbxml_surface_counts(tmp_path / "nope.gbxml") is None
