@@ -384,3 +384,35 @@ in more than one review.
 - Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
 
 ★ = raised independently by multiple personas — highest signal.
+
+## Non-goals and parked ideas
+
+Explicitly not goals for v0.1.x (see `docs/release.md` for scope and
+cadence; the dependency map lives there too):
+
+- **matchline does not run energy simulations.** It reads drawings and
+  IFC models and exports gbXML and IFC4; the simulation itself stays
+  with OpenStudio/EnergyPlus. Zone load inputs are set before any HVAC
+  sizing decision is made downstream.
+- **WiSARD never becomes the production detector.** `jesse.py` is a
+  deterministic research asset; production symbol spotting is the YOLO
+  pipeline in `detector/`.
+- **No raster-to-walls from sheet images.** The image input yields
+  symbols and takeoff only, stated honestly wherever it appears.
+- **No second PDF library.** pypdfium2 is the only PDF entry point;
+  AGPL options (PyMuPDF) stay rejected.
+- **No noncommercial data in shipped artifacts.** NC / copy-left
+  benchmark data and weights stay eval-only and quarantined (#751).
+- **No automatic releases.** Releases cut by hand from `develop` with
+  green CI and release notes that match reality.
+- **No unreviewed merges for higher-risk changes.** The duck review and
+  green CI gate everything; ambiguous or high-risk changes wait for
+  personal review regardless of CI.
+
+Parked ideas: deliberately unstarted, listed here so they do not get
+re-discovered as gaps. Revit/AutoCAD plugins, the enterprise trust items
+(SSO, audit logs, SOC 2 story, air-gapped mode), the standalone BIM
+import health score, and the open-core commercial model all sit under
+Strategy above; they are future-facing by design. Nexus-style
+infrastructure projects and anything outside drawings/IFC-to-BEM scope
+stay out of this repo entirely.
