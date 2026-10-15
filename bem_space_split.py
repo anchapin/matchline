@@ -99,11 +99,17 @@ def keep_openings_whole(pieces, spans):
     return out
 
 
-def covers_footprint(ring, spaces) -> bool:
-    """Do the spaces tile the footprint (no gap, no overlap) within COVER_TOL?"""
+def covers_footprint(ring, spaces, holes=None) -> bool:
+    """Do the spaces tile the footprint (no gap, no overlap) within COVER_TOL?
+
+    ``holes`` (#984): interior rings (courtyards) subtracted from the
+    footprint first, so band spaces around a courtyard count as tiling.
+    """
     from shapely.ops import unary_union
 
     foot = _poly(ring)
+    if holes:
+        foot = foot.difference(unary_union([_poly(h) for h in holes]))
     polys = [_poly(sp.polygon_m) for sp in spaces]
     if not polys or foot.area <= 0:
         return False
@@ -122,8 +128,20 @@ def shared_walls(spaces, ring, skip_pairs=frozenset()):
     Wound so ``b`` lies to the right of q0 -> q1, which is the side the
     writer's (q0, q1, top) loop faces: the normal points from a into b.
     Boundaries on the exterior ring are walls already and are left out.
+    ``ring`` (#984) may also be a list of rings (wings + courtyard holes);
+    boundaries on any of them are exterior walls already.
     """
-    outer = _poly(ring).boundary
+    if (
+        isinstance(ring, (list, tuple))
+        and ring
+        and isinstance(ring[0], (list, tuple))
+        and ring[0]
+        and isinstance(ring[0][0], (list, tuple))
+    ):
+        rings = list(ring)
+    else:
+        rings = [ring]
+    outers = [_poly(r).boundary for r in rings if len(r) >= 3]
     out = []
     for i, a in enumerate(spaces):
         pa = _poly(a.polygon_m)
@@ -140,8 +158,8 @@ def shared_walls(spaces, ring, skip_pairs=frozenset()):
                     if math.dist(q0, q1) < MIN_PIECE_M:
                         continue
                     mid = _pt(((q0[0] + q1[0]) / 2.0, (q0[1] + q1[1]) / 2.0))
-                    if outer.distance(mid) <= TOL_M:
-                        continue  # on the exterior ring: an exterior wall already
+                    if any(o.distance(mid) <= TOL_M for o in outers):
+                        continue  # on an exterior ring: an exterior wall already
                     out.append(_wind(a, b, pb, q0, q1))
     return out
 
