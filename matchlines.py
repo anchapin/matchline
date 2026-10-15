@@ -243,6 +243,16 @@ def link_enlarged_plans(
                         }
                     )
                     continue
+            else:
+                rep.links.append(
+                    {
+                        "file": f,
+                        "base": None,
+                        "basis": "none",
+                        "reason": "no base plan contains this enlarged sheet's content",
+                    }
+                )
+                continue
             if base and area_ratio is None:
                 outer = _geometry_bbox(walls[base])
                 area_ratio = round(_bbox_area(inner) / _bbox_area(outer), 3) if outer else None

@@ -421,7 +421,7 @@ def build_set_model(
         sheets_desc = ", ".join(_label(f) for f in c["files"])
         review.append(
             ReviewItem(
-                id=f"matchline-conflict-{c['key']}",
+                id=f"matchline-conflict-{c['key']}-{c['level']}",
                 kind="match_line_conflict",
                 target={"kind": "sheet", "id": c["files"][0]},
                 description=(
@@ -472,7 +472,7 @@ def build_set_model(
             continue
         review.append(
             ReviewItem(
-                id=f"matchline-pair-{pr['key']}",
+                id=f"matchline-pair-{pr['key']}-{pr['level']}",
                 kind="match_line_pair",
                 target={"kind": "sheet", "id": pr["files"][0]},
                 description=(
