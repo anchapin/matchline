@@ -67,3 +67,38 @@ never overridden.
 A sheet routed this way still needs a scale before walls read: with no scale
 note or bar, one or two agreeing dimensions estimate it, flagged for
 review (#1019).
+
+## Match lines, split sheets, and enlarged plans (#994)
+
+A split sheet covers part of a level and hands off to its neighbour at a
+match line; an enlarged plan re-draws a region its base plan already covers.
+Both mean a physical space can be taken off twice, or split in half, unless
+the set builder knows which sheets share content. After indexing, the set
+builder scans each sheet's text for match-line labels (`matchlines.py`):
+
+- A label with a key (`MATCH LINE A`, `MATCHLINE 3`, `MATCH LINE - AREA B`)
+  groups by key and level. A key on exactly two plan sheets of one level is
+  a **split pair**; both sheets are marked `takeoff_dedup: ok` and a review
+  item notes that rooms crossing the match line may appear as partial
+  spaces on both sheets (stitching is still not supported).
+- A key on three or more sheets of one level is a **conflict** review item:
+  a space may be taken off more than once.
+- A key on one sheet only is **unpaired**: its neighbour is missing from
+  the set, so the region past the match line may be missing. Keyless labels
+  are recorded but never paired.
+
+Enlarged plans link to their base plan two ways: a title that names another
+sheet (`ENLARGED PLAN - AREA A (A-101)`) links by reference; otherwise the
+enlarged sheet's wall geometry is extracted at its own scale and compared
+against every full plan's geometry, and geometry mostly inside a much
+larger plan's extent (containment at least 0.8, extent area at most 60% of
+the base's) is a crop of it. Two bases that fit equally well stay
+ambiguous; no scale or no geometry leaves the link unresolved. Either way
+an unlinked enlarged plan raises a review item.
+
+Every sheet a full plan already covers is recorded in the report's `dedup`
+block: `pairs`, `unpaired`, `conflicts`, `links`, and `exclusions` (an
+enlarged plan whose area is already on its base plan, a partial plan whose
+area is already on a full plan for the same level), and each excluded sheet
+carries a `takeoff_dedup: excluded` stage so the exclusion is visible next
+to the sheet's other stages.
