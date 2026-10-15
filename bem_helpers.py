@@ -324,6 +324,20 @@ def _place_openings_on_wall(units, L: float, h: float):
     total_width = sum(u.width_m for u in units)
     usable = L - 0.1
     scale = 1.0
+    if usable <= 0:
+        # #1010: a wall run too short to host an opening (usable run is L
+        # minus the 0.05 m reveal each side) cannot take one. At exactly
+        # L == 0.1 the fit-scale below divides zero by the opening width and
+        # crashed the whole gbXML export; below it the scale went negative,
+        # and an empty opening list still reached the division because
+        # total_width 0 > usable is true. Return early; note only when
+        # there was something to skip.
+        if units:
+            notes.append(
+                f"Skipped {len(units)} opening(s): wall {L:.2f} m is too short "
+                f"to host an opening (usable run {max(usable, 0.0):.2f} m)"
+            )
+        return placements, notes
     if total_width > usable:
         scale = usable / total_width
         notes.append(
