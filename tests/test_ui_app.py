@@ -8,6 +8,7 @@ result plumbing (stage watching, counts, summary, output discovery).
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -149,3 +150,31 @@ def test_gradio_import_is_lazy():
         # must raise ImportError, not NameError.
         with pytest.raises(ImportError):
             app.build_demo()
+
+
+def test_build_command_ifc(tmp_path):
+    cmd = build_command(tmp_path / "model.ifc", None, 0.02, tmp_path / "out")
+    assert "--ifc" in cmd and str(tmp_path / "model.ifc") in cmd
+    assert "--set" not in cmd and "--seed" not in cmd
+
+
+def test_build_command_zip_runs_the_set_path(tmp_path):
+    cmd = build_command(tmp_path / "set.zip", None, 0.02, tmp_path / "out")
+    assert "--set" in cmd and str(tmp_path / "set.zip") in cmd
+    assert "--ifc" not in cmd
+
+
+def test_build_command_image_runs_the_image_path(tmp_path):
+    cmd = build_command(tmp_path / "sheet.png", None, 0.02, tmp_path / "out")
+    assert "--image" in cmd and str(tmp_path / "sheet.png") in cmd
+
+
+def test_input_kind_covers_the_three_inputs():
+    from ui.app import input_kind
+
+    assert input_kind(Path("a.pdf")) == "set"
+    assert input_kind(Path("a.zip")) == "set"
+    assert input_kind(Path("a.ifc")) == "ifc"
+    assert input_kind(Path("a.ifcxml")) == "ifc"
+    assert input_kind(Path("a.png")) == "image"
+    assert input_kind(Path("a.JPG")) == "image"
