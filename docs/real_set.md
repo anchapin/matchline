@@ -221,3 +221,9 @@ is the merge rule for the built-in detector: legend hits replace the built-in
 templates for every class the legend draws, the built-ins stay as the
 fallback for classes it does not, and a built-in hit on top of a legend hit is
 dropped.
+
+Legacy sets whose title blocks carry no sheet numbers (#1016) still route:
+sheets classified `plan` by the geometry fallback (`sheet_index.py`) enter
+takeoff, and the set builder treats their discipline as unverified (geometry
+saying "plan" outranks a suspect number prefix). Each level-less plan becomes
+its own level (`LX<n>`), and the per-sheet report says so.

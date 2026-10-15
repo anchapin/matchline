@@ -5,6 +5,7 @@ pdf_ingest, so the whole read path is exercised."""
 from __future__ import annotations
 
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -283,3 +284,102 @@ def test_index_sheets_and_cli(tmp_path, capsys):
     assert data["schema"] == "matchline.sheet_index/1"
     assert len(data["sheets"]) == 8 and data["sheets"][1]["file"] == "sheet_002.json"
     assert data["levels"]["L2"]["M"] == ["M-102"]
+
+
+# ------------------------------------------------- geometry fallback (#1016)
+
+def _fallback_plan_body() -> str:
+    """12 double-lined rooms plus a filler band: plan-like geometry density."""
+    out = ""
+    for r in range(2):
+        for c in range(6):
+            x0, y0 = 40 + c * 280, 160 + r * 260
+            x1, y1 = x0 + 130, y0 + 100
+            out += (
+                line(x0, y0, x1, y0)
+                + line(x1, y0, x1, y1)
+                + line(x1, y1, x0, y1)
+                + line(x0, y1, x0, y0)
+                + line(x0 + 4, y0 + 4, x1 - 4, y0 + 4)
+                + line(x1 - 4, y0 + 4, x1 - 4, y1 - 4)
+                + line(x1 - 4, y1 - 4, x0 + 4, y1 - 4)
+                + line(x0 + 4, y1 - 4, x0 + 4, y0 + 4)
+            )
+    rng = random.Random(16)
+    for _ in range(2600):
+        x, y = rng.uniform(20, 1680), rng.uniform(1120, 1140)
+        out += line(x, y, x + rng.uniform(2, 6), y + rng.uniform(-1, 1))
+    return out
+
+
+def _index_of(tmp_path, pages):
+    pdf = write_pdf(tmp_path / "set.pdf", [PageSpec(width=W, height=H, content=c) for c in pages])
+    res = P.ingest_pdf(pdf, out_dir=tmp_path / "o", dpi=18)
+    return X.build_index(res.sheets), res.sheets
+
+
+def test_geometry_fallback_routes_an_unnumbered_plan(tmp_path):
+    idx, _ = _index_of(tmp_path, [_fallback_plan_body()])
+    e = idx.sheets[0]
+    t = e.value("type")
+    assert t == "plan"
+    assert e.type["source"] == "geometry_fallback"
+    assert e.type["evidence"]["room_regions"] >= 10
+    assert e.use_for_takeoff is True
+    assert e.needs_review is True
+    assert "modelled as its own level" in e.takeoff_note
+    assert any("classified as a plan by geometry" in w for w in e.warnings)
+
+
+def test_geometry_fallback_flags_a_suspect_sheet_number(tmp_path):
+    body = _fallback_plan_body() + text(1560, 40, "O-2", 24)
+    idx, _ = _index_of(tmp_path, [body])
+    e = idx.sheets[0]
+    assert e.value("number") == "O-2"
+    assert e.value("type") == "plan"
+    assert e.type["source"] == "geometry_fallback"
+    assert e.needs_review is True
+    assert e.use_for_takeoff is True
+    assert any("may have picked up a label" in w for w in e.warnings)
+
+
+def test_geometry_fallback_leaves_a_sparse_notes_sheet_alone(tmp_path):
+    notes = text(1500, 220, "PROJECT", 14) + text(1500, 150, "NOTES", 12) + text(1500, 60, "1. DO STUFF", 8)
+    idx, _ = _index_of(tmp_path, [notes])
+    e = idx.sheets[0]
+    assert e.value("type") == "general"
+    assert e.type["source"] != "geometry_fallback"
+    assert e.use_for_takeoff is False
+
+
+def test_geometry_fallback_never_overrides_a_real_classification(tmp_path):
+    idx, _ = _index_of(tmp_path, [_tb("A-101", "FIRST FLOOR PLAN") + _fallback_plan_body()])
+    e = idx.sheets[0]
+    assert e.value("type") == "floor_plan"
+    assert e.type["source"] == "title_block"
+    assert e.value("level") == "L1"
+    assert e.use_for_takeoff is True
+
+
+def test_geometry_fallback_rejects_one_huge_interior_region():
+    """A schedule-table page: dense, but one giant open cell, not rooms."""
+    sheet = {"kind": "vector", "width_pt": 1728.0, "height_pt": 1152.0, "primitives": []}
+
+    def seg(x0, y0, x1, y1):
+        return {"kind": "line", "segments": [["M", [[x0, y0]]], ["L", [[x1, y1]]]]}
+
+    # a big bordered table: the open interior dwarfs the room-band regions
+    sheet["primitives"].append(seg(100, 100, 1600, 100))
+    sheet["primitives"].append(seg(1600, 100, 1600, 1050))
+    sheet["primitives"].append(seg(1600, 1050, 100, 1050))
+    sheet["primitives"].append(seg(100, 1050, 100, 100))
+    for c in range(2, 30):
+        sheet["primitives"].append(seg(100 + c * 50, 100, 100 + c * 50, 1050))
+    for row in range(2, 20):
+        sheet["primitives"].append(seg(100, 100 + row * 50, 1600, 100 + row * 50))
+    # density filler, clear of the table
+    rng = random.Random(3)
+    for _ in range(2400):
+        x, y = rng.uniform(20, 1680), rng.uniform(1090, 1140)
+        sheet["primitives"].append(seg(x, y, x + rng.uniform(2, 6), y + rng.uniform(-1, 1)))
+    assert X._plan_fallback_evidence(sheet) is None

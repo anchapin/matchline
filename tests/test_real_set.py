@@ -18,6 +18,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 from test_plan_walls import DOOR, PARTITION, SHELL, T_EXT, _mass, _outline, _pt  # noqa: E402
+from test_sheet_index import _fallback_plan_body  # noqa: E402
 
 import real_set  # noqa: E402
 import run_pipeline  # noqa: E402
@@ -1181,3 +1182,26 @@ def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     # the door part gets the same walls, for thin-partition gaps (#874)
     assert got["door_plan"] == got["plan"] and "thin_gaps" in got["plan"]["walls"]
     assert rep.detector["provider"] == "combined" and not rep.detector["eval_only"]
+
+
+def test_geometry_fallback_plan_produces_rooms(tmp_path):
+    """An unnumbered legacy plan sheet routes by geometry and yields rooms (#1016)."""
+    body = _outline(_mass(SHELL + PARTITION, [DOOR])) + _labels(1)
+    page = (
+        text(1500, 150, "LEVEL ONE", 12)  # classifies as neither type nor level
+        + text(100, 48, SCALE_NOTE, 8)
+        + body
+        + _fallback_plan_body()
+    )
+    pdf = _set(tmp_path, [page])
+    model, report = real_set.build_set_model(pdf, tmp_path / "out")
+    st = report.sheets[0].stages
+    assert st["sheet_index"]["status"] == "ok"
+    assert "routed by geometry fallback" in st["sheet_index"]["reason"]
+    assert st["walls_rooms"]["status"] == "ok"
+    assert report.levels[0]["id"] == "LX1"
+    ids = {s.id for s in model.spaces.values() if s.level_id == "LX1"}
+    assert {"LX1-101", "LX1-102"} <= ids  # the labelled building rooms
+    # the fallback body's own closed loops read as unlabeled rooms, which is
+    # faithful: plan-like geometry extracts rooms, labels or not
+    assert len(ids) >= 14

@@ -44,3 +44,22 @@ came from a text box, the text and box.
 (different level or type, or titles that differ beyond abbreviation), a sheet
 number repeats, a sheet has no number, or a floor plan has no level. Index
 entries with no matching sheet are listed in `warnings`.
+
+## Geometry fallback for legacy sheets (#1016)
+
+A sheet whose title block yields no sheet number and no classifiable type is
+not dropped: `_plan_fallback_evidence` reads the vector primitives and asks
+whether the geometry itself looks like a floor plan. The gates are calibrated
+on 2006-era plan sheets: primitive density of at least 1200 per square
+megapoint of page area (plan pages sit near 2300, everything else below 950),
+at least 10 closed interior regions in the room-area band (0.3% to 15% of the
+page, page background excluded), and no single interior region above 25% of
+the page (a schedule table is one giant open cell, not rooms).
+
+A sheet that passes is classified `plan` with provenance source
+`geometry_fallback` and an `evidence` block, marked `needs_review`, and routed
+to takeoff even without a level: the set builder models each level-less plan
+as its own level (`LX<n>`). When a number *was* found but the type stayed
+unclassified, the fallback also flags that the number may be a label rather
+than the sheet number. A real classification (title text or NCS type digit) is
+never overridden.
