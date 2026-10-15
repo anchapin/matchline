@@ -100,6 +100,19 @@ def test_manifest_hashes_match_the_files(pkg):
     assert "Trust report" in text and "qualified" in text
 
 
+def test_signoff_block_is_dated_and_left_blank_for_the_professional(pkg):
+    """#976: the report carries a dated sign-off block matchline never signs."""
+    from datetime import datetime
+
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    so = tr["signoff"]
+    assert datetime.fromisoformat(so["generated_at"]).tzinfo is not None  # dated, UTC
+    assert so["prepared_by"] == "" and so["reviewed_by"] == "" and so["stamp"] == ""
+    page = (pkg / "trust_report.html").read_text()
+    assert "Sign-off" in page and "Prepared by" in page and "stamp / seal" in page
+    assert so["generated_at"] in page  # the HTML shows the same timestamp
+
+
 def test_input_files_are_hashed(tmp_path):
     f = tmp_path / "set.pdf"
     f.write_bytes(b"%PDF-1.4 test")

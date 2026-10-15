@@ -217,3 +217,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 ## XML Parsing
 
 Use  for all XML parsing. Never use , , or bare  directly.
+
+## Sign-off: DCO, not a CLA
+
+Contributions are accepted under the [DCO](https://developercertificate.org/):
+every commit carries a `Signed-off-by` line (`git commit -s`). We chose DCO
+over a CLA deliberately (#976): a CLA needs a signing entity and record
+bookkeeping to maintain, which is a poor fit for this project's size, while
+the DCO rides in git itself, needs no portal, and is the convention most
+small-to-mid OSS projects run. If the project ever grows a corporate
+contributor base, revisit this decision in an ADR rather than silently
+switching.
