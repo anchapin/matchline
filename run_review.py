@@ -445,7 +445,11 @@ def main(args: argparse.Namespace | None = None) -> None:
             if args.undo < 1:
                 print("Error: --undo needs a positive number of corrections.", file=sys.stderr)
                 sys.exit(1)
-            undone = corrections_mod.undo(model, model_path, args.undo)
+            try:
+                undone = corrections_mod.undo(model, model_path, args.undo)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
             model_path.write_text(model.to_json())
             for c in undone:
                 field = f" ({c['field']} back to {c['before']!r})" if c.get("field") else ""
@@ -471,7 +475,11 @@ def main(args: argparse.Namespace | None = None) -> None:
             print(_summarize_validation(run_checks(model)))
             return
 
-        doc = corrections_mod.load(model_path)
+        try:
+            doc = corrections_mod.load(model_path)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         cs = doc["corrections"]
         n_undone = sum(1 for c in cs if c.get("undone"))
         if not cs:

@@ -106,11 +106,11 @@ def _corrections(out_dir) -> dict:
         return {"recorded": False, "reason": "no accepted corrections beside the model yet"}
     import corrections as corrections_mod
 
-    return {
-        "recorded": True,
-        "file": "corrections.json",
-        "summary": corrections_mod.summary(corrections_mod.read(p)),
-    }
+    try:
+        doc = corrections_mod.read(p)
+    except (ValueError, OSError) as e:
+        return {"recorded": False, "reason": f"corrections.json could not be read ({e})"}
+    return {"recorded": True, "file": "corrections.json", "summary": corrections_mod.summary(doc)}
 
 
 def _decisions(review_dir, n_open: int) -> dict:

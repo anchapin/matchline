@@ -339,3 +339,29 @@ def test_cli_rejects_combined_modes(tmp_path, capsys):
                 corrections=False,
             )
         )
+
+
+def test_undo_with_a_stale_target_aborts_before_any_change(tmp_path):
+    m = _model()
+    mp = tmp_path / "model.json"
+    rid = m.review_queue[0].id
+    R.decide(m, rid, "edit", "width_m=0.9", corrections_path=mp)
+    # a later correction on a second opening that has since been deleted
+    m.spaces["L1-101"].openings.append(
+        SpaceOpening(id="S-W2", tag="", category="window", width_m=1.0, height_m=1.5, area_m2=1.5)
+    )  # fmt: skip
+    prov = Provenance(sheet_id="A-202", revision=1, method="elevation", confidence=0.6)
+    m.flag_for_review("window_room_link", "window W2 -> room 101", 0.6, prov,
+                      target={"kind": "opening", "id": "S-W2", "field": "width_m"})  # fmt: skip
+    rid2 = m.review_queue[1].id
+    R.decide(m, rid2, "edit", "width_m=0.8", corrections_path=mp)
+    m.spaces["L1-101"].openings = [o for o in m.spaces["L1-101"].openings if o.id != "S-W2"]
+    before_json = m.to_json()
+    with pytest.raises(ValueError, match="no longer resolves"):
+        C.undo(m, mp, 2)
+    assert m.to_json() == before_json  # nothing changed
+    # the stale entry blocks the stack until a revert-to-automatic clears it
+    r = C.revert_to_automatic(m, mp, "opening:S-W2:width_m")
+    assert r["entity_gone"] is True and r["to"] is None and r["reverted"] == 1
+    assert len(C.undo(m, mp, 1)) == 1
+    assert _op(m)[1].width_m == 1.2

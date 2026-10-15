@@ -103,6 +103,35 @@ def record(
     return entry
 
 
+def _target_resolves(model, t: dict, f: str) -> bool:
+    """True when the writer can still reach the entity an entry points at."""
+    from review_report import _find_fixture, _find_opening, _find_ref
+
+    kind = (t or {}).get("kind", "")
+    eid = (t or {}).get("id")
+    if kind == "opening":
+        return _find_opening(model, eid)[1] is not None
+    if kind == "fixture":
+        return _find_fixture(model, eid)[1] is not None
+    if kind in ("diffuser", "sensor"):
+        return _find_ref(model, kind, eid)[1] is not None
+    if kind == "bim_opening":
+        from opening_attach import find_bim_opening
+
+        return find_bim_opening(model, eid)[0] is not None
+    if kind == "wall" and f == "opening":
+        gap = (t or {}).get("gap") or {}
+        return (
+            bool(gap.get("opening_id")) and _find_opening(model, gap["opening_id"])[1] is not None
+        )
+    if f == "merge_into":
+        if eid in model.spaces:
+            return True
+        return any(eid in sp.merged_from for sp in model.spaces.values())
+    # the default writer path writes an attribute of the opening
+    return _find_opening(model, eid)[1] is not None
+
+
 def _item_of(model, item_id: str):
     return next((i for i in model.review_queue if i.id == item_id), None)
 
@@ -127,6 +156,15 @@ def undo(model, model_path, n: int = 1, doc: Optional[dict] = None) -> List[dict
         doc = load(model_path)
     active = [c for c in doc["corrections"] if not c.get("undone")]
     batch = active[-n:] if n > 0 else []
+    # a stale target (entity since deleted) aborts the whole batch before
+    # any change, so an undo never lands half-applied
+    for c in batch:
+        f = c.get("field") or ""
+        if f and "before" in c and not _target_resolves(model, c.get("target") or {}, f):
+            raise ValueError(
+                f"correction {c.get('seq')} ({c.get('item_id', '')}) writes {f} on an "
+                "entity that no longer resolves; undo stopped before any change"
+            )
     undone: List[dict] = []
     for c in reversed(batch):
         t = dict(c.get("target") or {})
@@ -174,8 +212,9 @@ def revert_to_automatic(model, model_path, key: str, doc: Optional[dict] = None)
     t = dict(first.get("target") or {})
     f = first["field"]
     auto_value = first.get("before")
-    current = _read(model, t, f)
-    if current != auto_value:
+    resolves = _target_resolves(model, t, f)
+    current = _read(model, t, f) if resolves else None
+    if resolves and current != auto_value:
         _write(model, t, f, auto_value)
     for c in active:
         c["undone"] = True
@@ -187,7 +226,13 @@ def revert_to_automatic(model, model_path, key: str, doc: Optional[dict] = None)
         sheet, rev, "review", f"revert-to-automatic {key} ({current!r} -> {auto_value!r})"
     )
     save(model_path, doc)
-    return {"field": key, "from": current, "to": auto_value, "reverted": len(active)}
+    return {
+        "field": key,
+        "from": current,
+        "to": auto_value if resolves else None,
+        "reverted": len(active),
+        "entity_gone": not resolves,
+    }
 
 
 def summary(doc: dict) -> Dict[str, int]:
