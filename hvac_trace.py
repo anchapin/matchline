@@ -24,6 +24,12 @@ is the same problem class at building scale):
 
 Inputs: sheet grayscale array + room polygons (GT here; production
 would use the room_labels module). Output: zone graph with audit trail.
+
+Naming note: every "WiSARD" below means the jesse.py research
+classifier (the paper reproduction), used inside this tracer's
+NCC/WiSARD cascade. The production symbol-spotting detector is the YOLO
+pipeline in `detector/`; WiSARD is not the production detector (the
+go-to-market rename, ROADMAP).
 """
 
 from __future__ import annotations
