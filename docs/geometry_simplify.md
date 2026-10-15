@@ -129,7 +129,7 @@ convention.
 
 ## Limitations
 
-- **Single-ring only**: The module accepts one exterior ring at a time. Buildings with courtyards (holes) or multi-wing campuses require per-part simplification with a shared area budget, which is not yet implemented.
+- **Per-part (handled, #970)**: `footprint_parts_from_regions` keeps every connected wing and each wing's interior rings (courtyards); `simplify_footprint` simplifies all rings under one shared area budget, so no ring can spend more than its area share of the total budget. The single-ring `simplify_ring` remains the per-ring primitive. The BEM export still consumes the largest part's ring (`FootprintSimplifyResult.ring`); exporting all rings end to end is future work.
 - **Uniform wall height**: All walls are assigned a single `wall_height` scalar; buildings with varying story heights will have incorrect envelope area.
 - **No opening reconciliation**: Window and door punched openings are handled separately by `datasets_adapter.rollup_takeoff`, not by this module. The two area streams must be manually reconciled before BEM export to avoid double-counting.
 - **Douglas-Peucker is not topology-preserving**: Simplified edges may cause tiny self-intersections or near-degenerate slivers that are cleaned by shapely but can affect downstream thin-polygon operations.

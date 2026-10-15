@@ -43,7 +43,12 @@ from datasets_adapter import (
     parse_schedule_csv,
     rollup_takeoff,
 )
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry_simplify import (  # noqa: F401  (footprint_from_regions reused below)
+    footprint_from_regions,
+    footprint_parts_from_regions,
+    simplify_footprint,
+    simplify_ring,
+)
 from link import build_model
 from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
@@ -508,18 +513,38 @@ def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out
     """
     if wall_height is None:
         wall_height = model.levels[0].wall_height_m
-    ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-    sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
-    write_json(
-        out_dir / "stage_03_simplified.json",
-        {
-            "original_count": sres.original_count,
-            "simplified_count": sres.simplified_count,
-            "simplified_ring": sres.ring,
-            "area_delta_pct": sres.area_delta_pct,
-            "tolerance_pct": sres.tol * 100.0,
-        },
-    )
+    parts = footprint_parts_from_regions([sp.polygon_m for sp in model.spaces.values()])
+    sres = simplify_footprint(parts, tol=simplify_tol, wall_height=wall_height)
+    payload = {
+        "original_count": sres.original_count,
+        "simplified_count": sres.simplified_count,
+        "simplified_ring": sres.ring,
+        "area_delta_pct": sres.area_delta_pct,
+        "tolerance_pct": sres.tol * 100.0,
+    }
+    if hasattr(sres, "parts"):
+        # #970: per-part simplification (courtyards + wings); record every
+        # ring's own delta alongside the combined shared-budget delta.
+        payload["method"] = sres.method
+        payload["per_part"] = [
+            {
+                "original_count": p.original_count,
+                "simplified_count": p.simplified_count,
+                "simplified_ring": p.ring,
+                "area_delta_pct": p.area_delta_pct,
+                "holes": [
+                    {
+                        "original_count": h.original_count,
+                        "simplified_count": h.simplified_count,
+                        "simplified_ring": h.ring,
+                        "area_delta_pct": h.area_delta_pct,
+                    }
+                    for h in hs
+                ],
+            }
+            for p, hs in zip(sres.parts, sres.holes)
+        ]
+    write_json(out_dir / "stage_03_simplified.json", payload)
     return sres, wall_height
 
 
