@@ -726,6 +726,7 @@ class ReviewItem:
         "below_grade",
         "zone_airflow",
         "air_loop",
+        "mech_schedule",
     ]
     description: str
     confidence: float
