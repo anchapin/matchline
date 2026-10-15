@@ -244,8 +244,30 @@ is not on disk shows as `missing`.
 - Duplex Apartment architectural IFC, same repo (CC BY 4.0). Verified
   2026-10-14: 2.4 MB IFC2X3, 4 storeys, 21 spaces each with area
   BaseQuantities, 57 walls, 14 doors, 24 windows; a separate rooms-and-spaces
-  model (37 spaces) and MEP/plumbing/electrical files sit alongside. No HVAC
-  IFC or drawing set.
+  model (37 spaces) and MEP/plumbing/electrical files sit alongside. The MEP
+  discipline file (`Duplex_MEP_20110907.ifc`, 17.9 MB, 105 IfcFlowTerminal of
+  which 103 are space-bound) is wired as the duplex `hvac_ifc` since
+  2026-10-15; the scoreboard currently assigns 0/103 terminals from it (under
+  investigation). No drawing set.
+
+- Molio building IFC, same repo (CC BY 4.0, repo-level license). Verified
+  2026-10-15: 73.9 MB IFC2X3, 10 storeys, 117 IfcSpaces each with
+  BaseQuantities, 189 walls, 119 windows, 119 doors, 969,835 entities. The
+  entity count exceeds the default import cap, so benchmark runs need
+  `MATCHLINE_MAX_IFC_ELEMENTS=1500000` (~156 s import, ~1.2 GB peak RSS).
+- TUM GNI BIM dataset, <https://zenodo.org/records/19722012> (CC BY 4.0):
+  eight real-building IFC4/IFC2X3 models from TUM Georg Nemetschek Institute
+  BIM student projects. Seven more (gni-49/50/54/74/115/136/149) joined the
+  scoreboard 2026-10-15 alongside gni-18.
+
+**Rejected candidates (2026-10-15 licensed-data search):** Schependomlaan
+as-planned IFCs (same community repo, CC BY 4.0) carry no IfcSpaces (no
+ground truth); the Krijnen & Hesselink balcony models
+(<https://zenodo.org/records/5047709>, CC BY 4.0) are walls-and-slabs only,
+no IfcSpaces; RestageIFC Aachen (<https://zenodo.org/records/21470658>,
+CC BY 4.0) is 189.8 MB, over the 100 MB import cap, and an assembly/schedule
+model. NIST NZERTF drawings are public domain but residential and
+drawings-only (no IFC ground truth for this harness).
 
 **IFC2X3 datasets (#929):** Esplanades and Duplex import via the in-memory
 IFC2X3 -> IFC4 schema upgrade (`model.source_schema` says "IFC2X3"; the
@@ -286,4 +308,10 @@ config file):
 }
 ```
 
-Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in starter config lists the three adopted buildings (bsi-clinic, esplanades, duplex); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`.
+Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists twelve buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`, and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`.
+
+**2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
+score; rooms, area, window and door counts match ground truth everywhere
+except gni-49 windows (truth 71 / model 0) and the duplex MEP terminals
+(0/103). gni-74's gbXML export raises `float division by zero` (noted as a
+defect, row still scores).
