@@ -416,3 +416,65 @@ import health score, and the open-core commercial model all sit under
 Strategy above; they are future-facing by design. Nexus-style
 infrastructure projects and anything outside drawings/IFC-to-BEM scope
 stay out of this repo entirely.
+# Part III — Review, correction, and feedback loop (added 2026-10-15)
+
+From Alex (2026-10-15): the model's value depends on the user's ability to check
+it, fix it, and teach us from it. Three directions — see the model, fix the
+model, learn from the user. Not sequenced; each slice gets its own numbered
+issue with acceptance criteria when pulled into the roadmap.
+
+## Review: a 3D viewer for the final simplified model
+
+The review queue is a list; a wrong wall is a shape. The user should be able to
+look at the final simplified model and find where matchline may have made
+mistakes before trusting the numbers.
+
+- Read-only first. Pan, rotate, and zoom; isolate one level at a time; a
+  top-down orthographic view per level to check space layout against the plan.
+  Toggle overlays: floor plans and elevations registered to the model, MEP
+  takeoffs, and traces.
+- Render from the canonical model the export writes, never a second geometry
+  copy. A viewer that lies is worse than no viewer. The share-back preview in
+  the export package and this viewer should share one render core.
+- Comparison is the feature: plan-over-model alignment exposes the mistakes
+  (a shifted wall, a merged room, a door called a window), and per-element
+  confidence heat-mapping points the eye where errors are most likely.
+- Open question: self-contained HTML (same constraint as the share-back
+  preview) vs matchline-ui. Decide when the first slice is pulled.
+
+## Correction: fix it where you found it
+
+Finding a mistake is half the loop; fixing it in place is the other half.
+
+- Start with the cheap, unambiguous edits: rename a space, reclassify a door as
+  a window (and the reverse), merge or split spaces. Moving an interior wall is
+  the stretch goal and needs a designed geometry-edit model first, not a quick
+  add.
+- Every correction writes back through the existing decisions.json workflow
+  (--confirm/--reject/--apply), lands in the correction history with
+  before/after values, source, and timestamp, and surfaces in the review
+  queue. The viewer never forks a private copy of the model.
+- A correction is provenance, not just a patch: what the automatic result got
+  wrong is exactly the signal the detector wants and the telemetry below
+  should carry.
+
+## Feedback: the minimum we ask back, and how we ask
+
+The flywheel needs data from users, and every byte we ask for is friction.
+
+- Minimum, not maximum. Candidate metrics: per-class detection confidence
+  distributions, correction counts by type (what users fix most is what the
+  detector should learn), which validation checks fail most often, binned
+  aggregate areas and counts, pipeline stage outcomes and timings. Explicitly
+  excluded: geometry, labels, names, coordinates, sheet images, anything that
+  identifies a building or a firm.
+- Strip at source. The emitter can only produce fields on an allowlist, and a
+  test proves the payload carries no building-specific data. Local-only mode
+  (Part II privacy item) turns telemetry fully off.
+- The ask must be legible. A one-page, plain-language description of exactly
+  what leaves the machine, versioned alongside the data-contribution agreement
+  (Part II trust item). A user should be able to decide in one read.
+- Structured feedback: capture at the moment of friction (a detector override,
+  an abandoned review item, a failed parse), plus a simple open-ended channel
+  for bugs, feature requests, and places where the conversation doesn't work
+  well. Feedback themes re-rank this roadmap.
