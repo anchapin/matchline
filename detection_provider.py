@@ -43,7 +43,7 @@ from typing import Dict, List, Optional, Union
 from datasets_adapter import Detection, detections_from_yolo_json
 
 ROOT = Path(__file__).resolve().parent
-LEDGER = ROOT / "license_ledger.json"
+LEDGER = ROOT / "assets" / "license_ledger.json"
 SHIPPABLE = ("permissive", "share_alike")  # share-alike ships with its notice
 _RANK = {"permissive": 0, "share_alike": 1, "copyleft": 2, "noncommercial": 3, "unknown": 4}
 

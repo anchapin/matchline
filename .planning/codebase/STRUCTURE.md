@@ -11,7 +11,7 @@ matchline/
 ├── detector/             # YOLO fine-tuning (separate venv, excluded from ruff)
 ├── tests/               # Pytest suite
 ├── docs/                # Module guides and design documents
-├── schemas/             # JSON schema definitions
+├── assets/              # wheel-shipped data: license ledger, schemas
 ├── review_classifier/   # Auto-triage for review queue
 └── .planning/           # GSD planning artifacts
 ```

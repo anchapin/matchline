@@ -80,7 +80,9 @@ __all__ = [
     "write_ifc4",
 ]
 
-SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parent / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+)
 
 
 def _validate_out_path(path: str | Path) -> Path:

@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
-LEDGER = ROOT / "license_ledger.json"
+LEDGER = ROOT / "assets" / "license_ledger.json"
 SCHEMA = "matchline.license_ledger/1"
 CLASSES = ("permissive", "share_alike", "noncommercial", "copyleft")
 EVAL_ONLY = ("noncommercial", "copyleft")
