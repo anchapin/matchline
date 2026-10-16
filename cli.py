@@ -431,6 +431,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--simplify-tol", type=float, default=0.02)
     p.add_argument(
+        "--mode",
+        default="full",
+        choices=["full", "progressive"],
+        help="pipeline mode (#998): 'full' runs everything through BEM export (default); "
+        "'progressive' stops after the takeoff (symbols, areas, counts) without BEM "
+        "construction, review-queue gate or export",
+    )
+    p.add_argument(
         "--config",
         type=str,
         default=None,
