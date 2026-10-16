@@ -223,7 +223,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 - No datasets, credentials, or machine paths in code
 - No `sys.path` hacks
 - No `~/workspace/.venv-det` paths
-- No PyPI publish without explicit human approval
+- No PyPI publish outside the tag-driven release workflow (pushing a vX.Y.Z tag is the approval)
 - No pushing directly to `main`
 
 ## Getting Help

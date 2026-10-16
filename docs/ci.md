@@ -48,3 +48,9 @@ All gates must be green before merging to `develop`.
 Instead, Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three pins together. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
 
 Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.
+
+## Release pipeline
+
+Publishing to PyPI is tag-driven (`release.yml`): pushing a `vX.Y.Z` tag whose name matches `pyproject.toml`'s version builds the sdist and wheel, runs `twine check`, smoke-tests the wheel with a fresh non-editable install (`matchline --help`, `pip check`), and publishes via PyPI trusted publishing (OIDC; no token secret lives in the repo). The `pypi` GitHub environment gates the publish job.
+
+One-time maintainer setup on pypi.org: add a pending/trusted publisher for `anchapin/matchline`, workflow `release.yml`, environment `pypi` (the environment is created in the GitHub repo automatically on first run). After that, cutting a release is: merge the version bump and release notes, then push the tag.
