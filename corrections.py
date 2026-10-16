@@ -53,7 +53,9 @@ def load(model_path) -> dict:
 
 def save(model_path, doc: dict) -> Path:
     p = path_for(model_path)
-    p.write_text(json.dumps(doc, indent=2) + "\n")
+    from atomic_io import write_text_atomic
+
+    write_text_atomic(p, json.dumps(doc, indent=2) + "\n")
     return p
 
 

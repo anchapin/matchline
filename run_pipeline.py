@@ -76,7 +76,9 @@ class StageError(Exception):
 
 def write_json(p: Path, data: Any) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, default=str))
+    from atomic_io import write_text_atomic
+
+    write_text_atomic(p, json.dumps(data, indent=2, default=str))
 
 
 def _ensure_ccw(ring: list) -> list:

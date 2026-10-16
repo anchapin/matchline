@@ -82,8 +82,10 @@ def save_tags(path, tags: Dict[str, str]) -> Path:
     p = Path(path)
     clean = _checked_tags(tags, str(p))
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        json.dumps({"schema": SCHEMA, "tags": dict(sorted(clean.items()))}, indent=2) + "\n"
+    from atomic_io import write_text_atomic
+
+    write_text_atomic(
+        p, json.dumps({"schema": SCHEMA, "tags": dict(sorted(clean.items()))}, indent=2) + "\n"
     )
     return p
 
