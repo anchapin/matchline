@@ -85,5 +85,34 @@ jobs:
           name: dist
           path: dist
 
+      - name: Skip if the version is already on PyPI
+        id: skipcheck
+        # PyPI never accepts the same version twice, so re-pointing a tag
+        # (releases are tagged on main; a tag moved after a first publish)
+        # would otherwise fail the run after build+smoke.
+        run: |
+          python - <<'PY'
+          import glob, json, os, re, sys, urllib.request
+          wheels = glob.glob("dist/*.whl")
+          assert wheels, "no wheel in dist/"
+          version = re.search(r"-(\d[^-/]*)\.whl$", wheels[0]).group(1)
+          try:
+              with urllib.request.urlopen("https://pypi.org/pypi/matchline/json") as r:
+                  published = json.load(r)["info"]["version"]
+          except Exception as e:
+              print(f"could not read PyPI state ({e}); publishing")
+              published = None
+          if published == version:
+              print(f"{version} is already on PyPI; skipping publish")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("skip=true\n")
+          else:
+              print(f"{version} not on PyPI; publishing")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("skip=false\n")
+          sys.exit(0)
+          PY
+
       - name: Publish
+        if: steps.skipcheck.outputs.skip != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1

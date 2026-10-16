@@ -113,6 +113,11 @@ tag-driven PyPI release workflow (#1099).
 - Releases are tag-driven now: `release.yml` builds, smoke-tests and
   publishes to PyPI when a `vX.Y.Z` tag matching pyproject's version is
   pushed; the tag push is the approval (CONTRIBUTING Never List).
+- Tags are cut on `main`: merge `develop` into `main`, then tag the
+  merge commit on `main` (the v0.2.0 tag was cut from `develop`; its
+  tree is identical to the post-merge `main`). The publish job skips
+  when the version is already on PyPI, so a re-pointed tag cannot
+  double-publish.
 - The earlier note that the version stays 0.1.0 until the real-building
   benchmark completes is superseded: 0.2.0 ships on 2026-10-16 with
   #974 and #975 shipped, which is what that bullet's own rule allowed.
