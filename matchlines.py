@@ -74,13 +74,22 @@ def find_match_lines(sheet, file: str) -> List[MatchLine]:
 def pair_match_lines(
     hits: Dict[str, List[MatchLine]], level_of: Dict[str, Optional[str]]
 ) -> DedupReport:
-    """Group match-line labels by key and level into pairs.
+    """Group match-line labels by key and level, pairing edges not file sets.
 
-    A key on exactly two plan sheets of one level is a split pair. A key on
-    three or more sheets of one level is a conflict (each space would be
-    taken off more than once). A key on one sheet only is unpaired: its
-    neighbour sheet is missing from the set, so the region past the match
-    line may not be taken off at all.
+    A match-line label is one edge of a split plan. A key on exactly two
+    edges from two different sheets of one level is a split pair. A key on
+    three or more sheets of one level where every sheet carries it once is
+    a conflict (each space would be taken off more than once). When a
+    sheet carries the same key on several edges (a three-sheet strip whose
+    middle sheet repeats the key), edges pair across distinct sheets and
+    any edge left without a counterpart is reported unpaired instead of
+    vanishing into a file-set count (#1042). Labels carry no edge
+    position, so pairing is by availability, not by which side of the
+    sheet the label sits on; a key pairing the same two sheets on more
+    than one edge is flagged for review, since a second shared edge and a
+    repeated label are indistinguishable there. A key on one sheet only is
+    unpaired: its neighbour sheet is missing from the set, so the region
+    past the match line may not be taken off at all.
     """
     rep = DedupReport()
     groups: Dict[Tuple[str, Optional[str]], List[MatchLine]] = {}
@@ -94,9 +103,20 @@ def pair_match_lines(
             groups.setdefault((ln.key, level_of.get(file)), []).append(ln)
     for (key, level), group in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
         files = sorted({ln.file for ln in group})
-        if len(files) == 2:
-            rep.pairs.append({"key": key, "level": level, "files": files})
-        elif len(files) > 2:
+        if len(files) == 1:
+            rep.unpaired.append(
+                {
+                    "file": files[0],
+                    "key": key,
+                    "level": level,
+                    "reason": f"match line {key} has no counterpart sheet in the set",
+                }
+            )
+            continue
+        by_file: Dict[str, int] = {}
+        for ln in group:
+            by_file[ln.file] = by_file.get(ln.file, 0) + 1
+        if len(files) > 2 and all(n == 1 for n in by_file.values()):
             rep.conflicts.append(
                 {
                     "key": key,
@@ -105,13 +125,52 @@ def pair_match_lines(
                     "reason": f"match line {key} appears on {len(files)} sheets of one level",
                 }
             )
-        else:
-            rep.unpaired.append(
+            continue
+        # Edge accounting (#1042): pair edges across distinct sheets, largest
+        # count first, so a middle sheet's second edge pairs with its other
+        # neighbour instead of disappearing into a file-set count.
+        remaining = dict(by_file)
+        seen_pairs: set = set()
+        dup_edges = 0
+        while True:
+            avail = sorted(
+                (f for f, n in remaining.items() if n > 0), key=lambda f: (-remaining[f], f)
+            )
+            if len(avail) < 2:
+                break
+            a, b = avail[0], avail[1]
+            remaining[a] -= 1
+            remaining[b] -= 1
+            pair_key = (a, b) if a < b else (b, a)
+            if pair_key in seen_pairs:
+                dup_edges += 1
+                continue
+            seen_pairs.add(pair_key)
+            rep.pairs.append({"key": key, "level": level, "files": [pair_key[0], pair_key[1]]})
+        for f, n in sorted(remaining.items()):
+            if n > 0:
+                rep.unpaired.append(
+                    {
+                        "file": f,
+                        "key": key,
+                        "level": level,
+                        "reason": (
+                            f"match line {key} appears {by_file[f]} times on this sheet "
+                            f"but only {by_file[f] - n} edge(s) have a counterpart sheet"
+                        ),
+                    }
+                )
+        if dup_edges:
+            rep.conflicts.append(
                 {
-                    "file": files[0],
                     "key": key,
                     "level": level,
-                    "reason": f"match line {key} has no counterpart sheet in the set",
+                    "files": files,
+                    "reason": (
+                        f"match line {key} pairs the same sheets on more than one edge; "
+                        "a second shared edge and a repeated label are indistinguishable "
+                        "without label positions"
+                    ),
                 }
             )
     return rep
@@ -169,11 +228,15 @@ def link_enlarged_plans(
     from plan_walls import extract_walls
 
     rep = DedupReport()
-    by_number = {
-        e["number"]["value"]: f
-        for f, e in entries.items()
-        if e.get("number") and e["number"].get("value")
-    }
+    # Canonical sheet numbers on both sides so a title reference links
+    # regardless of the case the title block or the title text was drawn in
+    # (#1042); parse_sheet_number normalises through its own uppercasing.
+    by_number: Dict[str, str] = {}
+    for f, e in entries.items():
+        raw = (e.get("number") or {}).get("value")
+        if raw:
+            parsed = parse_sheet_number(raw)
+            by_number[parsed["number"] if parsed else raw] = f
     plans = {
         f: e
         for f, e in entries.items()
@@ -185,9 +248,11 @@ def link_enlarged_plans(
         title = (e.get("title") or {}).get("value") or ""
         base = None
         basis = "none"
-        for tok in re.findall(r"[A-Z]{1,2}-\d{1,3}(?:\.\d{1,3})?[A-Z]?", title):
-            if parse_sheet_number(tok) and tok in by_number and by_number[tok] != f:
-                cand = by_number[tok]
+        for tok in re.findall(r"[A-Za-z]{1,2}-\d{1,3}(?:\.\d{1,3})?[A-Za-z]?", title):
+            parsed = parse_sheet_number(tok)
+            canon = parsed["number"] if parsed else tok
+            if parsed and canon in by_number and by_number[canon] != f:
+                cand = by_number[canon]
                 if cand in plans:
                     base, basis = cand, "title_reference"
                     break

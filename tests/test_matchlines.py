@@ -112,6 +112,84 @@ def test_keyless_label_is_recorded_but_never_paired():
     assert len(rep.unpaired) == 2 and all(u["key"] == "" for u in rep.unpaired)
 
 
+def test_middle_sheet_repeated_key_pairs_each_edge():
+    """A three-sheet strip whose middle sheet repeats the key: two pairs (#1042)."""
+    rep = matchlines.pair_match_lines(
+        {
+            "sheet_001.json": [_hit("sheet_001.json", "A")],
+            "sheet_002.json": [_hit("sheet_002.json", "A"), _hit("sheet_002.json", "A")],
+            "sheet_003.json": [_hit("sheet_003.json", "A")],
+        },
+        {f"sheet_00{i}.json": "L1" for i in (1, 2, 3)},
+    )
+    assert len(rep.pairs) == 2
+    assert {tuple(p["files"]) for p in rep.pairs} == {
+        ("sheet_001.json", "sheet_002.json"),
+        ("sheet_002.json", "sheet_003.json"),
+    }
+    assert rep.conflicts == [] and rep.unpaired == []
+
+
+def test_extra_edge_without_counterpart_is_unpaired():
+    """A middle sheet's second edge with no counterpart no longer vanishes (#1042)."""
+    rep = matchlines.pair_match_lines(
+        {
+            "sheet_001.json": [_hit("sheet_001.json", "A")],
+            "sheet_002.json": [_hit("sheet_002.json", "A"), _hit("sheet_002.json", "A")],
+        },
+        {"sheet_001.json": "L1", "sheet_002.json": "L1"},
+    )
+    assert len(rep.pairs) == 1
+    assert len(rep.unpaired) == 1
+    assert rep.unpaired[0]["file"] == "sheet_002.json"
+    assert "counterpart" in rep.unpaired[0]["reason"]
+
+
+def test_repeated_key_on_one_sheet_alone_stays_unpaired():
+    rep = matchlines.pair_match_lines(
+        {"sheet_002.json": [_hit("sheet_002.json", "A"), _hit("sheet_002.json", "A")]},
+        {"sheet_002.json": "L1"},
+    )
+    assert rep.pairs == [] and len(rep.unpaired) == 1
+    assert "no counterpart sheet" in rep.unpaired[0]["reason"]
+
+
+def test_same_sheets_on_two_edges_needs_review():
+    """A key pairing the same two sheets twice is ambiguous without label positions."""
+    rep = matchlines.pair_match_lines(
+        {
+            "sheet_001.json": [_hit("sheet_001.json", "A"), _hit("sheet_001.json", "A")],
+            "sheet_002.json": [_hit("sheet_002.json", "A"), _hit("sheet_002.json", "A")],
+        },
+        {"sheet_001.json": "L1", "sheet_002.json": "L1"},
+    )
+    assert len(rep.pairs) == 1
+    assert len(rep.conflicts) == 1
+    assert "more than one edge" in rep.conflicts[0]["reason"]
+
+
+def test_lowercase_title_reference_links():
+    entries = {
+        "sheet_101.json": _entry("A-101", "FIRST FLOOR PLAN"),
+        "sheet_501.json": _entry("A-501", "ENLARGED PLAN - AREA A (a-101)", type_="enlarged_plan"),
+    }
+    walls = {"sheet_101.json": _walls_res([[0, 0], [1, 1]])}
+    rep = matchlines.link_enlarged_plans(entries, walls, {}, ".")
+    assert rep.links[0]["basis"] == "title_reference"
+    assert rep.links[0]["base"] == "sheet_101.json"
+
+
+def test_lowercase_base_number_still_links():
+    entries = {
+        "sheet_101.json": _entry("a-101", "FIRST FLOOR PLAN"),
+        "sheet_501.json": _entry("A-501", "ENLARGED PLAN - AREA A (A-101)", type_="enlarged_plan"),
+    }
+    walls = {"sheet_101.json": _walls_res([[0, 0], [1, 1]])}
+    rep = matchlines.link_enlarged_plans(entries, walls, {}, ".")
+    assert rep.links[0]["basis"] == "title_reference"
+    assert rep.links[0]["base"] == "sheet_101.json"
+
+
 def test_same_key_on_two_levels_never_pairs():
     rep = matchlines.pair_match_lines(
         {
