@@ -208,6 +208,40 @@ jobs:
             fi
           fi
 
+  wheel-smoke:
+    # #1035: a non-editable install only works if py-modules lists every module
+    name: wheel contains every module
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel
+        run: pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
+
+      - name: Every module is in the wheel
+        # self-maintaining: any new top-level module must be packaged or this fails
+        run: |
+          python - "$RUNNER_TEMP"/dist/*.whl <<'PY'
+          import glob, sys, zipfile
+          names = set(zipfile.ZipFile(sys.argv[1]).namelist())
+          missing = [f for f in glob.glob("*.py") if f not in names]
+          pkgs = ["link", "validate", "query", "sim", "synth", "ui"]
+          pkg_missing = [p + "/__init__.py" for p in pkgs if p + "/__init__.py" not in names]
+          if missing or pkg_missing:
+              print("missing from wheel:", missing + pkg_missing)
+              sys.exit(1)
+          print("wheel ok:", sys.argv[1])
+          PY
+
   demo-smoke:
     # #753: fresh-clone install + matchline demo, the quickstart path
     name: fresh install + matchline demo
