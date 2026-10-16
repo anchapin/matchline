@@ -7,7 +7,10 @@ plan.  ``diff_takeoffs`` compares two pipeline outputs and returns counts per
 change class, one section per takeoff:
 
 * ``rooms``: spaces matched by id (added / removed / renamed / area_changed /
-  moved_level, with the changed ids listed).
+  moved_level, with the changed ids listed).  An id that disappears while a
+  similar space appears (same level, area, name tokens, and nearby centroid)
+  is reported as ``reidentified`` with its old/new id pair instead of one
+  added and one removed (#1046).
 * ``windows`` and ``doors``: per-space counts of the space's openings by
   category, summed into added / removed with the count of spaces whose count
   changed.  Openings present in both revisions with identity evidence (a
@@ -135,6 +138,114 @@ def _moved_openings(old_inv: List[dict], new_inv: List[dict]) -> List[Tuple[int,
     return pairs
 
 
+def _name_tokens(name) -> set:
+    return set(_norm_name(name).split())
+
+
+def _polygon_centroid(points) -> Optional[List[float]]:
+    """Shoelace centroid of [[x, y], ...]; None for degenerate polygons."""
+    pts = []
+    for p in points or []:
+        try:
+            pts.append((float(p[0]), float(p[1])))
+        except (TypeError, ValueError, IndexError):
+            continue
+    if len(pts) < 3:
+        return None
+    a = cx = cy = 0.0
+    n = len(pts)
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if abs(a) < 1e-12:
+        return None
+    return [cx / (3.0 * a), cy / (3.0 * a)]
+
+
+def _space_fingerprint(sp: dict) -> dict:
+    """Cross-revision identity evidence for one space (#1046)."""
+    area = 0.0
+    try:
+        area = float(sp.get("area_m2") or 0.0)
+    except (TypeError, ValueError):
+        pass
+    return {
+        "name": _norm_name(sp.get("name")),
+        "tokens": _name_tokens(sp.get("name")),
+        "area": area,
+        "level": str(sp.get("level_id") or ""),
+        "centroid": _polygon_centroid(sp.get("polygon_m")),
+    }
+
+
+def _reidentify_spaces(
+    old_sp: Dict[str, dict], new_sp: Dict[str, dict], removed: List[str], added: List[str]
+) -> List[Tuple[str, str]]:
+    """Pair spaces whose id changed between revisions (#1046).
+
+    Two spaces pair only on same level and area within the same relative
+    tolerance the per-id diff already uses, plus identity evidence: identical
+    normalized name, or name tokens overlapping >= 50% with a centroid close
+    enough to be the same room (distance <= max(1 m, 15% of sqrt(area)).
+    Ambiguous names (the same normalized name on several removed or several
+    added spaces at one level) never pair; greedy one-to-one otherwise."""
+    if not removed or not added:
+        return []
+    old_fp = {sid: _space_fingerprint(old_sp[sid]) for sid in removed}
+    new_fp = {sid: _space_fingerprint(new_sp[sid]) for sid in added}
+
+    name_old: Dict[Tuple[str, str], List[str]] = {}
+    name_new: Dict[Tuple[str, str], List[str]] = {}
+    for sid, fp in old_fp.items():
+        name_old.setdefault((fp["name"], fp["level"]), []).append(sid)
+    for sid, fp in new_fp.items():
+        name_new.setdefault((fp["name"], fp["level"]), []).append(sid)
+
+    def _centroid_ok(fa: dict, fb: dict) -> bool:
+        ca, cb = fa["centroid"], fb["centroid"]
+        if ca is None or cb is None:
+            return True  # no geometry on a side: name and area carry the pair
+        scale = max(1.0, 0.15 * ((max(fa["area"], fb["area"], 0.0)) ** 0.5))
+        return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5 <= scale
+
+    def _area_ok(fa: dict, fb: dict) -> bool:
+        bigger = max(abs(fa["area"]), abs(fb["area"]), 1e-9)
+        return abs(fb["area"] - fa["area"]) / bigger <= _AREA_REL_EPS
+
+    candidates: List[Tuple[float, str, str]] = []
+    for oid, fa in old_fp.items():
+        for nid, fb in new_fp.items():
+            if fa["level"] != fb["level"] or not _area_ok(fa, fb):
+                continue
+            if fa["name"] and fa["name"] == fb["name"]:
+                if (
+                    len(name_old[(fa["name"], fa["level"])]) == 1
+                    and len(name_new[(fb["name"], fb["level"])]) == 1
+                ):
+                    candidates.append((3.0, oid, nid))
+                    continue
+            inter = len(fa["tokens"] & fb["tokens"])
+            union = len(fa["tokens"] | fb["tokens"])
+            if union and inter / union >= 0.5 and fa["centroid"] and fb["centroid"]:
+                if _centroid_ok(fa, fb):
+                    candidates.append((2.0 + inter / union, oid, nid))
+
+    pairs: List[Tuple[str, str]] = []
+    used_old: set = set()
+    used_new: set = set()
+    for _, oid, nid in sorted(candidates, reverse=True):
+        if oid in used_old or nid in used_new:
+            continue
+        pairs.append((oid, nid))
+        used_old.add(oid)
+        used_new.add(nid)
+    return pairs
+
+
 def diff_takeoffs(
     old: dict,
     new: dict,
@@ -181,6 +292,12 @@ def diff_takeoffs(
         # and a union set built before the loop would go stale as the lists grow
         if not changed:
             unchanged += 1
+
+    reidentified_pairs = _reidentify_spaces(old_sp, new_sp, removed, added)
+    for oid, nid in reidentified_pairs:
+        removed.remove(oid)
+        added.remove(nid)
+    reidentified = [{"old_id": oid, "new_id": nid} for oid, nid in reidentified_pairs]
 
     def opening_section(cat: str) -> dict:
         old_c: Dict[str, int] = {}
@@ -258,6 +375,8 @@ def diff_takeoffs(
             "area_changed": len(area_changed),
             "moved_level": len(moved_level),
             "unchanged": unchanged,
+            "reidentified": len(reidentified),
+            "reidentified_pairs": reidentified,
             "added_ids": added,
             "removed_ids": removed,
             "renamed_ids": renamed,
