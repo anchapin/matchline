@@ -291,24 +291,33 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
-def _decide(model: BuildingModel, item_id: str, action: str) -> tuple[BuildingModel, str]:
+def _decide(
+    model: BuildingModel,
+    item_id: str,
+    action: str,
+    corrections_path=None,
+) -> tuple[BuildingModel, str]:
     """Same state and revision log entry as the HTML review report (#749)."""
     from review_report import decide
 
     done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
-    if decide(model, item_id, action):
+    if decide(model, item_id, action, corrections_path=corrections_path):
         return model, f"{done} {item_id}."
     return model, f"{item_id} is already {done.lower()}; nothing changed."
 
 
-def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
+def _confirm_item(
+    model: BuildingModel, item_id: str, corrections_path=None
+) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    return _decide(model, item_id, "confirm")
+    return _decide(model, item_id, "confirm", corrections_path=corrections_path)
 
 
-def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
+def _reject_item(
+    model: BuildingModel, item_id: str, corrections_path=None
+) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    return _decide(model, item_id, "reject")
+    return _decide(model, item_id, "reject", corrections_path=corrections_path)
 
 
 def _summarize_validation(report) -> str:
@@ -341,6 +350,26 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args.auto_triage:
         model.auto_triage = True
 
+    # --- Correction history modes (#997) take no other action ---------------
+    history_modes = [
+        getattr(args, "undo", None) is not None,
+        bool(getattr(args, "revert_to_auto", None)),
+        bool(getattr(args, "corrections", None)),
+    ]
+    if any(history_modes) and (
+        sum(history_modes) > 1
+        or args.confirm is not None
+        or args.reject is not None
+        or getattr(args, "apply", None)
+        or getattr(args, "report", None)
+        or getattr(args, "list", None)
+    ):
+        print(
+            "Error: --undo, --revert-to-auto and --corrections take no other action.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # --- Apply a decisions file from the HTML review report (#749) ---
     if getattr(args, "apply", None):
         import json
@@ -349,7 +378,13 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         try:
             doc = json.loads(pathlib.Path(args.apply).read_text())
-            summary = review_report.apply_decisions(model, doc, review_report.sha256_text(raw))
+            dest_apply = pathlib.Path(getattr(args, "out", None) or model_path)
+            summary = review_report.apply_decisions(
+                model,
+                doc,
+                review_report.sha256_text(raw),
+                corrections_path=dest_apply,
+            )
         except (OSError, ValueError) as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -384,10 +419,10 @@ def main(args: argparse.Namespace | None = None) -> None:
         try:
             if is_confirm:
                 assert args.confirm is not None
-                model, msg = _confirm_item(model, args.confirm)
+                model, msg = _confirm_item(model, args.confirm, corrections_path=model_path)
             else:
                 assert args.reject is not None
-                model, msg = _reject_item(model, args.reject)
+                model, msg = _reject_item(model, args.reject, corrections_path=model_path)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -400,6 +435,65 @@ def main(args: argparse.Namespace | None = None) -> None:
         # Re-run validation
         report = run_checks(model)
         print(_summarize_validation(report))
+        return
+
+    # --- Correction history (#997): undo, revert-to-automatic, listing ---
+    import corrections as corrections_mod
+
+    if any(history_modes):
+        if getattr(args, "undo", None) is not None:
+            if args.undo < 1:
+                print("Error: --undo needs a positive number of corrections.", file=sys.stderr)
+                sys.exit(1)
+            try:
+                undone = corrections_mod.undo(model, model_path, args.undo)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+            model_path.write_text(model.to_json())
+            for c in undone:
+                field = f" ({c['field']} back to {c['before']!r})" if c.get("field") else ""
+                print(f"Undid [{c['seq']}] {c['action']} {c['item_id']}{field}")
+            if not undone:
+                print("Nothing to undo.")
+            print(f"Model saved: {model_path}")
+            print(_summarize_validation(run_checks(model)))
+            return
+
+        if getattr(args, "revert_to_auto", None):
+            try:
+                r = corrections_mod.revert_to_automatic(model, model_path, args.revert_to_auto)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+            model_path.write_text(model.to_json())
+            print(
+                f"Reverted {r['field']} to automatic output "
+                f"({r['from']!r} -> {r['to']!r}); {r['reverted']} correction(s) marked undone."
+            )
+            print(f"Model saved: {model_path}")
+            print(_summarize_validation(run_checks(model)))
+            return
+
+        try:
+            doc = corrections_mod.load(model_path)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        cs = doc["corrections"]
+        n_undone = sum(1 for c in cs if c.get("undone"))
+        if not cs:
+            print("No corrections recorded.")
+            return
+        print(
+            f"Correction history: {len(cs)} accepted, {n_undone} undone "
+            f"({corrections_mod.path_for(model_path)})"
+        )
+        for c in cs:
+            mark = " [undone]" if c.get("undone") else ""
+            field = f" {c['field']} {c['before']!r} -> {c['after']!r}" if c.get("field") else ""
+            row = f"  [{c['seq']}] {c['ts']} {c['action']} {c['item_id']} ({c['source']})"
+            print(f"{row}{field}{mark}")
         return
 
     # --- List (non-interactive) ---
@@ -495,6 +589,22 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--report",
         metavar="DIR",
         help="Write the HTML review report to DIR/review (model, decisions template, page)",
+    )
+    parser.add_argument(
+        "--undo",
+        metavar="N",
+        type=int,
+        help="Undo the last N accepted corrections (corrections.json, #997)",
+    )
+    parser.add_argument(
+        "--revert-to-auto",
+        metavar="KEY",
+        help="Put one field back to the automatic output; KEY is KIND:ID:FIELD (#997)",
+    )
+    parser.add_argument(
+        "--corrections",
+        action="store_true",
+        help="Print the correction history beside the model (#997)",
     )
     return parser
 

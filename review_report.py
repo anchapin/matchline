@@ -584,12 +584,20 @@ def final_states(doc: dict) -> Dict[str, Optional[dict]]:
     return out
 
 
-def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
+def apply_decisions(
+    model,
+    doc: dict,
+    model_sha: Optional[str] = None,
+    source: str = "human",
+    corrections_path=None,
+) -> dict:
     """Apply a decisions file to ``model`` in place; returns a summary.
 
     Idempotent: replaying the same file again changes nothing and logs
     nothing. A model hash that differs from the file's is reported, not
-    refused, because applying decisions changes the model itself.
+    refused, because applying decisions changes the model itself. Each
+    accepted decision lands in the correction history (#997) when
+    ``corrections_path`` is given; a replay adds nothing.
     """
     items = {i.id: i for i in model.review_queue}
     check(doc, items)
@@ -619,7 +627,17 @@ def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
         else:
             want = _decided(act)
             note = act + (f": {st['value']}" if act == "edit" else "")
-        if _set(model, item, want, note, v, f):
+        if _set(
+            model,
+            item,
+            want,
+            note,
+            v,
+            f,
+            action=act,
+            source=source,
+            corrections_path=corrections_path,
+        ):
             summary[act] += 1
         else:
             summary["unchanged"] += 1
@@ -633,30 +651,59 @@ def _decided(action: str) -> dict:
 _KEEP = object()
 
 
-def _set(model, item, want: dict, note: str, value=_KEEP, f: str = "") -> bool:
+def _set(
+    model,
+    item,
+    want: dict,
+    note: str,
+    value=_KEEP,
+    f: str = "",
+    action: str = "",
+    source: str = "human",
+    corrections_path=None,
+) -> bool:
     """Put ``item`` in state ``want`` (and its field at ``value``) and log it.
 
     False when it already was. ``value`` is only written for an item whose
     target field an edit can change; the log keeps old and new values.
+    Every accepted change is also recorded in the correction history
+    beside the model (#997) when ``corrections_path`` is given.
     """
     t = item.target or {}
     f = f or edit_field(model, item)
     old = _read(model, t, f) if f and value is not _KEEP else None
-    same_state = auto_state(item) == {**auto_state(item), **want}
+    state_before = auto_state(item)
+    same_state = state_before == {**state_before, **want}
     same_value = value is _KEEP or old == value
     if same_state and same_value:
         return False
     for k, v in want.items():
         setattr(item, k, v)
+    wrote = False
     if not same_value:
         t.setdefault("original", original_value(model, item))
         t.setdefault("field", f)
         item.target = t
         _write(model, t, f, value)
         note = f"{note} ({f} {old!r} -> {value!r})"
+        wrote = True
     sheet = item.provenance.sheet_id if item.provenance else ""
     rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
     model.log_revision(sheet, rev, "review", f"{item.id} {note}")
+    if corrections_path is not None:
+        import corrections as _corrections
+
+        _corrections.record(
+            model,
+            item,
+            action,
+            source,
+            corrections_path,
+            field=f if wrote else "",
+            before=old if wrote else None,
+            after=value if wrote else None,
+            state_before=state_before,
+        )
     return True
 
 
@@ -673,12 +720,21 @@ def _target_value(model, item, action: str, value):
     return t["original"], t.get("field", "")
 
 
-def decide(model, item_id: str, action: str, value: Optional[str] = None) -> bool:
+def decide(
+    model,
+    item_id: str,
+    action: str,
+    value: Optional[str] = None,
+    source: str = "human",
+    corrections_path=None,
+) -> bool:
     """One decision, exactly as a replayed decisions file would apply it.
 
     Used by ``matchline review --confirm/--reject`` so the flags and the HTML
     report leave an item in the same state with the same revision log entry.
     Returns False when the item was already in that state (nothing logged).
+    ``source`` names what accepted it in the correction history (#997):
+    ``human`` for these flags, ``auto`` for a programmatic resolver.
     """
     item = next((i for i in model.review_queue if i.id == item_id), None)
     if item is None:
@@ -689,7 +745,17 @@ def decide(model, item_id: str, action: str, value: Optional[str] = None) -> boo
         raise ValueError(f"edit of {item_id!r} has no value")
     note = action + (f": {value}" if action == "edit" else "")
     v, f = _target_value(model, item, action, value)
-    return _set(model, item, _decided(action), note, v, f)
+    return _set(
+        model,
+        item,
+        _decided(action),
+        note,
+        v,
+        f,
+        action=action,
+        source=source,
+        corrections_path=corrections_path,
+    )
 
 
 def _item_row(i) -> dict:

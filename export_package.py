@@ -99,6 +99,20 @@ def _inputs(inputs: Iterable[dict]) -> List[dict]:
     return out
 
 
+def _corrections(out_dir) -> dict:
+    """The correction history beside the model (#997), or why there is none."""
+    p = Path(out_dir) / "corrections.json"
+    if not p.exists():
+        return {"recorded": False, "reason": "no accepted corrections beside the model yet"}
+    import corrections as corrections_mod
+
+    try:
+        doc = corrections_mod.read(p)
+    except (ValueError, OSError) as e:
+        return {"recorded": False, "reason": f"corrections.json could not be read ({e})"}
+    return {"recorded": True, "file": "corrections.json", "summary": corrections_mod.summary(doc)}
+
+
 def _decisions(review_dir, n_open: int) -> dict:
     """Where the reviewer records decisions (#749), or why there is nothing yet."""
     if not review_dir or not (Path(review_dir) / "decisions.json").exists():
@@ -116,7 +130,12 @@ def _decisions(review_dir, n_open: int) -> dict:
 
 
 def build_trust_report(
-    model, report, convention: dict, inputs: Iterable[dict] = (), review_dir=None
+    model,
+    report,
+    convention: dict,
+    inputs: Iterable[dict] = (),
+    review_dir=None,
+    corrections: Optional[dict] = None,
 ) -> dict:
     """The trust report as data; every number names where it was read from."""
     spaces = list(model.spaces.values())
@@ -221,6 +240,7 @@ def build_trust_report(
         "review": review,
         "defaults": defaults,
         "decisions_file": _decisions(review_dir, n_open),
+        "corrections": corrections or {"recorded": False, "reason": "no corrections recorded"},
     }
 
 
@@ -352,9 +372,34 @@ def render_html(tr: dict) -> str:
         "<tr><td>Reviewed by</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></table>",
         "<h2>Review decisions</h2>",
         f"<p>{_e(_dnote(tr))}</p>",
+        _corrections_html(tr),
         "</body></html>",
     ]
     return "\n".join(p for p in parts if p) + "\n"
+
+
+def _corrections_html(tr: dict) -> str:
+    """The corrections section of the HTML report (#997)."""
+    cor = tr.get("corrections") or {}
+    if not cor.get("recorded"):
+        return "<h2>Corrections</h2><p>no accepted corrections recorded</p>"
+    s = cor.get("summary") or {}
+    return (
+        "<h2>Corrections</h2><p>"
+        f"{s.get('total', 0)} accepted ({s.get('human', 0)} human, {s.get('auto', 0)} auto), "
+        f"{s.get('undone', 0)} undone; history in corrections.json.</p>"
+    )
+
+
+def _corrections_note(tr: dict) -> str:
+    cor = tr.get("corrections") or {}
+    if not cor.get("recorded"):
+        return "No accepted corrections recorded."
+    s = cor.get("summary") or {}
+    return (
+        f"{s.get('total', 0)} accepted ({s.get('human', 0)} human, {s.get('auto', 0)} auto), "
+        f"{s.get('undone', 0)} undone; history in corrections.json."
+    )
 
 
 def _dnote(tr: dict) -> str:
@@ -446,6 +491,8 @@ def write_pdf(tr: dict, path: Path) -> None:
               (0.18, 0.30, 0.22, 0.30)),
         Paragraph("Review decisions", h2),
         Paragraph(html.escape(_dnote(tr)), body),
+        Paragraph("Corrections", h2),
+        Paragraph(html.escape(_corrections_note(tr)), body),
         Spacer(1, 2),
     ]  # fmt: skip
     frame = KeepInFrame(w - 2 * m, h - 2 * m, [p for p in parts if p is not None], mode="shrink")
@@ -489,7 +536,10 @@ def build_package(
             if (Path(review_dir) / name).exists():
                 shutil.copy2(Path(review_dir) / name, rv / name)
         review_dir = rv
-    tr = build_trust_report(model, report, convention, inputs, review_dir)
+    corr = _corrections(out_dir)
+    if corr.get("recorded"):
+        shutil.copy2(Path(out_dir) / "corrections.json", pkg / "corrections.json")
+    tr = build_trust_report(model, report, convention, inputs, review_dir, corr)
     (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str))
     html_path = pkg / "trust_report.html"
     html_path.write_text(render_html(tr))
