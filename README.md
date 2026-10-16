@@ -150,6 +150,14 @@ validation against clean commercial sheets is the next milestone. The WiSARD
 classifier is a deterministic/explainable asset; production symbol spotting
 follows a fine-tuned YOLO + tiling/legend-learning pattern.
 
+## Contributing
+
+Contributions are welcome, human- or agent-authored alike. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the test-count gate, and the
+review norms for external PRs, and our
+[Code of Conduct](CODE_OF_CONDUCT.md). Every commit needs a DCO
+`Signed-off-by` line.
+
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).
