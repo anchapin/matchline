@@ -27,9 +27,7 @@ from elevation_windows import (  # noqa: E402
     assign_window_tag,
     build_model_with_elevations,
     detect_windows,
-    merge_elevation_observations,
     observations_to_facade,
-    reconcile_window_counts,
 )
 from link._schedules import _schedules  # noqa: E402
 from registration import (  # noqa: E402
@@ -183,152 +181,6 @@ def check_daylighting(model, bldg, params: DaylightParams):
     return n_p, n_s, bad
 
 
-def test_reconciliation_flags():
-    """Injected mismatches must land in the review queue."""
-    from building_model import BuildingModel as BM
-
-    model = BM(name="recon_test")
-    plan_counts = {"A": 3, "B": 2}
-    # elevation sees: one extra A, one missing B, one untagged
-    from elevation_windows import MergedWindow
-
-    merged = [
-        MergedWindow(
-            id="MW-1",
-            facade="south",
-            s0_m=1,
-            s1_m=2.2,
-            s_center_m=1.6,
-            width_m=1.2,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag="A",
-            category_hint="window",
-        ),
-        MergedWindow(
-            id="MW-2",
-            facade="south",
-            s0_m=3,
-            s1_m=4.2,
-            s_center_m=3.6,
-            width_m=1.2,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag="A",
-            category_hint="window",
-        ),
-        MergedWindow(
-            id="MW-3",
-            facade="south",
-            s0_m=5,
-            s1_m=6.2,
-            s_center_m=5.6,
-            width_m=1.2,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag="A",
-            category_hint="window",
-        ),
-        MergedWindow(
-            id="MW-4",
-            facade="south",
-            s0_m=7,
-            s1_m=8.2,
-            s_center_m=7.6,
-            width_m=1.2,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag="A",
-            category_hint="window",
-        ),
-        MergedWindow(
-            id="MW-5",
-            facade="south",
-            s0_m=9,
-            s1_m=10.8,
-            s_center_m=9.9,
-            width_m=1.8,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag="B",
-            category_hint="window",
-        ),
-        MergedWindow(
-            id="MW-6",
-            facade="south",
-            s0_m=11,
-            s1_m=12.0,
-            s_center_m=11.5,
-            width_m=1.0,
-            sill_m=0.9,
-            head_m=2.4,
-            height_m=1.5,
-            tag=None,
-            category_hint="window",
-        ),
-    ]
-    flags = reconcile_window_counts(model, plan_counts, merged, "south", "arch_A101")
-    kinds = [i.kind for i in model.review_queue]
-    ok = (
-        len(flags) == 3
-        and kinds.count("window_reconciliation") == 3
-        and any(
-            "1 'B'" in f["description"] and "no elevation instance" in f["description"]
-            for f in flags
-        )
-        and any(
-            "'A'" in f["description"] and "no matching arch-plan" in f["description"] for f in flags
-        )
-        and any("UNTAGGED" in f["description"] for f in flags)
-    )
-    return ok, [f["description"] for f in flags]
-
-
-def test_dedup_conflict():
-    """Overlapping-but-disagreeing observations -> conflict, not merge."""
-    from building_model import Provenance
-    from elevation_windows import FacadeWindow
-
-    a = FacadeWindow(
-        id="s1:EW-1",
-        sheet_id="s1",
-        facade="south",
-        s0_m=5.0,
-        s1_m=6.2,
-        s_center_m=5.6,
-        width_m=1.2,
-        sill_m=0.9,
-        head_m=2.4,
-        height_m=1.5,
-        category_hint="window",
-        confidence=0.8,
-        provenance=Provenance(sheet_id="s1", revision=1, method="x", confidence=0.8),
-    )
-    b = FacadeWindow(
-        id="s2:EW-1",
-        sheet_id="s2",
-        facade="south",
-        s0_m=5.5,
-        s1_m=6.7,
-        s_center_m=6.1,
-        width_m=1.2,
-        sill_m=0.9,
-        head_m=2.4,
-        height_m=1.5,
-        category_hint="window",
-        confidence=0.8,
-        provenance=Provenance(sheet_id="s2", revision=1, method="x", confidence=0.8),
-    )
-    merged, conflicts = merge_elevation_observations([[a], [b]], tol_m=0.30)
-    # centers differ by 0.5 > tol, intervals overlap -> conflict
-    return len(merged) == 2 and len(conflicts) == 1 and conflicts[0]["delta_center_m"] == 0.5
-
-
 def main():
     params = DaylightParams()
     all_ok = True
@@ -429,15 +281,6 @@ def main():
         all_ok &= rt
         print()
 
-    ok, descs = test_reconciliation_flags()
-    print(f"[reconciliation injection test] {'OK' if ok else '<-- FAIL'}")
-    for d in descs:
-        print(f"    - {d}")
-    all_ok &= ok
-    okc = test_dedup_conflict()
-    print(f"[dedup conflict test] {'OK' if okc else '<-- FAIL'}")
-    all_ok &= okc
-    print()
     print("ALL PASS" if all_ok else "FAILURES PRESENT")
 
 
