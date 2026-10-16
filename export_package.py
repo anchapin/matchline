@@ -550,6 +550,23 @@ def _pdf(tr: dict, path: Path) -> Optional[str]:
     return None
 
 
+def _viewer_fragment(scene: dict, banner: str = "") -> str:
+    """The 3D review viewer (#1001) as an embeddable fragment: one render
+    core shared with the ``matchline viewer`` page, embedded here in the
+    share-back preview (#999)."""
+    import review_viewer
+
+    return review_viewer.fragment(scene, banner=banner)
+
+
+def review_viewer_scene(model) -> dict:
+    """The viewer scene built from the model the package is built around
+    (#1001); read verbatim, nothing re-derived."""
+    import review_viewer
+
+    return review_viewer.build_scene(model)
+
+
 def _role_for(name: str) -> str:
     if name.startswith("review/"):
         return "review report, decisions template and model (#749)"
@@ -661,7 +678,12 @@ def build_package(
     (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str))
     html_path = pkg / "trust_report.html"
     html_path.write_text(render_html(tr))
-    (pkg / "share_back.html").write_text(render_html(tr, banner=SHARE_BACK_BANNER))
+    share_html = render_html(tr, banner=SHARE_BACK_BANNER)
+    # the 3D preview rides on the same page, from the same render core the
+    # CLI viewer uses (#1001): the canonical model is the only geometry
+    viewer_frag = _viewer_fragment(review_viewer_scene(model), banner="")
+    share_html = share_html.replace("</body>", viewer_frag + "\n</body>", 1)
+    (pkg / "share_back.html").write_text(share_html)
     why = _pdf(tr, pkg / "trust_report.pdf") if pdf else "PDF not requested"
     manifest = {
         "schema": "matchline.package/1",

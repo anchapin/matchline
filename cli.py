@@ -398,6 +398,18 @@ def cmd_review(args: argparse.Namespace) -> None:
     run_review.main(args)
 
 
+def cmd_viewer(args: argparse.Namespace) -> None:
+    """Write the read-only 3D review viewer page for a model (#1001)."""
+    import review_viewer
+    from building_model import BuildingModel
+
+    model = BuildingModel.from_json(Path(args.model).read_text())
+    scene = review_viewer.build_scene(model)
+    page = review_viewer.page_html(scene, title=f"matchline review viewer: {model.name}")
+    Path(args.out).write_text(page)
+    print(f"wrote {args.out}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="matchline",
@@ -623,6 +635,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the correction history beside the model (#997)",
     )
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser(
+        "viewer",
+        help="read-only 3D review viewer page from a model JSON (#1001)",
+    )
+    p.add_argument("model", help="BuildingModel JSON file path")
+    p.add_argument("--out", metavar="PATH", required=True, help="viewer.html path to write")
+    p.set_defaults(func=cmd_viewer)
 
     p = sub.add_parser(
         "diff",
