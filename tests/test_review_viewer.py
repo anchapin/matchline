@@ -3,12 +3,15 @@
 from pathlib import Path
 
 from building_model import (
+    AirLoop,
     BuildingModel,
+    ComponentRef,
     EnvelopeWall,
     Level,
     Provenance,
     ReviewItem,
     Space,
+    SpaceHVAC,
     SpaceOpening,
     Zone,
 )
@@ -255,3 +258,93 @@ def test_share_back_embeds_the_viewer():
     fr = review_viewer_export._viewer_fragment(build_scene(_model()), banner="")
     assert "<canvas" in fr
     assert hasattr(review_report, "write_review")  # review/ still written as before
+
+
+# ------------------------------------------------------------------ MEP (#1004)
+def _mep_model():
+    m = _model()
+    m.spaces["L1-101"].hvac = SpaceHVAC(
+        zone_ids=["Z1"],
+        diffusers=[
+            ComponentRef(
+                id="D1",
+                type="diffuser",
+                x_m=2.0,
+                y_m=2.0,
+                tag="D1",
+                provenance=Provenance("mech_M101", 1, "symbol_detection", 0.9),
+            )
+        ],
+        terminal_units=[
+            ComponentRef(
+                id="VAV-1",
+                type="vav",
+                x_m=5.0,
+                y_m=5.0,
+                tag="VAV-1",
+                provenance=Provenance("mech_M101", 1, "symbol_detection", 0.85),
+            )
+        ],
+    )
+    z = m.zones["Z1"]
+    z.terminal_unit = ComponentRef(id="VAV-1", type="vav", x_m=5.0, y_m=5.0, tag="VAV-1")
+    z.diffusers = [
+        ComponentRef(id="D2", type="diffuser", x_m=7.0, y_m=2.0, tag="D2"),
+        # same instance as the space's D1: the zone re-lists it, dedupe keeps one
+        ComponentRef(id="D1", type="diffuser", x_m=2.0, y_m=2.0, tag="D1"),
+    ]
+    m.air_loops = [
+        AirLoop(
+            tag="AHU-1",
+            sheet="mech_M101",
+            zone_ids=["Z1"],
+            provenance=Provenance("mech_M101", 1, "schedule", 0.88),
+        )
+    ]
+    m.zones["Z1"].provenance = Provenance("mech_M101", 1, "duct_tracing", 0.91)
+    return m
+
+
+def test_mep_symbols_read_from_model_with_provenance():
+    s = build_scene(_mep_model())
+    syms = s["mep"]["symbols"]
+    # dedupe: D1 listed by both the space and the zone is one symbol
+    ids = [(x["type"], x["id"]) for x in syms]
+    assert ("diffuser", "D1") in ids and ids.count(("diffuser", "D1")) == 1
+    assert ("vav", "VAV-1") in ids and ids.count(("vav", "VAV-1")) == 1
+    d1 = next(x for x in syms if x["id"] == "D1" and x["type"] == "diffuser")
+    assert d1["x"] == 2.0 and d1["y"] == 2.0 and d1["level"] == "L1"
+    assert d1["confidence"] == 0.9 and d1["sheet"] == "mech_M101"
+    d2 = next(x for x in syms if x["id"] == "D2")
+    assert d2["sheet"] == "" and d2["confidence"] is None
+
+
+def test_mep_counts_aggregate_the_instances():
+    s = build_scene(_mep_model())
+    counts = s["mep"]["counts"]
+    assert counts["diffuser"] == 2 and counts["vav"] == 1
+
+
+def test_mep_air_loops_and_zone_provenance_carry_through():
+    s = build_scene(_mep_model())
+    (loop,) = s["mep"]["air_loops"]
+    assert loop == {
+        "tag": "AHU-1",
+        "zones": ["Z1"],
+        "confidence": 0.88,
+        "sheet": "mech_M101",
+    }
+    (zrow,) = s["zones"]
+    assert zrow["confidence"] == 0.91 and zrow["sheet"] == "mech_M101"
+
+
+def test_mep_section_absent_data_is_empty_not_crashing():
+    s = build_scene(_model())  # no hvac, no air loops
+    assert s["mep"]["symbols"] == [] and s["mep"]["air_loops"] == []
+    assert s["mep"]["counts"] == {}
+
+
+def test_mep_toggles_render_in_page_and_fragment():
+    for html in (page_html(build_scene(_mep_model())), fragment(build_scene(_mep_model()))):
+        assert 'id="t-mep"' in html and 'id="t-loop"' in html
+        assert "drawMEP" in html and "drawLoops" in html
