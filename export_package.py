@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+from html_page import page_head
+
 SCHEMA = "matchline.trust_report/1"
 DISCLAIMER = (
     "matchline produces building energy modeling inputs for review by a qualified "
@@ -347,10 +349,9 @@ def render_html(tr: dict, banner: str = "") -> str:
     )
     more = rv["open"]["value"] - len(rv["worst"])
     parts = [
-        "<!doctype html><html><head><meta charset=utf-8>",
-        f"<title>matchline trust report: {_e(tr['building'])}</title>",
-        f"<style>{_CSS}</style></head><body>",
-        f"<h1>Trust report: {_e(tr['building'])}</h1>",
+        page_head(
+            f"matchline trust report: {tr['building']}", _CSS, f"Trust report: {tr['building']}"
+        ),
         f"<p>{_e(banner)}</p>" if banner else "",
         f"<div class=disc>{_e(tr['disclaimer'])}</div>",
         "<h2>Inputs</h2>",

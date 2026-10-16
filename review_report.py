@@ -42,6 +42,7 @@ from typing import Dict, List, Optional, Tuple
 
 import opening_attach
 import space_merge as space_merge
+from html_page import page_head
 
 SCHEMA = "matchline.review_decisions/1"
 ACTIONS = ("confirm", "reject", "edit", "revert")
@@ -1449,14 +1450,14 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}
-    name = html.escape(str(model.name))
     return (
         "\n".join(
             [
-                "<!doctype html><html><head><meta charset=utf-8>",
-                f"<title>matchline review: {name}</title>",
-                f"<style>{_CSS}{_SHEET_CSS}</style></head><body>",
-                f"<h1>Review queue: {name}</h1>",
+                page_head(
+                    f"matchline review: {model.name}",
+                    f"{_CSS}{_SHEET_CSS}",
+                    f"Review queue: {model.name}",
+                ),
                 f"<div class=mono>model SHA-256 {doc['model_sha256']}</div>",
                 "<div class=bar><span id=left></span>"
                 "<label><input type=checkbox id=open> open only</label>"
