@@ -380,6 +380,23 @@ def cmd_diff(args: argparse.Namespace) -> None:
         print(json.dumps(summary.to_dict(), indent=2))
 
 
+def cmd_takeoff_diff(args: argparse.Namespace) -> None:
+    """Diff two revisions' takeoffs (rooms, windows, doors, symbols) (#993)."""
+    import json
+
+    import takeoff_diff
+
+    old = json.loads(Path(args.old).read_text())
+    new = json.loads(Path(args.new).read_text())
+    old_report = json.loads(Path(args.old_report).read_text()) if args.old_report else None
+    new_report = json.loads(Path(args.new_report).read_text()) if args.new_report else None
+    rep = takeoff_diff.diff_takeoffs(old, new, old_report=old_report, new_report=new_report)
+    text = json.dumps(rep, indent=2)
+    if args.out:
+        Path(args.out).write_text(text + "\n")
+    print(text)
+
+
 def cmd_review(args: argparse.Namespace) -> None:
     """Review queue: list open review items, confirm or reject decisions."""
     import os
@@ -775,6 +792,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write diff summary JSON here (default: stdout)",
     )
     p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser(
+        "takeoff-diff",
+        help=(
+            "diff two revisions' takeoffs (rooms, windows, doors, symbols)"
+            " with counts per change class (#993)"
+        ),
+    )
+    p.add_argument(
+        "--old",
+        required=True,
+        dest="old",
+        help="Path to the baseline (old) revision: stage_02_model.json or a raw model JSON",
+    )
+    p.add_argument(
+        "--new",
+        required=True,
+        dest="new",
+        help="Path to the new revision: stage_02_model.json or a raw model JSON",
+    )
+    p.add_argument(
+        "--old-report",
+        default=None,
+        dest="old_report",
+        help="Optional old stage_00_set_report.json for the symbol takeoff",
+    )
+    p.add_argument(
+        "--new-report",
+        default=None,
+        dest="new_report",
+        help="Optional new stage_00_set_report.json for the symbol takeoff",
+    )
+    p.add_argument(
+        "--out",
+        default=None,
+        dest="out",
+        help="Write the diff report JSON here (default: stdout)",
+    )
+    p.set_defaults(func=cmd_takeoff_diff)
 
     p = sub.add_parser(
         "learn-legend",

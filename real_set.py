@@ -31,6 +31,7 @@ from typing import Dict, List, Optional
 
 from shapely.geometry import LineString, Point, Polygon
 
+import revisions
 import sheet_index
 
 SCHEMA = "matchline.set_report/1"
@@ -61,6 +62,7 @@ class SetReport:
     elevations: List[dict] = field(default_factory=list)
     hvac_legends: List[dict] = field(default_factory=list)
     dedup: dict = field(default_factory=dict)
+    revisions: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -78,6 +80,7 @@ class SetReport:
             "elevations": self.elevations,
             "hvac_legends": self.hvac_legends,
             "dedup": self.dedup,
+            "revisions": self.revisions,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -730,6 +733,7 @@ def build_set_model(
         zones,
         legend_tags=legend_tags,
     )
+    _revisions(files, status, sheets_dir, entries, review, report)
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
         sched_entries, review, report,
@@ -1194,6 +1198,82 @@ def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None
                 confidence=0.5,
                 provenance=Provenance(
                     tu.provenance.sheet_id if tu and tu.provenance else "", 0, "legend_symbol", 0.5
+                ),
+                needs_review=True,
+            )
+        )
+
+
+def _revisions(files, status, sheets_dir, entries, review, report) -> None:  # fmt: skip
+    """Revision tables, clouds, and ambiguous marks on every vector sheet (#993).
+
+    Each ingested vector sheet is read for its revision table (mark, date,
+    description) and its revision clouds; a cloud whose mark no table entry
+    names, and a table entry whose mark equals the sheet's title-block
+    revision with no cloud carrying it, become review items.  The per-set
+    picture (which mark touched which sheets, which sheets carry addenda
+    flags) lands on the report under ``revisions``.
+    """
+    from building_model import Provenance, ReviewItem
+
+    rev_of = {f: _val(entries.get(f, {}), "revision") for f in files}
+    addenda_of = {f: bool(entries.get(f, {}).get("addenda")) for f in files}
+    per_sheet: Dict[str, dict] = {}
+    ambiguous: List[dict] = []
+    for f in files:
+        st = status[f]
+        if st.stages.get("ingest", {}).get("kind") == "raster_only":
+            continue
+        try:
+            sheet = json.loads((sheets_dir / f).read_text())
+        except (OSError, ValueError):
+            continue
+        res = revisions.analyze_sheet(sheet, title_revision=rev_of.get(f))
+        per_sheet[f] = {"table_rows": len(res["table"]), "clouds": len(res["clouds"])}
+        for a in res["ambiguous"]:
+            ambiguous.append({"sheet": f, **a})
+    report.revisions = {
+        "schema": revisions.SCHEMA,
+        "marks": revisions.index_revisions(
+            [(rev_of.get(f), addenda_of.get(f, False)) for f in files]
+        ),
+        "sheets": per_sheet,
+        "ambiguous": ambiguous,
+    }  # fmt: skip
+
+    # one review item per distinct ambiguity (kind, mark, sheet), not per cloud
+    grouped: Dict[tuple, List[dict]] = {}
+    for a in ambiguous:
+        grouped.setdefault((a["kind"], a.get("mark"), a["sheet"]), []).append(a)
+    for (kind, mark, sheet), items in sorted(
+        grouped.items(), key=lambda kv: (kv[0][0], str(kv[0][1]), kv[0][2])
+    ):
+        n = len(items)
+        if kind == "cloud_without_table_entry":
+            desc = (
+                f"{n} revision cloud(s) marked {mark or '?'} on {sheet} with no matching "
+                "revision-table entry; the circled change is unrecorded"
+            )
+        else:
+            desc = (
+                f"revision {mark} on {sheet} matches the sheet's title-block revision but "
+                "no revision cloud carries it on the sheet; what changed is unclear"
+            )
+        review.append(
+            ReviewItem(
+                id=f"rq-revision-{kind}-{mark or 'x'}-{sheet}",
+                kind="revision_ambiguity",
+                target={"kind": "sheet", "id": sheet},
+                description=desc,
+                confidence=0.5,
+                provenance=Provenance(
+                    sheet_id=(
+                        status[sheet].number
+                        or sheet.replace("sheet_", "").rstrip(".json").rstrip(".")
+                    ),
+                    revision=0,
+                    method="revision_tracking",
+                    confidence=0.5,
                 ),
                 needs_review=True,
             )
