@@ -115,6 +115,22 @@ def cmd_run(args: argparse.Namespace) -> None:
         config = {}
     config["review_confidence"] = confidence_threshold
     run_pipeline.main(args, config=config)
+    if getattr(args, "baseline", None):
+        out_dir = Path(args.out_dir)
+        try:
+            res = _baseline_diff(out_dir, Path(args.baseline))
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        rep = res["report"]
+        rooms, windows, doors = rep["rooms"], rep["windows"], rep["doors"]
+        print(
+            f"takeoff-diff vs baseline {args.baseline}: "
+            f"rooms +{rooms['added']}/-{rooms['removed']}, "
+            f"windows +{windows['added']}/-{windows['removed']} ({windows['moved']} moved), "
+            f"doors +{doors['added']}/-{doors['removed']} ({doors['moved']} moved); "
+            f"report: {out_dir / 'takeoff_diff.json'}; review items attached: {res['attached']}"
+        )
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
@@ -398,6 +414,53 @@ def cmd_diff(args: argparse.Namespace) -> None:
         print(json.dumps(summary.to_dict(), indent=2))
 
 
+def _baseline_diff(out_dir: Path, baseline_dir: Path) -> dict:
+    """Diff a finished run against a baseline run's out-dir (#1077).
+
+    Reads stage_02_model.json from both out-dirs and stage_00_set_report.json
+    when present (it feeds the symbols section), writes takeoff_diff.json and
+    takeoff_diff_review_items.json into out_dir, and attaches stable-id review
+    items to the run's model queue: rerunning the same diff appends nothing.
+    """
+    import json
+    from dataclasses import asdict
+
+    import takeoff_diff
+    from atomic_io import write_text_atomic
+    from building_model import BuildingModel
+    from review_report import attach_takeoff_diff_items
+
+    old_path = baseline_dir / "stage_02_model.json"
+    new_path = out_dir / "stage_02_model.json"
+    missing = [str(p) for p in (old_path, new_path) if not p.exists()]
+    if missing:
+        raise FileNotFoundError(f"baseline diff needs {', '.join(missing)}")
+    old = json.loads(old_path.read_text())
+    new = json.loads(new_path.read_text())
+
+    def _report(d: Path):
+        p = d / "stage_00_set_report.json"
+        return json.loads(p.read_text()) if p.exists() else None
+
+    rep = takeoff_diff.diff_takeoffs(
+        old, new, old_report=_report(baseline_dir), new_report=_report(out_dir)
+    )
+    write_text_atomic(out_dir / "takeoff_diff.json", json.dumps(rep, indent=2) + "\n")
+    items = takeoff_diff.review_items(rep)
+    write_text_atomic(
+        out_dir / "takeoff_diff_review_items.json", json.dumps(items, indent=2) + "\n"
+    )
+    model = BuildingModel.from_dict(new)
+    attached = attach_takeoff_diff_items(model, rep)
+    if attached:
+        # persist only the queue back into the run's own stage file, so
+        # `matchline review <out-dir>/stage_02_model.json` sees the items and
+        # every other serialized key stays exactly as the pipeline wrote it
+        new["model"]["review_queue"] = [asdict(i) for i in model.review_queue]
+        write_text_atomic(new_path, json.dumps(new, indent=2) + "\n")
+    return {"report": rep, "attached": len(attached)}
+
+
 def cmd_takeoff_diff(args: argparse.Namespace) -> None:
     """Diff two revisions' takeoffs (rooms, windows, doors, symbols) (#993)."""
     import json
@@ -631,6 +694,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="grant consent for this run's anonymous telemetry payload (#1003); "
         "off by default, and config telemetry_local_only wins over it. "
         "The payload lands in <out-dir>/telemetry.json; nothing is transmitted",
+    )
+    p.add_argument(
+        "--baseline",
+        default=None,
+        metavar="DIR",
+        help="previous run's out-dir; after this run succeeds, diff its "
+        "stage_02_model against the baseline's, write <out-dir>/takeoff_diff.json, "
+        "and attach stable-id review items to the model's review queue (#1077)",
     )
     p.add_argument("--out-dir", default="bem_out")
 
