@@ -15,7 +15,9 @@ change class, one section per takeoff:
   category, summed into added / removed with the count of spaces whose count
   changed.  Openings present in both revisions with identity evidence (a
   unique tag, or a >=50% bbox overlap on a sheet both revisions share) are
-  reported as ``moved`` instead of one added and one removed (#1045).
+  reported as ``moved`` instead of one added and one removed (#1045), with
+  ``moved_pairs`` listing each relocation's old/new space, tag, and the
+  evidence that paired it (#1078).
 * ``symbols``: legend rows mapped to HVAC detector classes (from the set
   reports, when given) summed per class into added / removed.
 
@@ -415,6 +417,7 @@ def diff_takeoffs(
         moved_in: Dict[str, int] = {}
         moved_out: Dict[str, int] = {}
         n_moved = 0
+        moved_pairs: List[dict] = []
         for i, j in _moved_openings(old_inv, new_inv):
             s_old, s_new = old_inv[i]["space"], new_inv[j]["space"]
             if s_old == s_new:
@@ -422,6 +425,16 @@ def diff_takeoffs(
             n_moved += 1
             moved_out[s_old] = moved_out.get(s_old, 0) + 1
             moved_in[s_new] = moved_in.get(s_new, 0) + 1
+            # Evidence follows the pairing rule: a non-empty tag on both sides
+            # means the tag paired them; anything else paired on bbox overlap.
+            moved_pairs.append(
+                {
+                    "old_space": s_old,
+                    "new_space": s_new,
+                    "tag": old_inv[i]["tag"] or new_inv[j]["tag"],
+                    "evidence": "tag" if (old_inv[i]["tag"] and old_inv[j]["tag"]) else "bbox",
+                }
+            )
         n_added = n_removed = 0
         spaces_changed = 0
         for sid in set(old_c) | set(new_c):
@@ -435,6 +448,7 @@ def diff_takeoffs(
             "added": n_added,
             "removed": n_removed,
             "moved": n_moved,
+            "moved_pairs": moved_pairs,
             "spaces_changed": spaces_changed,
         }
 
