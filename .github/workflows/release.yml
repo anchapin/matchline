@@ -95,7 +95,7 @@ jobs:
           import glob, json, os, re, sys, urllib.request
           wheels = glob.glob("dist/*.whl")
           assert wheels, "no wheel in dist/"
-          version = re.search(r"-(\d[^-/]*)\.whl$", wheels[0]).group(1)
+          version = wheels[0].split("/")[-1].split("-")[1]
           try:
               with urllib.request.urlopen("https://pypi.org/pypi/matchline/json") as r:
                   published = json.load(r)["info"]["version"]
