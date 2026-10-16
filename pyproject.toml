@@ -122,6 +122,7 @@ py-modules = [
     "registration",
     "review_report",
     "review_viewer",
+    "viewer_corrections",
     "roof_geometry",
     "room_labels",
     "run_bem_export",

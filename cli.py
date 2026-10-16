@@ -400,14 +400,33 @@ def cmd_review(args: argparse.Namespace) -> None:
 
 def cmd_viewer(args: argparse.Namespace) -> None:
     """Write the read-only 3D review viewer page for a model (#1001)."""
+    import corrections as corrections_mod
     import review_viewer
     from building_model import BuildingModel
 
     model = BuildingModel.from_json(Path(args.model).read_text())
-    scene = review_viewer.build_scene(model)
+    cpath = corrections_mod.path_for(args.model)
+    cdoc = corrections_mod.read(cpath) if cpath.exists() else None
+    scene = review_viewer.build_scene(model, corrections_doc=cdoc)
     page = review_viewer.page_html(scene, title=f"matchline review viewer: {model.name}")
     Path(args.out).write_text(page)
     print(f"wrote {args.out}")
+
+
+def cmd_viewer_apply(args: argparse.Namespace) -> None:
+    """Apply a viewer corrections ops file through the decisions workflow (#1002)."""
+    import json
+
+    import viewer_corrections
+    from building_model import BuildingModel
+
+    model_path = Path(args.model)
+    model = BuildingModel.from_json(model_path.read_text())
+    doc = viewer_corrections.read(args.ops)
+    summary = viewer_corrections.apply_ops(model, doc, model_path)
+    dest = Path(args.out) if args.out else model_path
+    dest.write_text(model.to_json())
+    print(json.dumps(summary, indent=2, default=str))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -643,6 +662,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("model", help="BuildingModel JSON file path")
     p.add_argument("--out", metavar="PATH", required=True, help="viewer.html path to write")
     p.set_defaults(func=cmd_viewer)
+
+    p = sub.add_parser(
+        "viewer-apply",
+        help="apply a viewer corrections ops file through the decisions workflow (#1002)",
+    )
+    p.add_argument("model", help="BuildingModel JSON file path")
+    p.add_argument("ops", metavar="OPS_JSON", help="viewer_corrections.json from the viewer page")
+    p.add_argument(
+        "--out",
+        metavar="PATH",
+        help="write the corrected model here instead of in place",
+    )
+    p.set_defaults(func=cmd_viewer_apply)
 
     p = sub.add_parser(
         "diff",

@@ -559,12 +559,12 @@ def _viewer_fragment(scene: dict, banner: str = "") -> str:
     return review_viewer.fragment(scene, banner=banner)
 
 
-def review_viewer_scene(model) -> dict:
+def review_viewer_scene(model, corrections_doc: Optional[dict] = None) -> dict:
     """The viewer scene built from the model the package is built around
     (#1001); read verbatim, nothing re-derived."""
     import review_viewer
 
-    return review_viewer.build_scene(model)
+    return review_viewer.build_scene(model, corrections_doc=corrections_doc)
 
 
 def _role_for(name: str) -> str:
@@ -681,7 +681,14 @@ def build_package(
     share_html = render_html(tr, banner=SHARE_BACK_BANNER)
     # the 3D preview rides on the same page, from the same render core the
     # CLI viewer uses (#1001): the canonical model is the only geometry
-    viewer_frag = _viewer_fragment(review_viewer_scene(model), banner="")
+    corr_doc = None
+    cp = Path(out_dir) / "corrections.json"
+    if cp.exists():
+        try:
+            corr_doc = json.loads(cp.read_text())
+        except (OSError, ValueError):
+            corr_doc = None
+    viewer_frag = _viewer_fragment(review_viewer_scene(model, corrections_doc=corr_doc), banner="")
     share_html = share_html.replace("</body>", viewer_frag + "\n</body>", 1)
     (pkg / "share_back.html").write_text(share_html)
     why = _pdf(tr, pkg / "trust_report.pdf") if pdf else "PDF not requested"
