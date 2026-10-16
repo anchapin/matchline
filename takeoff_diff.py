@@ -246,6 +246,98 @@ def _reidentify_spaces(
     return pairs
 
 
+def review_items(diff: dict) -> List[dict]:
+    """Review items from a takeoff-diff report (#1048).
+
+    A revision that removes rooms or flips opening counts is exactly what a
+    reviewer should look at first, so the diff becomes queue items in the
+    same currency as the pipeline's own flags: removed rooms first (urgency
+    3), then opening-count changes (urgency 2 when something was removed),
+    then added rooms and symbol-count shifts.  Reidentified spaces (#1046)
+    produce no item: the identity is resolved, not open.  Ids are stable, so
+    re-running the same diff feeds no duplicates (see
+    ``review_report.attach_takeoff_diff_items``).
+    """
+    rooms = diff.get("rooms") or {}
+    out: List[dict] = []
+
+    def item(rid, kind, target, description, confidence, urgency) -> dict:
+        return {
+            "id": rid,
+            "kind": kind,
+            "target": dict(target),
+            "description": description,
+            "confidence": confidence,
+            "urgency": urgency,
+            "provenance": {
+                "sheet_id": "",
+                "revision": 0,
+                "method": "takeoff_diff",
+                "confidence": confidence,
+            },
+        }
+
+    for sid in rooms.get("removed_ids") or []:
+        out.append(
+            item(
+                f"takeoff-diff-room-removed-{sid}",
+                "revision_room_removed",
+                {"kind": "space", "id": sid},
+                f"room {sid} was removed in the newer revision",
+                0.7,
+                3,
+            )
+        )
+    for cat, key in (("window", "windows"), ("door", "doors")):
+        sec = diff.get(key) or {}
+        if not (sec.get("added") or sec.get("removed")):
+            continue
+        parts = []
+        if sec.get("added"):
+            parts.append(f"{sec['added']} added")
+        if sec.get("removed"):
+            parts.append(f"{sec['removed']} removed")
+        if sec.get("moved"):
+            parts.append(f"{sec['moved']} moved")
+        out.append(
+            item(
+                f"takeoff-diff-{key}",
+                "revision_opening_count",
+                {"kind": "takeoff", "id": key},
+                f"{cat} counts changed: " + ", ".join(parts),
+                0.7,
+                2 if sec.get("removed") else 1,
+            )
+        )
+    for sid in rooms.get("added_ids") or []:
+        out.append(
+            item(
+                f"takeoff-diff-room-added-{sid}",
+                "revision_room_added",
+                {"kind": "space", "id": sid},
+                f"room {sid} is new in the newer revision",
+                0.7,
+                1,
+            )
+        )
+    sym = diff.get("symbols") or {}
+    if sym.get("provided") and (sym.get("added") or sym.get("removed")):
+        out.append(
+            item(
+                "takeoff-diff-symbols",
+                "revision_symbol_count",
+                {"kind": "takeoff", "id": "symbols"},
+                (
+                    "mechanical symbols changed: "
+                    f"{sym.get('added', 0)} added, {sym.get('removed', 0)} removed"
+                ),
+                0.6,
+                1,
+            )
+        )
+    return out
+
+
 def diff_takeoffs(
     old: dict,
     new: dict,

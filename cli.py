@@ -412,6 +412,9 @@ def cmd_takeoff_diff(args: argparse.Namespace) -> None:
     text = json.dumps(rep, indent=2)
     if args.out:
         Path(args.out).write_text(text + "\n")
+    if args.review_items:
+        items = json.dumps(takeoff_diff.review_items(rep), indent=2)
+        Path(args.review_items).write_text(items + "\n")
     print(text)
 
 
@@ -948,6 +951,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="out",
         help="Write the diff report JSON here (default: stdout)",
+    )
+    p.add_argument(
+        "--review-items",
+        default=None,
+        dest="review_items",
+        help=(
+            "Also write the diff as review-queue items here, ready for"
+            " review_report.attach_takeoff_diff_items (#1048)"
+        ),
     )
     p.set_defaults(func=cmd_takeoff_diff)
 

@@ -730,6 +730,12 @@ class ReviewItem:
         # A correction a reviewer drew in the viewer (#1002): the item exists
         # to carry the decided state and the correction history entry.
         "viewer_correction",
+        # revision-to-revision takeoff changes (#1048): items a takeoff-diff
+        # report feeds into the queue, worst-first via review_report
+        "revision_room_removed",
+        "revision_room_added",
+        "revision_opening_count",
+        "revision_symbol_count",
     ]
     description: str
     confidence: float
