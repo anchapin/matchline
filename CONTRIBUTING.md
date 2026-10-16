@@ -60,7 +60,7 @@ CI enforces a **test count regression gate** — the count must not drift withou
 
 | Branch | Expected Count |
 |--------|----------------|
-| develop | ~642 |
+| `develop` | see `EXPECTED_TEST_COUNT` in `.github/workflows/ci.yml` (source of truth, changes only with a stated reason) |
 
 If you legitimately change the test count, update `EXPECTED_TEST_COUNT` in `.github/workflows/ci.yml` and include a comment explaining why.
 
@@ -141,7 +141,7 @@ Matchline follows **Conventional Commits**:
 ```
 fix(issue-342): add integration test for run_pipeline with review-blocking export
 docs(issue-322): explain jesse.py purpose and scope
-chore: update expected test count to 641
+chore: update EXPECTED_TEST_COUNT in ci.yml
 fix(issue-230): enforce conservation law in bem_export
 ```
 
@@ -177,7 +177,25 @@ All CI gates must be green before merging:
 - `python -m pytest tests/ -q`
 - Test count gate (no regressions)
 
+## Review Norms for External and Agent-Authored PRs
+
+PRs from outside the core loop are welcome, human- or agent-authored alike. What to expect:
+
+- **Response:** every PR gets a substantive review (a "rubber-duck" read of the diff:
+  edge cases, backward compatibility, consumers, limitations), not just a checklist pass.
+- **Merging:** docs and other low-risk changes may merge once all CI gates are green.
+  Larger or output-changing changes get a review round first.
+- **Superseded work:** if your PR overlaps with something that already merged, it is closed
+  with a comment crediting the overlap and pointing at the landed change. That is thanks,
+  not rejection; PR #1085 (superseded by #1084, same dedupe in the opposite direction) is
+  the worked example. Reviewers check for overlap before requesting rework, so a closed
+  duplicate never costs you a re-write.
+- **Agent-authored PRs:** state the generating task/worker in the template's agent-authorship
+  checklist and paste real `pytest` / `ruff` results; unverifiable claims are treated as absent.
+- **Sign-off:** the DCO `Signed-off-by` line applies to every commit, whatever wrote it.
+
 ## Project Architecture
+
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 
@@ -216,7 +234,10 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full domain map.
 
 ## XML Parsing
 
-Use  for all XML parsing. Never use , , or bare  directly.
+Use `safe_xml_parser()` from [safe_xml.py](safe_xml.py), an lxml parser built with
+`resolve_entities=False`, for all XML parsing. Never parse untrusted XML with a parser
+that resolves external entities; a DOCTYPE declaring external entities (e.g. in gbXML)
+must be rejected, not expanded.
 
 ## Sign-off: DCO, not a CLA
 
