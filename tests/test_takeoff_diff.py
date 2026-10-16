@@ -115,6 +115,8 @@ def test_cli_takeoff_diff(tmp_path, capsys):
     rep = json.loads(out.read_text())
     assert rep["schema"] == "matchline.takeoff_diff/1"
     assert rep["doors"]["added"] == 1
+
+
 def _opening(cat, tag=None, sheet=None, bbox=None):
     o = {"category": cat}
     if tag:

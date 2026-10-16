@@ -134,6 +134,7 @@ def _moved_openings(old_inv: List[dict], new_inv: List[dict]) -> List[Tuple[int,
             used_new.add(best_j)
     return pairs
 
+
 def diff_takeoffs(
     old: dict,
     new: dict,
