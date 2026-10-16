@@ -80,3 +80,41 @@ ideas" for what is explicitly out):
   R2 (detection-provider interface); it gates nothing shipped.
 - **The CPython 3.15 pin** lifts only when NREL/OpenStudio ships cp315
   wheels (#5668); Renovate reopens the question every Monday window.
+
+
+## v0.2.0 (2026-10-16)
+
+### What v0.2.0 contains
+
+Everything in the `[0.2.0]` changelog section: the from-scratch detector
+track and its eval tooling (#743), HVAC terminal detection and the duct
+skeleton trace (#744, #745), mechanical schedules, zone airflow and air
+loops on export (#746), the construction library and semi-exterior
+envelope classes (#747, #900), storefront and glazing reads (#793),
+explicit area definitions (#975), the 3D review viewer and queue
+(#996, #1001-#1004), correction history and revision tracking with
+takeoff diffs (#993, #997), progressive takeoff (#998), the export
+package (#999), the telemetry/feedback spec and its wiring (#1003),
+match lines and split-sheet dedup (#994), the benchmark on 12 licensed
+buildings, the wheel packaging fixes that make `pip install matchline` a
+real install, contributor docs, the generated repo map, and the
+tag-driven PyPI release workflow (#1099).
+
+### What v0.2.0 explicitly does not contain
+
+- Completed real-building benchmark results: #748 waits on licensed
+  building data beyond the adopted twelve.
+- The #1093 top-level deep clean, the #1094 research sweep, and the
+  #1095 training/research improvements: they target v0.3.0.
+- Revit/AutoCAD plugins, SSO/SOC 2, SaaS: still parked.
+
+### Release cadence (updated for 0.2.0)
+
+- Releases are tag-driven now: `release.yml` builds, smoke-tests and
+  publishes to PyPI when a `vX.Y.Z` tag matching pyproject's version is
+  pushed; the tag push is the approval (CONTRIBUTING Never List).
+- The earlier note that the version stays 0.1.0 until the real-building
+  benchmark completes is superseded: 0.2.0 ships on 2026-10-16 with
+  #974 and #975 shipped, which is what that bullet's own rule allowed.
+- v0.3.0 targets the deep clean (#1093), the research sweep (#1094) and
+  the training/research improvements (#1095).

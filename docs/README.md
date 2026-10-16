@@ -87,7 +87,7 @@ disclosed, not hidden.
 | `ci.md` | CI gates, test count regression policy, and merge requirements |
 | `CODE-REVIEW.md` | Code review standards and per-PR checklist (severity levels, domain-specific focus, anti-patterns) |
 | `PLANS.md` | Planning conventions and plan template (3-digit prefix, work/designs folders, Status lifecycle) |
-| `release.md` | Release notes and scope: v0.1.0 |
+| `release.md` | Release notes and scope (v0.1.0, v0.2.0) |
 | `risk-register.md` | Risk register |
 | `license_ledger.md` | License ledger (#751) |
 | `data-contribution-agreement.md` | Data-contribution agreement (template, v1.0) |
