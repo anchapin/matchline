@@ -10,7 +10,7 @@ This document describes the automated gates that run on every PR and push.
 
 **Expected test count:** pinned as `EXPECTED_TEST_COUNT` in the `Check test count` step (see below)
 
-The `demo-smoke` job installs the package non-editable the way a fresh user would and runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753).
+The `demo-smoke` job installs the package non-editable the way a fresh user would and runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753). The `wheel-smoke` job builds the wheel and fails when any top-level module or package is missing from the archive (see #1035).
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
