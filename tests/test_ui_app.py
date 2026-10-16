@@ -178,3 +178,38 @@ def test_input_kind_covers_the_three_inputs():
     assert input_kind(Path("a.ifcxml")) == "ifc"
     assert input_kind(Path("a.png")) == "image"
     assert input_kind(Path("a.JPG")) == "image"
+
+
+def test_summarize_worst_first_line():
+    """The summary names the worst-first top items (#996)."""
+    model = {
+        "name": "snap",
+        "levels": [],
+        "spaces": {},
+        "review_queue": [
+            {
+                "id": "A1",
+                "kind": "window_room_link",
+                "confidence": 0.4,
+                "urgency": 1,
+                "status": "open",
+            },
+            {
+                "id": "A2",
+                "kind": "fixture_assignment",
+                "confidence": 0.3,
+                "urgency": 2,
+                "status": "open",
+            },
+            {
+                "id": "A3",
+                "kind": "space_merge",
+                "confidence": 0.5,
+                "urgency": 0,
+                "status": "confirmed",
+            },
+        ],
+    }
+    text = summarize(model)
+    assert "Items to review: 3" in text
+    assert "Worst first: A2 (fixture_assignment, 0.30), A1 (window_room_link, 0.40)" in text

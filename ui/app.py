@@ -141,6 +141,19 @@ def opening_counts(model: dict) -> dict[str, int]:
     return counts
 
 
+def _worst_first(items: list) -> list:
+    """Review items worst-first (#996): open, highest urgency, lowest confidence."""
+    return sorted(
+        items,
+        key=lambda i: (
+            (i.get("status") or "open") != "open",
+            -int(i.get("urgency") or 0),
+            float(i.get("confidence") or 1.0),
+            str(i.get("id") or ""),
+        ),
+    )
+
+
 def summarize(model: dict) -> str:
     """Plain-language results paragraph for one finished run."""
     name = model.get("name") or "the building"
@@ -153,6 +166,13 @@ def summarize(model: dict) -> str:
         lines.append(f"{label.capitalize()}: {count}")
     review = model.get("review_queue") or []
     lines.append(f"Items to review: {len(review)}")
+    worst = _worst_first(review)
+    if worst:
+        top = ", ".join(
+            f"{i.get('id')} ({i.get('kind')}, {float(i.get('confidence') or 0):.2f})"
+            for i in worst[:3]
+        )
+        lines.append(f"Worst first: {top}")
     return "\n".join(lines)
 
 

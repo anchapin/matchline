@@ -20,6 +20,28 @@ confirmed or rejected.
 
 ---
 
+## Ordering and bulk actions (#996)
+
+The queue is listed worst-first everywhere: open items before resolved ones,
+then highest urgency, then lowest confidence (the same order the HTML review
+page renders). `--list --format json` rows carry `level`, the floor the
+item's target belongs to.
+
+Bulk confirm/reject applies one action to every OPEN item matching the
+filters, in worst-first order, records each in the correction history beside
+the model, and re-runs validation:
+
+```bash
+matchline review model.json --bulk-confirm --kind window_room_link
+matchline review model.json --bulk-reject  --conf-below 0.5
+matchline review model.json --bulk-confirm --conf-above 0.2 --level L1
+```
+
+Filters (`--kind`, `--conf-above`, `--conf-below`, `--level`) combine; with
+none given every open item matches. Zero matches exits 1 without changing
+the model. Bulk flags take no `--confirm`/`--reject` and none of the
+correction-history flags.
+
 ## Usage
 
 ```bash

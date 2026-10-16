@@ -95,3 +95,18 @@ replay them (#750).
 ## Browser test
 
 `tests/test_review_page_browser.py` (#802) loads `review.html` from a synthetic drawing-set run in headless Chromium and drives it like a reviewer: `c`/`r`/`e` by key (the edit prompt adds the missing opening of an unsized gap from a schedule tag), `s` highlights the gap on its plan sheet, a layer toggle hides and shows its layer, decisions survive a reload, and the exported `decisions.json` replays with `matchline review --apply`. It also fails on any page script error. Locally it skips when Playwright or Chromium is missing; the CI job `review page in a browser` installs both and sets `MATCHLINE_BROWSER_TESTS=1`, so there a missing browser fails the job.
+
+## Filters and bulk actions (#996)
+
+Above the queue: filter by type, confidence band (>=0.9, 0.7-0.9, <0.7) and
+floor (the level the item's target space, opening, wall or fixture belongs
+to). Filters combine, and the count beside them says how many of the queue
+they leave visible. The two bulk buttons apply confirm or reject to every
+OPEN item that passes the filters; already-decided items are never touched.
+Bulk decisions land in the same decisions file, so exporting and replaying
+with `matchline review model.json --apply decisions.json` replays them
+exactly like single decisions.
+
+Keyboard: `j`/`k` move through the visible rows, `c` confirm, `r` reject,
+`e` edit, `u` revert, `s` show on sheet, `o` toggles open-only, `C` bulk
+confirm filtered, `R` bulk reject filtered, `?` shows the shortcut list.

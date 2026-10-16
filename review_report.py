@@ -38,7 +38,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import opening_attach
 import space_merge as space_merge
@@ -821,6 +821,34 @@ def _item_row(i) -> dict:
     }
 
 
+def _level_index(model) -> Dict[Tuple[str, str], str]:
+    """Target (kind, id) -> level id, backing the review queue's floor filter (#996)."""
+    idx: Dict[Tuple[str, str], str] = {}
+    for sp in model.spaces.values():
+        idx[("space", sp.id)] = sp.level_id
+        for o in sp.openings:
+            idx[("opening", o.id)] = sp.level_id
+        for fx in sp.lighting.fixtures:
+            idx[("fixture", fx.id)] = sp.level_id
+    for w in getattr(model, "envelope", None) or []:
+        sp = model.spaces.get(w.space_id)
+        if sp is not None:
+            idx[("wall", w.id)] = sp.level_id
+    return idx
+
+
+def _item_level(model, item, idx: Optional[Dict[Tuple[str, str], str]] = None) -> str:
+    """The floor an item belongs to, from the entity its target names; "" when unresolved.
+
+    Used by the review page's floor filter and the CLI's ``--level`` bulk
+    filter, so both read the same mapping (#996).
+    """
+    t = item.target or {}
+    if idx is None:
+        idx = _level_index(model)
+    return idx.get((t.get("kind", ""), t.get("id", "")), "")
+
+
 _CSS = """
 body{font:13px/1.4 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#111;margin:20px}
 h1{font-size:18px;margin:0 0 6px}.bar{display:flex;gap:10px;align-items:center;margin:8px 0}
@@ -830,6 +858,8 @@ tr.sel{outline:2px solid #3367d6}tr.done td{color:#888}.hist{font-size:11px;colo
 .st-confirmed{color:#16794a}.st-rejected{color:#b00}.st-edited{color:#8a5a00}
 button{font:inherit;padding:1px 6px}.mono{font-family:Menlo,Consolas,monospace;font-size:11px}
 .keys{color:#666;font-size:11px}
+.help{position:fixed;top:70px;right:20px;background:#fff;
+border:1px solid #999;padding:8px 12px;font-size:12px;display:none;z-index:9}
 """
 
 # Pure replay, mirrored from final_states(); runnable under node for tests.
@@ -853,6 +883,25 @@ _UI_JS = """
   try { var saved = localStorage.getItem(key); if (saved) doc = JSON.parse(saved); }
   catch (e) {}
   var sel = 0, openOnly = false, svgs = {};
+  var filters = {kind: "", band: "all", level: ""};
+  function bandOf(c) { return c >= 0.9 ? "high" : c >= 0.7 ? "mid" : "low"; }
+  function pass(it) {
+    if (filters.kind && it.kind !== filters.kind) return false;
+    if (filters.band !== "all" && bandOf(it.confidence) !== filters.band) return false;
+    if (filters.level && (it.level || "") !== filters.level) return false;
+    return true;
+  }
+  function visibleIdx(fs) {
+    var out = [];
+    data.items.forEach(function (it, k) {
+      var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
+      var done = !!st || it.auto.status !== "open";
+      if (openOnly && done) return;
+      if (!pass(it)) return;
+      out.push(k);
+    });
+    return out;
+  }
   (data.sheets || []).forEach(function (sh) {
     var host = document.querySelector(".sheet[data-sheet='" + sh.file + "']");
     if (host) svgs[sh.file] = drawSheet(sh, host);
@@ -937,10 +986,10 @@ _UI_JS = """
   function render() {
     var fs = finalStates(doc), tb = document.getElementById("rows"), n = 0;
     tb.innerHTML = "";
-    data.items.forEach(function (it, k) {
+    visibleIdx(fs).forEach(function (k) {
+      var it = data.items[k];
       var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
       var done = !!st || it.auto.status !== "open";
-      if (openOnly && done) return;
       if (!done) n++;
       var tr = document.createElement("tr");
       tr.className = (k === sel ? "sel " : "") + (done ? "done" : "");
@@ -968,6 +1017,49 @@ _UI_JS = """
       tb.appendChild(tr);
     });
     document.getElementById("left").textContent = n + " still open";
+    var m = document.getElementById("matched");
+    if (m) m.textContent = "showing " + visibleIdx(fs).length + " of " + data.items.length;
+  }
+  function bulk(action) {
+    var fs = finalStates(doc), at = new Date().toISOString(), n = 0;
+    visibleIdx(fs).forEach(function (k) {
+      var it = data.items[k];
+      var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
+      var done = !!st || it.auto.status !== "open";
+      if (done) return;
+      doc.decisions.push({id: it.id, action: action, at: at}); n++;
+    });
+    if (!n) {
+      var mm = document.getElementById("matched");
+      if (mm) mm.textContent = "no open items match the filters";
+      return;
+    }
+    save(); render();
+  }
+  function fill(id, values) {
+    var sel = document.getElementById(id);
+    values.forEach(function (v) {
+      var o = document.createElement("option"); o.value = v; o.textContent = v;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      if (id === "f-kind") filters.kind = sel.value;
+      else if (id === "f-band") filters.band = sel.value;
+      else filters.level = sel.value;
+      render();
+    };
+  }
+  var kinds = [], levels = [];
+  data.items.forEach(function (it) {
+    if (kinds.indexOf(it.kind) < 0) kinds.push(it.kind);
+    if (it.level && levels.indexOf(it.level) < 0) levels.push(it.level);
+  });
+  fill("f-kind", kinds); fill("f-level", levels);
+  document.getElementById("bulk-confirm").onclick = function () { bulk("confirm"); };
+  document.getElementById("bulk-reject").onclick = function () { bulk("reject"); };
+  function toggleHelp() {
+    var h = document.getElementById("khelp");
+    if (h) h.style.display = h.style.display === "block" ? "none" : "block";
   }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
     return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); }
@@ -992,11 +1084,28 @@ _UI_JS = """
   };
   document.addEventListener("keydown", function (e) {
     if (e.target.tagName === "INPUT") return;
+    var vis = visibleIdx(finalStates(doc));
+    if (!vis.length) {
+      if (e.key === "?") { toggleHelp(); return; }
+      if (e.key === "o") {
+        var ob = document.getElementById("open");
+        ob.checked = !ob.checked; openOnly = ob.checked; render(); return;
+      }
+      return;
+    }
+    if (vis.indexOf(sel) < 0) sel = vis[0];
     var it = data.items[sel], m = {c: "confirm", r: "reject", e: "edit", u: "revert"};
-    if (e.key === "j") sel = Math.min(sel + 1, data.items.length - 1);
-    else if (e.key === "k") sel = Math.max(sel - 1, 0);
+    if (e.key === "j") sel = vis[Math.min(vis.indexOf(sel) + 1, vis.length - 1)];
+    else if (e.key === "k") sel = vis[Math.max(vis.indexOf(sel) - 1, 0)];
     else if (m[e.key] && it) { decide(it.id, m[e.key], it); return; }
     else if (e.key === "s" && it) { show(it.id); return; }
+    else if (e.key === "o") {
+      var cb = document.getElementById("open");
+      cb.checked = !cb.checked; openOnly = cb.checked;
+    }
+    else if (e.key === "C") { bulk("confirm"); return; }
+    else if (e.key === "R") { bulk("reject"); return; }
+    else if (e.key === "?") { toggleHelp(); return; }
     else return;
     render();
   });
@@ -1322,9 +1431,11 @@ def _sheets_html(sheets: List[dict]) -> str:
 
 def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
     items = []
+    lvl_idx = _level_index(model)
     for i in worst_first(model.review_queue):
         row, f = _item_row(i), edit_field(model, i)
         row["field"] = f
+        row["level"] = _item_level(model, i, lvl_idx)
         row["value"] = original_value(model, i) if f else None
         if f == "opening":
             cands = ", ".join((i.target.get("gap") or {}).get("candidates") or [])
@@ -1352,8 +1463,21 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
                 "<button id=export>Export decisions.json</button>"
                 "<label>Load decisions <input type=file id=import accept='.json'></label></div>",
                 "<div class=keys>j/k move, c confirm, r reject, e edit, u revert to automatic, "
-                "s show on sheet. "
+                "s show on sheet, o open-only, C confirm filtered, R reject filtered, "
+                "? shortcuts. "
                 "Then run: matchline review model.json --apply decisions.json</div>",
+                "<div id=khelp class=help>j/k move, c confirm, r reject, e edit, "
+                "u revert to automatic, s show on sheet, o open-only, "
+                "C confirm filtered, R reject filtered, ? close</div>",
+                "<div class=bar id=filters><span>Filter:</span>"
+                "<select id=f-kind><option value=''>all types</option></select>"
+                "<select id=f-band><option value=all>all confidence</option>"
+                "<option value=high>&#8805;0.9</option><option value=mid>0.7&#8211;0.9</option>"
+                "<option value=low>&lt;0.7</option></select>"
+                "<select id=f-level><option value=''>all floors</option></select>"
+                "<span id=matched></span>"
+                "<button id=bulk-confirm>Confirm filtered</button>"
+                "<button id=bulk-reject>Reject filtered</button></div>",
                 "<table><thead><tr><th>confidence</th><th>urgency</th><th>kind</th>"
                 "<th>item</th><th>decision and history</th><th></th></tr></thead>"
                 "<tbody id=rows></tbody></table>",
