@@ -80,7 +80,14 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit(1)
         with config_path.open() as f:
             config = yaml.safe_load(f) or {}
-        known_keys = {"simplify_tolerance", "wall_height", "review_confidence", "datasets"}
+        known_keys = {
+            "simplify_tolerance",
+            "wall_height",
+            "review_confidence",
+            "datasets",
+            "telemetry_consent",
+            "telemetry_local_only",
+        }
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)
@@ -580,7 +587,15 @@ def build_parser() -> argparse.ArgumentParser:
         dest="building_category",
         help="ASHRAE 90.1 Table 5.5 building category (default Nonresidential)",
     )
+    p.add_argument(
+        "--telemetry",
+        action="store_true",
+        help="grant consent for this run's anonymous telemetry payload (#1003); "
+        "off by default, and config telemetry_local_only wins over it. "
+        "The payload lands in <out-dir>/telemetry.json; nothing is transmitted",
+    )
     p.add_argument("--out-dir", default="bem_out")
+
     p.add_argument("--open-office-span", action="store_true")
     p.add_argument(
         "--elevation-key",
