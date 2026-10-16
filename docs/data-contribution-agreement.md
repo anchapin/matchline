@@ -32,6 +32,10 @@ addresses, signatures of identifiable individuals). Contributors are
 responsible for redacting title blocks, stamps, and sheet borders
 before submitting.
 
+Anonymous run telemetry is separate and opt-in; what it
+collects (and what it never collects) is on the
+[telemetry data page](telemetry-data.md).
+
 ## 4. Attribution and versioning
 
 Contributions are recorded in the license ledger with contributor,
