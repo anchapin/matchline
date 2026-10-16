@@ -66,14 +66,28 @@ def test_windows_and_doors_counted_per_space():
 
 def test_symbols_from_set_reports():
     old_rep = {
-        "hvac_legends": [{"rows": [{"cls": "diffuser"}, {"cls": "diffuser"}, {"cls": "sensor"}]}]
+        "hvac_legends": [
+            {"rows": [{"class": "diffuser"}, {"class": "diffuser"}, {"class": "sensor"}]}
+        ]
     }
-    new_rep = {"hvac_legends": [{"rows": [{"cls": "diffuser"}, {"cls": "grille"}]}]}
+    new_rep = {"hvac_legends": [{"rows": [{"class": "diffuser"}, {"class": "grille"}]}]}
     rep = takeoff_diff.diff_takeoffs({}, {}, old_report=old_rep, new_report=new_rep)
     assert rep["symbols"]["provided"] is True
     assert rep["symbols"]["added"] == 1 and rep["symbols"]["removed"] == 2
     assert rep["symbols"]["by_class"]["diffuser"] == {"added": 0, "removed": 1}
     assert rep["symbols"]["by_class"]["grille"] == {"added": 1, "removed": 0}
+
+
+def test_symbols_legacy_cls_key_fallback():
+    """Rows keyed "cls" (the old hand-written-fixture spelling) still count (#1034)."""
+    old_rep = {"hvac_legends": [{"rows": [{"cls": "diffuser"}]}]}
+    new_rep = {"hvac_legends": [{"rows": [{"class": "grille"}, {"cls": "diffuser"}]}]}
+    rep = takeoff_diff.diff_takeoffs({}, {}, old_report=old_rep, new_report=new_rep)
+    assert rep["symbols"]["provided"] is True
+    # old: 1 diffuser (legacy key); new: grille (real key) + diffuser (legacy key)
+    assert rep["symbols"]["added"] == 1 and rep["symbols"]["removed"] == 0
+    assert rep["symbols"]["by_class"]["grille"] == {"added": 1, "removed": 0}
+    assert "diffuser" not in rep["symbols"]["by_class"]  # 1 -> 1 is no change
 
 
 def test_symbols_absent_without_reports():

@@ -114,7 +114,9 @@ def diff_takeoffs(
             out: Dict[str, int] = {}
             for leg in (report or {}).get("hvac_legends") or []:
                 for row in leg.get("rows") or []:
-                    cls = row.get("cls")
+                    # real_set.py writes legend rows with the key "class" (#1034);
+                    # "cls" stays as the legacy hand-written-fixture spelling
+                    cls = row.get("class") if "class" in row else row.get("cls")
                     if cls:
                         out[cls] = out.get(cls, 0) + 1
             return out
