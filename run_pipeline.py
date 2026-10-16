@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,7 @@ from geometry_simplify import (  # noqa: F401  (footprint_from_regions reused be
 from link import build_model
 from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
+from telemetry_emitter import TelemetryEmitter
 from validate import export_gate, run_checks, validate_bem_conservation
 
 # ---------------------------------------------------------------------------
@@ -874,9 +877,45 @@ def _run_inputs(args, config: dict | None) -> list:
     return out
 
 
+@contextmanager
+def _stage_telemetry(emitter: TelemetryEmitter, name: str):
+    """Record one pipeline stage's outcome and duration (#1037)."""
+    t0 = time.monotonic()
+    try:
+        yield
+    except Exception:
+        emitter.record_stage(name, "error", time.monotonic() - t0)
+        raise
+    emitter.record_stage(name, "ok", time.monotonic() - t0)
+
+
+def _make_emitter(args, config: dict | None) -> TelemetryEmitter:
+    """The consent-gated emitter: --telemetry or config telemetry_consent (#1037)."""
+    consent = bool(getattr(args, "telemetry", False)) or bool(
+        (config or {}).get("telemetry_consent", False)
+    )
+    local_only = bool((config or {}).get("telemetry_local_only", False))
+    return TelemetryEmitter(consent=consent, local_only=local_only)
+
+
+def _emit_telemetry(emitter: TelemetryEmitter, out_dir: Path) -> None:
+    """Write the payload when emission is on; telemetry never fails a run (#1037)."""
+    from telemetry_emitter import EmitterBuildError
+
+    try:
+        payload = emitter.build_payload()
+    except EmitterBuildError as e:
+        print(f"warning: telemetry payload skipped: {e}", file=sys.stderr)
+        return
+    if payload is not None:
+        write_json(out_dir / "telemetry.json", payload)
+
+
+
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    emitter = _make_emitter(args, config)
     try:
         # Config overrides from YAML
         simplify_tol = args.simplify_tol
@@ -892,7 +931,8 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 1: generate building or load real-sheet detections ----------
         try:
-            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
+            with _stage_telemetry(emitter, "1.generate"):
+                bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
         except StageError:
             raise
         except Exception as e:
@@ -908,11 +948,13 @@ def main(args, config: dict | None = None) -> None:
         # --- Progressive mode (#998): the takeoff is the deliverable ---------
         if getattr(args, "mode", "full") == "progressive":
             _progressive_stop(bldg_or_model, bldg)
+            _emit_telemetry(emitter, out_dir)
             return
 
         # --- Stage 2: build model --------------------------------------------
         try:
-            model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
+            with _stage_telemetry(emitter, "2.build_model"):
+                model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
         except StageError:
             raise
         except Exception as e:
@@ -926,7 +968,8 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 3: simplify geometry --------------------------------------
         try:
-            sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
+            with _stage_telemetry(emitter, "3.simplify"):
+                sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
         except StageError:
             raise
         except Exception as e:
@@ -940,17 +983,19 @@ def main(args, config: dict | None = None) -> None:
             ) from e
 
         # --- Stage 3b: construction library (#747) ---------------------------
-        climate_zone = getattr(args, "climate_zone", None)
-        category = getattr(args, "building_category", None) or "Nonresidential"
-        if config:
-            climate_zone = config.get("climate_zone", climate_zone)
-            category = config.get("building_category", category)
-        constructions = apply_construction_library(model, climate_zone or "", category)
-        write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
+        with _stage_telemetry(emitter, "3b.constructions"):
+            climate_zone = getattr(args, "climate_zone", None)
+            category = getattr(args, "building_category", None) or "Nonresidential"
+            if config:
+                climate_zone = config.get("climate_zone", climate_zone)
+                category = config.get("building_category", category)
+            constructions = apply_construction_library(model, climate_zone or "", category)
+            write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
 
         # --- Stage 4: validation checks --------------------------------------
         try:
-            report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
+            with _stage_telemetry(emitter, "4.validation"):
+                report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
         except StageError:
             raise
         except Exception as e:
@@ -962,20 +1007,38 @@ def main(args, config: dict | None = None) -> None:
                 "fields are populated in the BuildingModel.",
             ) from e
 
+        from telemetry_emitter import EmitterBuildError
+
+        for _r in report.errors:
+            try:
+                emitter.record_check_failure(_r.check_id)
+            except EmitterBuildError:
+                pass  # a non-conforming check id is a skipped metric, never a failed run
+
         # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
-        _stage_4b_auto_triage(model, out_dir)
+        with _stage_telemetry(emitter, "4b.auto_triage"):
+            _stage_4b_auto_triage(model, out_dir)
 
         # --- HTML review report, written before the fail-fast gate (#749) ---
         from review_report import write_review
 
-        review_dir = write_review(out_dir, model)
+        with _stage_telemetry(emitter, "review.report"):
+            review_dir = write_review(out_dir, model)
         print(f"  review: {review_dir / 'review.html'}")
 
         # --- Stage 5: fail-fast on validation errors ------------------------
-        _stage_5_fail_fast(report, min_review_confidence)
+        _t5 = time.monotonic()
+        try:
+            _stage_5_fail_fast(report, min_review_confidence)
+        except SystemExit:
+            emitter.record_stage("5.fail_fast", "error", time.monotonic() - _t5)
+            _emit_telemetry(emitter, out_dir)
+            raise
+        emitter.record_stage("5.fail_fast", "ok", time.monotonic() - _t5)
 
         # --- Stage 6: BEM export ---------------------------------------------
         try:
+            _t6 = time.monotonic()
             gbxml_path, ifc_path = _stage_6_bem_export(
                 model, sres, wall_height, simplify_tol, out_dir
             )
@@ -997,9 +1060,12 @@ def main(args, config: dict | None = None) -> None:
             print(f"  package: {pkg}")
             print(f"  package zip: {out_dir / 'package.zip'}")
             _print_pipeline_complete(out_dir, report)
+            emitter.record_stage("6.export", "ok", time.monotonic() - _t6)
         except StageError:
+            emitter.record_stage("6.export", "error", time.monotonic() - _t6)
             raise
         except Exception as e:
+            emitter.record_stage("6.export", "error", time.monotonic() - _t6)
             raise StageError(
                 "Stage 6: BEM_export",
                 6,
@@ -1007,11 +1073,13 @@ def main(args, config: dict | None = None) -> None:
                 hint="Check BEM export dependencies and output directory permissions. "
                 "Ensure write_gbxml and write_ifc4 can write to the output directory.",
             ) from e
+        _emit_telemetry(emitter, out_dir)
     except StageError as e:
         # the stage name, the reason and the recovery hint, so a failed run says why
         print(f"ERROR {e}", file=sys.stderr)
         if e.hint:
             print(f"  hint: {e.hint}", file=sys.stderr)
+        _emit_telemetry(emitter, out_dir)
         sys.exit(1)
 
 
