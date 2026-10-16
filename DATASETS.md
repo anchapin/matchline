@@ -4,7 +4,7 @@ External datasets are **not committed** to the repository. All demos and command
 require external data fail clearly when the data is absent.
 
 Licenses: each dataset's license, and every artifact trained or derived from it, is
-recorded in [`license_ledger.json`](license_ledger.json) (see
+recorded in [`license_ledger.json`](assets/license_ledger.json) (see
 [docs/license_ledger.md](docs/license_ledger.md)). Artifacts from non-commercial or
 copyleft data are evaluation-only and never ship in a release.
 
