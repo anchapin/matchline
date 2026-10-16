@@ -60,8 +60,20 @@ def test_windows_and_doors_counted_per_space():
         }
     }
     rep = takeoff_diff.diff_takeoffs(old, new)
-    assert rep["windows"] == {"added": 2, "removed": 0, "moved": 0, "spaces_changed": 2}
-    assert rep["doors"] == {"added": 0, "removed": 1, "moved": 0, "spaces_changed": 1}
+    assert rep["windows"] == {
+        "added": 2,
+        "removed": 0,
+        "moved": 0,
+        "moved_pairs": [],
+        "spaces_changed": 2,
+    }
+    assert rep["doors"] == {
+        "added": 0,
+        "removed": 1,
+        "moved": 0,
+        "moved_pairs": [],
+        "spaces_changed": 1,
+    }
 
 
 def test_symbols_from_set_reports():
@@ -137,7 +149,13 @@ def test_moved_opening_by_tag():
     old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
     new = {"spaces": {"b": {"openings": [_opening("window", tag="W1")]}}}
     rep = takeoff_diff.diff_takeoffs(old, new)
-    assert rep["windows"] == {"added": 0, "removed": 0, "moved": 1, "spaces_changed": 2}
+    assert rep["windows"] == {
+        "added": 0,
+        "removed": 0,
+        "moved": 1,
+        "moved_pairs": [{"old_space": "a", "new_space": "b", "tag": "W1", "evidence": "tag"}],
+        "spaces_changed": 2,
+    }
 
 
 def test_same_space_tag_pair_is_not_moved():
@@ -172,7 +190,13 @@ def test_untagged_without_geometry_stays_added_removed():
     old = {"spaces": {"a": {"openings": [_opening("window")]}}}
     new = {"spaces": {"b": {"openings": [_opening("window")]}}}
     rep = takeoff_diff.diff_takeoffs(old, new)
-    assert rep["windows"] == {"added": 1, "removed": 1, "moved": 0, "spaces_changed": 2}
+    assert rep["windows"] == {
+        "added": 1,
+        "removed": 1,
+        "moved": 0,
+        "moved_pairs": [],
+        "spaces_changed": 2,
+    }
 
 
 def test_duplicate_tags_never_pair():
@@ -344,3 +368,26 @@ def test_cli_takeoff_diff_review_items_flag(tmp_path):
     items = json.loads(out.read_text())
     assert [i["id"] for i in items] == ["takeoff-diff-room-removed-a"]
     assert items[0]["provenance"]["method"] == "takeoff_diff"
+
+
+def test_moved_pairs_bbox_evidence():
+    """A bbox-paired untagged move reports evidence "bbox" and an empty tag."""
+    old = {
+        "spaces": {"a": {"openings": [_opening("window", sheet="A201", bbox=[100, 100, 160, 260])]}}
+    }
+    new = {
+        "spaces": {"b": {"openings": [_opening("window", sheet="A201", bbox=[110, 110, 170, 270])]}}
+    }
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 1
+    assert rep["windows"]["moved_pairs"] == [
+        {"old_space": "a", "new_space": "b", "tag": "", "evidence": "bbox"}
+    ]
+
+
+def test_moved_pairs_absent_when_nothing_moves():
+    """Same-space pairs and pure adds never appear in moved_pairs."""
+    old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    new = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved_pairs"] == []
