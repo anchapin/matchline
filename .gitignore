@@ -38,10 +38,6 @@ bem_out/
 .foreman/
 
 # Planning docs (personal/dynamic — not project source)
-/.planning/NEXT_SESSION.md
-/.planning/PROJECT.md
-/.planning/REQUIREMENTS.md
-/.planning/phases/
 
 # OS
 .DS_Store
