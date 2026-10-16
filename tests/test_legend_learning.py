@@ -21,6 +21,7 @@ from legend_learning import (  # noqa: E402
     load_tags,
     normalize,
     save_tags,
+    suggest_tags,
 )
 
 
@@ -251,3 +252,81 @@ def test_cli_legend_eval_exits_on_regression(tmp_path, capsys):
     with pytest.raises(SystemExit, match="regression"):
         cli_main(["legend-eval", str(before), str(after)])
     assert "LOST" in capsys.readouterr().out
+
+
+# --- suggest_tags (#1047) ---------------------------------------------------
+
+
+def test_suggest_identical_description_elsewhere():
+    """A description mapped on one sheet and unmapped on another suggests it."""
+    report = _report(
+        {
+            "M-101": [("SUPPLY GRILLE", "grille")],
+            "M-102": [("SUPPLY GRILLE", None)],
+        }
+    )
+    s = suggest_tags(report)
+    assert len(s) == 1
+    assert s[0] == {
+        "description": "SUPPLY GRILLE",
+        "class": "grille",
+        "via": "SUPPLY GRILLE",
+        "score": 1.0,
+    }
+
+
+def test_suggest_by_token_overlap():
+    """Partial overlap still suggests the class of the best-known phrasing."""
+    report = _report({"M-101": [("SUPPLY GRILLE", "grille"), ("GRILLE SUPPLY SIDE", None)]})
+    s = suggest_tags(report)
+    assert len(s) == 1 and s[0]["class"] == "grille"
+    assert s[0]["description"] == "GRILLE SUPPLY SIDE" and s[0]["via"] == "SUPPLY GRILLE"
+
+
+def test_no_overlap_no_suggestion():
+    """No token overlap to any known phrasing: nothing, not a guess."""
+    report = _report({"M-101": [("SUPPLY GRILLE", "grille"), ("CHILLED WATER PUMP", None)]})
+    assert suggest_tags(report) == []
+
+
+def test_suggestions_capped_and_ranked():
+    """At most three suggestions, most confident first."""
+    report = _report(
+        {
+            "M-101": [("SUPPLY GRILLE", "grille"), ("RETURN GRILLE", "grille"), ("VAV BOX", "vav")],
+            "M-102": [("GRILLE 2", None), ("VAV 2", None), ("AHU 2", None)],
+            "M-103": [("SENSOR 2", None), ("DIFFUSER 2", None), ("AHU 1", "ahu")],
+        }
+    )
+    s = suggest_tags(report)
+    assert len(s) == 3
+    assert s[0]["score"] >= s[-1]["score"]
+
+
+def test_majority_class_wins():
+    """The same phrasing mapped to two classes: the majority vote suggests."""
+    report = _report(
+        {
+            "M-101": [("SUPPLY GRILLE", "grille"), ("SUPPLY GRILLE", "diffuser")],
+            "M-102": [("SUPPLY GRILLE", "grille"), ("SUPPLY GRILLE", None)],
+        }
+    )
+    s = suggest_tags(report)
+    assert len(s) == 1 and s[0]["class"] == "grille"
+
+
+def test_non_class_rows_are_not_evidence():
+    """Rows mapped outside CLASSES are not evidence for suggestions."""
+    report = _report({"M-101": [("PUMP", "circulator"), ("PUMP SUPPLY", None)]})
+    assert suggest_tags(report) == []
+
+
+def test_cli_learn_legend_prints_suggestions(tmp_path, capsys):
+    report = tmp_path / "stage_00_set_report.json"
+    report.write_text(
+        json.dumps(_report({"M-101": [("SUPPLY GRILLE", "grille"), ("SUPPLY GRILLE SIDE", None)]}))
+    )
+    cli_main(["learn-legend", str(report), "--out", str(tmp_path / "t.json")])
+    text = capsys.readouterr().out
+    assert "suggested --tag mappings" in text
+    assert "--tag SUPPLY GRILLE SIDE=grille" in text

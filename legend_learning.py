@@ -14,7 +14,9 @@ Learning has two sources, both project-local:
   resolved, so the project's phrasing survives a rules change. Rows the rules
   could not map are reported, not guessed.
 * ``--tag DESC=CLASS`` on ``matchline learn-legend`` records a human decision
-  for exactly those rows.
+  for exactly those rows.  ``suggest_tags`` reads the same report and proposes
+  the most confident ready-to-paste ``--tag`` pairs, from descriptions the
+  rules already mapped (#1047); it never writes them itself.
 
 The sidecar is JSON (``matchline.legend_tags/1``), lives beside the drawing
 set, is loaded by ``run_pipeline`` only when it is present, and is never
@@ -121,6 +123,51 @@ def learn_from_set_report(report: dict) -> Tuple[Dict[str, str], List[str], List
                 continue
             tags[key] = cls
     return tags, sorted(set(conflicts)), sorted(unmapped)
+
+
+def suggest_tags(report: dict, max_suggestions: int = 3) -> List[dict]:
+    """Suggested ``--tag`` pairs for a report's unmapped legend descriptions (#1047).
+
+    The evidence is the report itself: descriptions its rules already mapped,
+    each with the class the rules chose (majority vote across sheets).  Every
+    unmapped description is scored against that evidence by word-token
+    Jaccard similarity, and the most confident suggestions come back first,
+    at most ``max_suggestions``.  A description with no token overlap to any
+    known phrasing gets nothing rather than a guess; rows mapped outside
+    ``CLASSES`` are not evidence.  Nothing here writes a sidecar: the pairs
+    are for one-key confirmation through ``--tag``.
+    """
+    known: Dict[str, Dict[str, int]] = {}
+    unmapped: set = set()
+    for _sheet, desc, cls in _legend_rows(report):
+        if not desc.strip():
+            continue
+        key = normalize(desc)
+        if cls and cls in CLASSES:
+            known.setdefault(key, {})
+            known[key][cls] = known[key].get(cls, 0) + 1
+        else:
+            unmapped.add(key)
+    out: List[dict] = []
+    for desc in unmapped:
+        toks = set(desc.split())
+        ranked: List[Tuple[float, str, str]] = []
+        for kd, votes in known.items():
+            ktoks = set(kd.split())
+            union = toks | ktoks
+            if not union:
+                continue
+            sim = len(toks & ktoks) / len(union)
+            if sim <= 0.0:
+                continue
+            cls = max(sorted(votes), key=lambda c: votes[c])
+            ranked.append((sim, kd, cls))
+        if not ranked:
+            continue
+        sim, via, cls = max(ranked)
+        out.append({"description": desc, "class": cls, "via": via, "score": round(sim, 3)})
+    out.sort(key=lambda s: (-s["score"], s["description"]))
+    return out[:max_suggestions]
 
 
 def add_tags(tags: Dict[str, str], pairs) -> Dict[str, str]:
