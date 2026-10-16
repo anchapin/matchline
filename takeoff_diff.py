@@ -10,7 +10,9 @@ change class, one section per takeoff:
   moved_level, with the changed ids listed).
 * ``windows`` and ``doors``: per-space counts of the space's openings by
   category, summed into added / removed with the count of spaces whose count
-  changed.
+  changed.  Openings present in both revisions with identity evidence (a
+  unique tag, or a >=50% bbox overlap on a sheet both revisions share) are
+  reported as ``moved`` instead of one added and one removed (#1045).
 * ``symbols``: legend rows mapped to HVAC detector classes (from the set
   reports, when given) summed per class into added / removed.
 
@@ -21,7 +23,7 @@ nothing here edits either model.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 SCHEMA = "matchline.takeoff_diff/1"
 
@@ -45,6 +47,92 @@ def _opening_counts(space: dict) -> Dict[str, int]:
         cat = str((o or {}).get("category") or "unknown").lower()
         out[cat] = out.get(cat, 0) + 1
     return out
+
+
+def _bbox_iou(a: List[float], b: List[float]) -> float:
+    """Intersection-over-union of two [x0, y0, x1, y1] boxes."""
+    iw = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    ih = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = iw * ih
+    if inter <= 0.0:
+        return 0.0
+    area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0.0 else 0.0
+
+
+def _opening_inventory(spaces: Dict[str, dict], cat: str) -> List[dict]:
+    """One entry per opening of ``cat``, with its cross-revision identity
+    evidence: the tag and the per-sheet provenance bboxes (#1045)."""
+    inv: List[dict] = []
+    for sid, sp in spaces.items():
+        for o in sp.get("openings") or []:
+            o = o or {}
+            if str(o.get("category") or "").lower() != cat:
+                continue
+            bboxes: List[Tuple[str, List[float]]] = []
+            for p in [o.get("provenance")] + list(o.get("source_provenance") or []):
+                if not isinstance(p, dict) or not p.get("sheet_id") or not p.get("bbox"):
+                    continue
+                try:
+                    box = [float(x) for x in p["bbox"]]
+                except (TypeError, ValueError):
+                    continue
+                if len(box) == 4:
+                    bboxes.append((str(p["sheet_id"]), box))
+            inv.append(
+                {
+                    "space": sid,
+                    "tag": str(o.get("tag") or "").strip().upper(),
+                    "bboxes": bboxes,
+                }
+            )
+    return inv
+
+
+def _moved_openings(old_inv: List[dict], new_inv: List[dict]) -> List[Tuple[int, int]]:
+    """Pairs of openings present in both revisions, strongest evidence first
+    (#1045): a tag that names exactly one opening per revision, then a bbox
+    overlap (IoU >= 0.5) on a sheet both revisions share.  Openings without
+    shared evidence never pair: an untagged opening with no comparable
+    geometry stays added/removed rather than being guessed into a move."""
+    pairs: List[Tuple[int, int]] = []
+    used_old: set = set()
+    used_new: set = set()
+    old_by_tag: Dict[str, List[int]] = {}
+    new_by_tag: Dict[str, List[int]] = {}
+    for i, o in enumerate(old_inv):
+        if o["tag"]:
+            old_by_tag.setdefault(o["tag"], []).append(i)
+    for j, o in enumerate(new_inv):
+        if o["tag"]:
+            new_by_tag.setdefault(o["tag"], []).append(j)
+    for tag, oi in old_by_tag.items():
+        nj = new_by_tag.get(tag)
+        if nj and len(oi) == 1 and len(nj) == 1:
+            pairs.append((oi[0], nj[0]))
+            used_old.add(oi[0])
+            used_new.add(nj[0])
+    for i, o in enumerate(old_inv):
+        if i in used_old or not o["bboxes"]:
+            continue
+        best, best_j = 0.0, None
+        for j, n in enumerate(new_inv):
+            if j in used_new or not n["bboxes"]:
+                continue
+            for s_old, b_old in o["bboxes"]:
+                for s_new, b_new in n["bboxes"]:
+                    if s_old != s_new:
+                        continue
+                    v = _bbox_iou(b_old, b_new)
+                    if v > best:
+                        best, best_j = v, j
+        if best_j is not None and best >= 0.5:
+            pairs.append((i, best_j))
+            used_old.add(i)
+            used_new.add(best_j)
+    return pairs
 
 
 def diff_takeoffs(
@@ -101,15 +189,39 @@ def diff_takeoffs(
             old_c[sid] = _opening_counts(sp).get(cat, 0)
         for sid, sp in new_sp.items():
             new_c[sid] = _opening_counts(sp).get(cat, 0)
+        # Openings matched across revisions (#1045) are not churn: a window
+        # that moved from space A to space B used to report one added and one
+        # removed.  Matched pairs are taken out of the per-space deltas before
+        # they are summed, so added/removed stay the genuine changes and the
+        # relocation is its own class.  Without identity evidence the numbers
+        # reduce exactly to the previous net counting.
+        old_inv = _opening_inventory(old_sp, cat)
+        new_inv = _opening_inventory(new_sp, cat)
+        moved_in: Dict[str, int] = {}
+        moved_out: Dict[str, int] = {}
+        n_moved = 0
+        for i, j in _moved_openings(old_inv, new_inv):
+            s_old, s_new = old_inv[i]["space"], new_inv[j]["space"]
+            if s_old == s_new:
+                continue
+            n_moved += 1
+            moved_out[s_old] = moved_out.get(s_old, 0) + 1
+            moved_in[s_new] = moved_in.get(s_new, 0) + 1
         n_added = n_removed = 0
         spaces_changed = 0
         for sid in set(old_c) | set(new_c):
             d = new_c.get(sid, 0) - old_c.get(sid, 0)
-            if d:
+            genuine = d - moved_in.get(sid, 0) + moved_out.get(sid, 0)
+            if d or moved_in.get(sid, 0) or moved_out.get(sid, 0):
                 spaces_changed += 1
-                n_added += max(d, 0)
-                n_removed += max(-d, 0)
-        return {"added": n_added, "removed": n_removed, "spaces_changed": spaces_changed}
+            n_added += max(genuine, 0)
+            n_removed += max(-genuine, 0)
+        return {
+            "added": n_added,
+            "removed": n_removed,
+            "moved": n_moved,
+            "spaces_changed": spaces_changed,
+        }
 
     windows = opening_section("window")
     doors = opening_section("door")
