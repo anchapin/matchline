@@ -22,6 +22,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import revisions
+
 SCHEMA = "matchline.sheet_index/1"
 
 Box = Tuple[float, float, float, float]
@@ -421,6 +423,7 @@ class SheetEntry:
     level: Optional[dict] = None
     revision: Optional[dict] = None
     date: Optional[dict] = None
+    addenda: bool = False
     use_for_takeoff: bool = False
     takeoff_note: str = ""
     needs_review: bool = False
@@ -437,6 +440,7 @@ class SheetIndex:
     drawing_index: Dict[str, dict]
     levels: Dict[str, Dict[str, List[str]]]
     warnings: List[str] = field(default_factory=list)
+    revisions: Dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -445,6 +449,7 @@ class SheetIndex:
             "drawing_index": self.drawing_index,
             "levels": self.levels,
             "warnings": self.warnings,
+            "revisions": self.revisions,
         }
 
     def by_number(self, number: str) -> Optional[SheetEntry]:
@@ -459,6 +464,7 @@ def read_title_block(sheet, file: Optional[str] = None) -> Tuple[SheetEntry, Dic
     w, h = float(_attr(sheet, "width_pt")), float(_attr(sheet, "height_pt"))
     spans = _spans(sheet)
     e = SheetEntry(file=file, page=_attr(sheet, "page_number"))
+    e.addenda = any(revisions.ADDENDUM_RX.search(sp.text) for sp in spans)
 
     num_span = find_sheet_number(spans, w, h)
     parsed = parse_sheet_number(num_span.text) if num_span else None
@@ -656,7 +662,8 @@ def build_index(sheets: Sequence, files: Optional[Sequence[str]] = None) -> Shee
             d.setdefault(e.discipline["designator"] if e.discipline else "?", []).append(
                 e.value("number")
             )
-    return SheetIndex(entries, drawing_index, dict(sorted(levels.items())), warnings)
+    rev_map = revisions.index_revisions([(e.value("revision"), e.addenda) for e in entries])
+    return SheetIndex(entries, drawing_index, dict(sorted(levels.items())), warnings, rev_map)
 
 
 def index_sheets(sheet_dir) -> SheetIndex:
