@@ -619,6 +619,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="List review items to stdout without prompting (exits 0 immediately)",
     )
     p.add_argument(
+        "--bulk-confirm",
+        action="store_true",
+        help="Confirm every OPEN item matching the bulk filters (#996)",
+    )
+    p.add_argument(
+        "--bulk-reject",
+        action="store_true",
+        help="Reject every OPEN item matching the bulk filters (#996)",
+    )
+    p.add_argument("--kind", metavar="KIND", help="Bulk filter: review-item kind")
+    p.add_argument("--conf-above", metavar="MIN", type=float, help="Bulk filter: confidence >= MIN")
+    p.add_argument("--conf-below", metavar="MAX", type=float, help="Bulk filter: confidence <= MAX")
+    p.add_argument("--level", metavar="LEVEL", help="Bulk filter: level id (floor)")
+    p.add_argument(
         "--format",
         choices=["text", "json"],
         default="text",

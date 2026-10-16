@@ -182,8 +182,9 @@ def list_review_items(
 ) -> tuple[list[ReviewItem], bool]:
     """Load the model, classify open items, and print the review queue.
 
-    Items are ordered by urgency (highest first), then auto-resolved items
-    are shown before human-needed items at each urgency level.
+    Items are ordered worst-first (#996): open items before resolved ones,
+    then highest urgency, then lowest confidence. This matches the HTML
+    review page and the matchline-ui summary.
 
     Args:
         model_path: path to BuildingModel JSON file
@@ -220,8 +221,11 @@ def list_review_items(
         print("No review items in queue." if show_all else "No open review items.")
         return items, classifier_available
 
-    # Sort by urgency (highest first), auto-resolved last within urgency band
-    items.sort(key=_urgency_sort_key)
+    # Worst-first (#996): open first, highest urgency, lowest confidence.
+    # Same ordering the HTML review page renders (#749).
+    import review_report
+
+    items = review_report.worst_first(items)
 
     n_auto = sum(1 for i in items if i.auto_resolved)
     print(
@@ -363,6 +367,8 @@ def main(args: argparse.Namespace | None = None) -> None:
         or getattr(args, "apply", None)
         or getattr(args, "report", None)
         or getattr(args, "list", None)
+        or getattr(args, "bulk_confirm", False)
+        or getattr(args, "bulk_reject", False)
     ):
         print(
             "Error: --undo, --revert-to-auto and --corrections take no other action.",
@@ -403,6 +409,56 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         d = review_report.write_review(pathlib.Path(args.report), model)
         print(f"Review report: {d / 'review.html'}")
+        return
+
+    # --- Bulk confirm/reject with filters (#996) ---
+    if getattr(args, "bulk_confirm", False) or getattr(args, "bulk_reject", False):
+        if getattr(args, "bulk_confirm", False) and getattr(args, "bulk_reject", False):
+            print(
+                "Error: specify only one of --bulk-confirm or --bulk-reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if args.confirm is not None or args.reject is not None:
+            print(
+                "Error: --bulk-confirm/--bulk-reject take no --confirm/--reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        is_confirm = getattr(args, "bulk_confirm", False)
+        import review_report
+
+        lvl_idx = review_report._level_index(model)
+        matched = [
+            item
+            for item in review_report.worst_first(model.review_queue)
+            if item.status == "open"
+            and (not args.kind or item.kind == args.kind)
+            and (args.conf_above is None or item.confidence >= args.conf_above)
+            and (args.conf_below is None or item.confidence <= args.conf_below)
+            and (not args.level or review_report._item_level(model, item, lvl_idx) == args.level)
+        ]
+        if not matched:
+            print("Error: no open review items match the bulk filters.", file=sys.stderr)
+            sys.exit(1)
+
+        changed = 0
+        try:
+            for item in matched:
+                if is_confirm:
+                    model, msg = _confirm_item(model, item.id, corrections_path=model_path)
+                else:
+                    model, msg = _reject_item(model, item.id, corrections_path=model_path)
+                changed += 1
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        model_path.write_text(model.to_json())
+        action = "confirmed" if is_confirm else "rejected"
+        print(f"Bulk {action}: {len(matched)} item(s) matched the filters, {changed} changed.")
+        print(_summarize_validation(run_checks(model)))
         return
 
     # --- Confirm or Reject ---
@@ -507,9 +563,15 @@ def main(args: argparse.Namespace | None = None) -> None:
         if args.format == "json":
             import json
 
+            import review_report
+
+            lvl_idx = review_report._level_index(model)
             print(
                 json.dumps(
-                    [_review_item_to_dict(item) for item in items],
+                    [
+                        _review_item_to_dict(item, review_report._item_level(model, item, lvl_idx))
+                        for item in items
+                    ],
                     indent=2,
                 )
             )
@@ -526,7 +588,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     list_review_items(args.model, show_all=args.show_all)
 
 
-def _review_item_to_dict(item: ReviewItem) -> dict:
+def _review_item_to_dict(item: ReviewItem, level: str | None = None) -> dict:
     return {
         "id": item.id,
         "kind": item.kind,
@@ -534,6 +596,7 @@ def _review_item_to_dict(item: ReviewItem) -> dict:
         "confidence": item.confidence,
         "description": item.description,
         "status": item.status if item.status else None,
+        "level": level,
     }
 
 
@@ -605,6 +668,38 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--corrections",
         action="store_true",
         help="Print the correction history beside the model (#997)",
+    )
+    parser.add_argument(
+        "--bulk-confirm",
+        action="store_true",
+        help="Confirm every OPEN item matching the bulk filters (#996)",
+    )
+    parser.add_argument(
+        "--bulk-reject",
+        action="store_true",
+        help="Reject every OPEN item matching the bulk filters (#996)",
+    )
+    parser.add_argument(
+        "--kind",
+        metavar="KIND",
+        help="Bulk filter: review-item kind, exact match",
+    )
+    parser.add_argument(
+        "--conf-above",
+        metavar="MIN",
+        type=float,
+        help="Bulk filter: confidence >= MIN",
+    )
+    parser.add_argument(
+        "--conf-below",
+        metavar="MAX",
+        type=float,
+        help="Bulk filter: confidence <= MAX",
+    )
+    parser.add_argument(
+        "--level",
+        metavar="LEVEL",
+        help="Bulk filter: level id (floor) the item's target belongs to",
     )
     return parser
 
