@@ -1,0 +1,89 @@
+name: release
+
+# Publishing is tag-driven: pushing a vX.Y.Z tag whose name matches
+# pyproject.toml builds the sdist and wheel, smoke-tests the wheel with a
+# fresh install, and publishes to PyPI via trusted publishing (OIDC; no
+# token secret stored in the repo). One-time maintainer setup on pypi.org:
+# add a pending publisher / trusted publisher for anchapin/matchline,
+# workflow release.yml, environment pypi.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build sdist and wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Tag matches pyproject version
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          expected = "v" + tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != expected:
+              sys.exit(f"tag {tag} does not match pyproject version {expected}")
+          PY
+
+      - name: Build
+        run: |
+          pip install --no-cache-dir build twine
+          python -m build
+          twine check dist/*
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  smoke:
+    name: wheel smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Fresh install from the wheel, as a user would
+        run: |
+          python -m venv "$RUNNER_TEMP/relvenv"
+          "$RUNNER_TEMP/relvenv/bin/pip" install --no-cache-dir dist/*.whl
+          "$RUNNER_TEMP/relvenv/bin/pip" check
+          "$RUNNER_TEMP/relvenv/bin/matchline" --help
+          "$RUNNER_TEMP/relvenv/bin/matchline" run --help
+
+  publish:
+    name: publish to PyPI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, smoke]
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
