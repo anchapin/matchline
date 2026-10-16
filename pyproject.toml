@@ -81,6 +81,7 @@ py-modules = [
     "constructions",
     "corrections",
     "convention_report",
+    "legend_learning",
     "mech_schedule",
     "datasets_adapter",
     "daylight_skylights",

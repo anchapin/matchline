@@ -435,6 +435,24 @@ def _merge_pdfs(pdfs: list[Path], out: Path) -> Path:
     return out
 
 
+def _legend_tags_for(args, set_pdf: Path) -> dict | None:
+    """The project's learned legend sidecar (#995): ``--legend-tags`` wins,
+    else ``legend_tags.json`` beside the drawing set. Absent is normal (the
+    run simply uses the built-in word rules); malformed is warned about and
+    ignored rather than failing the whole run."""
+    from legend_learning import SIDECAR_NAME, LegendTagsError, load_tags
+
+    path = getattr(args, "legend_tags", None) or (set_pdf.parent / SIDECAR_NAME)
+    try:
+        tags = load_tags(path)
+    except LegendTagsError as e:
+        print(f"warning: legend sidecar ignored: {e}", file=sys.stderr)
+        return None
+    if tags:
+        print(f"legend tags: {len(tags)} learned description(s) from {path}")
+    return tags
+
+
 def _drawing_set_pdf(args, out_dir: Path) -> Path:
     """Resolve ``--set`` to the PDF the set stages ingest (#988).
 
@@ -536,6 +554,7 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 out_dir,
                 storey_height_m=_set_storey_height(args, config),
                 provider=provider,
+                legend_tags=_legend_tags_for(args, set_pdf),
             )
         except (ProviderConfigError, ProviderLicenseError) as e:
             raise StageError(

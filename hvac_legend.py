@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 # a legend title is the whole text item, optionally led by the discipline
 # (a bare singular "SYMBOL" is the legend's own column header, not a title)
@@ -73,9 +73,18 @@ class Legend:
         return [r for r in self.rows if r.cls is None]
 
 
-def classify(description: str) -> Optional[str]:
-    """HVAC detector class a legend description names, or None."""
+def classify(description: str, learned: Optional[Dict[str, str]] = None) -> Optional[str]:
+    """HVAC detector class a legend description names, or None.
+
+    ``learned`` is a per-project sidecar of {description: class} learned from
+    this set's own legend (#995), keyed exactly like ``u`` below; a hit there
+    wins over the built-in word rules, a miss falls back to them.
+    """
     u = " ".join(description.upper().split())
+    if learned:
+        hit = learned.get(u)
+        if hit is not None:
+            return hit
     for cls, rx in CLASS_RX:
         if rx.search(u):
             return cls
@@ -116,7 +125,7 @@ def _lines(texts: list) -> list:
     ]
 
 
-def read_legend(sheet: dict) -> List[Legend]:
+def read_legend(sheet: dict, learned: Optional[Dict[str, str]] = None) -> List[Legend]:
     """Every symbol legend on a vector sheet, with its rows classified."""
     texts = [t for t in sheet.get("text") or [] if (t.get("text") or "").strip()]
     boxes = [b for b in (_prim_bbox(p) for p in sheet.get("primitives") or []) if b]
@@ -164,7 +173,7 @@ def read_legend(sheet: dict) -> List[Legend]:
                 # with no symbol before any row is a column header
                 if leg.rows:
                     leg.rows[-1].description += " " + desc
-                    leg.rows[-1].cls = classify(leg.rows[-1].description)
+                    leg.rows[-1].cls = classify(leg.rows[-1].description, learned)
                 continue
             bb = [
                 min(b[0] for b in sym),
@@ -172,7 +181,7 @@ def read_legend(sheet: dict) -> List[Legend]:
                 max(b[2] for b in sym),
                 max(b[3] for b in sym),
             ]
-            leg.rows.append(LegendRow(desc, classify(desc), [round(v, 2) for v in bb]))
+            leg.rows.append(LegendRow(desc, classify(desc, learned), [round(v, 2) for v in bb]))
         if leg.rows:
             out.append(leg)
     return out
