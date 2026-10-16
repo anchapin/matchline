@@ -288,3 +288,22 @@ def test_scene_carries_standing_corrections():
     keys = [c["key"] for c in scene["corrections"]]
     assert keys == ["space:L1-101:name"]
     assert scene["corrections"][0]["after"] == "CONFERENCE"
+
+
+def test_unresolvable_revert_key_refused_before_changes(tmp_path):
+    """A revert key with no standing correction stops the whole file (#1002)."""
+    m = _model()
+    mp = tmp_path / "model.json"
+    mp.write_text(m.to_json())
+    with pytest.raises(ValueError, match="no accepted correction"):
+        apply_ops(
+            m,
+            _ops(
+                {"op": "rename_space", "id": "L1-101", "field": "name", "value": "CONFERENCE"},
+                {"op": "revert_to_auto", "key": "space:L1-101:name"},
+            ),
+            mp,
+        )
+    # the rename never landed and nothing reached the correction history
+    assert m.spaces["L1-101"].name == "OFFICE"
+    assert _history(m, tmp_path)["corrections"] == []

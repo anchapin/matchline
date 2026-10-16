@@ -105,6 +105,23 @@ def apply_ops(
     from review_report import apply_decisions
 
     check(doc)
+    # every revert key must resolve against the standing correction history
+    # BEFORE anything applies: nothing changes unless every op would (#1002)
+    if any(op.get("op") == "revert_to_auto" for op in doc.get("ops", [])):
+        cdoc = corrections_mod.load(model_path)
+        for n, op in enumerate(doc.get("ops", [])):
+            if op.get("op") != "revert_to_auto":
+                continue
+            key = op["key"]
+            active = [
+                c
+                for c in cdoc["corrections"]
+                if not c.get("undone")
+                and c.get("field")
+                and corrections_mod.field_key(c.get("target") or {}, c["field"]) == key
+            ]
+            if not active:
+                raise ValueError(f"op {n}: no accepted correction for field {key!r}")
     items: List[dict] = []
     for n, op in enumerate(doc.get("ops", [])):
         kind = op["op"]
