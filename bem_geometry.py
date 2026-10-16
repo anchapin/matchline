@@ -165,6 +165,11 @@ class BEMModel:
     # facade of each ring edge i -> i+1 (parallel to ring_m), set by adapters
     # that know which frame their ring is in; empty when unknown
     ring_facades: list = field(default_factory=list)
+    # per-part envelope rings (#984): [{"ring": [...], "holes": [[...]]}, ...],
+    # one entry per connected part (wing); courtyard holes ride with their
+    # part wound CW so the writers' outward-normal convention points into
+    # the void. Empty on single-part models: ring_m / ring_facades as before.
+    rings_m: list = field(default_factory=list)
     # roof assembly U (W/m2K) from BuildingModel.roof_construction_id;
     # None -> the generic roof construction
     roof_u_value_w_m2k: Optional[float] = None

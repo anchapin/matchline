@@ -2,10 +2,10 @@
  "building_name": "test_bldg",
  "ok": false,
  "summary": {
-  "n_checks": 48,
+  "n_checks": 49,
   "errors": 5,
   "warnings": 4,
-  "passes": 23,
+  "passes": 24,
   "skipped": 16
  },
  "results": [
@@ -391,6 +391,74 @@
    "entities": [],
    "expected": 96.0,
    "actual": 92.4
+  },
+  {
+   "check_id": "area_definitions_reconcile",
+   "name": "Area definitions reconcile (#975)",
+   "severity": "pass",
+   "message": "gross >= rentable and assignable <= rentable hold on every level and in total",
+   "entities": [],
+   "actual": {
+    "reconciliation": {
+     "L1": {
+      "gross_gte_rentable": {
+       "verified": null,
+       "delta_m2": null,
+       "attributed": "gross unavailable (no exterior wall thickness); not verified, not zero"
+      },
+      "construction_gte_rentable": {
+       "verified": true,
+       "delta_m2": 0.0,
+       "attributed": "vertical penetrations (shaft + elevator_core)"
+      },
+      "assignable_lte_rentable": {
+       "verified": true,
+       "delta_m2": 10.0,
+       "attributed": "unallocated: closet/unclassified spaces plus circulation the model cannot yet identify"
+      },
+      "components_match_union": {
+       "verified": null,
+       "delta_m2": -10.0,
+       "attributed": "gaps between space polygons"
+      }
+     },
+     "total": {
+      "gross_gte_rentable": {
+       "verified": null,
+       "delta_m2": null,
+       "attributed": "gross unavailable (unavailable on: L1); not verified, not zero"
+      },
+      "construction_gte_rentable": {
+       "verified": true,
+       "delta_m2": 0.0,
+       "attributed": "vertical penetrations (shaft + elevator_core)"
+      },
+      "assignable_lte_rentable": {
+       "verified": true,
+       "delta_m2": 10.0,
+       "attributed": "unallocated: closet/unclassified spaces plus circulation the model cannot yet identify"
+      },
+      "components_match_union": {
+       "verified": null,
+       "delta_m2": -10.0,
+       "attributed": "gaps between space polygons"
+      }
+     }
+    },
+    "totals": {
+     "space_area_sum_m2": 50.0,
+     "assignable_m2": 50.0,
+     "penetration_m2": 0,
+     "other_space_m2": 0,
+     "construction_union_m2": 60.0,
+     "gross_m2": null,
+     "levels_without_gross_m2": [
+      "L1"
+     ],
+     "rentable_m2": 60.0,
+     "unallocated_m2": 10.0
+    }
+   }
   }
  ]
 }

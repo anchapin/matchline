@@ -317,3 +317,129 @@ class TestReviewQueueConfirmRejectValidationReRun:
         )
 
         model_path.unlink()
+
+
+class TestReviewQueueBulkCLI:
+    """Bulk confirm/reject with filters, and worst-first listing (#996)."""
+
+    def _write_model_to_temp(self, model: BuildingModel) -> Path:
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with open(fd, "w") as f:
+            f.write(model.to_json())
+        return Path(path)
+
+    def _make_bulk_model(self) -> BuildingModel:
+        model = BuildingModel()
+        prov = Provenance(sheet_id="sheet_A", revision=1, method="test", confidence=0.75)
+        for iid, kind, conf, urg in [
+            ("A1", "window_room_link", 0.40, 1),
+            ("A2", "window_room_link", 0.80, 0),
+            ("A3", "fixture_assignment", 0.30, 2),
+        ]:
+            item = ReviewItem(
+                id=iid,
+                kind=kind,
+                description=f"{kind} {iid}",
+                status="open",
+                confidence=conf,
+                provenance=prov,
+                urgency=urg,
+            )
+            model.review_queue.append(item)
+        model.review_queue[0].target = {"kind": "space", "id": "L1-101"}
+        done = ReviewItem(
+            id="A4",
+            kind="space_merge",
+            description="already handled",
+            status="confirmed",
+            confidence=0.5,
+            provenance=prov,
+            urgency=3,
+        )
+        model.review_queue.append(done)
+        return model
+
+    def test_bulk_confirm_kind_filter(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--bulk-confirm", "--kind", "window_room_link"])
+        assert r.returncode == 0, r.stderr
+        assert "Bulk confirmed: 2 item(s) matched" in r.stdout
+        updated = BuildingModel.from_json(model_path.read_text())
+        statuses = {i.id: i.status for i in updated.review_queue}
+        assert statuses == {"A1": "confirmed", "A2": "confirmed", "A3": "open", "A4": "confirmed"}
+        model_path.unlink()
+
+    def test_bulk_reject_confidence_band(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--bulk-reject", "--conf-below", "0.5"])
+        assert r.returncode == 0, r.stderr
+        assert "Bulk rejected: 2 item(s) matched" in r.stdout
+        updated = BuildingModel.from_json(model_path.read_text())
+        statuses = {i.id: i.status for i in updated.review_queue}
+        assert statuses["A1"] == "rejected" and statuses["A3"] == "rejected"
+        assert statuses["A2"] == "open"
+        model_path.unlink()
+
+    def test_bulk_conf_above_and_level(self):
+        from building_model import Level, Space
+
+        model = self._make_bulk_model()
+        model.levels.append(Level(id="L1", wall_height_m=3.0))
+        model.spaces["L1-101"] = Space(
+            id="L1-101",
+            level_id="L1",
+            number="101",
+            polygon_m=[[0, 0], [4, 0], [4, 4], [0, 4]],
+        )
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(
+            ["review", str(model_path), "--bulk-confirm", "--conf-above", "0.2", "--level", "L1"]
+        )
+        assert r.returncode == 0, r.stderr
+        # only A1 carries a target on L1
+        assert "Bulk confirmed: 1 item(s) matched" in r.stdout
+        model_path.unlink()
+
+    def test_bulk_zero_matches_fails(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--bulk-confirm", "--kind", "nosuch"])
+        assert r.returncode == 1
+        assert "no open review items match" in r.stderr
+        model_path.unlink()
+
+    def test_bulk_and_single_are_exclusive(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--bulk-confirm", "--confirm", "A1"])
+        assert r.returncode == 1
+        model_path.unlink()
+
+    def test_bulk_reject_both_fails(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--bulk-confirm", "--bulk-reject"])
+        assert r.returncode == 1
+        model_path.unlink()
+
+    def test_list_is_worst_first(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--list"])
+        assert r.returncode == 0, r.stderr
+        order = [line for line in r.stdout.splitlines() if line.startswith("[A")]
+        ids = [line.split("]")[0].strip("[") for line in order]
+        # open first, highest urgency, then lowest confidence; resolved A4 never shown
+        assert ids == ["A3", "A1", "A2"]
+        model_path.unlink()
+
+    def test_list_json_carries_level(self):
+        model = self._make_bulk_model()
+        model_path = self._write_model_to_temp(model)
+        r = _run_cli(["review", str(model_path), "--list", "--format", "json"])
+        assert r.returncode == 0, r.stderr
+        rows = json.loads(r.stdout)
+        assert all("level" in row for row in rows)
+        model_path.unlink()

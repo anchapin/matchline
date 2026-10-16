@@ -1033,3 +1033,142 @@ def test_bim_element_items_stay_record_only():
     )  # an edit on the wall element notes the element; it attaches nothing
     rq = next(x for x in m.review_queue if x.id == "R2")
     assert R.edit_field(m, rq) == ""
+
+
+# --- review queue floor filter + bulk UI (#996) --------------------------------------
+
+
+def _levels_fixture():
+    """Spaces on two floors plus openings, a wall and a fixture for level mapping."""
+    from building_model import EnvelopeWall, FixtureInstance, Level, Space, SpaceOpening
+
+    m = _model()
+    m.levels.append(Level(id="L1", wall_height_m=3.0))
+    m.levels.append(Level(id="L2", wall_height_m=3.0))
+
+    def rect(x0, y0, x1, y1):
+        return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+    r1 = Space(id="L1-101", level_id="L1", number="101", polygon_m=rect(0, 0, 6, 4))
+    r1.openings.append(
+        SpaceOpening(id="O1", tag="W1", category="window", width_m=1.2, height_m=1.5)
+    )
+    r1.lighting.fixtures.append(
+        FixtureInstance(id="F1", tag="L1", fixture_class="recessed", x_m=1.0, y_m=1.0)
+    )
+    r2 = Space(id="L2-201", level_id="L2", number="201", polygon_m=rect(0, 0, 6, 4))
+    m.spaces[r1.id] = r1
+    m.spaces[r2.id] = r2
+    m.envelope.append(
+        EnvelopeWall(id="W1", facade="south", space_id="L1-101", length_m=6.0, height_m=3.0)
+    )
+
+    m.review_queue[0].target = {"kind": "opening", "id": "O1"}  # R1 -> L1
+    m.review_queue[1].target = {"kind": "fixture", "id": "F1"}  # R2 -> L1
+    m.review_queue[2].target = {"kind": "space", "id": "L2-201"}  # R3 -> L2
+    m.review_queue.append(
+        ReviewItem(
+            id="R5",
+            kind="wall_assembly",
+            description="Wall W1 assembly",
+            confidence=0.30,
+            provenance=m.review_queue[0].provenance,
+            urgency=2,
+            target={"kind": "wall", "id": "W1"},
+        )
+    )
+    m.review_queue.append(
+        ReviewItem(
+            id="R6",
+            kind="misc_unknown",
+            description="No target",
+            confidence=0.20,
+            provenance=m.review_queue[0].provenance,
+            urgency=0,
+        )
+    )
+    return m
+
+
+def test_item_level_resolution():
+    m = _levels_fixture()
+    idx = R._level_index(m)
+    assert R._item_level(m, m.review_queue[0], idx) == "L1"  # opening target
+    assert R._item_level(m, m.review_queue[1], idx) == "L1"  # fixture target
+    assert R._item_level(m, m.review_queue[2], idx) == "L2"  # space target
+    assert R._item_level(m, m.review_queue[4], idx) == "L1"  # wall target (R5)
+    assert R._item_level(m, m.review_queue[3], idx) == ""  # R4: confirmed, no target
+    assert R._item_level(m, m.review_queue[5], idx) == ""  # no target
+
+
+def test_render_html_items_carry_provenance_method():
+    """The queue's embedded item data carries the provenance method (#1079)."""
+    page = R.render_html(_model(), R.template(_model(), "x"))
+    assert '"method": "plan_gap_schedule_width"' in page
+
+
+def test_render_html_carries_level_and_filters():
+    m = _levels_fixture()
+    page = R.render_html(m, R.template(m, "x"))
+    for needle in (
+        "id=f-kind",
+        "id=f-band",
+        "id=f-level",
+        "id=f-method",
+        "all methods",
+        "id=bulk-confirm",
+        "id=bulk-reject",
+        "id=khelp",
+    ):
+        assert needle in page, needle
+    assert '"level": "L2"' in page  # R3's row carries its floor
+    assert '"level": ""' in page  # targetless rows carry an empty floor
+
+
+def test_render_html_rows_worst_first():
+    m = _levels_fixture()
+    page = R.render_html(m, R.template(m, "x"))
+    data = json.loads(
+        re.search(r'<script type="application/json" id="data">(.*?)</script>', page, re.S).group(1)
+    )
+    ids = [i["id"] for i in data["items"]]
+    # open first, highest urgency, then lowest confidence; resolved last
+    assert ids == ["R3", "R5", "R2", "R1", "R6", "R4"]
+
+
+def test_attach_takeoff_diff_items_appends_and_dedupes():
+    import takeoff_diff as TD
+
+    old = {
+        "spaces": {
+            "a": {"name": "Office", "area_m2": 20.0},
+            "b": {"name": "Hall", "area_m2": 10.0},
+        }
+    }
+    new = {
+        "spaces": {
+            "a": {"name": "Office", "area_m2": 20.0},
+            "c": {"name": "Cafe", "area_m2": 30.0},
+        }
+    }
+    diff = TD.diff_takeoffs(old, new)
+    m = BuildingModel(name="diff848")
+    first = R.attach_takeoff_diff_items(m, diff)
+    kinds = {i.kind for i in first}
+    assert "revision_room_removed" in kinds and "revision_room_added" in kinds
+    assert all(i.provenance is not None and i.provenance.method == "takeoff_diff" for i in first)
+    second = R.attach_takeoff_diff_items(m, diff)
+    assert second == []
+    assert len(m.review_queue) == len(first)
+
+
+def test_attach_takeoff_diff_items_sort_worst_first():
+    import takeoff_diff as TD
+
+    old = {"spaces": {"a": {"name": "Hall", "area_m2": 10.0}}}
+    new = {"spaces": {"c": {"name": "Cafe", "area_m2": 30.0}}}
+    diff = TD.diff_takeoffs(old, new)
+    m = BuildingModel(name="diff848b")
+    R.attach_takeoff_diff_items(m, diff)
+    order = [i.id for i in R.worst_first(m.review_queue)]
+    assert order == ["takeoff-diff-room-removed-a", "takeoff-diff-room-added-c"]

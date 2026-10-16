@@ -317,11 +317,3 @@ def generate(task: str, n: int, seed: int = 20260919) -> list[Example]:
     if task not in _GENERATORS:
         raise ValueError(f"unknown task {task!r}; expected one of {sorted(_GENERATORS)}")
     return _GENERATORS[task](random.Random(seed), n)
-
-
-def generate_all(n_per_task: int = 1500, seed: int = 20260919) -> list[Example]:
-    """Generate the full multi-task prototype dataset."""
-    out: list[Example] = []
-    for i, task in enumerate(_GENERATORS):
-        out.extend(generate(task, n_per_task, seed=seed + i))
-    return out

@@ -38,10 +38,11 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import opening_attach
 import space_merge as space_merge
+from html_page import page_head
 
 SCHEMA = "matchline.review_decisions/1"
 ACTIONS = ("confirm", "reject", "edit", "revert")
@@ -69,7 +70,9 @@ def auto_state(item) -> dict:
 # Fields a review edit can write, per target kind (#796). Anything else keeps
 # the #749 behaviour: the value is recorded and the item closed.
 EDITABLE = {
-    "opening": ("width_m", "space_id", "construction_id"),
+    # Space name/number edits (#1002): the viewer's rename writes through here.
+    "space": ("name", "number", "split"),
+    "opening": ("width_m", "space_id", "construction_id", "category"),
     "wall": ("opening",),
     # fixture / diffuser / sensor space assignment (#799)
     "fixture": ("space_id",),
@@ -134,7 +137,13 @@ def edit_field(model, item) -> str:
     f = t.get("field", "")
     allowed = EDITABLE.get(kind, ()) + MERGE_EDITABLE.get(getattr(item, "kind", ""), ())
     if not f:
-        f = allowed[0] if len(allowed) == 1 else ""
+        # a merge item's field comes from MERGE_EDITABLE even when its target
+        # kind also carries editable fields now (#1002: kind "space" does)
+        merge_fields = MERGE_EDITABLE.get(getattr(item, "kind", ""), ())
+        if len(merge_fields) == 1:
+            f = merge_fields[0]
+        else:
+            f = allowed[0] if len(allowed) == 1 else ""
     if f not in allowed:
         return ""
     if f == "merge_into":
@@ -195,6 +204,13 @@ def _read(model, t: dict, f: str):
     if kind == "bim_opening" and f == "space_id":
         sp = opening_attach.host_space(model, eid)
         return sp.id if sp is not None else None
+    if kind == "space" and f in ("name", "number"):
+        sp = model.spaces.get(eid)
+        return getattr(sp, f) if sp is not None else None
+    if kind == "space" and f == "split":
+        # the current cut, so a replayed identical split matches and a revert
+        # (value None) takes it back out
+        return (t.get("split_state") or {}).get("cut")
     if f == "merge_into":
         if eid in model.spaces:
             return None  # still its own space: no automatic merge to undo
@@ -256,6 +272,26 @@ def _coerce(model, t: dict, f: str, raw: str):
         if raw in model.constructions:
             return raw
         raise ValueError(f"construction {raw!r} is not in the model")
+    if f == "category":
+        if raw not in GAP_CATEGORIES:
+            raise ValueError(f"category {raw!r} is not one of {', '.join(GAP_CATEGORIES)}")
+        _sp, op = _find_opening(model, t.get("id"))
+        if op is not None and op.category == "skylight":
+            raise ValueError(
+                f"opening {t.get('id')!r} is a skylight; a door/window reclass does not apply"
+            )
+        return raw
+    if f in ("name", "number"):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("the value is empty")
+        return raw
+    if f == "split":
+        parsed = space_merge.parse_split(raw)
+        snap = (t.get("split_state") or {}).get("cut")
+        if snap and space_merge.cuts_equal(snap, parsed):
+            return parsed  # the identical cut is already applied (#1002 replay)
+        return space_merge.validate_split(model, t.get("id", ""), raw)
     return raw
 
 
@@ -266,6 +302,19 @@ def _write(model, t: dict, f: str, value) -> None:
     kind = t.get("kind", "")
     if f == "merge_into":
         _merge_into(model, t, value)
+        return
+    if kind == "space" and f in ("name", "number"):
+        setattr(model.spaces[t.get("id", "")], f, value)
+        return
+    if kind == "space" and f == "split":
+        if value is None:
+            if t.get("split_state"):
+                space_merge.un_split(model, t["split_state"])
+                del t["split_state"]
+            return
+        snap = space_merge.split_space(model, t.get("id", ""), value["a"], value["b"])
+        if snap:
+            t["split_state"] = snap
         return
     if kind == "bim_opening" and f == "space_id":
         if value is None:
@@ -534,6 +583,36 @@ def original_value(model, item):
     return _read(model, t, f) if f else None
 
 
+def attach_takeoff_diff_items(model, diff: dict) -> List["ReviewItem"]:
+    """Append a takeoff-diff report's review items to a model's queue (#1048).
+
+    Item ids are stable, so a rerun of the same diff appends nothing: any id
+    already in the queue is skipped.  The queue's worst-first ordering (#996)
+    applies wherever it is read.
+    """
+    import takeoff_diff
+    from building_model import Provenance, ReviewItem
+
+    existing = {i.id for i in model.review_queue}
+    out: List[ReviewItem] = []
+    for raw in takeoff_diff.review_items(diff):
+        if raw["id"] in existing:
+            continue
+        prov = raw.get("provenance")
+        item = ReviewItem(
+            id=raw["id"],
+            kind=raw["kind"],
+            description=raw["description"],
+            confidence=raw["confidence"],
+            urgency=raw["urgency"],
+            provenance=Provenance(**prov) if prov else None,
+            target=dict(raw.get("target") or {}),
+        )
+        model.review_queue.append(item)
+        out.append(item)
+    return out
+
+
 def worst_first(items) -> list:
     """Open items first, then higher urgency, then lower confidence."""
     return sorted(
@@ -584,12 +663,20 @@ def final_states(doc: dict) -> Dict[str, Optional[dict]]:
     return out
 
 
-def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
+def apply_decisions(
+    model,
+    doc: dict,
+    model_sha: Optional[str] = None,
+    source: str = "human",
+    corrections_path=None,
+) -> dict:
     """Apply a decisions file to ``model`` in place; returns a summary.
 
     Idempotent: replaying the same file again changes nothing and logs
     nothing. A model hash that differs from the file's is reported, not
-    refused, because applying decisions changes the model itself.
+    refused, because applying decisions changes the model itself. Each
+    accepted decision lands in the correction history (#997) when
+    ``corrections_path`` is given; a replay adds nothing.
     """
     items = {i.id: i for i in model.review_queue}
     check(doc, items)
@@ -619,7 +706,17 @@ def apply_decisions(model, doc: dict, model_sha: Optional[str] = None) -> dict:
         else:
             want = _decided(act)
             note = act + (f": {st['value']}" if act == "edit" else "")
-        if _set(model, item, want, note, v, f):
+        if _set(
+            model,
+            item,
+            want,
+            note,
+            v,
+            f,
+            action=act,
+            source=source,
+            corrections_path=corrections_path,
+        ):
             summary[act] += 1
         else:
             summary["unchanged"] += 1
@@ -633,30 +730,59 @@ def _decided(action: str) -> dict:
 _KEEP = object()
 
 
-def _set(model, item, want: dict, note: str, value=_KEEP, f: str = "") -> bool:
+def _set(
+    model,
+    item,
+    want: dict,
+    note: str,
+    value=_KEEP,
+    f: str = "",
+    action: str = "",
+    source: str = "human",
+    corrections_path=None,
+) -> bool:
     """Put ``item`` in state ``want`` (and its field at ``value``) and log it.
 
     False when it already was. ``value`` is only written for an item whose
     target field an edit can change; the log keeps old and new values.
+    Every accepted change is also recorded in the correction history
+    beside the model (#997) when ``corrections_path`` is given.
     """
     t = item.target or {}
     f = f or edit_field(model, item)
     old = _read(model, t, f) if f and value is not _KEEP else None
-    same_state = auto_state(item) == {**auto_state(item), **want}
+    state_before = auto_state(item)
+    same_state = state_before == {**state_before, **want}
     same_value = value is _KEEP or old == value
     if same_state and same_value:
         return False
     for k, v in want.items():
         setattr(item, k, v)
+    wrote = False
     if not same_value:
         t.setdefault("original", original_value(model, item))
         t.setdefault("field", f)
         item.target = t
         _write(model, t, f, value)
         note = f"{note} ({f} {old!r} -> {value!r})"
+        wrote = True
     sheet = item.provenance.sheet_id if item.provenance else ""
     rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
     model.log_revision(sheet, rev, "review", f"{item.id} {note}")
+    if corrections_path is not None:
+        import corrections as _corrections
+
+        _corrections.record(
+            model,
+            item,
+            action,
+            source,
+            corrections_path,
+            field=f if wrote else "",
+            before=old if wrote else None,
+            after=value if wrote else None,
+            state_before=state_before,
+        )
     return True
 
 
@@ -673,12 +799,21 @@ def _target_value(model, item, action: str, value):
     return t["original"], t.get("field", "")
 
 
-def decide(model, item_id: str, action: str, value: Optional[str] = None) -> bool:
+def decide(
+    model,
+    item_id: str,
+    action: str,
+    value: Optional[str] = None,
+    source: str = "human",
+    corrections_path=None,
+) -> bool:
     """One decision, exactly as a replayed decisions file would apply it.
 
     Used by ``matchline review --confirm/--reject`` so the flags and the HTML
     report leave an item in the same state with the same revision log entry.
     Returns False when the item was already in that state (nothing logged).
+    ``source`` names what accepted it in the correction history (#997):
+    ``human`` for these flags, ``auto`` for a programmatic resolver.
     """
     item = next((i for i in model.review_queue if i.id == item_id), None)
     if item is None:
@@ -689,7 +824,17 @@ def decide(model, item_id: str, action: str, value: Optional[str] = None) -> boo
         raise ValueError(f"edit of {item_id!r} has no value")
     note = action + (f": {value}" if action == "edit" else "")
     v, f = _target_value(model, item, action, value)
-    return _set(model, item, _decided(action), note, v, f)
+    return _set(
+        model,
+        item,
+        _decided(action),
+        note,
+        v,
+        f,
+        action=action,
+        source=source,
+        corrections_path=corrections_path,
+    )
 
 
 def _item_row(i) -> dict:
@@ -707,6 +852,34 @@ def _item_row(i) -> dict:
     }
 
 
+def _level_index(model) -> Dict[Tuple[str, str], str]:
+    """Target (kind, id) -> level id, backing the review queue's floor filter (#996)."""
+    idx: Dict[Tuple[str, str], str] = {}
+    for sp in model.spaces.values():
+        idx[("space", sp.id)] = sp.level_id
+        for o in sp.openings:
+            idx[("opening", o.id)] = sp.level_id
+        for fx in sp.lighting.fixtures:
+            idx[("fixture", fx.id)] = sp.level_id
+    for w in getattr(model, "envelope", None) or []:
+        sp = model.spaces.get(w.space_id)
+        if sp is not None:
+            idx[("wall", w.id)] = sp.level_id
+    return idx
+
+
+def _item_level(model, item, idx: Optional[Dict[Tuple[str, str], str]] = None) -> str:
+    """The floor an item belongs to, from the entity its target names; "" when unresolved.
+
+    Used by the review page's floor filter and the CLI's ``--level`` bulk
+    filter, so both read the same mapping (#996).
+    """
+    t = item.target or {}
+    if idx is None:
+        idx = _level_index(model)
+    return idx.get((t.get("kind", ""), t.get("id", "")), "")
+
+
 _CSS = """
 body{font:13px/1.4 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#111;margin:20px}
 h1{font-size:18px;margin:0 0 6px}.bar{display:flex;gap:10px;align-items:center;margin:8px 0}
@@ -716,6 +889,8 @@ tr.sel{outline:2px solid #3367d6}tr.done td{color:#888}.hist{font-size:11px;colo
 .st-confirmed{color:#16794a}.st-rejected{color:#b00}.st-edited{color:#8a5a00}
 button{font:inherit;padding:1px 6px}.mono{font-family:Menlo,Consolas,monospace;font-size:11px}
 .keys{color:#666;font-size:11px}
+.help{position:fixed;top:70px;right:20px;background:#fff;
+border:1px solid #999;padding:8px 12px;font-size:12px;display:none;z-index:9}
 """
 
 # Pure replay, mirrored from final_states(); runnable under node for tests.
@@ -739,6 +914,26 @@ _UI_JS = """
   try { var saved = localStorage.getItem(key); if (saved) doc = JSON.parse(saved); }
   catch (e) {}
   var sel = 0, openOnly = false, svgs = {};
+  var filters = {kind: "", band: "all", level: "", method: ""};
+  function bandOf(c) { return c >= 0.9 ? "high" : c >= 0.7 ? "mid" : "low"; }
+  function pass(it) {
+    if (filters.kind && it.kind !== filters.kind) return false;
+    if (filters.band !== "all" && bandOf(it.confidence) !== filters.band) return false;
+    if (filters.level && (it.level || "") !== filters.level) return false;
+    if (filters.method && (it.method || "") !== filters.method) return false;
+    return true;
+  }
+  function visibleIdx(fs) {
+    var out = [];
+    data.items.forEach(function (it, k) {
+      var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
+      var done = !!st || it.auto.status !== "open";
+      if (openOnly && done) return;
+      if (!pass(it)) return;
+      out.push(k);
+    });
+    return out;
+  }
   (data.sheets || []).forEach(function (sh) {
     var host = document.querySelector(".sheet[data-sheet='" + sh.file + "']");
     if (host) svgs[sh.file] = drawSheet(sh, host);
@@ -823,10 +1018,10 @@ _UI_JS = """
   function render() {
     var fs = finalStates(doc), tb = document.getElementById("rows"), n = 0;
     tb.innerHTML = "";
-    data.items.forEach(function (it, k) {
+    visibleIdx(fs).forEach(function (k) {
+      var it = data.items[k];
       var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
       var done = !!st || it.auto.status !== "open";
-      if (openOnly && done) return;
       if (!done) n++;
       var tr = document.createElement("tr");
       tr.className = (k === sel ? "sel " : "") + (done ? "done" : "");
@@ -854,6 +1049,51 @@ _UI_JS = """
       tb.appendChild(tr);
     });
     document.getElementById("left").textContent = n + " still open";
+    var m = document.getElementById("matched");
+    if (m) m.textContent = "showing " + visibleIdx(fs).length + " of " + data.items.length;
+  }
+  function bulk(action) {
+    var fs = finalStates(doc), at = new Date().toISOString(), n = 0;
+    visibleIdx(fs).forEach(function (k) {
+      var it = data.items[k];
+      var st = fs.hasOwnProperty(it.id) ? fs[it.id] : null;
+      var done = !!st || it.auto.status !== "open";
+      if (done) return;
+      doc.decisions.push({id: it.id, action: action, at: at}); n++;
+    });
+    if (!n) {
+      var mm = document.getElementById("matched");
+      if (mm) mm.textContent = "no open items match the filters";
+      return;
+    }
+    save(); render();
+  }
+  function fill(id, values) {
+    var sel = document.getElementById(id);
+    values.forEach(function (v) {
+      var o = document.createElement("option"); o.value = v; o.textContent = v;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      if (id === "f-kind") filters.kind = sel.value;
+      else if (id === "f-band") filters.band = sel.value;
+      else if (id === "f-method") filters.method = sel.value;
+      else filters.level = sel.value;
+      render();
+    };
+  }
+  var kinds = [], levels = [], methods = [];
+  data.items.forEach(function (it) {
+    if (kinds.indexOf(it.kind) < 0) kinds.push(it.kind);
+    if (it.level && levels.indexOf(it.level) < 0) levels.push(it.level);
+    if (it.method && methods.indexOf(it.method) < 0) methods.push(it.method);
+  });
+  fill("f-kind", kinds); fill("f-level", levels); fill("f-method", methods);
+  document.getElementById("bulk-confirm").onclick = function () { bulk("confirm"); };
+  document.getElementById("bulk-reject").onclick = function () { bulk("reject"); };
+  function toggleHelp() {
+    var h = document.getElementById("khelp");
+    if (h) h.style.display = h.style.display === "block" ? "none" : "block";
   }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
     return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]; }); }
@@ -878,11 +1118,28 @@ _UI_JS = """
   };
   document.addEventListener("keydown", function (e) {
     if (e.target.tagName === "INPUT") return;
+    var vis = visibleIdx(finalStates(doc));
+    if (!vis.length) {
+      if (e.key === "?") { toggleHelp(); return; }
+      if (e.key === "o") {
+        var ob = document.getElementById("open");
+        ob.checked = !ob.checked; openOnly = ob.checked; render(); return;
+      }
+      return;
+    }
+    if (vis.indexOf(sel) < 0) sel = vis[0];
     var it = data.items[sel], m = {c: "confirm", r: "reject", e: "edit", u: "revert"};
-    if (e.key === "j") sel = Math.min(sel + 1, data.items.length - 1);
-    else if (e.key === "k") sel = Math.max(sel - 1, 0);
+    if (e.key === "j") sel = vis[Math.min(vis.indexOf(sel) + 1, vis.length - 1)];
+    else if (e.key === "k") sel = vis[Math.max(vis.indexOf(sel) - 1, 0)];
     else if (m[e.key] && it) { decide(it.id, m[e.key], it); return; }
     else if (e.key === "s" && it) { show(it.id); return; }
+    else if (e.key === "o") {
+      var cb = document.getElementById("open");
+      cb.checked = !cb.checked; openOnly = cb.checked;
+    }
+    else if (e.key === "C") { bulk("confirm"); return; }
+    else if (e.key === "R") { bulk("reject"); return; }
+    else if (e.key === "?") { toggleHelp(); return; }
     else return;
     render();
   });
@@ -1208,9 +1465,11 @@ def _sheets_html(sheets: List[dict]) -> str:
 
 def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
     items = []
+    lvl_idx = _level_index(model)
     for i in worst_first(model.review_queue):
         row, f = _item_row(i), edit_field(model, i)
         row["field"] = f
+        row["level"] = _item_level(model, i, lvl_idx)
         row["value"] = original_value(model, i) if f else None
         if f == "opening":
             cands = ", ".join((i.target.get("gap") or {}).get("candidates") or [])
@@ -1224,22 +1483,36 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
         items.append(row)
     sheets = sheets or []
     data = {"doc": doc, "items": items, "sheets": sheets, "links": item_links(model, sheets)}
-    name = html.escape(str(model.name))
     return (
         "\n".join(
             [
-                "<!doctype html><html><head><meta charset=utf-8>",
-                f"<title>matchline review: {name}</title>",
-                f"<style>{_CSS}{_SHEET_CSS}</style></head><body>",
-                f"<h1>Review queue: {name}</h1>",
+                page_head(
+                    f"matchline review: {model.name}",
+                    f"{_CSS}{_SHEET_CSS}",
+                    f"Review queue: {model.name}",
+                ),
                 f"<div class=mono>model SHA-256 {doc['model_sha256']}</div>",
                 "<div class=bar><span id=left></span>"
                 "<label><input type=checkbox id=open> open only</label>"
                 "<button id=export>Export decisions.json</button>"
                 "<label>Load decisions <input type=file id=import accept='.json'></label></div>",
                 "<div class=keys>j/k move, c confirm, r reject, e edit, u revert to automatic, "
-                "s show on sheet. "
+                "s show on sheet, o open-only, C confirm filtered, R reject filtered, "
+                "? shortcuts. "
                 "Then run: matchline review model.json --apply decisions.json</div>",
+                "<div id=khelp class=help>j/k move, c confirm, r reject, e edit, "
+                "u revert to automatic, s show on sheet, o open-only, "
+                "C confirm filtered, R reject filtered, ? close</div>",
+                "<div class=bar id=filters><span>Filter:</span>"
+                "<select id=f-kind><option value=''>all types</option></select>"
+                "<select id=f-band><option value=all>all confidence</option>"
+                "<option value=high>&#8805;0.9</option><option value=mid>0.7&#8211;0.9</option>"
+                "<option value=low>&lt;0.7</option></select>"
+                "<select id=f-level><option value=''>all floors</option></select>"
+                "<select id=f-method><option value=''>all methods</option></select>"
+                "<span id=matched></span>"
+                "<button id=bulk-confirm>Confirm filtered</button>"
+                "<button id=bulk-reject>Reject filtered</button></div>",
                 "<table><thead><tr><th>confidence</th><th>urgency</th><th>kind</th>"
                 "<th>item</th><th>decision and history</th><th></th></tr></thead>"
                 "<tbody id=rows></tbody></table>",

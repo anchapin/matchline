@@ -18,7 +18,10 @@ import sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from classes import CLASS_IDS, FLOORPLANCAD_MAP
+try:  # package import: python -m detector.convert_floorplancad, pytest
+    from detector.classes import CLASS_IDS, FLOORPLANCAD_MAP
+except ImportError:  # direct script execution from inside detector/
+    from classes import CLASS_IDS, FLOORPLANCAD_MAP
 
 
 def main():

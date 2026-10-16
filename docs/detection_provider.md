@@ -13,6 +13,7 @@ source sheet. The takeoff join reads that shape whatever produced it.
 {"provider": "none"}
 {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger artifact path>"}
 {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger artifact path>"}
+{"provider": "scratch", "weights": "ckpt.pt", "artifact": "<ledger path>"}
 {"provider": "door_swing"}
 {"provider": "vector_glazing"}
 ```
@@ -25,6 +26,14 @@ source sheet. The takeoff join reads that shape whatever produced it.
 - `yolo_sahi`: runs tiled YOLO inference on each floor plan's rendered image (needs
   `ultralytics`; CPU unless `device` says otherwise). Optional keys: `tile`,
   `overlap`, `conf`, `device`.
+- `scratch`: the from-scratch detector (`detector/train_scratch.py`): one grayscale
+  pass over the full sheet, no tiling, torch imported only when it runs. `weights`
+  is a `ckpt.pt` written by training; it carries its own model config and class
+  names, so nothing about the model lives in the detector config. Optional keys:
+  `conf`, `device` (CPU unless told otherwise). Checkpoints from the synthetic-only
+  training workflow (`detector-train.yml`, run dirs `scratch-synth-*`) are trained
+  on matchline's BSD-3-Clause generators, so the ledger classes them permissive
+  and a release may use them; anything else needs a ledger entry of its own.
 - `door_swing`: finds doors by rule in each floor plan's rendered image
   (`door_detect.py`, see `docs/space_merge.md`): a straight leaf from the hinge
   jamb plus a quarter arc back to the far jamb, a wall at both jambs and a clear
@@ -52,9 +61,12 @@ adds a note, and marks each plan sheet's symbols stage `eval_only: true` when th
 detections came from evaluation-only weights. `provider_from_config(cfg,
 release=True)` refuses an evaluation-only provider outright.
 
-Today the only trained door/window weights are the CubiCasa5K YOLO11n runs, which
-the ledger classes as noncommercial (and copyleft through the YOLO11n starting
-weights): they work through this interface for evaluation, never for a release.
+Two trained door/window backends work through this interface today. The
+CubiCasa5K YOLO11n runs the ledger classes as noncommercial (and copyleft through
+the YOLO11n starting weights): evaluation, never a release. The from-scratch
+synthetic checkpoints (`scratch-synth-*`, `scratch-tile*`) are permissive and may ship, at a
+detector quality that still lags the CubiCasa baseline (mean F1 0.58 at 30 epochs
+on the synthetic val split, still climbing).
 
 - `vector_glazing`: reports the windows the wall reader (`plan_walls`) already
   finds in the sheet's vectors: a glazing line drawn inside a wall run, a
@@ -74,8 +86,7 @@ weights): they work through this interface for evaluation, never for a release.
 
 ## Not yet
 
-A trained door/window backend whose training data and weights may ship (the
-`door_swing` rules ship but find swing doors only), measurement on commercial sheets (F1 at IoU 0.50) beside the CubiCasa baseline, and joining detections
+Measurement of both backends on commercial sheets (F1 at IoU 0.50) beside the sheets (F1 at IoU 0.50) beside the CubiCasa baseline, and joining detections
 to plan openings and mechanical tags.
 
 ## Doors and windows together
@@ -86,6 +97,27 @@ detections. It needs whatever any part needs (a scale, the walls), and the set
 reader hands each part only what it asks for. It is evaluation only when any
 part is, so a release refuses a combined config with an eval-only part. A
 combined config cannot hold `none` or another `combined`.
+
+## The specialist freeze: one checkpoint per class
+
+A part may declare `labels`, the class names it is kept to: every detection
+outside them is dropped. That is the specialist freeze (#743): the multi-scale
+window checkpoint and the single-scale door checkpoint run side by side,
+without either detector's other class firing into the other side's candidate
+pool.
+
+```json
+{"provider": "combined", "providers": [
+  {"provider": "scratch", "weights": "window_ckpt.pt", "labels": ["window"]},
+  {"provider": "scratch", "weights": "door_ckpt.pt", "labels": ["door"]}]}
+```
+
+`configs/detector_specialists.json` is that config checked in with the real checkpoints: the multi-scale window run and the single-scale door run, both ledger-permissive (#959). `matchline run --set ... --detector-config configs/detector_specialists.json` runs it, and a release accepts it.
+
+`labels` works on any provider, alone or as a combined part. A labeled part
+keeps the inner provider's artifact, license class and eval-only flag:
+filtering labels trains nothing, so a release refuses the combined config when
+any inner provider is evaluation only.
 
 ## Vector door swings
 

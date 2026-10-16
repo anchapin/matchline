@@ -14,7 +14,7 @@ with full provenance.
 | `synth/mech.py` | Mechanical-equipment generator (stub — `NotImplementedError`) |
 | `synth/make_dataset.py` | CLI entry point: `--sheets N --crops-per-class M --seed S` → `synth/out/` |
 | `synth/gap_experiment.py` | Sim-to-real gap evaluation: synth-trained classifier vs real AEC-bench crops |
-| `synth/e2e_test.py` | End-to-end pipeline smoke: GT detections → schedule rollup → floor area → simplify |
+| `scripts/synth_e2e_test.py` | End-to-end pipeline smoke: GT detections → schedule rollup → floor area → simplify |
 | `synth/out/` | Persisted samples: 6 sheets + 2,000 crops + gap_results.json |
 | `tests/test_synth_*.py` | Property-based sheet tests (area budgets, room count, wall continuity) |
 
@@ -95,7 +95,7 @@ different but structurally equivalent building.
 
 ```bash
 python -m pytest tests/test_synth_sheets.py -q      # ~5 s
-python synth/e2e_test.py                           # ~20 s
+python scripts/synth_e2e_test.py                           # ~20 s
 python synth/gap_experiment.py                      # ~20 s
 python synth/make_dataset.py --sheets 6 --crops-per-class 250 --seed 7
 ```

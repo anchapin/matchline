@@ -167,6 +167,37 @@ def _classify_edges(rooms):
 
 
 # ---------------------------------------------------------------------------
+# Wall thickness mix (#743): real plans vary partition thickness, and hairline
+# renders turn thin partitions into tight parallel line pairs that sit right at
+# the synth window glyph's glass-line spacing. Drawing most interior walls thin
+# gives the detector hard negatives: a continuous pair with no glass triplet,
+# no gap and no end caps is a wall, not a window.
+_THIN_WALL_T_M = (0.09, 0.12, 0.15)
+_THIN_WALL_WEIGHTS = (0.4, 0.3, 0.3)
+
+
+def wall_thickness_by_line(edges, rng):
+    """Thickness in metres per wall line.
+
+    Exterior lines keep ``WALL_T_M``; interior lines draw thin (90-150 mm) with
+    probability 0.5, staying at ``WALL_T_M`` otherwise. Both rooms sharing a
+    wall line get the same thickness, so the render stays consistent.
+    """
+    kinds = {}
+    for e in edges:
+        cur = kinds.get(e["key"])
+        if cur is None or e["kind"] == "exterior":
+            kinds[e["key"]] = e["kind"]
+    out = {}
+    for key, kind in kinds.items():
+        if kind == "exterior" or rng.random() < 0.50:
+            out[key] = WALL_T_M
+        else:
+            out[key] = float(rng.choice(_THIN_WALL_T_M, p=_THIN_WALL_WEIGHTS))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Opening placement (doors/windows) with conflict tracking on wall lines
 # ---------------------------------------------------------------------------
 
@@ -255,13 +286,25 @@ def _draw_window_glyph(d, c_px, w_px, wt_px, lw, orient):
             d.line([cx - wt_px / 2, yy, cx + wt_px / 2, yy], fill=0, width=lw)
 
 
-def generate_sheet(seed: int):
-    """Render one synthetic sheet. Returns (image uint8 (H,W), gt dict)."""
+def generate_sheet(seed: int, px_per_m: float = PX_PER_M):
+    """Render one synthetic sheet. Returns (image uint8 (H,W), gt dict).
+
+    ``px_per_m`` overrides the sheet scale (default 50 px/m). Multi-scale
+    training renders the same seed at several scales; when it differs from
+    ``PX_PER_M`` the sheet id gains a ``_s<int>`` suffix so every scale of a
+    seed is a distinct file (#743).
+    """
     rng = np.random.default_rng(seed)
-    S = PX_PER_M
-    wt_px = int(round(WALL_T_M * S))
+    # stroke-weight regime: filled (thick poché walls) or hairline (thin
+    # outline walls with 1-2 px strokes, matching a 1:100 vector sheet like
+    # the clinic eval renderer). Real sets span both; see #743.
+    hairline = bool(rng.random() < 0.5)
+    wall_lw = int(rng.integers(1, 3))  # hairline wall stroke: 1 or 2 px
+    glyph_lw = 1 if hairline else 4  # symbol strokes follow the wall regime
+    S = float(px_per_m)
     rects, rooms = _layout_footprint(rng)
     edges = _classify_edges(rooms)
+    t_m_by_line = wall_thickness_by_line(edges, rng)
     placer = OpeningPlacer()
 
     # ---- plan pixel frame -------------------------------------------------
@@ -285,11 +328,17 @@ def generate_sheet(seed: int):
     # ---- walls --------------------------------------------------------------
     for r in rooms:
         for (ax, ay), (bx, by) in _rect_edges(r):
+            key = ("h", round(ay, 6)) if abs(ay - by) < 1e-9 else ("v", round(ax, 6))
+            wt = max(2, int(round(t_m_by_line[key] * S)))
             x0, y0, x1, y1 = X(ax), Y(ay), X(bx), Y(by)
             if abs(y0 - y1) < 1e-9:  # horizontal
-                d.rectangle([min(x0, x1), y0 - wt_px / 2, max(x0, x1), y0 + wt_px / 2], fill=0)
+                box = [min(x0, x1), y0 - wt / 2, max(x0, x1), y0 + wt / 2]
             else:  # vertical
-                d.rectangle([x0 - wt_px / 2, min(y0, y1), x0 + wt_px / 2, max(y0, y1)], fill=0)
+                box = [x0 - wt / 2, min(y0, y1), x0 + wt / 2, max(y0, y1)]
+            if hairline:
+                d.rectangle(box, outline=0, width=wall_lw)
+            else:
+                d.rectangle(box, fill=0)
 
     symbols = []
     int_edges = [e for e in edges if e["kind"] == "interior"]
@@ -343,7 +392,7 @@ def generate_sheet(seed: int):
         double = tag == "D2"
         glyph = glyph_double_door if double else glyph_single_door
         kind = "door_double" if double else "door_single"
-        bbox = render_and_paste(glyph, w_px, 4, cpx, cpy, orient, swing_side, kind)
+        bbox = render_and_paste(glyph, w_px, glyph_lw, cpx, cpy, orient, swing_side, kind)
         return {
             "type": ("Double Swing Door" if double else "Single Swing Door"),
             "tag": tag,
@@ -355,7 +404,7 @@ def generate_sheet(seed: int):
         w_px = SCHED_BY_TAG[tag]["width_m"] * S
         orient = "h" if e["key"][0] == "h" else "v"
         cpx, cpy = (X(c_m), Y(e["a"][1])) if orient == "h" else (X(e["a"][0]), Y(c_m))
-        bbox = render_and_paste(glyph_window_plan, w_px, 4, cpx, cpy, orient, 1, "window")
+        bbox = render_and_paste(glyph_window_plan, w_px, glyph_lw, cpx, cpy, orient, 1, "window")
         return {"type": "Window", "tag": tag, "bbox_px": bbox, "drawing": "floor_plan"}
 
     # ---- doors ---------------------------------------------------------------
@@ -477,7 +526,7 @@ def generate_sheet(seed: int):
         exp["counts"][s["tag"]] = exp["counts"].get(s["tag"], 0) + 1
 
     gt = {
-        "sheet_id": f"sheet_{seed:03d}",
+        "sheet_id": f"sheet_{seed:03d}" + (f"_s{int(S)}" if S != PX_PER_M else ""),
         "seed": seed,
         "scale_px_per_m": S,
         "sheet_size_px": [sheet_w, sheet_h],
@@ -491,11 +540,11 @@ def generate_sheet(seed: int):
     return np.asarray(img), gt
 
 
-def save_sheet(seed: int, outdir: str | Path):
+def save_sheet(seed: int, outdir: str | Path, px_per_m: float = PX_PER_M):
     """Render one sheet: PNG + GT JSON. Returns (png_path, json_path)."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    img, gt = generate_sheet(seed)
+    img, gt = generate_sheet(seed, px_per_m=px_per_m)
     png = outdir / f"{gt['sheet_id']}.png"
     js = outdir / f"{gt['sheet_id']}.gt.json"
     Image.fromarray(img.astype(np.uint8)).save(png)

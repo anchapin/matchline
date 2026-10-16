@@ -246,6 +246,17 @@ Candidate approaches:
   and report our numbers on the same protocol plus our own drawing-set
   results.
 
+**Spike outcome (2026-10-15, #973).** Real legacy plan sheets expose rich
+vector primitives (8k+ lines on a single plan page), and rooms parse directly
+from them (flood-fill prototype: 22 and 31 plausible rooms on two plan pages).
+The shipped vector pipeline's blocker on legacy sets is sheet routing, not
+extraction (no sheet number in 2006-era title blocks; follow-up #1016).
+VecFormer stays deferred: it is a symbol spotter, not a wall parser, and would
+enter through the R2 DetectionProvider interface if ever needed. Full write-up
+in docs/r1_vector_spike.md. Decision: raster YOLO+SAHI stays the production
+path; vector-native geometry stays an open research track, unblocked by the
+routing fix; the meet-or-beat-0.929 F1 target waits on a labeled evaluation set.
+
 ### R2. Modular detection-provider interface
 
 Context: detection backends are currently hard-wired (YOLOv11+SAHI). If R1
@@ -361,6 +372,9 @@ in more than one review.
 - Community presence through Unmet Hours, LinkedIn, IBPSA/ASHRAE
 - Visible monthly flywheel/model changelog
 - Rename before public launch because WiSARD is not the production detector
+  (done: production docs name the YOLO detector; the one surviving "WiSARD" in
+  hvac_trace.py is jesse.py's research classifier inside its cascade, noted in
+  its docstring — #979)
 
 ## Strategy
 
@@ -381,3 +395,97 @@ in more than one review.
 - Set a review-bandwidth budget, maximum PR size, review cadence, and SLA ★
 
 ★ = raised independently by multiple personas — highest signal.
+
+## Non-goals and parked ideas
+
+Explicitly not goals for v0.1.x (see `docs/release.md` for scope and
+cadence; the dependency map lives there too):
+
+- **matchline does not run energy simulations.** It reads drawings and
+  IFC models and exports gbXML and IFC4; the simulation itself stays
+  with OpenStudio/EnergyPlus. Zone load inputs are set before any HVAC
+  sizing decision is made downstream.
+- **WiSARD never becomes the production detector.** `jesse.py` is a
+  deterministic research asset; production symbol spotting is the YOLO
+  pipeline in `detector/`.
+- **No raster-to-walls from sheet images.** The image input yields
+  symbols and takeoff only, stated honestly wherever it appears.
+- **No second PDF library.** pypdfium2 is the only PDF entry point;
+  AGPL options (PyMuPDF) stay rejected.
+- **No noncommercial data in shipped artifacts.** NC / copy-left
+  benchmark data and weights stay eval-only and quarantined (#751).
+- **No automatic releases.** Releases cut by hand from `develop` with
+  green CI and release notes that match reality.
+- **No unreviewed merges for higher-risk changes.** The duck review and
+  green CI gate everything; ambiguous or high-risk changes wait for
+  personal review regardless of CI.
+
+Parked ideas: deliberately unstarted, listed here so they do not get
+re-discovered as gaps. Revit/AutoCAD plugins, the enterprise trust items
+(SSO, audit logs, SOC 2 story, air-gapped mode), the standalone BIM
+import health score, and the open-core commercial model all sit under
+Strategy above; they are future-facing by design. Nexus-style
+infrastructure projects and anything outside drawings/IFC-to-BEM scope
+stay out of this repo entirely.
+# Part III — Review, correction, and feedback loop (added 2026-10-15)
+
+From Alex (2026-10-15): the model's value depends on the user's ability to check
+it, fix it, and teach us from it. Three directions — see the model, fix the
+model, learn from the user. Not sequenced; each slice gets its own numbered
+issue with acceptance criteria when pulled into the roadmap.
+
+## Review: a 3D viewer for the final simplified model
+
+The review queue is a list; a wrong wall is a shape. The user should be able to
+look at the final simplified model and find where matchline may have made
+mistakes before trusting the numbers.
+
+- Read-only first. Pan, rotate, and zoom; isolate one level at a time; a
+  top-down orthographic view per level to check space layout against the plan.
+  Toggle overlays: floor plans and elevations registered to the model, MEP
+  takeoffs, and traces.
+- Render from the canonical model the export writes, never a second geometry
+  copy. A viewer that lies is worse than no viewer. The share-back preview in
+  the export package and this viewer should share one render core.
+- Comparison is the feature: plan-over-model alignment exposes the mistakes
+  (a shifted wall, a merged room, a door called a window), and per-element
+  confidence heat-mapping points the eye where errors are most likely.
+- Open question: self-contained HTML (same constraint as the share-back
+  preview) vs matchline-ui. Decide when the first slice is pulled.
+
+## Correction: fix it where you found it
+
+Finding a mistake is half the loop; fixing it in place is the other half.
+
+- Start with the cheap, unambiguous edits: rename a space, reclassify a door as
+  a window (and the reverse), merge or split spaces. Moving an interior wall is
+  the stretch goal and needs a designed geometry-edit model first, not a quick
+  add.
+- Every correction writes back through the existing decisions.json workflow
+  (--confirm/--reject/--apply), lands in the correction history with
+  before/after values, source, and timestamp, and surfaces in the review
+  queue. The viewer never forks a private copy of the model.
+- A correction is provenance, not just a patch: what the automatic result got
+  wrong is exactly the signal the detector wants and the telemetry below
+  should carry.
+
+## Feedback: the minimum we ask back, and how we ask
+
+The flywheel needs data from users, and every byte we ask for is friction.
+
+- Minimum, not maximum. Candidate metrics: per-class detection confidence
+  distributions, correction counts by type (what users fix most is what the
+  detector should learn), which validation checks fail most often, binned
+  aggregate areas and counts, pipeline stage outcomes and timings. Explicitly
+  excluded: geometry, labels, names, coordinates, sheet images, anything that
+  identifies a building or a firm.
+- Strip at source. The emitter can only produce fields on an allowlist, and a
+  test proves the payload carries no building-specific data. Local-only mode
+  (Part II privacy item) turns telemetry fully off.
+- The ask must be legible. A one-page, plain-language description of exactly
+  what leaves the machine, versioned alongside the data-contribution agreement
+  (Part II trust item). A user should be able to decide in one read.
+- Structured feedback: capture at the moment of friction (a detector override,
+  an abandoned review item, a failed parse), plus a simple open-ended channel
+  for bugs, feature requests, and places where the conversation doesn't work
+  well. Feedback themes re-rank this roadmap.

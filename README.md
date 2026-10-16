@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # ~1,860 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
+python -m pytest tests/ -q   # ~3,500 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
@@ -45,9 +45,35 @@ matchline schedules sheets/    # door, window, lighting and mechanical schedule 
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 matchline ifc-export model.json out.ifc  # IFC4 export
 matchline review model.json     # review queue: list/confirm/reject
+matchline takeoff-diff --old a.json --new b.json  # diff two revisions' takeoffs (rooms, openings, symbols)
+matchline takeoff-diff --old a.json --new b.json --review-items model.json  # feed the diff into the review queue
+matchline learn-legend out_dir --tag 'SUPPLY GRILLE=grille'  # learn legend tags from set reports; suggests mappings
 matchline multidiscipline       # 3 synthetic buildings
 matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
 ```
+
+## Web interface
+
+The same pipeline is reachable from a browser. The `ui` extra adds a one-page
+web app that shells out to `run_pipeline`, so its numbers match the CLI:
+
+```bash
+pip install "matchline[ui]"
+matchline-ui                 # opens http://127.0.0.1:7860
+```
+
+Drop a drawing set (one PDF, or a zip of PDFs that is unpacked and read in
+filename order), an IFC model, or a single sheet image, or tick the demo box
+for a synthetic building. Set how aggressively similar surfaces merge, press
+Run, and download the gbXML, the building model JSON, and the review page.
+A sheet image is labeled honestly in the app: it yields symbols and a takeoff
+only, never walls or rooms, and the pipeline says so instead of exporting a
+half model. IFC runs go through the same stages as a drawing set; validation
+findings (review items and conservation checks) block export exactly as they
+do for any other input, with the review page written so you can work through
+them (`matchline review out/stage_02_model.json --confirm <id>`, then re-run).
+The server binds to 127.0.0.1 and keeps uploaded files on the machine that
+runs it.
 
 ## Pipeline
 
@@ -86,7 +112,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |
 | `cli.py` | Unified `matchline` CLI (one subcommand per demo script) |
-| `validate/` | 48-check invariant battery; errors block export |
+| `validate/` | 49-check invariant battery; errors block export |
 
 ## Quickstart
 
@@ -123,6 +149,14 @@ Research prototype. Synthetic end-to-end paths are green; real-drawing
 validation against clean commercial sheets is the next milestone. The WiSARD
 classifier is a deterministic/explainable asset; production symbol spotting
 follows a fine-tuned YOLO + tiling/legend-learning pattern.
+
+## Contributing
+
+Contributions are welcome, human- or agent-authored alike. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, the test-count gate, and the
+review norms for external PRs, and our
+[Code of Conduct](CODE_OF_CONDUCT.md). Every commit needs a DCO
+`Signed-off-by` line.
 
 ## License
 

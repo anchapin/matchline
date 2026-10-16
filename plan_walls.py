@@ -1449,7 +1449,8 @@ def _thin_gaps(
     lo, hi = THIN_T_MIN_M * k, t_min * 0.999
     if hi <= lo:
         return []
-    bands = _pair_bands(segs, lo, hi, THIN_MIN_LEN_M * k)
+    # drawn lengths round, so a pier at exactly the minimum still pairs (#875)
+    bands = _pair_bands(segs, lo, hi, THIN_MIN_LEN_M * k - tol)
     if not bands:
         return []
     gmin, gmax = THIN_GAP_MIN_M * k - tol, THIN_GAP_MAX_M * k + tol
@@ -1464,6 +1465,10 @@ def _thin_gaps(
         for p, q in ((w.b, w.a), (w.a, w.b)):
             ux, uy = (p[0] - q[0]) / L, (p[1] - q[1]) / L
             ray = LineString([p, (p[0] + ux * gmax, p[1] + uy * gmax)])
+            # uneven pier faces clip a band short of the true end, and the
+            # opening's own jamb face is then drawn just past it: that face is
+            # the gap's near edge, so look past it for the far edge (#875)
+            near = 1.5 * w.t + tol
             best = None
             for i in tree.query(ray):
                 x = ray.intersection(geoms[int(i)])
@@ -1473,7 +1478,7 @@ def _thin_gaps(
                 for g in pts:
                     for c in g.coords:
                         d = (c[0] - p[0]) * ux + (c[1] - p[1]) * uy
-                        if d > tol and (best is None or d < best):
+                        if d > near and (best is None or d < best):
                             best = d
             if best is not None and gmin <= best <= gmax:
                 found.append((p, (p[0] + ux * best, p[1] + uy * best), w.t))
@@ -1484,7 +1489,7 @@ def _thin_gaps(
         if not (gmin <= L <= gmax):
             continue
         mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        if any(math.dist(mid, m) <= max(2 * t, tol) for m in mids):
+        if any(math.dist(mid, m) <= max(2 * t, tol) + tol for m in mids):
             continue  # the same gap seen from its other end
         mids.append(mid)
         out.append(
@@ -1498,7 +1503,9 @@ def _thin_gaps(
     return out
 
 
-def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
+def extract_walls(
+    sheet, m_per_pt: Optional[float], scale_review: Optional[dict] = None
+) -> PlanWalls:
     if not m_per_pt:
         return PlanWalls([], [], [], [{"kind": "no_scale", "reason": "sheet has no scale"}], None)
     k = 1.0 / m_per_pt  # points per metre
@@ -1511,6 +1518,8 @@ def extract_walls(sheet, m_per_pt: Optional[float]) -> PlanWalls:
     bands = _pair_bands(segs, t_min, t_max, MIN_WALL_LEN_M * k)
     bands += [_band_from_rect(a, b, t) for _, a, b, t in rects]
     review: List[dict] = []
+    if scale_review:
+        review.append(dict(scale_review))
 
     def to_m(p: Pt) -> Pt:
         return (round(p[0] * m_per_pt, 4), round((H - p[1]) * m_per_pt, 4))
@@ -1869,7 +1878,19 @@ def walls_for_sheets(sheet_dir) -> Dict[str, dict]:
         if keep is not None and p.name not in keep:
             continue
         sc = scales.get(p.name, {})
-        res = extract_walls(json.loads(p.read_text()), sc.get("m_per_pt"))
+        est = None
+        if (
+            sc.get("m_per_pt")
+            and sc.get("needs_review")
+            and sc.get("source") in ("single_dimension", "dimensions")
+        ):
+            # an estimated scale's areas are provisional until a human confirms (#1019)
+            est = {
+                "kind": "scale_estimated",
+                "source": sc.get("source"),
+                "reason": sc.get("reason", ""),
+            }
+        res = extract_walls(json.loads(p.read_text()), sc.get("m_per_pt"), scale_review=est)
         name = p.name.replace("sheet_", "walls_")
         (d / name).write_text(json.dumps(res.to_dict(), indent=2))
         out[p.name] = res.to_dict()

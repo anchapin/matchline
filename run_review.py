@@ -71,11 +71,12 @@ from review_classifier.data import Example
 from review_classifier.model import TypedDecider
 from validate import run_checks
 
-# Per-task model file names (relative to review_classifier/)
+# Per-task model file names (relative to review_classifier/). The shipped
+# models are .npz; the security guard below rejects any .pkl in this directory.
 _TASK_MODEL_NAMES: dict[str, str] = {
-    "route_to_review": "trained_model_route_to_review.pkl",
-    "schedule_match": "trained_model_schedule_match.pkl",
-    "extraction_type": "trained_model_extraction_type.pkl",
+    "route_to_review": "trained_model_route_to_review.npz",
+    "schedule_match": "trained_model_schedule_match.npz",
+    "extraction_type": "trained_model_extraction_type.npz",
 }
 
 # Task name for each ReviewItem.kind
@@ -141,8 +142,7 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     model_file = _TASK_MODEL_NAMES.get(task)
     if model_file is None:
         return None
-    base_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
-    npz_path = base_path.with_suffix(".npz")
+    npz_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
     if npz_path.exists():
         try:
             return TypedDecider.from_npz(npz_path)
@@ -182,8 +182,9 @@ def list_review_items(
 ) -> tuple[list[ReviewItem], bool]:
     """Load the model, classify open items, and print the review queue.
 
-    Items are ordered by urgency (highest first), then auto-resolved items
-    are shown before human-needed items at each urgency level.
+    Items are ordered worst-first (#996): open items before resolved ones,
+    then highest urgency, then lowest confidence. This matches the HTML
+    review page and the matchline-ui summary.
 
     Args:
         model_path: path to BuildingModel JSON file
@@ -220,8 +221,11 @@ def list_review_items(
         print("No review items in queue." if show_all else "No open review items.")
         return items, classifier_available
 
-    # Sort by urgency (highest first), auto-resolved last within urgency band
-    items.sort(key=_urgency_sort_key)
+    # Worst-first (#996): open first, highest urgency, lowest confidence.
+    # Same ordering the HTML review page renders (#749).
+    import review_report
+
+    items = review_report.worst_first(items)
 
     n_auto = sum(1 for i in items if i.auto_resolved)
     print(
@@ -291,24 +295,72 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
-def _decide(model: BuildingModel, item_id: str, action: str) -> tuple[BuildingModel, str]:
+def _log_review_override(
+    model: BuildingModel, item_id: str, action: str, corrections_path=None
+) -> None:
+    """Capture a review decision as friction feedback (#1038).
+
+    The review decision is a correction of a detection, so it lands in the
+    local feedback log (beside the corrections history) as an override
+    event: the item's kind when that token is generic enough for the
+    telemetry exclusion list, "review_item" otherwise. Capture failure
+    never blocks the review.
+    """
+    from feedback_capture import FeedbackCaptureError, FeedbackLog
+
+    item = next((i for i in model.review_queue if i.id == item_id), None)
+    kind = item.kind if item is not None else "unknown"
+    # the exclusion list refuses "confirm" (substring "firm"), so the action
+    # token maps to accept/reject, same 1:1 vocabulary, both exclusion-safe
+    action_token = {"confirm": "accept", "reject": "reject"}[action]
+    log_path = (
+        pathlib.Path(corrections_path).parent / "feedback.jsonl"
+        if corrections_path
+        else pathlib.Path("feedback.jsonl")
+    )
+    try:
+        log = FeedbackLog(log_path)
+        try:
+            log.log_override(kind, action_token)
+        except FeedbackCaptureError:
+            log.log_override("review_item", action_token)
+    except (FeedbackCaptureError, OSError):
+        pass
+
+
+def _decide(
+    model: BuildingModel,
+    item_id: str,
+    action: str,
+    corrections_path=None,
+) -> tuple[BuildingModel, str]:
     """Same state and revision log entry as the HTML review report (#749)."""
     from review_report import decide
 
     done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
-    if decide(model, item_id, action):
-        return model, f"{done} {item_id}."
-    return model, f"{item_id} is already {done.lower()}; nothing changed."
+    changed = decide(model, item_id, action, corrections_path=corrections_path)
+    if changed:
+        _log_review_override(model, item_id, action, corrections_path)
+    return (
+        model,
+        f"{done} {item_id}."
+        if changed
+        else f"{item_id} is already {done.lower()}; nothing changed.",
+    )
 
 
-def _confirm_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
+def _confirm_item(
+    model: BuildingModel, item_id: str, corrections_path=None
+) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    return _decide(model, item_id, "confirm")
+    return _decide(model, item_id, "confirm", corrections_path=corrections_path)
 
 
-def _reject_item(model: BuildingModel, item_id: str) -> tuple[BuildingModel, str]:
+def _reject_item(
+    model: BuildingModel, item_id: str, corrections_path=None
+) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    return _decide(model, item_id, "reject")
+    return _decide(model, item_id, "reject", corrections_path=corrections_path)
 
 
 def _summarize_validation(report) -> str:
@@ -341,6 +393,28 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args.auto_triage:
         model.auto_triage = True
 
+    # --- Correction history modes (#997) take no other action ---------------
+    history_modes = [
+        getattr(args, "undo", None) is not None,
+        bool(getattr(args, "revert_to_auto", None)),
+        bool(getattr(args, "corrections", None)),
+    ]
+    if any(history_modes) and (
+        sum(history_modes) > 1
+        or args.confirm is not None
+        or args.reject is not None
+        or getattr(args, "apply", None)
+        or getattr(args, "report", None)
+        or getattr(args, "list", None)
+        or getattr(args, "bulk_confirm", False)
+        or getattr(args, "bulk_reject", False)
+    ):
+        print(
+            "Error: --undo, --revert-to-auto and --corrections take no other action.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # --- Apply a decisions file from the HTML review report (#749) ---
     if getattr(args, "apply", None):
         import json
@@ -349,7 +423,13 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         try:
             doc = json.loads(pathlib.Path(args.apply).read_text())
-            summary = review_report.apply_decisions(model, doc, review_report.sha256_text(raw))
+            dest_apply = pathlib.Path(getattr(args, "out", None) or model_path)
+            summary = review_report.apply_decisions(
+                model,
+                doc,
+                review_report.sha256_text(raw),
+                corrections_path=dest_apply,
+            )
         except (OSError, ValueError) as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -370,6 +450,56 @@ def main(args: argparse.Namespace | None = None) -> None:
         print(f"Review report: {d / 'review.html'}")
         return
 
+    # --- Bulk confirm/reject with filters (#996) ---
+    if getattr(args, "bulk_confirm", False) or getattr(args, "bulk_reject", False):
+        if getattr(args, "bulk_confirm", False) and getattr(args, "bulk_reject", False):
+            print(
+                "Error: specify only one of --bulk-confirm or --bulk-reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if args.confirm is not None or args.reject is not None:
+            print(
+                "Error: --bulk-confirm/--bulk-reject take no --confirm/--reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        is_confirm = getattr(args, "bulk_confirm", False)
+        import review_report
+
+        lvl_idx = review_report._level_index(model)
+        matched = [
+            item
+            for item in review_report.worst_first(model.review_queue)
+            if item.status == "open"
+            and (not args.kind or item.kind == args.kind)
+            and (args.conf_above is None or item.confidence >= args.conf_above)
+            and (args.conf_below is None or item.confidence <= args.conf_below)
+            and (not args.level or review_report._item_level(model, item, lvl_idx) == args.level)
+        ]
+        if not matched:
+            print("Error: no open review items match the bulk filters.", file=sys.stderr)
+            sys.exit(1)
+
+        changed = 0
+        try:
+            for item in matched:
+                if is_confirm:
+                    model, msg = _confirm_item(model, item.id, corrections_path=model_path)
+                else:
+                    model, msg = _reject_item(model, item.id, corrections_path=model_path)
+                changed += 1
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        model_path.write_text(model.to_json())
+        action = "confirmed" if is_confirm else "rejected"
+        print(f"Bulk {action}: {len(matched)} item(s) matched the filters, {changed} changed.")
+        print(_summarize_validation(run_checks(model)))
+        return
+
     # --- Confirm or Reject ---
     if args.confirm is not None or args.reject is not None:
         if args.confirm is not None and args.reject is not None:
@@ -384,10 +514,10 @@ def main(args: argparse.Namespace | None = None) -> None:
         try:
             if is_confirm:
                 assert args.confirm is not None
-                model, msg = _confirm_item(model, args.confirm)
+                model, msg = _confirm_item(model, args.confirm, corrections_path=model_path)
             else:
                 assert args.reject is not None
-                model, msg = _reject_item(model, args.reject)
+                model, msg = _reject_item(model, args.reject, corrections_path=model_path)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -402,6 +532,65 @@ def main(args: argparse.Namespace | None = None) -> None:
         print(_summarize_validation(report))
         return
 
+    # --- Correction history (#997): undo, revert-to-automatic, listing ---
+    import corrections as corrections_mod
+
+    if any(history_modes):
+        if getattr(args, "undo", None) is not None:
+            if args.undo < 1:
+                print("Error: --undo needs a positive number of corrections.", file=sys.stderr)
+                sys.exit(1)
+            try:
+                undone = corrections_mod.undo(model, model_path, args.undo)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+            model_path.write_text(model.to_json())
+            for c in undone:
+                field = f" ({c['field']} back to {c['before']!r})" if c.get("field") else ""
+                print(f"Undid [{c['seq']}] {c['action']} {c['item_id']}{field}")
+            if not undone:
+                print("Nothing to undo.")
+            print(f"Model saved: {model_path}")
+            print(_summarize_validation(run_checks(model)))
+            return
+
+        if getattr(args, "revert_to_auto", None):
+            try:
+                r = corrections_mod.revert_to_automatic(model, model_path, args.revert_to_auto)
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
+            model_path.write_text(model.to_json())
+            print(
+                f"Reverted {r['field']} to automatic output "
+                f"({r['from']!r} -> {r['to']!r}); {r['reverted']} correction(s) marked undone."
+            )
+            print(f"Model saved: {model_path}")
+            print(_summarize_validation(run_checks(model)))
+            return
+
+        try:
+            doc = corrections_mod.load(model_path)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        cs = doc["corrections"]
+        n_undone = sum(1 for c in cs if c.get("undone"))
+        if not cs:
+            print("No corrections recorded.")
+            return
+        print(
+            f"Correction history: {len(cs)} accepted, {n_undone} undone "
+            f"({corrections_mod.path_for(model_path)})"
+        )
+        for c in cs:
+            mark = " [undone]" if c.get("undone") else ""
+            field = f" {c['field']} {c['before']!r} -> {c['after']!r}" if c.get("field") else ""
+            row = f"  [{c['seq']}] {c['ts']} {c['action']} {c['item_id']} ({c['source']})"
+            print(f"{row}{field}{mark}")
+        return
+
     # --- List (non-interactive) ---
     if args.list:
         model = BuildingModel.from_json(pathlib.Path(args.model).read_text())
@@ -413,9 +602,15 @@ def main(args: argparse.Namespace | None = None) -> None:
         if args.format == "json":
             import json
 
+            import review_report
+
+            lvl_idx = review_report._level_index(model)
             print(
                 json.dumps(
-                    [_review_item_to_dict(item) for item in items],
+                    [
+                        _review_item_to_dict(item, review_report._item_level(model, item, lvl_idx))
+                        for item in items
+                    ],
                     indent=2,
                 )
             )
@@ -432,7 +627,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     list_review_items(args.model, show_all=args.show_all)
 
 
-def _review_item_to_dict(item: ReviewItem) -> dict:
+def _review_item_to_dict(item: ReviewItem, level: str | None = None) -> dict:
     return {
         "id": item.id,
         "kind": item.kind,
@@ -440,6 +635,7 @@ def _review_item_to_dict(item: ReviewItem) -> dict:
         "confidence": item.confidence,
         "description": item.description,
         "status": item.status if item.status else None,
+        "level": level,
     }
 
 
@@ -495,6 +691,54 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--report",
         metavar="DIR",
         help="Write the HTML review report to DIR/review (model, decisions template, page)",
+    )
+    parser.add_argument(
+        "--undo",
+        metavar="N",
+        type=int,
+        help="Undo the last N accepted corrections (corrections.json, #997)",
+    )
+    parser.add_argument(
+        "--revert-to-auto",
+        metavar="KEY",
+        help="Put one field back to the automatic output; KEY is KIND:ID:FIELD (#997)",
+    )
+    parser.add_argument(
+        "--corrections",
+        action="store_true",
+        help="Print the correction history beside the model (#997)",
+    )
+    parser.add_argument(
+        "--bulk-confirm",
+        action="store_true",
+        help="Confirm every OPEN item matching the bulk filters (#996)",
+    )
+    parser.add_argument(
+        "--bulk-reject",
+        action="store_true",
+        help="Reject every OPEN item matching the bulk filters (#996)",
+    )
+    parser.add_argument(
+        "--kind",
+        metavar="KIND",
+        help="Bulk filter: review-item kind, exact match",
+    )
+    parser.add_argument(
+        "--conf-above",
+        metavar="MIN",
+        type=float,
+        help="Bulk filter: confidence >= MIN",
+    )
+    parser.add_argument(
+        "--conf-below",
+        metavar="MAX",
+        type=float,
+        help="Bulk filter: confidence <= MAX",
+    )
+    parser.add_argument(
+        "--level",
+        metavar="LEVEL",
+        help="Bulk filter: level id (floor) the item's target belongs to",
     )
     return parser
 

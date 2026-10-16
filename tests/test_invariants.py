@@ -157,3 +157,89 @@ def test_floor_area_ratio_failure_path():
         f"Expected space_area_matches_polygon warn, got "
         f"{[r.severity for r in report.results if r.check_id == 'space_area_matches_polygon']}"
     )
+
+
+def _result_by_id(report, check_id):
+    return next(r for r in report.results if r.check_id == check_id)
+
+
+def test_simplify_budget_pass_reports_ring_offset():
+    """Clean model: the check passes and reports the measured ring offset."""
+    m = make_clean_model()
+    m._sres = _sres_for(m)
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "pass", result.message
+    assert "ring offset" in result.message
+
+
+def test_simplify_budget_simplified_area_reverification_fires():
+    """Issue #971: a wrong simplified area beyond the budget is an error,
+    even when the stored original area re-verifies cleanly."""
+    m = make_clean_model()
+    sres = _sres_for(m)
+    sres.simplified_area = sres.simplified_area * 1.05  # 5% drift vs 2% budget
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "simplified area re-verification failed" in result.message
+    assert not export_gate(report)
+
+
+def test_simplify_budget_ring_offset_drift_fires():
+    """Issue #971: a simplified ring that no longer matches the raw footprint
+    (here: translated 20 m, area preserved) is an error."""
+    m = make_clean_model()
+    sres = _sres_for(m)
+    sres.ring = [[x + 20.0, y] for x, y in sres.ring]
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "drifts" in result.message
+    assert not export_gate(report)
+
+
+# --- #970: per-part simplify_budget (FootprintSimplifyResult) ---
+
+
+def _multi_sres_for(model):
+    """#970: wrap the model's own ring into a per-part FootprintSimplifyResult."""
+    from geometry_simplify import FootprintSimplifyResult
+
+    spaces = list(model.spaces.values())
+    h = model.levels[0].wall_height_m
+    ring = footprint_from_regions([sp.polygon_m for sp in spaces])
+    part = simplify_ring(ring, tol=0.02, wall_height=h)
+    return FootprintSimplifyResult(
+        parts=[part],
+        holes=[],
+        total_original_area=part.original_area,
+        total_simplified_area=part.simplified_area,
+        area_delta_pct=part.area_delta_pct,
+        tol=0.02,
+    )
+
+
+def test_simplify_budget_per_part_combined_budget_passes():
+    """#970: a per-part result passes with the combined-budget message."""
+    m = make_clean_model()
+    m._sres = _multi_sres_for(m)
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "pass", result.message
+    assert "per-part" in result.message
+
+
+def test_simplify_budget_per_part_ring_drift_fires():
+    """#970: a drifted wing ring in a per-part result is an error."""
+    m = make_clean_model()
+    sres = _multi_sres_for(m)
+    sres.parts[0].ring = [[x + 20.0, y] for x, y in sres.parts[0].ring]
+    m._sres = sres
+    report = run_checks(m)
+    result = _result_by_id(report, "simplify_budget")
+    assert result.severity == "error", result.message
+    assert "drifts" in result.message
+    assert not export_gate(report)
