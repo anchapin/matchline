@@ -96,6 +96,9 @@ disclosed, not hidden.
 
 ## Quick Start
 
+Working from the repo (a plain PyPI install is covered on the
+[repo front page](../README.md)):
+
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
 python -m pytest tests/ -q      # (2) smoke test — 3,500+ tests, a few minutes
