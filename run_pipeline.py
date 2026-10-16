@@ -11,6 +11,11 @@ Chains all pipeline stages:
 
 Each stage writes intermediate JSON so operators can inspect any step.
 Validation errors block export (exit code 1, not silent).
+
+Modes (#998):
+  full (default): stages 1-6, BEM construction and export included.
+  progressive: stops after the takeoff (stage 1 symbols, areas, counts); no BEM
+  construction, no review-queue gate, no export.
 """
 
 from __future__ import annotations
@@ -383,6 +388,14 @@ def parse_args():
         default=0.02,
         help="tolerance for geometry simplification (default: 0.02 = 2%%)",
     )
+    ap.add_argument(
+        "--mode",
+        default="full",
+        choices=["full", "progressive"],
+        help="pipeline mode (#998): 'full' runs everything through BEM export (default); "
+        "'progressive' stops after the takeoff (symbols, areas, counts) without BEM "
+        "construction, review-queue gate or export",
+    )
     return ap.parse_args()
 
 
@@ -483,6 +496,23 @@ def _set_storey_height(args, config: dict | None):
     return (config or {}).get("wall_height")
 
 
+def _progressive_stop(bldg_or_model: Any, bldg: dict | None) -> None:
+    """Progressive mode (#998): report the takeoff, stop before BEM construction."""
+    lines = ["progressive mode: stopping after the takeoff (stage 1)"]
+    if isinstance(bldg, dict):
+        if "takeoff" in bldg:
+            t = bldg["takeoff"]
+            lines.append(f"  takeoff: {sorted(t) if isinstance(t, dict) else type(t).__name__}")
+        for k in ("spaces", "walls", "openings"):
+            if k in bldg:
+                lines.append(f"  {k}: {len(bldg[k])}")
+    if bldg_or_model is not None and getattr(bldg_or_model, "spaces", None):
+        lines.append(f"  spaces: {len(bldg_or_model.spaces)} (takeoff source model, no BEM build)")
+    lines.append("  no BEM construction, no review-queue gate, no export")
+    lines.append("  run with --mode full (the default) for the full pipeline")
+    print("\n".join(lines))
+
+
 def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
     """Stage 1: Generate building or load real-sheet detections.
 
@@ -579,6 +609,20 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 "n_scheduled": len(schedule),
             },
         )
+        if getattr(args, "mode", "full") == "progressive":
+            # Progressive mode (#998): the takeoff is the deliverable; a single
+            # sheet image cannot build a model, so stop here instead of raising.
+            write_json(
+                out_dir / "stage_01_takeoff.json",
+                {
+                    "source": str(args.image),
+                    "detections": bldg["detections"],
+                    "schedule": bldg["schedule"],
+                    "takeoff": bldg["takeoff"],
+                },
+            )
+            print("  takeoff: stage_01_takeoff.json")
+            return bldg, None, bldg
         # A single raster sheet gives symbols and a takeoff (written above) but no
         # walls or rooms: raster wall finding is not built, so there is nothing to
         # put the symbols in. Fail loudly with the route that does build a model.
@@ -839,6 +883,11 @@ def main(args, config: dict | None = None) -> None:
                 "For --seed ensure the seed is an integer. "
                 "For --ifc ensure the file is a readable IFC.",
             ) from e
+
+        # --- Progressive mode (#998): the takeoff is the deliverable ---------
+        if getattr(args, "mode", "full") == "progressive":
+            _progressive_stop(bldg_or_model, bldg)
+            return
 
         # --- Stage 2: build model --------------------------------------------
         try:

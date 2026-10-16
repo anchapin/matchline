@@ -48,6 +48,7 @@ Unified pipeline: generate + link + validate + BEM export.
 
 ```bash
 matchline run --seed 42
+matchline run --seed 42 --mode progressive
 matchline run --aec-bench /path/to/aec-bench
 matchline run --seed 42 --config pipeline.yaml
 ```
@@ -69,6 +70,9 @@ matchline run --seed 42 --config pipeline.yaml
 
 `--simplify-tol FLOAT` (default: `0.02`)
 : Simplification tolerance as a fraction (0.02 = 2%).
+
+`--mode {full,progressive}` (default: `full`)
+: Pipeline mode (#998). `full` runs everything through BEM export. `progressive` stops after the takeoff (stage 1: symbols, areas, counts) without BEM construction, review-queue gate or export. The UI exposes the same mode choice in matchline-ui (#987/#988).
 
 `--config FILE`
 : YAML config file. Keys:
