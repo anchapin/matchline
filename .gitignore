@@ -49,3 +49,9 @@ bem_out/
 # wheel builds (scripts/check_release_licenses.py)
 build/
 dist/
+
+# gh CLI state and tool caches (PR A of the #1093 top-level clean)
+.local/
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
