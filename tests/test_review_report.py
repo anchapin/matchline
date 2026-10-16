@@ -1126,3 +1126,41 @@ def test_render_html_rows_worst_first():
     ids = [i["id"] for i in data["items"]]
     # open first, highest urgency, then lowest confidence; resolved last
     assert ids == ["R3", "R5", "R2", "R1", "R6", "R4"]
+
+
+def test_attach_takeoff_diff_items_appends_and_dedupes():
+    import takeoff_diff as TD
+
+    old = {
+        "spaces": {
+            "a": {"name": "Office", "area_m2": 20.0},
+            "b": {"name": "Hall", "area_m2": 10.0},
+        }
+    }
+    new = {
+        "spaces": {
+            "a": {"name": "Office", "area_m2": 20.0},
+            "c": {"name": "Cafe", "area_m2": 30.0},
+        }
+    }
+    diff = TD.diff_takeoffs(old, new)
+    m = BuildingModel(name="diff848")
+    first = R.attach_takeoff_diff_items(m, diff)
+    kinds = {i.kind for i in first}
+    assert "revision_room_removed" in kinds and "revision_room_added" in kinds
+    assert all(i.provenance is not None and i.provenance.method == "takeoff_diff" for i in first)
+    second = R.attach_takeoff_diff_items(m, diff)
+    assert second == []
+    assert len(m.review_queue) == len(first)
+
+
+def test_attach_takeoff_diff_items_sort_worst_first():
+    import takeoff_diff as TD
+
+    old = {"spaces": {"a": {"name": "Hall", "area_m2": 10.0}}}
+    new = {"spaces": {"c": {"name": "Cafe", "area_m2": 30.0}}}
+    diff = TD.diff_takeoffs(old, new)
+    m = BuildingModel(name="diff848b")
+    R.attach_takeoff_diff_items(m, diff)
+    order = [i.id for i in R.worst_first(m.review_queue)]
+    assert order == ["takeoff-diff-room-removed-a", "takeoff-diff-room-added-c"]

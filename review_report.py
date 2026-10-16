@@ -583,6 +583,36 @@ def original_value(model, item):
     return _read(model, t, f) if f else None
 
 
+def attach_takeoff_diff_items(model, diff: dict) -> List["ReviewItem"]:
+    """Append a takeoff-diff report's review items to a model's queue (#1048).
+
+    Item ids are stable, so a rerun of the same diff appends nothing: any id
+    already in the queue is skipped.  The queue's worst-first ordering (#996)
+    applies wherever it is read.
+    """
+    import takeoff_diff
+    from building_model import Provenance, ReviewItem
+
+    existing = {i.id for i in model.review_queue}
+    out: List[ReviewItem] = []
+    for raw in takeoff_diff.review_items(diff):
+        if raw["id"] in existing:
+            continue
+        prov = raw.get("provenance")
+        item = ReviewItem(
+            id=raw["id"],
+            kind=raw["kind"],
+            description=raw["description"],
+            confidence=raw["confidence"],
+            urgency=raw["urgency"],
+            provenance=Provenance(**prov) if prov else None,
+            target=dict(raw.get("target") or {}),
+        )
+        model.review_queue.append(item)
+        out.append(item)
+    return out
+
+
 def worst_first(items) -> list:
     """Open items first, then higher urgency, then lower confidence."""
     return sorted(

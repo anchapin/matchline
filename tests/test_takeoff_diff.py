@@ -282,3 +282,65 @@ def test_polygon_centroid_helper():
     assert abs(c[0] - 2.0) < 1e-9 and abs(c[1] - 2.0) < 1e-9
     assert takeoff_diff._polygon_centroid([[0, 0], [1, 1]]) is None
     assert takeoff_diff._polygon_centroid(None) is None
+
+
+def test_review_items_removed_room_first():
+    """A removed room is a queue item at urgency 3."""
+    old = {"spaces": {"a": _fpspace("Office", 20.0), "b": _fpspace("Hall", 10.0)}}
+    new = {"spaces": {"a": _fpspace("Office", 20.0)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    items = takeoff_diff.review_items(rep)
+    removed = [i for i in items if i["kind"] == "revision_room_removed"]
+    assert len(removed) == 1
+    assert removed[0]["id"] == "takeoff-diff-room-removed-b"
+    assert removed[0]["urgency"] == 3
+    assert removed[0]["target"] == {"kind": "space", "id": "b"}
+
+
+def test_review_items_opening_counts():
+    """Window/door flips become count items; moved-only reports nothing."""
+    old = {"spaces": {"a": {"openings": [_opening("window"), _opening("door")]}}}
+    new = {"spaces": {"b": {"openings": [_opening("window")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    items = takeoff_diff.review_items(rep)
+    by_id = {i["id"]: i for i in items}
+    assert by_id["takeoff-diff-windows"]["urgency"] == 2
+    assert "1 removed" in by_id["takeoff-diff-windows"]["description"]
+    assert by_id["takeoff-diff-doors"]["urgency"] == 2
+    assert "1 removed" in by_id["takeoff-diff-doors"]["description"]
+
+
+def test_review_items_moved_only_has_no_item():
+    """A window that moved (paired) does not create an opening item."""
+    old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}, "k": {}}}
+    new = {"spaces": {"a": {}, "k": {"openings": [_opening("window", tag="W1")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 1
+    assert takeoff_diff.review_items(rep) == []
+
+
+def test_review_items_added_rooms_and_symbols():
+    """Added rooms become items; symbols only when reports were provided."""
+    old = {"spaces": {}}
+    new = {"spaces": {"c": _fpspace("Cafe", 30.0)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert [i["kind"] for i in takeoff_diff.review_items(rep)] == ["revision_room_added"]
+    old_rep = {"hvac_legends": [{"rows": [{"class": "diffuser"}]}]}
+    rep2 = takeoff_diff.diff_takeoffs(old, new, old_report=old_rep, new_report={})
+    items = takeoff_diff.review_items(rep2)
+    sym = [i for i in items if i["kind"] == "revision_symbol_count"]
+    assert len(sym) == 1 and sym[0]["urgency"] == 1
+
+
+def test_cli_takeoff_diff_review_items_flag(tmp_path):
+    old = tmp_path / "old.json"
+    old.write_text('{"spaces": {"a": {"name": "Hall", "area_m2": 10.0}}}')
+    new = tmp_path / "new.json"
+    new.write_text('{"spaces": {}}')
+    out = tmp_path / "items.json"
+    cli_main(["takeoff-diff", "--old", str(old), "--new", str(new), "--review-items", str(out)])
+    import json
+
+    items = json.loads(out.read_text())
+    assert [i["id"] for i in items] == ["takeoff-diff-room-removed-a"]
+    assert items[0]["provenance"]["method"] == "takeoff_diff"
