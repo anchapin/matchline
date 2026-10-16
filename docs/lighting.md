@@ -42,7 +42,7 @@ Glyphs follow drafting convention where it aids discrimination: the sconce
 is drawn on a wall stub (vs. the downlight's free circle+cross), the exit
 sign's rect hugs its EXIT text (vs. troffer louver grids).
 
-## Validation (`synth/lighting_e2e_test.py`) — ALL PASS
+## Validation (`scripts/synth_lighting_e2e_test.py`) — ALL PASS
 
 Two synthetic lighting sheets (seeds 201–202), full pipeline:
 
