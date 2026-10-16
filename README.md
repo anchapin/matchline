@@ -16,7 +16,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ```bash
 git checkout develop
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # ~1,860 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
+python -m pytest tests/ -q   # ~3,500 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
 ```
 
 Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
