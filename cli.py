@@ -500,6 +500,7 @@ def cmd_learn_legend(args: argparse.Namespace) -> None:
         add_tags,
         learn_from_set_report,
         save_tags,
+        suggest_tags,
     )
 
     path = Path(args.report)
@@ -520,6 +521,14 @@ def cmd_learn_legend(args: argparse.Namespace) -> None:
         print("unmapped descriptions (map them with --tag):")
         for d in unmapped:
             print(f"  {d}")
+        suggestions = suggest_tags(report)
+        if suggestions:
+            print("suggested --tag mappings (best token match in this report):")
+            for s in suggestions:
+                print(
+                    f"  --tag {s['description']}={s['class']}"
+                    f"  # matches {s['via']!r} ({s['score']:.0%})"
+                )
 
 
 def cmd_legend_eval(args: argparse.Namespace) -> None:
