@@ -45,6 +45,9 @@ matchline schedules sheets/    # door, window, lighting and mechanical schedule 
 matchline ifc-import bldg.ifc --out model.json  # IFC Tier-0 import
 matchline ifc-export model.json out.ifc  # IFC4 export
 matchline review model.json     # review queue: list/confirm/reject
+matchline takeoff-diff --old a.json --new b.json  # diff two revisions' takeoffs (rooms, openings, symbols)
+matchline takeoff-diff --old a.json --new b.json --review-items model.json  # feed the diff into the review queue
+matchline learn-legend out_dir --tag 'SUPPLY GRILLE=grille'  # learn legend tags from set reports; suggests mappings
 matchline multidiscipline       # 3 synthetic buildings
 matchline mnist --data-dir data # needs data/mnist_X.npy + mnist_y.npy
 ```
