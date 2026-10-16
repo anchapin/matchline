@@ -10,7 +10,9 @@ Every `run_pipeline` run that reaches the BEM export also writes `out/package/`:
 | `trust_report.html` | one page rendered from that JSON; inline CSS, no scripts, no external assets |
 | `trust_report.pdf` | the same report on one page, drawn with reportlab from `trust_report.json` (no system packages needed); if rendering fails, `manifest.json` says why |
 | `DISCLAIMER.txt` | the professional-use disclaimer |
+| `share_back.html` | the whole package previewed on one self-contained page (model, trust report, decisions, history) (#999) |
 | `manifest.json` | SHA-256 of every file in the package, and whether the PDF was produced |
+| `../package.zip` (next to the package folder) | the one zip a reviewer receives (#999) |
 
 ## What the report shows
 
@@ -22,6 +24,14 @@ Every `run_pipeline` run that reaches the BEM export also writes `out/package/`:
 - **Defaults used**: every provenance in the model whose method means the value was not drawn (`construction_default`, the 90.1 Table 5.5 fills, and `storey_height_default`, the 3.0 m storey height a drawing-set run uses when no section or elevation was read), with where it sits in the model and the table it came from.
 - **Review decisions**: `review/` holds the HTML review report, the decisions template and the model it applies to (#749); the report gives the `matchline review review/model.json --apply decisions.json` command. A run with no review report says so.
 - **Corrections**: the correction history beside the model (#997) is copied into the package as `corrections.json` when one exists, and the report shows the counts (accepted, human vs auto, undone). A run with no accepted corrections says so.
+
+- **Package contents**: every file the package holds, each with its size and SHA-256 (the files the report itself generates are listed with a note that `manifest.json` carries their hash, report included) (#999).
+
+## Building the zip from a finished run
+
+`matchline export-package <out_dir>` verifies every hash in `package/manifest.json` and builds `<out_dir>/package.zip`; a mismatched file or a missing package exits 1.
+
+The package is only built after the export gate (#750): the pipeline fails fast while review items are unacknowledged, and `build_package` re-checks the gate when asked (`require_gate=True`, which `run_pipeline` passes).
 
 ## Disclaimer
 

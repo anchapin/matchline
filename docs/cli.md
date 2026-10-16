@@ -108,6 +108,10 @@ in-place using the `review_classifier` models before the BEM export stage.
 
 ---
 
+## `matchline export-package`
+
+`matchline export-package <out_dir>` verifies every hash recorded in `<out_dir>/package/manifest.json` against the files on disk and builds `<out_dir>/package.zip`, the one zip to hand a reviewer (#999). A missing package or a hash mismatch prints `ERROR:` and exits 1.
+
 ## `matchline bem-export`
 
 gbXML + IFC4 export demo using `sheet_007` (synthetic).
