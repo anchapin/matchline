@@ -415,6 +415,32 @@ def cmd_takeoff_diff(args: argparse.Namespace) -> None:
     print(text)
 
 
+def cmd_feedback(args: argparse.Namespace) -> None:
+    """Open-ended feedback and feedback-log summaries (#1005, #1038)."""
+    import json as json_mod
+
+    from feedback_capture import FeedbackCaptureError, FeedbackLog, summarize
+
+    log = FeedbackLog(args.log)
+    if args.text is not None:
+        try:
+            log.log_open_response(args.text, topic=args.topic)
+        except FeedbackCaptureError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Feedback recorded: {log.path}")
+        return
+    if args.summary:
+        events = log.read()
+        if not events:
+            print("No feedback recorded yet.")
+            return
+        print(json_mod.dumps(summarize(events), indent=2))
+        return
+    print("Error: give --text to record feedback, or --summary to read the log.", file=sys.stderr)
+    sys.exit(2)
+
+
 def cmd_review(args: argparse.Namespace) -> None:
     """Review queue: list open review items, confirm or reject decisions."""
     import os
@@ -745,6 +771,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("model", help="BuildingModel JSON file path")
     p.add_argument("out", help="Output IFC4 file path")
     p.set_defaults(func=cmd_ifc_export)
+
+    p = sub.add_parser(
+        "feedback",
+        help="Record open-ended feedback, or summarize the local feedback log (#1005)",
+    )
+    p.add_argument(
+        "--text",
+        help="Open-ended feedback: bugs, feature requests, process friction",
+    )
+    p.add_argument("--topic", help="Short generic topic label, e.g. review, detector, export")
+    p.add_argument("--log", default="feedback.jsonl", help="Feedback JSONL path")
+    p.add_argument("--summary", action="store_true", help="Print a summary of the feedback log")
+    p.set_defaults(func=cmd_feedback)
 
     p = sub.add_parser("review", help="Review queue: list open items, confirm or reject decisions")
     p.add_argument("model", help="BuildingModel JSON file path")

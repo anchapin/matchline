@@ -898,6 +898,19 @@ def _make_emitter(args, config: dict | None) -> TelemetryEmitter:
     return TelemetryEmitter(consent=consent, local_only=local_only)
 
 
+def _capture_stage_failure(out_dir: Path, err: StageError) -> None:
+    """Capture a failed stage as local friction feedback (#1038); never fails the run."""
+    from feedback_capture import FeedbackCaptureError, FeedbackLog
+
+    cause = type(err.__cause__).__name__ if err.__cause__ else "stage_error"
+    # stage identity is the stage number: stage names like "Stage 1:
+    # generate_building" are refused by the exclusion list ("building")
+    try:
+        FeedbackLog(out_dir / "feedback.jsonl").log_failed_parse(f"stage_{err.stage_index}", cause)
+    except (FeedbackCaptureError, OSError):
+        pass
+
+
 def _emit_telemetry(emitter: TelemetryEmitter, out_dir: Path) -> None:
     """Write the payload when emission is on; telemetry never fails a run (#1037)."""
     from telemetry_emitter import EmitterBuildError
@@ -1078,6 +1091,7 @@ def main(args, config: dict | None = None) -> None:
         print(f"ERROR {e}", file=sys.stderr)
         if e.hint:
             print(f"  hint: {e.hint}", file=sys.stderr)
+        _capture_stage_failure(out_dir, e)
         _emit_telemetry(emitter, out_dir)
         sys.exit(1)
 

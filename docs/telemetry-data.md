@@ -85,3 +85,16 @@ of the telemetry emitter's five metric groups, so it never flows into a
 telemetry payload. `summarize()` turns a log into counts by kind, the
 most common friction points, and theme words from open responses, for
 roadmap re-prioritization.
+
+## Where feedback is captured (#1038)
+
+Review decisions (`matchline review --confirm/--reject`) record an
+override event in `feedback.jsonl` beside the corrections history, and
+a failed pipeline stage records a failed-parse event in
+`<out-dir>/feedback.jsonl`. Open-ended feedback has a CLI entry point:
+`matchline feedback --text "..." [--topic ...]` writes to `--log`
+(default `feedback.jsonl` in the current directory) and
+`matchline feedback --summary` prints the aggregate summary. Capture
+failure never blocks a review or a run. The matchline-ui form remains
+the eventual entry point for open-ended feedback; nothing here
+forecloses it.

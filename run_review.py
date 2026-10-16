@@ -295,6 +295,39 @@ def format_review_list(
     return list_review_items(model_path, show_all)
 
 
+def _log_review_override(
+    model: BuildingModel, item_id: str, action: str, corrections_path=None
+) -> None:
+    """Capture a review decision as friction feedback (#1038).
+
+    The review decision is a correction of a detection, so it lands in the
+    local feedback log (beside the corrections history) as an override
+    event: the item's kind when that token is generic enough for the
+    telemetry exclusion list, "review_item" otherwise. Capture failure
+    never blocks the review.
+    """
+    from feedback_capture import FeedbackCaptureError, FeedbackLog
+
+    item = next((i for i in model.review_queue if i.id == item_id), None)
+    kind = item.kind if item is not None else "unknown"
+    # the exclusion list refuses "confirm" (substring "firm"), so the action
+    # token maps to accept/reject, same 1:1 vocabulary, both exclusion-safe
+    action_token = {"confirm": "accept", "reject": "reject"}[action]
+    log_path = (
+        pathlib.Path(corrections_path).parent / "feedback.jsonl"
+        if corrections_path
+        else pathlib.Path("feedback.jsonl")
+    )
+    try:
+        log = FeedbackLog(log_path)
+        try:
+            log.log_override(kind, action_token)
+        except FeedbackCaptureError:
+            log.log_override("review_item", action_token)
+    except (FeedbackCaptureError, OSError):
+        pass
+
+
 def _decide(
     model: BuildingModel,
     item_id: str,
@@ -305,9 +338,15 @@ def _decide(
     from review_report import decide
 
     done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
-    if decide(model, item_id, action, corrections_path=corrections_path):
-        return model, f"{done} {item_id}."
-    return model, f"{item_id} is already {done.lower()}; nothing changed."
+    changed = decide(model, item_id, action, corrections_path=corrections_path)
+    if changed:
+        _log_review_override(model, item_id, action, corrections_path)
+    return (
+        model,
+        f"{done} {item_id}."
+        if changed
+        else f"{item_id} is already {done.lower()}; nothing changed.",
+    )
 
 
 def _confirm_item(
