@@ -19,6 +19,7 @@ import numpy as np
 
 from building_model import Provenance
 from datasets_adapter import polygon_area_px2
+from registration import point_in_polygon
 
 # ---------------------------------------------------------------------------
 # Output contract
@@ -221,25 +222,6 @@ def to_room_label(tb: TextBox) -> RoomLabel:
 # ---------------------------------------------------------------------------
 # Geometry: point-in-polygon + nearest-polygon association
 # ---------------------------------------------------------------------------
-
-
-def point_in_polygon(pt, poly) -> bool:
-    """Ray-casting point-in-polygon. poly: [(x, y), ...]."""
-    x, y = pt
-    inside = False
-    n = len(poly)
-    if n < 3:
-        return False
-    j = n - 1
-    for i in range(n):
-        xi, yi = poly[i]
-        xj, yj = poly[j]
-        if (yi > y) != (yj > y):
-            xinters = (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi
-            if x < xinters:
-                inside = not inside
-        j = i
-    return inside
 
 
 def point_to_polygon_dist(pt, poly) -> float:
