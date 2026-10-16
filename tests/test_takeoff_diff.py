@@ -202,3 +202,83 @@ def test_moved_plus_genuine_addition():
     assert rep["windows"]["moved"] == 1
     assert rep["windows"]["added"] == 1 and rep["windows"]["removed"] == 0
     assert rep["windows"]["spaces_changed"] == 2
+
+
+def _fpspace(name, area, level="L1", polygon=None):
+    sp = {"id": name, "name": name, "area_m2": area, "level_id": level}
+    if polygon:
+        sp["polygon_m"] = polygon
+    return sp
+
+
+def test_reidentified_on_id_change():
+    """Same name, area, and level under a new id: reidentified, not +1/-1."""
+    old = {"spaces": {"a": _fpspace("Office", 20.0)}}
+    new = {"spaces": {"c": _fpspace("Office", 20.0)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    r = rep["rooms"]
+    assert r["reidentified"] == 1
+    assert r["reidentified_pairs"] == [{"old_id": "a", "new_id": "c"}]
+    assert r["added"] == 0 and r["removed"] == 0
+
+
+def test_reidentified_with_rename_and_centroid():
+    """Renamed AND re-id'd spaces pair on tokens plus a nearby centroid."""
+    old = {"spaces": {"a": _fpspace("Office", 20.0, polygon=[[0, 0], [4, 0], [4, 5], [0, 5]])}}
+    new = {
+        "spaces": {
+            "z": _fpspace(
+                "Office Area", 20.0, polygon=[[0.2, 0.2], [4.2, 0.2], [4.2, 5.2], [0.2, 5.2]]
+            )
+        }
+    }
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    r = rep["rooms"]
+    assert r["reidentified"] == 1 and r["added"] == 0 and r["removed"] == 0
+
+
+def test_reidentification_never_across_levels():
+    old = {"spaces": {"a": _fpspace("Office", 20.0, level="L1")}}
+    new = {"spaces": {"c": _fpspace("Office", 20.0, level="L2")}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["rooms"]["reidentified"] == 0
+    assert rep["rooms"]["added"] == 1 and rep["rooms"]["removed"] == 1
+
+
+def test_reidentification_requires_area_match():
+    old = {"spaces": {"a": _fpspace("Office", 20.0)}}
+    new = {"spaces": {"c": _fpspace("Office", 30.0)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["rooms"]["reidentified"] == 0
+
+
+def test_ambiguous_duplicate_names_never_pair():
+    """Two removed Offices, one added Office, no geometry: no pairing."""
+    old = {
+        "spaces": {
+            "a": _fpspace("Office", 20.0),
+            "b": _fpspace("Office", 25.0),
+        }
+    }
+    new = {"spaces": {"c": _fpspace("Office", 20.0)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["rooms"]["reidentified"] == 0
+    assert rep["rooms"]["added"] == 1 and rep["rooms"]["removed"] == 2
+
+
+def test_centroid_far_blocks_reid():
+    """Token overlap alone is not identity: distant centroids stay unpaired."""
+    far_a = [[0, 0], [4, 0], [4, 5], [0, 5]]
+    far_b = [[100, 100], [104, 100], [104, 105], [100, 105]]
+    old = {"spaces": {"a": _fpspace("Conference Room", 20.0, polygon=far_a)}}
+    new = {"spaces": {"z": _fpspace("Conference", 20.0, polygon=far_b)}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["rooms"]["reidentified"] == 0
+    assert rep["rooms"]["added"] == 1 and rep["rooms"]["removed"] == 1
+
+
+def test_polygon_centroid_helper():
+    c = takeoff_diff._polygon_centroid([[0, 0], [4, 0], [4, 4], [0, 4]])
+    assert abs(c[0] - 2.0) < 1e-9 and abs(c[1] - 2.0) < 1e-9
+    assert takeoff_diff._polygon_centroid([[0, 0], [1, 1]]) is None
+    assert takeoff_diff._polygon_centroid(None) is None
