@@ -54,3 +54,21 @@ raises `EmitterBuildError` at build time, never in front of users, and
 nothing non-conforming ships. Local-only mode disables emission
 entirely: the emitter collects nothing and `build_payload` returns
 None, consent or not.
+
+## Feedback capture is separate from telemetry
+
+Structured feedback (issue #1005, `feedback_capture.py`) is captured at
+the moment of friction: a detector override, an abandoned review item, a
+failed parse, plus an open-ended channel for bugs, feature requests, and
+places where the conversation does not work well.
+
+It is a local, append-only JSONL log someone on the team opens and
+reads; nothing here sends anything anywhere. Context tokens are checked
+against the same exclusion list as telemetry, so room names, paths, and
+sheet references are refused at capture time, and a failed parse
+records the stage and a coarse error kind, never the raw exception text.
+Open-ended responses keep the user's own words, but feedback is not one
+of the telemetry emitter's five metric groups, so it never flows into a
+telemetry payload. `summarize()` turns a log into counts by kind, the
+most common friction points, and theme words from open responses, for
+roadmap re-prioritization.
