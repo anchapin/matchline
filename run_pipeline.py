@@ -911,7 +911,6 @@ def _emit_telemetry(emitter: TelemetryEmitter, out_dir: Path) -> None:
         write_json(out_dir / "telemetry.json", payload)
 
 
-
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

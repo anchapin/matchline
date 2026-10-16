@@ -81,13 +81,13 @@ def cmd_run(args: argparse.Namespace) -> None:
         with config_path.open() as f:
             config = yaml.safe_load(f) or {}
         known_keys = {
-        "simplify_tolerance",
-        "wall_height",
-        "review_confidence",
-        "datasets",
-        "telemetry_consent",
-        "telemetry_local_only",
-    }
+            "simplify_tolerance",
+            "wall_height",
+            "review_confidence",
+            "datasets",
+            "telemetry_consent",
+            "telemetry_local_only",
+        }
         unknown = set(config.keys()) - known_keys
         if unknown:
             print(f"Warning: unknown config keys ignored: {sorted(unknown)}", file=sys.stderr)

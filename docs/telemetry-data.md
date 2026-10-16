@@ -55,6 +55,19 @@ nothing non-conforming ships. Local-only mode disables emission
 entirely: the emitter collects nothing and `build_payload` returns
 None, consent or not.
 
+## How consent is granted
+
+A run emits only when you grant consent for that run, two ways: the
+`--telemetry` flag on `matchline run`, or a `telemetry_consent: true` key in
+the run config. `telemetry_local_only: true` in the config wins over either:
+nothing is collected, consent or not.
+
+The emitted payload is written to `telemetry.json` in the run's output
+directory; the pipeline transmits nothing anywhere. Stage outcomes and
+timings, and validation-check failure counts, are the groups wired so far;
+a failed payload build warns and is skipped, so telemetry never changes a
+run's outcome.
+
 ## Feedback capture is separate from telemetry
 
 Structured feedback (issue #1005, `feedback_capture.py`) is captured at
