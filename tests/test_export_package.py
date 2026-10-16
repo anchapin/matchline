@@ -36,6 +36,34 @@ def pkg(tmp_path_factory):
     return _run(tmp_path_factory.mktemp("pkg"), climate_zone="5A")
 
 
+def test_package_reports_the_feedback_summary(tmp_path):
+    from feedback_capture import FeedbackLog
+
+    log = FeedbackLog(tmp_path / "out" / "feedback.jsonl")
+    log.log_failed_parse("stage_2", "malformed_input")
+    log.log_failed_parse("stage_2", "malformed_input")
+    log.log_override("wall", "retype", confidence=0.4)
+    with (tmp_path / "out" / "feedback.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write("{not json\n")
+    pkg = _run(tmp_path, climate_zone="5A")
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    assert tr["feedback"]["present"] is True
+    assert tr["feedback"]["file"] == "feedback.jsonl"
+    assert tr["feedback"]["summary"]["total"] == 3
+    assert tr["feedback"]["skipped_lines"] == 1
+    html = (pkg / "trust_report.html").read_text()
+    assert "<h2>Feedback log</h2>" in html
+    assert "failed_parse 2" in html
+    assert "override 1" in html
+    assert "malformed log line(s) skipped" in html
+
+
+def test_package_report_unchanged_without_feedback_log(pkg):
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    assert "feedback" not in tr
+    assert "<h2>Feedback log</h2>" not in (pkg / "trust_report.html").read_text()
+
+
 def test_package_holds_the_exports_report_and_disclaimer(pkg):
     names = {p.name for p in pkg.iterdir()}
     assert {"trust_report.html", "trust_report.json", "DISCLAIMER.txt", "manifest.json"} <= names
