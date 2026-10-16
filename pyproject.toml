@@ -77,6 +77,7 @@ py-modules = [
     "cli",
     "construction_library",
     "construction_library_data",
+    "atomic_io",
     "construction_library_prm_data",
     "constructions",
     "corrections",
