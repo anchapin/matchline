@@ -240,6 +240,19 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     print(f"wrote {args.out}/ingest.json")
 
 
+def cmd_export_package(args: argparse.Namespace) -> None:
+    """Verify an export package's manifest and build its share zip (#999)."""
+    import export_package as E
+
+    try:
+        z = E.export_zip(Path(args.out_dir))
+    except (FileNotFoundError, ValueError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"  zip: {z}")
+    return z
+
+
 def cmd_scale(args: argparse.Namespace) -> None:
     """Read each ingested sheet's drawing scale (#739); writes scale.json."""
     from drawing_scale import scale_sheets
@@ -518,6 +531,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("scale", help="read each ingested sheet's drawing scale")
     p.add_argument("sheets", help="folder written by `matchline ingest`")
     p.set_defaults(func=cmd_scale)
+
+    p = sub.add_parser(
+        "export-package",
+        help="verify an export package's manifest and build its share zip",
+    )
+    p.add_argument("out_dir", help="run output folder holding package/")
+    p.set_defaults(func=cmd_export_package)
 
     p = sub.add_parser("index", help="index sheets by discipline, type and level")
     p.add_argument("sheets", help="folder written by `matchline ingest`")

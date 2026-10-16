@@ -922,8 +922,10 @@ def main(args, config: dict | None = None) -> None:
                 [gbxml_path, ifc_path],
                 _run_inputs(args, config),
                 review_dir=review_dir,
+                require_gate=True,
             )
             print(f"  package: {pkg}")
+            print(f"  package zip: {out_dir / 'package.zip'}")
             _print_pipeline_complete(out_dir, report)
         except StageError:
             raise

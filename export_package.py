@@ -9,6 +9,8 @@
   CSS, no external assets); ``trust_report.pdf``, the same content on
   one page, drawn with reportlab from the same JSON;
 - ``DISCLAIMER.txt`` and ``manifest.json`` (file names and SHA-256);
+- ``share_back.html``: a self-contained preview of the whole package (#999);
+- ``package.zip``: the one zip a reviewer receives (#999);
 - a dated sign-off block (#976): when the report was generated, the tool
   version, and blank preparer/reviewer/stamp lines for the professional
   to fill and stamp.
@@ -44,6 +46,11 @@ DISCLAIMER = (
 # height a drawing set falls back to when no section or elevation was read
 DEFAULT_METHODS = ("construction_default", "storey_height_default")
 TOP_REVIEW = 15
+SHARE_BACK_BANNER = (
+    "Share-back preview: this one page previews the whole export package "
+    "(model, trust report, review decisions and history); manifest.json "
+    "carries the SHA-256 of every file, report included."
+)
 
 
 def sha256(path: Path) -> str:
@@ -316,7 +323,7 @@ def _table(head: List[str], body: str) -> str:
     return f"<table><tr>{th}</tr>{body}</table>"
 
 
-def render_html(tr: dict) -> str:
+def render_html(tr: dict, banner: str = "") -> str:
     ins = "".join(
         f"<tr><td>{_e(i.get('role'))}</td>"
         f"<td class=mono>{_e(i.get('path') or i.get('value'))}</td>"
@@ -344,6 +351,7 @@ def render_html(tr: dict) -> str:
         f"<title>matchline trust report: {_e(tr['building'])}</title>",
         f"<style>{_CSS}</style></head><body>",
         f"<h1>Trust report: {_e(tr['building'])}</h1>",
+        f"<p>{_e(banner)}</p>" if banner else "",
         f"<div class=disc>{_e(tr['disclaimer'])}</div>",
         "<h2>Inputs</h2>",
         _table(["role", "file or value", "sha256"], ins) or "<p>no input files recorded</p>",
@@ -373,9 +381,31 @@ def render_html(tr: dict) -> str:
         "<h2>Review decisions</h2>",
         f"<p>{_e(_dnote(tr))}</p>",
         _corrections_html(tr),
+        _contents_html(tr),
         "</body></html>",
     ]
     return "\n".join(p for p in parts if p) + "\n"
+
+
+def _contents_html(tr: dict) -> str:
+    """The package contents section (#999): every file, with its hash or the
+    note that the manifest carries it."""
+    rows = "".join(
+        f"<tr><td class=mono>{_e(c['path'])}</td>"
+        f"<td class=mono>{c['bytes'] if c.get('bytes') is not None else ''}</td>"
+        f"<td class=mono>"
+        + (_e(c["sha256"][:16]) if c.get("sha256") else "hashed in manifest.json")
+        + "</td></tr>"
+        for c in tr.get("package_contents", [])
+    )
+    if not rows:
+        return ""
+    return (
+        "<h2>Package contents</h2>"
+        f"<table><tr><th>file</th><th>bytes</th><th>sha256</th></tr>{rows}</table>"
+        "<p>manifest.json carries the SHA-256 of every file in the package, "
+        "the report included.</p>"
+    )
 
 
 def _corrections_html(tr: dict) -> str:
@@ -493,6 +523,14 @@ def write_pdf(tr: dict, path: Path) -> None:
         Paragraph(html.escape(_dnote(tr)), body),
         Paragraph("Corrections", h2),
         Paragraph(html.escape(_corrections_note(tr)), body),
+        Paragraph("Package contents", h2),
+        table(["file", "bytes", "sha256"],
+              [[c["path"],
+                c["bytes"] if c.get("bytes") is not None else "",
+                (c["sha256"] or "hashed in manifest.json")[:16]
+                if c.get("sha256") else "hashed in manifest.json"]
+               for c in tr.get("package_contents", [])],
+              (0.52, 0.13, 0.35)),
         Spacer(1, 2),
     ]  # fmt: skip
     frame = KeepInFrame(w - 2 * m, h - 2 * m, [p for p in parts if p is not None], mode="shrink")
@@ -512,6 +550,72 @@ def _pdf(tr: dict, path: Path) -> Optional[str]:
     return None
 
 
+def _role_for(name: str) -> str:
+    if name.startswith("review/"):
+        return "review report, decisions template and model (#749)"
+    if name.endswith((".xml", ".gbxml")):
+        return "exported gbXML"
+    if name.endswith(".ifc"):
+        return "exported IFC4"
+    if name == "convention_report.json":
+        return "measured convention biases"
+    if name == "corrections.json":
+        return "correction history (#997)"
+    if name == "DISCLAIMER.txt":
+        return "professional-use disclaimer"
+    return "package file"
+
+
+def _contents(pkg: Path, generated: List[str]) -> List[dict]:
+    """Every file the package will hold: the ones on disk with their hash,
+    the ones written with the report itself (the manifest then carries the
+    SHA-256 of those too, report included)."""
+    rows = []
+    for p in sorted(pkg.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(pkg).as_posix()
+        rows.append(
+            {
+                "path": rel,
+                "bytes": p.stat().st_size,
+                "sha256": sha256(p),
+                "role": _role_for(rel),
+            }
+        )
+    for rel in generated:
+        rows.append(
+            {"path": rel, "bytes": None, "sha256": None, "role": _role_for(rel), "generated": True}
+        )
+    return rows
+
+
+def zip_package(pkg: Path, zip_path: Path) -> Path:
+    """One zip of the package (#999); entries sorted, names package-relative."""
+    import zipfile
+
+    zip_path = Path(zip_path)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(p for p in Path(pkg).rglob("*") if p.is_file()):
+            zf.write(p, p.relative_to(pkg).as_posix())
+    return zip_path
+
+
+def export_zip(out_dir: Path) -> Path:
+    """Verify an existing package's manifest and build ``out_dir/package.zip``."""
+    out_dir = Path(out_dir)
+    pkg = out_dir / "package"
+    manifest = pkg / "manifest.json"
+    if not manifest.exists():
+        raise FileNotFoundError(f"no export package under {out_dir} (run `matchline run` first)")
+    man = json.loads(manifest.read_text())
+    for name, digest in man["files"].items():
+        f = pkg / name
+        if not f.exists() or sha256(f) != digest:
+            raise ValueError(f"manifest hash mismatch for {name}")
+    return zip_package(pkg, out_dir / "package.zip")
+
+
 def build_package(
     out_dir: Path,
     model,
@@ -521,8 +625,16 @@ def build_package(
     inputs: Iterable[dict] = (),
     pdf: bool = True,
     review_dir: Optional[Path] = None,
+    require_gate: bool = False,
 ) -> Path:
-    """Write ``out_dir/package``; returns its path."""
+    """Write ``out_dir/package`` and ``out_dir/package.zip``; returns the dir."""
+    if require_gate:
+        from validate import export_gate
+
+        if not export_gate(report, model):
+            raise ValueError(
+                "the export gate has not acknowledged the review items; no package is built"
+            )
     pkg = Path(out_dir) / "package"
     pkg.mkdir(parents=True, exist_ok=True)
     for f in files:
@@ -540,10 +652,16 @@ def build_package(
     if corr.get("recorded"):
         shutil.copy2(Path(out_dir) / "corrections.json", pkg / "corrections.json")
     tr = build_trust_report(model, report, convention, inputs, review_dir, corr)
+    (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n")
+    generated = ["trust_report.json", "trust_report.html"]
+    if pdf:
+        generated.append("trust_report.pdf")
+    generated += ["share_back.html", "manifest.json"]
+    tr["package_contents"] = _contents(pkg, generated)
     (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str))
     html_path = pkg / "trust_report.html"
     html_path.write_text(render_html(tr))
-    (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n")
+    (pkg / "share_back.html").write_text(render_html(tr, banner=SHARE_BACK_BANNER))
     why = _pdf(tr, pkg / "trust_report.pdf") if pdf else "PDF not requested"
     manifest = {
         "schema": "matchline.package/1",
@@ -555,4 +673,5 @@ def build_package(
         "pdf": {"produced": why is None, **({"reason": why} if why else {})},
     }
     (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    zip_package(pkg, Path(out_dir) / "package.zip")
     return pkg
