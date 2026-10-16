@@ -54,8 +54,19 @@ def cmd_run(args: argparse.Namespace) -> None:
     """Unified pipeline: generate + link + validate + BEM export."""
     import run_pipeline
 
-    if (args.seed is None) == (args.aec_bench is None):
-        print("Error: exactly one of --seed or --aec-bench is required", file=sys.stderr)
+    inputs = {
+        "--seed": args.seed is not None,
+        "--aec-bench": args.aec_bench is not None,
+        "--set": getattr(args, "set_pdf", None) is not None,
+        "--ifc": getattr(args, "ifc_path", None) is not None,
+    }
+    named = ", ".join(name for name, given in inputs.items() if given)
+    if sum(inputs.values()) != 1:
+        print(
+            f"Error: exactly one of --seed, --aec-bench, --set or --ifc is required"
+            f" (got: {named or 'none'})",
+            file=sys.stderr,
+        )
         sys.exit(1)
     config = None
     if args.config_path:
@@ -523,6 +534,51 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path to AEC-Bench dataset root (contains annotations_15.xml)",
+    )
+    p.add_argument(
+        "--set",
+        type=Path,
+        default=None,
+        dest="set_pdf",
+        help="real PDF drawing set, or a zip of PDFs (#988): ingest, index, scale, "
+        "walls/rooms, then the model (mutually exclusive with --seed, --aec-bench and --ifc)",
+    )
+    p.add_argument(
+        "--ifc",
+        type=Path,
+        default=None,
+        dest="ifc_path",
+        help="IFC model (#988): import, then the same simplify/validate/export stages "
+        "(mutually exclusive with --seed, --aec-bench and --set)",
+    )
+    p.add_argument(
+        "--detector-config",
+        type=Path,
+        default=None,
+        dest="detector_config",
+        help="JSON naming the door/window detection provider for --set (#743); "
+        "see docs/detection_provider.md",
+    )
+    p.add_argument(
+        "--storey-height",
+        type=float,
+        default=None,
+        dest="storey_height",
+        help="storey height in metres for --set when the set states none (default 3.0, flagged)",
+    )
+    p.add_argument(
+        "--climate-zone",
+        default=None,
+        dest="climate_zone",
+        help="ASHRAE climate zone (e.g. 4A) for the construction library (#747); "
+        "unset constructions stay unset without one",
+    )
+    p.add_argument(
+        "--building-category",
+        default="Nonresidential",
+        choices=["Nonresidential", "Residential", "Semiheated"],
+        dest="building_category",
+        help="ASHRAE 90.1 Table 5.5 building category (default Nonresidential)",
     )
     p.add_argument("--out-dir", default="bem_out")
     p.add_argument("--open-office-span", action="store_true")

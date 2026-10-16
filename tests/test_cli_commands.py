@@ -163,3 +163,28 @@ class TestValidate:
         assert r.returncode == 0
         out = r.stdout + r.stderr
         assert len(out) > 0
+
+
+class TestRunInputGuards:
+    """The `run` command accepts every input path the pipeline supports (#1036)."""
+
+    def test_requires_one_input(self):
+        r = _run(["run"])
+        assert r.returncode != 0
+        assert "exactly one of" in r.stderr
+
+    def test_rejects_two_inputs(self):
+        r = _run(["run", "--seed", "7", "--ifc", "no_such_model.ifc"])
+        assert r.returncode != 0
+        assert "exactly one of" in r.stderr
+
+    def test_accepts_set_pdf(self):
+        # the guard must let a --set run through; a missing file fails later, in stage 1
+        r = _run(["run", "--set", "no_such_set.pdf"])
+        assert r.returncode != 0
+        assert "exactly one of" not in r.stderr
+
+    def test_accepts_ifc(self):
+        r = _run(["run", "--ifc", "no_such_model.ifc"])
+        assert r.returncode != 0
+        assert "exactly one of" not in r.stderr
