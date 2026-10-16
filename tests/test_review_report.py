@@ -1101,6 +1101,12 @@ def test_item_level_resolution():
     assert R._item_level(m, m.review_queue[5], idx) == ""  # no target
 
 
+def test_render_html_items_carry_provenance_method():
+    """The queue's embedded item data carries the provenance method (#1079)."""
+    page = R.render_html(_model(), R.template(_model(), "x"))
+    assert '"method": "plan_gap_schedule_width"' in page
+
+
 def test_render_html_carries_level_and_filters():
     m = _levels_fixture()
     page = R.render_html(m, R.template(m, "x"))
@@ -1108,6 +1114,8 @@ def test_render_html_carries_level_and_filters():
         "id=f-kind",
         "id=f-band",
         "id=f-level",
+        "id=f-method",
+        "all methods",
         "id=bulk-confirm",
         "id=bulk-reject",
         "id=khelp",
