@@ -90,3 +90,26 @@ own. The browser draws exactly what the model states. Correct mode
 (#1002) never forks a private model copy: the ops file is the only
 thing the viewer writes, and the CLI applies it to the canonical model
 through the decisions workflow.
+
+## MEP overlays (#1004)
+
+The toolbar gains two overlays next to the review marks: **MEP symbols**
+and **Air loops**. Both read the same canonical model the viewer already
+renders; nothing is re-derived in the browser or by ``build_scene``.
+
+- **MEP symbols** plots every component instance the model records
+  (diffusers, terminal units, sensors, grilles, air handlers) at the
+  detected position, tagged with its schedule tag or id and colored by
+  type (diffusers green, VAVs orange, AHUs red, sensors blue). Instances
+  listed twice (a space and its zone both name the same diffuser) plot
+  once. Counts in the legend and status bar aggregate these instances;
+  the overlay carries each instance's detection provenance (sheet,
+  confidence) in the scene.
+- **Air loops** draws the trace the model records: each air loop with
+  its zone list, joined through the zones already in the scene, with the
+  loop tag labeled and the loop's provenance carried through. The
+  **Zones** toggle remains the zone-assignment trace: spaces tinted by
+  zone, and zone rows now carry their tracing provenance (sheet,
+  confidence).
+
+## The invariant

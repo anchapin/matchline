@@ -79,6 +79,7 @@ _BODY = """
 <button id="t-heat">Heat map</button><button id="t-zones">Zones</button>
 <button id="t-env" class="on">Envelope</button><button id="t-plan">Plans</button>
 <button id="t-elev">Elevations</button><button id="t-rev">Review marks</button>
+<button id="t-mep">MEP symbols</button><button id="t-loop">Air loops</button>
 <button id="t-corr">Correct</button>
 </div>
 <div id="stage"><canvas id="cv"></canvas>
@@ -98,10 +99,12 @@ var S = __SCENE__;
 var cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 var cam = {yaw: 0, elev: 35 * Math.PI / 180, zoom: 8, px: 0, py: 0};
 var level = "all", facade = null;
-var on = {heat: false, zones: false, env: true, plan: false, elev: false, rev: false};
+var on = {heat: false, zones: false, env: true, plan: false, elev: false, rev: false,
+  mep: false, loop: false};
 var ZPAL = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b",
 "#e377c2","#7f7f7f","#bcbd22","#17becf","#aec7e8","#ffbb78"];
 var FCOL = {south: "#c62828", north: "#1565c0", east: "#2e7d32", west: "#6a1b9a"};
+var MPAL = __MEPCOLORS__;
 function zcol(zid){var h=0;for(var i=0;i<zid.length;i++)h=(h*31+zid.charCodeAt(i))>>>0;
   return ZPAL[h%ZPAL.length];}
 function heat(c){if(c==null)return null;
@@ -175,6 +178,8 @@ function render(){
   if(on.elev && facade && cam.elev < 0.35) drawOpenings();
   if(on.plan && cam.elev > 1.4) drawPlan();
   if(on.rev) drawReviewMarks();
+  if(on.mep) drawMEP();
+  if(on.loop) drawLoops();
   status();
 }
 function drawOpenings(){
@@ -226,6 +231,54 @@ function drawReviewMarks(){
     drawPoly(f.pts, null, "#c62828", 2.5);
   });
 }
+function drawMEP(){
+  // MEP symbols read verbatim from the model's component instances (#1004).
+  (S.mep ? S.mep.symbols : []).forEach(function(s){
+    if(!visible(s)) return;
+    var l = lvl(s.level);
+    var p = proj([s.x, s.y, l.elevation_z_m + 1.2]);
+    var X = p.x * cam.zoom + cam.px, Y = p.y * cam.zoom + cam.py;
+    ctx.fillStyle = MPAL[s.type] || "#555";
+    ctx.beginPath();
+    ctx.moveTo(X, Y - 4); ctx.lineTo(X + 4, Y);
+    ctx.lineTo(X, Y + 4); ctx.lineTo(X - 4, Y);
+    ctx.closePath(); ctx.fill();
+    ctx.font = "9px sans-serif"; ctx.fillStyle = "#222";
+    ctx.fillText(s.tag || s.id, X + 6, Y + 3);
+  });
+}
+function zoneCentroid(zid){
+  var sx = 0, sy = 0, z0 = null, n = 0;
+  S.spaces.forEach(function(s){
+    if(s.zones && s.zones.indexOf(zid) >= 0 && s.polygon && s.polygon.length >= 3){
+      var cx = 0, cy = 0;
+      s.polygon.forEach(function(p){cx += p[0]; cy += p[1];});
+      sx += cx / s.polygon.length; sy += cy / s.polygon.length;
+      z0 = lvl(s.level).elevation_z_m; n++;
+    }
+  });
+  return n ? [sx / n, sy / n, z0] : null;
+}
+function drawLoops(){
+  // Air-loop traces: the zone lists the model records per air loop, joined
+  // through the zones already in the scene. Nothing re-derived here.
+  (S.mep ? S.mep.air_loops : []).forEach(function(a){
+    var pts = (a.zones || []).map(zoneCentroid).filter(Boolean);
+    if(!pts.length) return;
+    ctx.strokeStyle = "#e65100"; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    for(var i = 0; i + 1 < pts.length; i++){
+      var p0 = proj(pts[i]), p1 = proj(pts[i + 1]);
+      ctx.beginPath();
+      ctx.moveTo(p0.x * cam.zoom + cam.px, p0.y * cam.zoom + cam.py);
+      ctx.lineTo(p1.x * cam.zoom + cam.px, p1.y * cam.zoom + cam.py);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    var f = proj(pts[0]);
+    ctx.font = "10px sans-serif"; ctx.fillStyle = "#e65100";
+    ctx.fillText(a.tag, f.x * cam.zoom + cam.px + 6, f.y * cam.zoom + cam.py - 6);
+  });
+}
 function fit(){
   if(!faces) faces = buildFaces();
   var xs = [], ys = [];
@@ -269,7 +322,8 @@ function bind(){
       view([0, Math.PI, -Math.PI / 2, Math.PI / 2][i], 0, f);};
   });
   [["t-heat", "heat"], ["t-zones", "zones"], ["t-env", "env"],
-   ["t-plan", "plan"], ["t-elev", "elev"], ["t-rev", "rev"]].forEach(function(p){
+   ["t-plan", "plan"], ["t-elev", "elev"], ["t-rev", "rev"],
+   ["t-mep", "mep"], ["t-loop", "loop"]].forEach(function(p){
     document.getElementById(p[0]).onclick = function(){toggle(p[0], p[1]);};
   });
   var sel = document.getElementById("v-level");
@@ -302,6 +356,7 @@ function status(){
   var env = S.envelope.filter(visible).length;
   var t = "spaces " + sp + " · envelope walls " + env + " · open review items "
     + S.review_open + " · " + (level === "all" ? "all levels" : "level " + level);
+  if(on.mep && S.mep) t += " · MEP symbols " + S.mep.symbols.length;
   if(facade) t += " · " + facade + " elevation (elevations overlay places openings by "
     + "host_interval_m from the facade axis minimum)";
   if(corr.on) t += " · correct mode: " + corr.ops.length + " op(s) queued";
@@ -317,6 +372,20 @@ function legend(){
     S.zones.forEach(function(z){
       h += '<div class="row"><span class="sw" style="background:' + zcol(z.id)
         + '"></span>' + z.id + (z.air_loop ? " · " + z.air_loop : "") + "</div>";});
+  }
+  if(on.mep && S.mep && S.mep.symbols.length){
+    h += "<h2>MEP symbols</h2>";
+    var types = {};
+    S.mep.symbols.forEach(function(s){types[s.type] = (types[s.type] || 0) + 1;});
+    Object.keys(types).forEach(function(t){
+      h += '<div class="row"><span class="sw" style="background:' + (MPAL[t] || "#555")
+        + '"></span>' + t + " × " + types[t] + "</div>";});
+  }
+  if(on.loop && S.mep && S.mep.air_loops.length){
+    h += "<h2>Air loops</h2>";
+    S.mep.air_loops.forEach(function(a){
+      h += '<div class="row"><span class="sw" style="background:#e65100"></span>'
+        + a.tag + " · " + a.zones.length + " zone(s)</div>";});
   }
   lg.innerHTML = h;
 }
@@ -537,7 +606,8 @@ bind(); legend(); setLevel("all"); view(0, 35 * Math.PI / 180, null);
 
 
 def _js() -> str:
-    return _JS.replace("__HEAT__", json.dumps(list(HEAT)))
+    js = _JS.replace("__HEAT__", json.dumps(list(HEAT)))
+    return js.replace("__MEPCOLORS__", json.dumps(MEP_COLORS))
 
 
 def _scene_json(scene: dict) -> str:
@@ -579,6 +649,81 @@ def page_html(scene: dict, title: str = "matchline review viewer") -> str:
 
 def _prov_conf(prov) -> Optional[float]:
     return None if prov is None else float(getattr(prov, "confidence", 0.0) or 0.0)
+
+
+# MEP overlay colors in the viewer canvas: one hue per component type.
+MEP_COLORS = {
+    "diffuser": "#2e7d32",
+    "grille": "#388e3c",
+    "vav": "#e65100",
+    "ahu": "#c62828",
+    "sensor": "#1565c0",
+}
+
+
+def _symbol_row(ref, level_id: str) -> dict:
+    """One MEP symbol instance, verbatim from the model component (#1004)."""
+    prov = getattr(ref, "provenance", None)
+    return {
+        "id": ref.id,
+        "type": ref.type,
+        "tag": ref.tag,
+        "x": float(ref.x_m),
+        "y": float(ref.y_m),
+        "level": level_id,
+        "confidence": _prov_conf(prov),
+        "sheet": (getattr(prov, "sheet_id", "") or "") if prov is not None else "",
+    }
+
+
+def mep_scene(model, space_level: dict, level_of_space: dict) -> dict:
+    """The MEP takeoff and trace overlay section of the scene (#1004).
+
+    Everything here is read straight off the canonical model the pipeline
+    wrote: component instances with their detected positions, the zone
+    assignments, and the air loops with their zone lists. The viewer never
+    re-derives any of it; counts are an aggregation of the instances below,
+    not a separate takeoff.
+    """
+    symbols: list = []
+    seen = set()
+    for sid, sp in model.spaces.items():
+        hv = getattr(sp, "hvac", None)
+        if hv is None:
+            continue
+        lvl = level_of_space.get(sid, "")
+        for ref in hv.diffusers + hv.terminal_units + hv.sensors:
+            if ref is None:
+                continue
+            key = (ref.type, ref.id, ref.tag, round(ref.x_m, 6), round(ref.y_m, 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            symbols.append(_symbol_row(ref, lvl))
+    for zid, z in getattr(model, "zones", {}).items():
+        for ref in [z.terminal_unit] + list(z.diffusers) + list(z.sensors):
+            if ref is None:
+                continue
+            key = (ref.type, ref.id, ref.tag, round(ref.x_m, 6), round(ref.y_m, 6))
+            if key in seen:
+                continue
+            seen.add(key)
+            symbols.append(_symbol_row(ref, z.level_id))
+    counts: dict = {}
+    for sym in symbols:
+        counts[sym["type"]] = counts.get(sym["type"], 0) + 1
+    air_loops = []
+    for a in getattr(model, "air_loops", []):
+        prov = getattr(a, "provenance", None)
+        air_loops.append(
+            {
+                "tag": a.tag,
+                "zones": list(a.zone_ids),
+                "confidence": _prov_conf(prov),
+                "sheet": (getattr(prov, "sheet_id", "") or "") if prov is not None else "",
+            }
+        )
+    return {"symbols": symbols, "counts": counts, "air_loops": air_loops}
 
 
 def build_scene(model, corrections_doc: Optional[dict] = None) -> dict:
@@ -632,6 +777,7 @@ def build_scene(model, corrections_doc: Optional[dict] = None) -> dict:
             }
         )
     space_level = {s["id"]: s["level"] for s in spaces}
+    level_of_space = {sid: sp.level_id for sid, sp in model.spaces.items()}
     envelope = []
     for w in getattr(model, "envelope", []):
         if not w.from_m or not w.to_m:
@@ -671,10 +817,14 @@ def build_scene(model, corrections_doc: Optional[dict] = None) -> dict:
                     "confidence": _prov_conf(o.provenance),
                 }
             )
-    zones = [
-        {"id": zid, "spaces": z.space_ids, "air_loop": getattr(z, "air_loop", "") or ""}
-        for zid, z in getattr(model, "zones", {}).items()
-    ]
+    zones = []
+    for zid, z in getattr(model, "zones", {}).items():
+        row = {"id": zid, "spaces": z.space_ids, "air_loop": getattr(z, "air_loop", "") or ""}
+        prov = getattr(z, "provenance", None)
+        if prov is not None:
+            row["confidence"] = _prov_conf(prov)
+            row["sheet"] = getattr(prov, "sheet_id", "") or ""
+        zones.append(row)
     review_open = sum(1 for i in getattr(model, "review_queue", []) if i.status == "open")
     targets: List[str] = []
     for it in getattr(model, "review_queue", []):
@@ -708,6 +858,7 @@ def build_scene(model, corrections_doc: Optional[dict] = None) -> dict:
         "envelope": envelope,
         "openings": openings,
         "zones": zones,
+        "mep": mep_scene(model, space_level, level_of_space),
         "review_open": review_open,
         "review_targets": targets,
         "corrections": standing,
