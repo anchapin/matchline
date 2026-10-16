@@ -11,12 +11,19 @@ Chains all pipeline stages:
 
 Each stage writes intermediate JSON so operators can inspect any step.
 Validation errors block export (exit code 1, not silent).
+
+Modes (#998):
+  full (default): stages 1-6, BEM construction and export included.
+  progressive: stops after the takeoff (stage 1 symbols, areas, counts); no BEM
+  construction, no review-queue gate, no export.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -43,10 +50,16 @@ from datasets_adapter import (
     parse_schedule_csv,
     rollup_takeoff,
 )
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry_simplify import (  # noqa: F401  (footprint_from_regions reused below)
+    footprint_from_regions,
+    footprint_parts_from_regions,
+    simplify_footprint,
+    simplify_ring,
+)
 from link import build_model
 from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
+from telemetry_emitter import TelemetryEmitter
 from validate import export_gate, run_checks, validate_bem_conservation
 
 # ---------------------------------------------------------------------------
@@ -66,7 +79,9 @@ class StageError(Exception):
 
 def write_json(p: Path, data: Any) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, default=str))
+    from atomic_io import write_text_atomic
+
+    write_text_atomic(p, json.dumps(data, indent=2, default=str))
 
 
 def _ensure_ccw(ring: list) -> list:
@@ -186,30 +201,60 @@ def model_from_linked_model(
             f"(see skipped_openings)."
         )
 
-    # --- envelope ring ---------------------------------------------------
-    ring_ccw = _ensure_ccw(_north_up(simplified_ring))
+    # --- envelope ring(s) -------------------------------------------------
+    if hasattr(simplified_ring, "parts"):
+        # #984: per-part result (#970): every wing and every courtyard hole
+        # flows through to export. Wings wind CCW in the BEM frame; holes
+        # wind CW so the writers' outward-normal convention points into the
+        # courtyard void (outdoor air). ``ring_m`` stays the largest part's
+        # ring for every existing single-ring consumer.
+        rings_m = [
+            {
+                "ring": _ensure_ccw(_north_up(part.ring)),
+                "holes": [list(reversed(_ensure_ccw(_north_up(h.ring)))) for h in hs],
+            }
+            for part, hs in zip(simplified_ring.parts, simplified_ring.holes)
+        ]
 
-    # --- area delta from simplifier (approximate from ring change) ----------
-    # The simplifier reports relative area change; we pass it through
-    # Original ring area vs simplified ring area
-    orig_ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-    orig_area = 0.0
-    n = len(orig_ring)
-    for i in range(n):
-        x0, y0 = orig_ring[i]
-        x1, y1 = orig_ring[(i + 1) % n]
-        orig_area += x0 * y1 - x1 * y0
-    orig_area = abs(orig_area) / 2.0
+        def _abs_area(ring):
+            return abs(
+                sum(
+                    ring[i][0] * ring[(i + 1) % len(ring)][1]
+                    - ring[(i + 1) % len(ring)][0] * ring[i][1]
+                    for i in range(len(ring))
+                )
+            )
 
-    simp_area = 0.0
-    n = len(ring_ccw)
-    for i in range(n):
-        x0, y0 = ring_ccw[i]
-        x1, y1 = ring_ccw[(i + 1) % n]
-        simp_area += x0 * y1 - x1 * y0
-    simp_area = abs(simp_area) / 2.0
+        ring_ccw = max(rings_m, key=lambda r: _abs_area(r["ring"]))["ring"]
+        area_delta_pct = simplified_ring.area_delta_pct
+    else:
+        rings_m = []
+        if hasattr(simplified_ring, "ring"):
+            # plain SimplifyResult (single part, no holes): unwrap the ring
+            simplified_ring = simplified_ring.ring
+        ring_ccw = _ensure_ccw(_north_up(simplified_ring))
 
-    area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
+        # --- area delta from simplifier (approximate from ring change) ------
+        # The simplifier reports relative area change; we pass it through
+        # Original ring area vs simplified ring area
+        orig_ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
+        orig_area = 0.0
+        n = len(orig_ring)
+        for i in range(n):
+            x0, y0 = orig_ring[i]
+            x1, y1 = orig_ring[(i + 1) % n]
+            orig_area += x0 * y1 - x1 * y0
+        orig_area = abs(orig_area) / 2.0
+
+        simp_area = 0.0
+        n = len(ring_ccw)
+        for i in range(n):
+            x0, y0 = ring_ccw[i]
+            x1, y1 = ring_ccw[(i + 1) % n]
+            simp_area += x0 * y1 - x1 * y0
+        simp_area = abs(simp_area) / 2.0
+
+        area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
     from bem_shading import shades_from_model
 
@@ -234,6 +279,7 @@ def model_from_linked_model(
         # and takeoff adapters; before this the ring was written mirrored N-S
         ring_facades=_edge_facades(ring_ccw, y_north=True),
         ring_m=ring_ccw,
+        rings_m=rings_m,
         wall_height_m=wall_height_m,
         area_delta_pct=area_delta_pct,
         simplify_tolerance=simplify_tolerance,
@@ -281,6 +327,12 @@ def parse_args():
         type=Path,
         dest="set_pdf",
         help="real PDF drawing set (#741): ingest, index, scale, walls/rooms, then the model",
+    )
+    g.add_argument(
+        "--ifc",
+        type=Path,
+        dest="ifc_path",
+        help="IFC model (#988): import, then the same simplify/validate/export stages",
     )
     ap.add_argument(
         "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
@@ -341,12 +393,120 @@ def parse_args():
         default=0.02,
         help="tolerance for geometry simplification (default: 0.02 = 2%%)",
     )
+    ap.add_argument(
+        "--mode",
+        default="full",
+        choices=["full", "progressive"],
+        help="pipeline mode (#998): 'full' runs everything through BEM export (default); "
+        "'progressive' stops after the takeoff (symbols, areas, counts) without BEM "
+        "construction, review-queue gate or export",
+    )
     return ap.parse_args()
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _merge_pdfs(pdfs: list[Path], out: Path) -> Path:
+    """Concatenate PDFs in order into one multi-sheet set PDF.
+
+    pdfium (pypdfium2, Apache-2.0/BSD-3) is already the set backend
+    (``pdf_ingest``); no second PDF library is added for this (#988).
+    """
+    import pypdfium2 as pdfium
+
+    dest = pdfium.PdfDocument.new()
+    try:
+        for pdf in pdfs:
+            try:
+                src = pdfium.PdfDocument(pdf)
+            except Exception as e:  # corrupt or not a PDF after all
+                raise StageError(
+                    "Stage 1: drawing set",
+                    1,
+                    f"{pdf.name} could not be read as a PDF: {e}",
+                    hint="Re-zip the set without the unreadable file, or run --set "
+                    "on the PDFs directly.",
+                ) from e
+            try:
+                dest.import_pages(src)
+            finally:
+                src.close()
+        dest.save(out)
+    finally:
+        dest.close()
+    return out
+
+
+def _legend_tags_for(args, set_pdf: Path) -> dict | None:
+    """The project's learned legend sidecar (#995): ``--legend-tags`` wins,
+    else ``legend_tags.json`` beside the drawing set. Absent is normal (the
+    run simply uses the built-in word rules); malformed is warned about and
+    ignored rather than failing the whole run."""
+    from legend_learning import SIDECAR_NAME, LegendTagsError, load_tags
+
+    path = getattr(args, "legend_tags", None) or (set_pdf.parent / SIDECAR_NAME)
+    try:
+        tags = load_tags(path)
+    except LegendTagsError as e:
+        print(f"warning: legend sidecar ignored: {e}", file=sys.stderr)
+        return None
+    if tags:
+        print(f"legend tags: {len(tags)} learned description(s) from {path}")
+    return tags
+
+
+def _drawing_set_pdf(args, out_dir: Path) -> Path:
+    """Resolve ``--set`` to the PDF the set stages ingest (#988).
+
+    A PDF passes straight through. A ``.zip`` is unpacked into
+    ``out_dir/_sets/``: a single member PDF passes through unchanged, several
+    are concatenated in filename order into one multi-sheet set so the rest of
+    the set stages keep seeing one drawing set.
+    """
+    import zipfile
+
+    pdf = Path(args.set_pdf)
+    if pdf.suffix.lower() != ".zip":
+        return pdf
+    staging = out_dir / "_sets"
+    staging.mkdir(parents=True, exist_ok=True)
+    members: list[Path] = []
+    staged: dict[str, Path] = {}
+    try:
+        with zipfile.ZipFile(pdf) as zf:
+            for info in sorted(zf.infolist(), key=lambda i: i.filename):
+                if info.is_dir() or Path(info.filename).suffix.lower() != ".pdf":
+                    continue
+                name = Path(info.filename).name
+                if name in staged:  # two members share a basename: order would lie
+                    raise StageError(
+                        "Stage 1: drawing set",
+                        1,
+                        f"{pdf.name} holds two PDFs both named {name} (in "
+                        f"{Path(info.filename).parent} and "
+                        f"{Path(staged[name].stem).parent or '.'})",
+                        hint="Rename one of them inside the zip so sheets stay in order.",
+                    )
+                dest = staging / name
+                with zf.open(info) as src, open(dest, "wb") as dst:
+                    dst.write(src.read())
+                members.append(dest)
+                staged[name] = dest
+    except zipfile.BadZipFile as e:
+        raise StageError("Stage 1: drawing set", 1, f"{pdf.name} is not a readable zip: {e}") from e
+    if not members:
+        raise StageError(
+            "Stage 1: drawing set",
+            1,
+            f"{pdf.name} holds no PDF files",
+            hint="Zip the drawing-set PDFs, or run --set on the PDF itself.",
+        )
+    if len(members) == 1:
+        return members[0]
+    return _merge_pdfs(members, staging / f"{pdf.stem}.pdf")
 
 
 def _set_storey_height(args, config: dict | None):
@@ -357,6 +517,23 @@ def _set_storey_height(args, config: dict | None):
     if flag is not None:
         return flag
     return (config or {}).get("wall_height")
+
+
+def _progressive_stop(bldg_or_model: Any, bldg: dict | None) -> None:
+    """Progressive mode (#998): report the takeoff, stop before BEM construction."""
+    lines = ["progressive mode: stopping after the takeoff (stage 1)"]
+    if isinstance(bldg, dict):
+        if "takeoff" in bldg:
+            t = bldg["takeoff"]
+            lines.append(f"  takeoff: {sorted(t) if isinstance(t, dict) else type(t).__name__}")
+        for k in ("spaces", "walls", "openings"):
+            if k in bldg:
+                lines.append(f"  {k}: {len(bldg[k])}")
+    if bldg_or_model is not None and getattr(bldg_or_model, "spaces", None):
+        lines.append(f"  spaces: {len(bldg_or_model.spaces)} (takeoff source model, no BEM build)")
+    lines.append("  no BEM construction, no review-queue gate, no export")
+    lines.append("  run with --mode full (the default) for the full pipeline")
+    print("\n".join(lines))
 
 
 def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
@@ -374,13 +551,15 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
         )
         from real_set import SetError, build_set_model
 
+        set_pdf = _drawing_set_pdf(args, out_dir)  # unpacks a zip (#988)
         try:
             provider = provider_from_config(getattr(args, "detector_config", None))
             model, set_report = build_set_model(
-                args.set_pdf,
+                set_pdf,
                 out_dir,
                 storey_height_m=_set_storey_height(args, config),
                 provider=provider,
+                legend_tags=_legend_tags_for(args, set_pdf),
             )
         except (ProviderConfigError, ProviderLicenseError) as e:
             raise StageError(
@@ -414,6 +593,21 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 file=sys.stderr,
             )
         return model, None, None
+    if getattr(args, "ifc_path", None):  # IFC input path (#988)
+        # Lazy import: ifc_import imports this module's StageError.
+        from ifc_import import import_ifc
+
+        model = import_ifc(str(args.ifc_path))
+        write_json(
+            out_dir / "stage_01_building.json",
+            {
+                "source": str(args.ifc_path),
+                "schema": getattr(model, "source_schema", None) or "IFC4",
+                "n_levels": len(model.levels),
+                "n_spaces": len(model.spaces),
+            },
+        )
+        return model, None, None
     if getattr(args, "image", None):  # cli Namespace carries no --image (#753)
         dets = detections_from_yolo_json(getattr(args, "detections", None), args.image.stem)
         schedule_csv = getattr(args, "schedule_csv", None)
@@ -439,6 +633,20 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
                 "n_scheduled": len(schedule),
             },
         )
+        if getattr(args, "mode", "full") == "progressive":
+            # Progressive mode (#998): the takeoff is the deliverable; a single
+            # sheet image cannot build a model, so stop here instead of raising.
+            write_json(
+                out_dir / "stage_01_takeoff.json",
+                {
+                    "source": str(args.image),
+                    "detections": bldg["detections"],
+                    "schedule": bldg["schedule"],
+                    "takeoff": bldg["takeoff"],
+                },
+            )
+            print("  takeoff: stage_01_takeoff.json")
+            return bldg, None, bldg
         # A single raster sheet gives symbols and a takeoff (written above) but no
         # walls or rooms: raster wall finding is not built, so there is nothing to
         # put the symbols in. Fail loudly with the route that does build a model.
@@ -508,18 +716,38 @@ def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out
     """
     if wall_height is None:
         wall_height = model.levels[0].wall_height_m
-    ring = footprint_from_regions([sp.polygon_m for sp in model.spaces.values()])
-    sres = simplify_ring(ring, tol=simplify_tol, wall_height=wall_height)
-    write_json(
-        out_dir / "stage_03_simplified.json",
-        {
-            "original_count": sres.original_count,
-            "simplified_count": sres.simplified_count,
-            "simplified_ring": sres.ring,
-            "area_delta_pct": sres.area_delta_pct,
-            "tolerance_pct": sres.tol * 100.0,
-        },
-    )
+    parts = footprint_parts_from_regions([sp.polygon_m for sp in model.spaces.values()])
+    sres = simplify_footprint(parts, tol=simplify_tol, wall_height=wall_height)
+    payload = {
+        "original_count": sres.original_count,
+        "simplified_count": sres.simplified_count,
+        "simplified_ring": sres.ring,
+        "area_delta_pct": sres.area_delta_pct,
+        "tolerance_pct": sres.tol * 100.0,
+    }
+    if hasattr(sres, "parts"):
+        # #970: per-part simplification (courtyards + wings); record every
+        # ring's own delta alongside the combined shared-budget delta.
+        payload["method"] = sres.method
+        payload["per_part"] = [
+            {
+                "original_count": p.original_count,
+                "simplified_count": p.simplified_count,
+                "simplified_ring": p.ring,
+                "area_delta_pct": p.area_delta_pct,
+                "holes": [
+                    {
+                        "original_count": h.original_count,
+                        "simplified_count": h.simplified_count,
+                        "simplified_ring": h.ring,
+                        "area_delta_pct": h.area_delta_pct,
+                    }
+                    for h in hs
+                ],
+            }
+            for p, hs in zip(sres.parts, sres.holes)
+        ]
+    write_json(out_dir / "stage_03_simplified.json", payload)
     return sres, wall_height
 
 
@@ -573,7 +801,7 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
     """Stage 6: Export BEM model to gbXML and IFC4 formats."""
     bem_model = model_from_linked_model(
         model=model,
-        simplified_ring=sres.ring,
+        simplified_ring=sres,
         wall_height_m=wall_height,
         simplify_tolerance=simplify_tol * 100.0,
     )
@@ -628,6 +856,7 @@ def _run_inputs(args, config: dict | None) -> list:
         ("detections", "detections"),
         ("schedule csv", "schedule_csv"),
         ("aec-bench", "aec_bench"),
+        ("ifc model", "ifc_path"),
         ("detector config", "detector_config"),
     ):
         v = getattr(args, attr, None)
@@ -648,9 +877,57 @@ def _run_inputs(args, config: dict | None) -> list:
     return out
 
 
+@contextmanager
+def _stage_telemetry(emitter: TelemetryEmitter, name: str):
+    """Record one pipeline stage's outcome and duration (#1037)."""
+    t0 = time.monotonic()
+    try:
+        yield
+    except Exception:
+        emitter.record_stage(name, "error", time.monotonic() - t0)
+        raise
+    emitter.record_stage(name, "ok", time.monotonic() - t0)
+
+
+def _make_emitter(args, config: dict | None) -> TelemetryEmitter:
+    """The consent-gated emitter: --telemetry or config telemetry_consent (#1037)."""
+    consent = bool(getattr(args, "telemetry", False)) or bool(
+        (config or {}).get("telemetry_consent", False)
+    )
+    local_only = bool((config or {}).get("telemetry_local_only", False))
+    return TelemetryEmitter(consent=consent, local_only=local_only)
+
+
+def _capture_stage_failure(out_dir: Path, err: StageError) -> None:
+    """Capture a failed stage as local friction feedback (#1038); never fails the run."""
+    from feedback_capture import FeedbackCaptureError, FeedbackLog
+
+    cause = type(err.__cause__).__name__ if err.__cause__ else "stage_error"
+    # stage identity is the stage number: stage names like "Stage 1:
+    # generate_building" are refused by the exclusion list ("building")
+    try:
+        FeedbackLog(out_dir / "feedback.jsonl").log_failed_parse(f"stage_{err.stage_index}", cause)
+    except (FeedbackCaptureError, OSError):
+        pass
+
+
+def _emit_telemetry(emitter: TelemetryEmitter, out_dir: Path) -> None:
+    """Write the payload when emission is on; telemetry never fails a run (#1037)."""
+    from telemetry_emitter import EmitterBuildError
+
+    try:
+        payload = emitter.build_payload()
+    except EmitterBuildError as e:
+        print(f"warning: telemetry payload skipped: {e}", file=sys.stderr)
+        return
+    if payload is not None:
+        write_json(out_dir / "telemetry.json", payload)
+
+
 def main(args, config: dict | None = None) -> None:
     out_dir = _validate_out_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    emitter = _make_emitter(args, config)
     try:
         # Config overrides from YAML
         simplify_tol = args.simplify_tol
@@ -666,7 +943,8 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 1: generate building or load real-sheet detections ----------
         try:
-            bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
+            with _stage_telemetry(emitter, "1.generate"):
+                bldg_or_model, link_report, bldg = _stage_1_generate(args, out_dir, config)
         except StageError:
             raise
         except Exception as e:
@@ -675,12 +953,20 @@ def main(args, config: dict | None = None) -> None:
                 1,
                 str(e),
                 hint="Check input data format. For --aec-bench ensure dataset path is valid. "
-                "For --seed ensure the seed is an integer.",
+                "For --seed ensure the seed is an integer. "
+                "For --ifc ensure the file is a readable IFC.",
             ) from e
+
+        # --- Progressive mode (#998): the takeoff is the deliverable ---------
+        if getattr(args, "mode", "full") == "progressive":
+            _progressive_stop(bldg_or_model, bldg)
+            _emit_telemetry(emitter, out_dir)
+            return
 
         # --- Stage 2: build model --------------------------------------------
         try:
-            model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
+            with _stage_telemetry(emitter, "2.build_model"):
+                model, link_report = _stage_2_build_model(bldg, args, out_dir, bldg_or_model)
         except StageError:
             raise
         except Exception as e:
@@ -694,7 +980,8 @@ def main(args, config: dict | None = None) -> None:
 
         # --- Stage 3: simplify geometry --------------------------------------
         try:
-            sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
+            with _stage_telemetry(emitter, "3.simplify"):
+                sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
         except StageError:
             raise
         except Exception as e:
@@ -708,17 +995,19 @@ def main(args, config: dict | None = None) -> None:
             ) from e
 
         # --- Stage 3b: construction library (#747) ---------------------------
-        climate_zone = getattr(args, "climate_zone", None)
-        category = getattr(args, "building_category", None) or "Nonresidential"
-        if config:
-            climate_zone = config.get("climate_zone", climate_zone)
-            category = config.get("building_category", category)
-        constructions = apply_construction_library(model, climate_zone or "", category)
-        write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
+        with _stage_telemetry(emitter, "3b.constructions"):
+            climate_zone = getattr(args, "climate_zone", None)
+            category = getattr(args, "building_category", None) or "Nonresidential"
+            if config:
+                climate_zone = config.get("climate_zone", climate_zone)
+                category = config.get("building_category", category)
+            constructions = apply_construction_library(model, climate_zone or "", category)
+            write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
 
         # --- Stage 4: validation checks --------------------------------------
         try:
-            report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
+            with _stage_telemetry(emitter, "4.validation"):
+                report = _stage_4_validation(model, sres, min_review_confidence, out_dir)
         except StageError:
             raise
         except Exception as e:
@@ -730,20 +1019,38 @@ def main(args, config: dict | None = None) -> None:
                 "fields are populated in the BuildingModel.",
             ) from e
 
+        from telemetry_emitter import EmitterBuildError
+
+        for _r in report.errors:
+            try:
+                emitter.record_check_failure(_r.check_id)
+            except EmitterBuildError:
+                pass  # a non-conforming check id is a skipped metric, never a failed run
+
         # --- Stage 4b: auto-triage (default, no opt-in) -----------------------
-        _stage_4b_auto_triage(model, out_dir)
+        with _stage_telemetry(emitter, "4b.auto_triage"):
+            _stage_4b_auto_triage(model, out_dir)
 
         # --- HTML review report, written before the fail-fast gate (#749) ---
         from review_report import write_review
 
-        review_dir = write_review(out_dir, model)
+        with _stage_telemetry(emitter, "review.report"):
+            review_dir = write_review(out_dir, model)
         print(f"  review: {review_dir / 'review.html'}")
 
         # --- Stage 5: fail-fast on validation errors ------------------------
-        _stage_5_fail_fast(report, min_review_confidence)
+        _t5 = time.monotonic()
+        try:
+            _stage_5_fail_fast(report, min_review_confidence)
+        except SystemExit:
+            emitter.record_stage("5.fail_fast", "error", time.monotonic() - _t5)
+            _emit_telemetry(emitter, out_dir)
+            raise
+        emitter.record_stage("5.fail_fast", "ok", time.monotonic() - _t5)
 
         # --- Stage 6: BEM export ---------------------------------------------
         try:
+            _t6 = time.monotonic()
             gbxml_path, ifc_path = _stage_6_bem_export(
                 model, sres, wall_height, simplify_tol, out_dir
             )
@@ -760,12 +1067,17 @@ def main(args, config: dict | None = None) -> None:
                 [gbxml_path, ifc_path],
                 _run_inputs(args, config),
                 review_dir=review_dir,
+                require_gate=True,
             )
             print(f"  package: {pkg}")
+            print(f"  package zip: {out_dir / 'package.zip'}")
             _print_pipeline_complete(out_dir, report)
+            emitter.record_stage("6.export", "ok", time.monotonic() - _t6)
         except StageError:
+            emitter.record_stage("6.export", "error", time.monotonic() - _t6)
             raise
         except Exception as e:
+            emitter.record_stage("6.export", "error", time.monotonic() - _t6)
             raise StageError(
                 "Stage 6: BEM_export",
                 6,
@@ -773,11 +1085,14 @@ def main(args, config: dict | None = None) -> None:
                 hint="Check BEM export dependencies and output directory permissions. "
                 "Ensure write_gbxml and write_ifc4 can write to the output directory.",
             ) from e
+        _emit_telemetry(emitter, out_dir)
     except StageError as e:
         # the stage name, the reason and the recovery hint, so a failed run says why
         print(f"ERROR {e}", file=sys.stderr)
         if e.hint:
             print(f"  hint: {e.hint}", file=sys.stderr)
+        _capture_stage_failure(out_dir, e)
+        _emit_telemetry(emitter, out_dir)
         sys.exit(1)
 
 

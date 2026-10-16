@@ -256,7 +256,9 @@ def _validate_detector_output(data: dict, path: str | Path) -> None:
     violation. The pipeline MUST fail loudly — not silently — on schema
     violations to catch detector output format drift.
     """
-    schema_path = Path(__file__).resolve().parent / "schemas" / "detector_output_v1.schema.json"
+    schema_path = (
+        Path(__file__).resolve().parent / "assets" / "schemas" / "detector_output_v1.schema.json"
+    )
     if not schema_path.exists():
         raise DetectorOutputValidationError(
             f"Schema not found at {schema_path}; cannot validate {path}"
@@ -291,7 +293,7 @@ def detections_from_yolo_json(
     source: sheet identifier, e.g. "aec-bench:sheet_01" — stored as Detection.source.
 
     Raises DetectorOutputValidationError if the JSON violates the versioned
-    detector output schema (schemas/detector_output_v1.schema.json).
+    detector output schema (assets/schemas/detector_output_v1.schema.json).
     """
     try:
         data = json.loads(Path(yolo_json_path).read_text())

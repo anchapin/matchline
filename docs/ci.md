@@ -10,11 +10,11 @@ This document describes the automated gates that run on every PR and push.
 
 **Expected test count:** pinned as `EXPECTED_TEST_COUNT` in the `Check test count` step (see below)
 
-The `demo-smoke` job installs the package non-editable the way a fresh user would and runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753).
+The `demo-smoke` job installs the package non-editable the way a fresh user would, requires every CLI subcommand (read from `cli.py`) to answer `--help`, then runs `matchline demo --no-open` end to end, failing if it takes five minutes or more or the trust and review reports are missing (see #753, #1076). The `wheel-smoke` job builds the wheel and fails when any top-level module, or any `.py` file under a package declared in `pyproject.toml`, is missing from the archive (see #1035, #1076). The `repo-map` job regenerates `docs/repo-map.mmd` and `docs/repo-map.md` with `scripts/generate_repo_map.py` (stdlib-only) and fails on any diff, so the generated module map cannot go stale (see #1096).
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (3072), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3552), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**
@@ -48,3 +48,9 @@ All gates must be green before merging to `develop`.
 Instead, Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three pins together. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
 
 Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.
+
+## Release pipeline
+
+Publishing to PyPI is tag-driven (`release.yml`): pushing a `vX.Y.Z` tag whose name matches `pyproject.toml`'s version builds the sdist and wheel, runs `twine check`, smoke-tests the wheel with a fresh non-editable install (`matchline --help`, `pip check`), and publishes via PyPI trusted publishing (OIDC; no token secret lives in the repo). The `pypi` GitHub environment gates the publish job.
+
+One-time maintainer setup on pypi.org: add a pending/trusted publisher for `anchapin/matchline`, workflow `release.yml`, environment `pypi` (the environment is created in the GitHub repo automatically on first run). After that, cutting a release is: merge the version bump and release notes, then push the tag.

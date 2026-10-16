@@ -47,10 +47,10 @@ class TestHelp:
 
 
 class TestArgumentParsing:
-    def test_run_requires_seed_or_aec_bench(self):
+    def test_run_requires_one_input(self):
         r = _run(["run"])
         assert r.returncode == 1
-        assert "exactly one of --seed or --aec-bench is required" in r.stderr
+        assert "exactly one of --seed, --aec-bench, --set or --ifc is required" in r.stderr
 
     @pytest.mark.skipif(yaml is None, reason="pyyaml not installed")
     def test_run_rejects_missing_config(self):

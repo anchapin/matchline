@@ -573,3 +573,112 @@ class TestHardCaseDefectInjection:
         dp = [s for s in res.skipped if s["op"] == "douglas_peucker"]
         assert dp
         assert "tol" in dp[0]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# #970: per-part footprints (courtyards + wings) with a shared area budget
+# ---------------------------------------------------------------------------
+
+JAGGED = [
+    (0, 0),
+    (10, 0),
+    (10, 4.9),
+    (10.2, 4.9),
+    (10.2, 5.1),
+    (10, 5.1),
+    (10, 10),
+    (0, 10),
+]
+
+
+def _courtyard_rooms():
+    """Four bands around a (4,4)-(6,6) hole: union is a square with a courtyard."""
+    return [
+        [[0, 0], [10, 0], [10, 4], [0, 4]],
+        [[0, 6], [10, 6], [10, 10], [0, 10]],
+        [[0, 4], [4, 4], [4, 6], [0, 6]],
+        [[6, 4], [10, 4], [10, 6], [6, 6]],
+    ]
+
+
+class TestFootprintParts:
+    def test_courtyard_single_part_with_hole(self):
+        parts = gs.footprint_parts_from_regions(_courtyard_rooms())
+        assert len(parts) == 1
+        assert len(parts[0].holes) == 1
+        assert len(parts[0].holes[0]) == 4
+
+    def test_two_disjoint_wings_two_parts(self):
+        rooms = [
+            [[0, 0], [10, 0], [10, 4], [0, 4]],
+            [[20, 0], [30, 0], [30, 4], [20, 4]],
+        ]
+        parts = gs.footprint_parts_from_regions(rooms)
+        assert len(parts) == 2
+        assert all(not p.holes for p in parts)
+
+    def test_empty_input(self):
+        assert gs.footprint_parts_from_regions([]) == []
+
+
+class TestSimplifyFootprint:
+    def test_single_part_no_holes_backward_compat(self):
+        parts = gs.footprint_parts_from_regions([SQUARE])
+        res = gs.simplify_footprint(parts, tol=0.02, wall_height=3.0)
+        assert isinstance(res, gs.SimplifyResult)
+        direct = simplify_ring(SQUARE, tol=0.02, wall_height=3.0)
+        assert res.ring == direct.ring
+        assert res.area_delta_pct == direct.area_delta_pct
+
+    def test_courtyard_hole_simplified_under_shared_budget(self):
+        parts = gs.footprint_parts_from_regions(_courtyard_rooms())
+        res = gs.simplify_footprint(parts, tol=0.05, wall_height=3.0)
+        assert isinstance(res, gs.FootprintSimplifyResult)
+        assert len(res.parts) == 1 and len(res.holes[0]) == 1
+        assert abs(res.area_delta_pct) <= 5.0 + 1e-9
+        assert res.valid
+        hole = res.holes[0][0]
+        assert hole.simplified_count <= hole.original_count
+        total = sum(r.original_area for r in [res.parts[0], hole])
+        assert abs(total - res.total_original_area) < 1e-6
+        # the pre-#970 single-ring view still works for downstream consumers
+        assert len(res.ring) >= 3
+
+    def test_two_wings_shared_budget_combined_delta(self):
+        parts = [
+            gs.FootprintPart(ring=list(JAGGED), holes=[], footprint_area=100.4),
+            gs.FootprintPart(
+                ring=[(x + 20.0, y) for x, y in JAGGED], holes=[], footprint_area=100.4
+            ),
+        ]
+        res = gs.simplify_footprint(parts, tol=0.02, wall_height=3.0)
+        assert isinstance(res, gs.FootprintSimplifyResult)
+        assert len(res.parts) == 2
+        # both wings actually simplified
+        assert res.parts[0].simplified_count < res.parts[0].original_count
+        assert res.parts[1].simplified_count < res.parts[1].original_count
+        # combined shared budget holds across the wings
+        assert abs(res.area_delta_pct) <= 2.0 + 1e-9
+        total_used = sum((abs(r.area_delta_pct) / 100.0) * r.original_area for r in res.parts)
+        assert total_used <= 0.02 * res.total_original_area + 1e-6
+        assert res.rings == [res.parts[0].ring, res.parts[1].ring]
+
+    def test_empty_parts_raises(self):
+        with pytest.raises(ValueError):
+            gs.simplify_footprint([])
+
+
+def test_multi_part_result_carries_total_edge_counts():
+    """#1019: a multi-ring footprint result exposes original_count and
+    simplified_count like the single-ring result, summed over parts + holes."""
+    parts = [
+        gs.FootprintPart(ring=[(0, 0), (10, 0), (10, 10), (0, 10)], holes=[], footprint_area=100.0),
+        gs.FootprintPart(
+            ring=[(20, 0), (40, 0), (40, 10), (20, 10)], holes=[], footprint_area=200.0
+        ),
+    ]
+    res = gs.simplify_footprint(parts, tol=0.02)
+    assert res.parts and res.holes == [[], []]
+    assert res.original_count == sum(r.original_count for r in res.parts)
+    assert res.simplified_count == sum(r.simplified_count for r in res.parts)
+    assert res.simplified_count <= res.original_count

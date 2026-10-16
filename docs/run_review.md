@@ -20,6 +20,28 @@ confirmed or rejected.
 
 ---
 
+## Ordering and bulk actions (#996)
+
+The queue is listed worst-first everywhere: open items before resolved ones,
+then highest urgency, then lowest confidence (the same order the HTML review
+page renders). `--list --format json` rows carry `level`, the floor the
+item's target belongs to.
+
+Bulk confirm/reject applies one action to every OPEN item matching the
+filters, in worst-first order, records each in the correction history beside
+the model, and re-runs validation:
+
+```bash
+matchline review model.json --bulk-confirm --kind window_room_link
+matchline review model.json --bulk-reject  --conf-below 0.5
+matchline review model.json --bulk-confirm --conf-above 0.2 --level L1
+```
+
+Filters (`--kind`, `--conf-above`, `--conf-below`, `--level`) combine; with
+none given every open item matches. Zero matches exits 1 without changing
+the model. Bulk flags take no `--confirm`/`--reject` and none of the
+correction-history flags.
+
 ## Usage
 
 ```bash
@@ -28,6 +50,9 @@ matchline review model.json --show-all            # list all items including res
 matchline review model.json --list                 # list items to stdout, exit 0 immediately
 matchline review model.json --list --format json   # list items as JSON
 matchline review model.json --confirm RVW-001      # confirm an item, re-run validation
+matchline review model.json --undo 3               # undo the last 3 accepted corrections (#997)
+matchline review model.json --revert-to-auto opening:S-W1:width_m  # back to automatic (#997)
+matchline review model.json --corrections          # print the correction history (#997)
 matchline review model.json --reject RVW-002       # reject an item, re-run validation
 matchline review model.json --reject RVW-002 --auto-triage  # enable auto-triage on load
 ```

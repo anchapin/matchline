@@ -198,7 +198,12 @@ def test_level_without_envelope_walls_uses_room_outline_over_wall_gaps(tmp_path)
     assert len(l2.rings) == 1 and Polygon(l2.rings[0]).area == pytest.approx(200.0)
     assert any("room outlines" in n for n in bem.notes)
     _, root = _write(m, tmp_path)
-    assert len([w for w in _surfaces(root, "ExteriorWall") if "-L2-" in w.get("id")]) == 4
+    walls = [w for w in _surfaces(root, "ExteriorWall") if "-L2-" in w.get("id")]
+    # #986: the closed outline splits between the two rooms it encloses
+    # (west 1 + north 2 + south 2 + east 1)
+    assert len(walls) == 6
+    adj = sorted(w.find("g:AdjacentSpaceId", NS).get("spaceIdRef") for w in walls)
+    assert adj == ["L2-201", "L2-201", "L2-201", "L2-202", "L2-202", "L2-202"]
 
 
 def test_hole_free_split_tiles_a_courtyard_plan():
@@ -221,11 +226,20 @@ def test_courtyard_level_gets_inward_facing_courtyard_walls(tmp_path):
     assert len(l1.rings) == 2
     assert Polygon(l1.rings[0]).exterior.is_ccw and not Polygon(l1.rings[1]).exterior.is_ccw
     _, root = _write(m, tmp_path)
-    # the four courtyard walls face into the courtyard
+
+    # the four courtyard walls (strictly inside the 20 x 20 outline) face in
+    def _inside_courtyard(w):
+        xs, ys = [], []
+        for c in w.iter(f"{{{NS['g']}}}CartesianPoint"):
+            xy = c.findall("g:Coordinate", NS)
+            xs.append(float(xy[0].text))
+            ys.append(float(xy[1].text))
+        return all(0 < abs(x) < 20 for x in xs) and all(0 < abs(y) < 20 for y in ys)
+
     az = sorted(
         float(w.find("g:RectangularGeometry/g:Azimuth", NS).text)
         for w in _surfaces(root, "ExteriorWall")
-        if "-L1-" in w.get("id") and int(w.get("id")[-3:]) > 4
+        if "-L1-" in w.get("id") and _inside_courtyard(w)
     )
     assert az == pytest.approx([0.0, 90.0, 180.0, 270.0])
     floors = _surfaces(root, "InteriorFloor")
@@ -280,3 +294,87 @@ def test_openstudio_reads_every_storey(tmp_path):
     assert model.is_initialized()
     m = model.get()
     assert len(m.getBuildingStorys()) == 3 and len(m.getSpaces()) == 3
+
+
+def _multiring_spaces(hole=True):
+    """Courtyard (10 x 10 with a 2 x 2 hole) or two-wing rooms, per level."""
+    if hole:
+        boxes = [(0, 0, 10, 4), (0, 6, 10, 10), (0, 4, 4, 6), (6, 4, 10, 6)]
+        tags = ["N", "S", "W", "E"]
+    else:
+        boxes = [(0, 0, 10, 4), (20, 0, 30, 4)]
+        tags = ["W1", "W2"]
+    return list(zip(tags, boxes))
+
+
+def test_multistorey_courtyard_walls_match_the_single_storey_counts(tmp_path):
+    m = _model([("L1", 0.0, None), ("L2", 3.0, None)], [], walls=False)
+    for lid in ("L1", "L2"):
+        for tag, box in _multiring_spaces():
+            sid = f"{lid}-{tag}"
+            m.spaces[sid] = Space(
+                id=sid, level_id=lid, polygon_m=_rect(*box), area_m2=Polygon(_rect(*box)).area
+            )
+    _, root = _write(m, tmp_path)
+    walls = _surfaces(root, "ExteriorWall")
+    assert len(walls) == 24  # 12 per level, as the single-storey courtyard exports
+    for lid in ("L1", "L2"):
+
+        def _on_west(w):
+            xs = [
+                float(c.findall("g:Coordinate", NS)[0].text)
+                for c in w.iter(f"{{{NS['g']}}}CartesianPoint")
+            ]
+            return {round(x, 6) for x in xs} == {0.0}
+
+        west = [w for w in walls if f"-{lid}-" in w.get("id") and _on_west(w)]
+        # the 10 m west side splits between the north band, the west strip
+        # and the south band it touches
+        adj = [w.find("g:AdjacentSpaceId", NS).get("spaceIdRef") for w in west]
+        assert adj == [f"{lid}-N", f"{lid}-W", f"{lid}-S"]
+
+
+def test_multistorey_two_wing_has_no_wall_across_the_gap(tmp_path):
+    m = _model([("L1", 0.0, None), ("L2", 3.0, None)], [], walls=False)
+    for lid in ("L1", "L2"):
+        for tag, box in _multiring_spaces(hole=False):
+            sid = f"{lid}-{tag}"
+            m.spaces[sid] = Space(
+                id=sid, level_id=lid, polygon_m=_rect(*box), area_m2=Polygon(_rect(*box)).area
+            )
+    _, root = _write(m, tmp_path)
+    walls = _surfaces(root, "ExteriorWall")
+    assert len(walls) == 16  # 4 per wing per level, nothing spanning the gap
+    for w in walls:
+        xs = [
+            float(c.findall("g:Coordinate", NS)[0].text)
+            for c in w.iter(f"{{{NS['g']}}}CartesianPoint")
+        ]
+        assert all(x <= 10.0 or x >= 20.0 for x in xs)
+
+
+def test_opening_on_a_split_wall_stays_with_its_space(tmp_path):
+    m = _model([("L1", 0.0, None), ("L2", 3.0, None)], [], walls=False)
+    for lid in ("L1", "L2"):
+        for tag, box in _multiring_spaces():
+            sid = f"{lid}-{tag}"
+            m.spaces[sid] = Space(
+                id=sid, level_id=lid, polygon_m=_rect(*box), area_m2=Polygon(_rect(*box)).area
+            )
+    m.spaces["L1-N"].openings.append(
+        SpaceOpening(
+            id="w1", tag="A", category="window", width_m=1.2, height_m=1.5, host_facade="west"
+        )
+    )
+    _, root = _write(m, tmp_path)
+    for s in root.iter(f"{{{NS['g']}}}Surface"):
+        for op in s.findall("g:Opening", NS):
+            if op.get("openingType") in ("FixedWindow", "OperableWindow"):
+                host = s.find("g:AdjacentSpaceId", NS).get("spaceIdRef")
+                assert host == "L1-N"
+                break
+        else:
+            continue
+        break
+    else:
+        raise AssertionError("window not exported")

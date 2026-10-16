@@ -402,11 +402,72 @@ def _polyline_footprint(solid, scale):
     if not p.is_a("IfcArbitraryClosedProfileDef"):
         return None
     oc = p.OuterCurve
-    pts = [(float(c.Coordinates[0]) * scale, float(c.Coordinates[1]) * scale) for c in oc.Points]
+    if oc.is_a("IfcIndexedPolyCurve"):
+        # IFC4 exporters (Archicad, Revit) put the points on an
+        # IfcCartesianPointList, not IfcCartesianPoint entities, and may add
+        # arc segments; chord-sampling arcs would misshape the footprint, so
+        # honor line-only curves and let the caller degrade otherwise.
+        segs = getattr(oc, "Segments", None)
+        if segs and any(not sg.is_a("IfcLineIndex") for sg in segs):
+            return None
+        coord_list = getattr(oc.Points, "CoordList", None)
+        if coord_list is None:
+            return None
+        raw = list(coord_list)
+    elif oc.is_a("IfcPolyline"):
+        raw = [c.Coordinates for c in oc.Points]
+    else:
+        return None
+    pts = [(float(c[0]) * scale, float(c[1]) * scale) for c in raw]
     # drop a duplicated closing point if present
     if len(pts) > 1 and pts[0] == pts[-1]:
         pts = pts[:-1]
     return pts, float(solid.Depth) * scale
+
+
+def _profile_bbox_dims(solid, scale):
+    """(xdim, ydim, depth) in meters from a closed profile's vertex bbox, or None.
+
+    Line-only IfcIndexedPolyCurve / IfcPolyline outer curves only: arc
+    segments would under-measure, so the caller degrades instead.
+    """
+    fp = _polyline_footprint(solid, scale)
+    if fp is None:
+        return None
+    pts, depth = fp
+    xs = [x for x, _ in pts]
+    ys = [y for _, y in pts]
+    return (max(xs) - min(xs), max(ys) - min(ys), depth)
+
+
+def _face_set_extents(el, scale):
+    """(dx, dy, dz) in meters from an IfcPolygonalFaceSet's vertex bbox, or None.
+
+    The geometry kernel fails on some exporters' face sets, so the vertex
+    list stands in; the result is still an axis-aligned bounding box.
+    """
+    rep = getattr(el, "Representation", None)
+    if rep is None:
+        return None
+    fs = None
+    for r in rep.Representations or []:
+        for it in r.Items or []:
+            if it.is_a("IfcPolygonalFaceSet"):
+                fs = it
+                break
+        if fs is not None:
+            break
+    if fs is None:
+        return None
+    coord_list = getattr(getattr(fs, "Coordinates", None), "CoordList", None)
+    if not coord_list:
+        return None
+    xs, ys, zs = [], [], []
+    for c in coord_list:
+        xs.append(float(c[0]) * scale)
+        ys.append(float(c[1]) * scale)
+        zs.append(float(c[2]) * scale)
+    return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
 
 
 def _geom_verts(el):
@@ -570,7 +631,10 @@ STOREY_ELEVATION_TOL_M = 0.1  # Pascal storey-semantics.ts
 
 def _storey_above_ground(storey):
     """Pset_BuildingStoreyCommon.AboveGround as True/False, or None when the
-    file leaves it absent or UNKNOWN (#634). Never inferred from elevation."""
+    file leaves it absent or UNKNOWN (#634). Never inferred from elevation.
+    Synthesized storey stand-ins (#928) carry no psets and return None."""
+    if isinstance(storey, _SyntheticStorey):
+        return None
     import ifcopenshell.util.element as _El
 
     v = ((_El.get_psets(storey) or {}).get("Pset_BuildingStoreyCommon") or {}).get("AboveGround")
@@ -625,6 +689,60 @@ def _storey_less_elements(f, storeys, classes):
                 continue  # in a space or zone: its own route, not this fallback
             out.append(el)
     return sorted(out, key=lambda e: e.GlobalId)
+
+
+class _SyntheticRelAggregates:
+    """IfcRelAggregates-shaped wrapper so ``_aggregated`` works on a
+    synthesized storey stand-in (#928)."""
+
+    def __init__(self, related):
+        self.RelatedObjects = related
+
+    def is_a(self, name):
+        return name == "IfcRelAggregates"
+
+
+class _SyntheticStorey:
+    """Storey stand-in for files with IfcSpaces but no IfcBuildingStorey (#928).
+
+    Carries only what the import walk reads: GlobalId, Name, Elevation, and
+    the space aggregation. Containment stays empty: elements contained in
+    IfcSite flow through the by-elevation fallback (#585) instead.
+    """
+
+    def __init__(self, index, elevation, spaces):
+        self.GlobalId = f"MATCHLINE-SYN-STORY-{index}"
+        self.Name = f"Level {index} (synthesized)"
+        self.Elevation = elevation
+        self.IsDecomposedBy = [_SyntheticRelAggregates(spaces)]
+        self.ContainsElements = []
+
+
+def _synthesized_storeys(f, scale):
+    """Stand-in storeys for files with no IfcBuildingStorey at all (#928).
+
+    Groups every IfcSpace by placement z, bucketed at
+    STOREY_ELEVATION_TOL_M, and returns one _SyntheticStorey per bucket,
+    lowest first. Spaces without a readable placement land in the z=0
+    bucket. Returns [] when the file has no IfcSpaces, so a truly empty
+    file imports empty exactly as before.
+    """
+    buckets = {}  # bucket key -> [(raw z, IfcSpace)]
+    for sp in f.by_type("IfcSpace"):
+        try:
+            # raw IFC units: the walk applies the length scale itself when
+            # it reads Elevation, so storing scaled meters would double-scale
+            z_raw = _placement_transform(sp, 1.0)[3]
+        except Exception:
+            z_raw = 0.0
+        if z_raw is None:
+            z_raw = 0.0
+        buckets.setdefault(round(z_raw * scale / STOREY_ELEVATION_TOL_M), []).append((z_raw, sp))
+    groups = sorted(buckets.values(), key=lambda g: min(z for z, _ in g))
+    return [
+        _SyntheticStorey(i + 1, min(z for z, _ in g), [sp for _, sp in g])
+        for i, g in enumerate(groups)
+    ]
 
 
 _ROOMNUM = re.compile(r"^[A-Za-z]?\d+[A-Za-z]?$")
@@ -1614,6 +1732,27 @@ def _wall_thermal_transmittance(wall):
     except (TypeError, ValueError):
         return None
     return u if u > 0 and math.isfinite(u) else None
+
+
+def _wall_marked_interior(wall):
+    """Pset_WallCommon.IsExternal explicitly False (#747).
+
+    Exported interior partitions (semi-exterior and vestibule boundaries)
+    carry this pset, so a re-imported matchline file does not count them
+    as envelope. A file without the pset, or with it True, is unchanged.
+    """
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(wall) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return False
+    ext = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
+    if ext is None or ext is True:
+        return False
+    if ext is False:
+        return True
+    return str(ext).strip().lower() in ("false", ".f.", "0")
 
 
 # ISO 6946 surface resistances for horizontal heat flow (walls), m2K/W.
@@ -2916,6 +3055,40 @@ def _facades_onto_openings(model):
                 op.host_facade = f
 
 
+def _upgrade_ifc2x3_to_ifc4(f):
+    """In-memory IFC2X3 -> IFC4 upgrade via the ifcopenshell schema Migrator (#929).
+
+    Returns ``(new_file, skipped)``: an IFC4 copy of the model, plus the
+    (entity, error) pairs the migrator could not map (IFC4 dropped a small
+    number of IFC2X3 entities). The caller keeps the skip count visible on
+    the model instead of losing those elements silently.
+
+    The migrator prints one line per IFC4-only attribute it cannot fill
+    (PredefinedType, LongName, ...) -- tens of thousands on a real building.
+    Those attributes are optional and default to $; the printed noise
+    carries no signal, so both streams are suppressed around the migrate
+    loop (the vendored migrator print()s to stdout). Entities the migrator
+    *raises* on still land in ``skipped``.
+    """
+    import ifcopenshell
+    from ifcopenshell.util.schema import Migrator
+
+    migrator = Migrator()
+    new_file = ifcopenshell.file(schema_identifier="IFC4")
+    skipped = []
+    import contextlib
+    import io
+
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        for element in f:
+            try:
+                migrator.migrate(element, new_file)
+            except Exception as exc:  # noqa: BLE001 - keep going, collect for review
+                skipped.append((element, exc))
+    return new_file, skipped
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -2958,8 +3131,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             f"exceeds the {max_elements} element limit. "
             "Set MATCHLINE_MAX_IFC_ELEMENTS to increase the limit."
         )
+    upgrade_skipped = None  # (entity, error) pairs, only when we upgraded
     if f.schema != "IFC4":
-        raise ValueError(f"expected IFC4 schema, got {f.schema}")
+        if f.schema != "IFC2X3":
+            raise ValueError(f"expected IFC4 or IFC2X3 schema, got {f.schema}")
+        # Translation-first (#929): upgrade IFC2X3 to IFC4 in memory via the
+        # vendored ifcopenshell schema Migrator, then run the unchanged IFC4
+        # pipeline. Entities the migrator cannot map are collected, never
+        # silently dropped.
+        f, upgrade_skipped = _upgrade_ifc2x3_to_ifc4(f)
     sheet = sheet_id or path.name
     scale = _length_scale(f)
 
@@ -2975,6 +3155,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             for bldg in _aggregated(site, "IfcBuilding"):
                 bname = bldg.Name or ""
     model = BuildingModel(name=bname or (project.Name if project else "") or path.stem)
+    if upgrade_skipped is not None:
+        model.source_schema = "IFC2X3"
+        if upgrade_skipped:
+            model.source_schema = f"IFC2X3 ({len(upgrade_skipped)} entities skipped in upgrade)"
     if project is not None:
         from solar_aperture import compound_angle_deg
 
@@ -2996,7 +3180,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 storeys.extend(_aggregated(bldg, "IfcBuildingStorey"))
     if not storeys:
         # degenerate but non-empty file: fall back to a flat scan
-        storeys = f.by_type("IfcBuildingStorey")
+        # (by_type returns a tuple, and storeys.sort below needs a list, #748)
+        storeys = list(f.by_type("IfcBuildingStorey"))
+    if not storeys:
+        # no storeys anywhere: files like GNI gni-74 aggregate IfcSpaces
+        # directly under IfcSite, so synthesize stand-in storeys from the
+        # space elevations instead of importing nothing (#928)
+        storeys = _synthesized_storeys(f, scale)
 
     def _storey_elevation(s):
         try:
@@ -3190,6 +3380,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 if ext is not None:
                     dims = ext
                     dims_note = "local extents via geometry kernel (axis-aligned solid assumed)"
+            if dims is None and solids:
+                ext = _profile_bbox_dims(solids[0], scale)
+                if ext is not None:
+                    dims = ext
+                    dims_note = "IfcExtrudedAreaSolid closed-profile bbox (axis-aligned assumed)"
+            if dims is None and not solids:
+                ext = _face_set_extents(el, scale)
+                if ext is not None:
+                    dims = ext
+                    dims_note = "IfcPolygonalFaceSet vertex bbox (axis-aligned solid assumed)"
             if dims is not None:
                 xd, yd, dep = dims
                 if cls in ("IfcWall", "IfcWallStandardCase"):
@@ -3231,8 +3431,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             model.bim_elements.append(be)
 
             # walls also feed the BEM envelope (facade classification
-            # needs adjacency -> Tier 1, so facade stays empty here)
-            if cls in ("IfcWall", "IfcWallStandardCase") and length_m:
+            # needs adjacency -> Tier 1, so facade stays empty here). A wall
+            # whose pset says IsExternal False is a partition, not envelope (#747).
+            if (
+                cls in ("IfcWall", "IfcWallStandardCase")
+                and length_m
+                and not _wall_marked_interior(el)
+            ):
                 wall_axis_fix[gid] = _wall_centreline_fix(
                     el, solids, dims_note.startswith("local extents"), scale
                 )

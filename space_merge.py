@@ -25,6 +25,7 @@ square joins) and the absorbed wall strip area is recorded on the merge.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Iterable, List, Optional
 
@@ -463,3 +464,248 @@ def merge_closets_and_shafts(
             continue
         _merge_shaft(model, sp, result)
     return result
+
+
+# --------------------------------------------------------------- split (#1002)
+# A reviewer can split one space along a straight cut they draw in the viewer.
+# The cut's endpoints must sit on the space's boundary (within SPLIT_TOL_M) and
+# the cut must produce exactly two usable pieces; the larger piece keeps the
+# space's identity (id, number, zone and lighting assignments), the smaller one
+# becomes a new unlabeled space the pipeline treats like any other. Openings
+# whose absolute centre can be located (facade openings against the envelope
+# walls, skylights with a plan centre) move to the piece that contains them;
+# everything else stays with the kept piece.
+
+SPLIT_TOL_M = 0.05  # how far a cut endpoint may sit off the boundary
+MIN_SPLIT_AREA_M2 = 0.5  # a piece smaller than this is not a usable room
+
+
+def parse_split(raw: str) -> dict:
+    """Parse ``a=x,y;b=x,y`` into ``{"a": [x, y], "b": [x, y]}``; ValueError
+    on a malformed cut. No geometry checks here."""
+    m = re.fullmatch(r"\s*a\s*=\s*([^;]+)\s*;\s*b\s*=\s*(.+)\s*", raw or "")
+    if not m:
+        raise ValueError("a split edit takes the form a=x,y;b=x,y")
+
+    def _pt(side, text):
+        xy = [v.strip() for v in text.split(",")]
+        if len(xy) != 2:
+            raise ValueError(f"split endpoint {side} {text!r} is not x,y")
+        try:
+            return [float(xy[0]), float(xy[1])]
+        except ValueError:
+            raise ValueError(f"split endpoint {side} {text!r} is not x,y") from None
+
+    return {"a": _pt("a", m.group(1)), "b": _pt("b", m.group(2))}
+
+
+def cuts_equal(cut: dict, parsed: dict) -> bool:
+    """True when a stored split cut is the same cut, to a millimetre."""
+    for side in ("a", "b"):
+        for c, q in zip(cut.get(side) or [], parsed.get(side) or []):
+            if abs(float(c) - float(q)) > 1e-3:
+                return False
+        if len(cut.get(side) or []) != len(parsed.get(side) or []):
+            return False
+    return True
+
+
+def validate_split(model: BuildingModel, source_id: str, raw: str) -> dict:
+    """Parse and check a viewer split cut WITHOUT changing the model.
+
+    ``raw`` is the decisions-file value form ``a=x,y;b=x,y``. Returns the cut
+    as ``{"a": [x, y], "b": [x, y]}`` or raises ValueError saying what is
+    wrong: the same checks split_space applies before it cuts.
+    """
+    cut = parse_split(raw)
+    a, b = cut["a"], cut["b"]
+    sp = model.spaces.get(source_id)
+    if sp is None:
+        raise ValueError(f"space {source_id!r} is not in the model")
+    if not sp.polygon_m or len(sp.polygon_m) < 3:
+        raise ValueError(f"space {source_id!r} has no usable polygon to split")
+    poly = _poly(sp)
+    if poly is None:
+        raise ValueError(f"space {source_id!r} has no usable polygon to split")
+    for pt in (a, b):
+        if poly.boundary.distance(Point(pt[0], pt[1])) > SPLIT_TOL_M:
+            raise ValueError(f"split endpoint {pt} is not on the boundary")
+    from shapely.geometry import GeometryCollection, LineString
+    from shapely.ops import split as shp_split
+
+    line = LineString([(a[0], a[1]), (b[0], b[1])])
+    if line.length < 1e-9:
+        raise ValueError("the split cut has no length")
+    parts = shp_split(poly, line)
+    if isinstance(parts, GeometryCollection):
+        parts = list(parts.geoms)
+    else:
+        parts = [parts]
+    pieces = [
+        g
+        for g in parts
+        if isinstance(g, Polygon) and not g.is_empty and g.area >= MIN_SPLIT_AREA_M2
+    ]
+    if len(pieces) != 2:
+        raise ValueError(f"the cut makes {len(pieces)} usable piece(s); a split needs exactly two")
+    return {"a": a, "b": b}
+
+
+def split_space(model: BuildingModel, source_id: str, a, b) -> dict:
+    """Split ``source_id`` along segment ``a``-``b``; returns what ``un_split`` restores.
+
+    ``a`` and ``b`` are [x, y] points in the model frame (metres, y down), each
+    on (or within SPLIT_TOL_M of) the space's boundary. Raises ValueError, and
+    changes nothing, when the cut is not exactly two usable pieces.
+    """
+    from shapely.geometry import GeometryCollection, LineString
+    from shapely.ops import split as shp_split
+
+    sp = model.spaces.get(source_id)
+    if sp is None:
+        raise ValueError(f"space {source_id!r} is not in the model")
+    if not sp.polygon_m or len(sp.polygon_m) < 3:
+        raise ValueError(f"space {source_id!r} has no usable polygon to split")
+    poly = _poly(sp)
+    if poly is None:
+        raise ValueError(f"space {source_id!r} has no usable polygon to split")
+    for pt in (a, b):
+        if not (isinstance(pt, (list, tuple)) and len(pt) == 2):
+            raise ValueError("split cut endpoints must each be an [x, y] point")
+        try:
+            q = Point(float(pt[0]), float(pt[1]))
+        except (TypeError, ValueError):
+            raise ValueError("split cut endpoints must each be an [x, y] point") from None
+        if poly.boundary.distance(q) > SPLIT_TOL_M:
+            raise ValueError(f"split endpoint {list(q.coords)[0]} is not on the boundary")
+    line = LineString([(float(a[0]), float(a[1])), (float(b[0]), float(b[1]))])
+    if line.length < 1e-9:
+        raise ValueError("the split cut has no length")
+    parts = shp_split(poly, line)
+    if isinstance(parts, GeometryCollection):
+        parts = list(parts.geoms)
+    else:
+        parts = [parts]
+    pieces = [
+        g
+        for g in parts
+        if isinstance(g, Polygon) and not g.is_empty and g.area >= MIN_SPLIT_AREA_M2
+    ]
+    if len(pieces) != 2:
+        raise ValueError(f"the cut makes {len(pieces)} usable piece(s); a split needs exactly two")
+    pieces.sort(key=lambda g: g.area, reverse=True)
+    kept, new = orient(pieces[0], 1.0), orient(pieces[1], 1.0)
+
+    snap = {
+        "kept_id": sp.id,
+        "polygon_m": [list(map(float, v)) for v in sp.polygon_m],
+        "new_id": _new_split_id(model, sp.level_id),
+        "cut": {"a": [float(a[0]), float(a[1])], "b": [float(b[0]), float(b[1])]},
+        "moved": [],
+    }
+    nsp = Space(
+        id=snap["new_id"],
+        level_id=sp.level_id,
+        name=sp.name,
+        number="",
+        polygon_m=_ring(new),
+        label_confidence=0.95,
+        poly_type=sp.poly_type,
+        poly_type_confidence=sp.poly_type_confidence,
+    )
+    centers = _opening_centers(model, sp)
+    for op in list(sp.openings):
+        c = centers.get(op.id)
+        if c is not None:
+            kp, np_ = _contains(kept, c), _contains(new, c)
+            if np_ and not kp:
+                sp.openings.remove(op)
+                nsp.openings.append(op)
+                snap["moved"].append(op.id)
+    sp.polygon_m = _ring(kept)
+    _recompute_area(sp)
+    _recompute_area(nsp)
+    model.spaces[nsp.id] = nsp
+    return snap
+
+
+def un_split(model: BuildingModel, snap: dict) -> None:
+    """Put a split space back the way the pipeline left it (revert path)."""
+    sp = model.spaces.get(snap.get("kept_id") or "")
+    if sp is None:
+        return
+    sp.polygon_m = snap["polygon_m"]
+    _recompute_area(sp)
+    nsp = model.spaces.pop(snap["new_id"], None)
+    if nsp is not None:
+        for op in list(nsp.openings):
+            nsp.openings.remove(op)
+            sp.openings.append(op)
+
+
+def _contains(poly: Polygon, c) -> bool:
+    return poly.covers(Point(c[0], c[1]))
+
+
+def _recompute_area(sp: Space) -> None:
+    p = _poly(sp)
+    sp.area_m2 = round(p.area, 4) if p is not None else None
+
+
+def _new_split_id(model: BuildingModel, level_id: str) -> str:
+    k = 1
+    while f"{level_id}-SPLIT-{k}" in model.spaces:
+        k += 1
+    return f"{level_id}-SPLIT-{k}"
+
+
+def _opening_centers(model: BuildingModel, sp: Space) -> dict:
+    """Absolute [x, y] centre per opening id, where the model locates one.
+
+    Facade openings: host_interval_m along the facade axis from the axis
+    minimum of that level+facade's envelope walls (the same placement the
+    review viewer draws); skylights: plan_center_m. Openings the model cannot
+    place get no entry and stay with the kept piece.
+    """
+
+    facades = {o.host_facade for o in sp.openings if o.host_facade in FACADE_AXES}
+    mins, plane, n = {}, {}, {}
+    for w in getattr(model, "envelope", []):
+        host = model.spaces.get(w.space_id)
+        if w.facade not in facades or host is None or host.level_id != sp.level_id:
+            continue
+        axis = FACADE_AXES[w.facade]
+        lo = min(w.from_m[axis], w.to_m[axis])
+        cur = mins.get(w.facade)
+        if cur is None or lo < cur:
+            mins[w.facade] = lo
+        plane[w.facade] = plane.get(w.facade, 0.0) + (w.from_m[1 - axis] + w.to_m[1 - axis]) / 2
+        n[w.facade] = n.get(w.facade, 0) + 1
+    for f in plane:
+        plane[f] = plane[f] / n[f]
+    centers = {}
+    for o in sp.openings:
+        if o.category == "skylight" and o.plan_center_m:
+            centers[o.id] = [float(o.plan_center_m[0]), float(o.plan_center_m[1])]
+            continue
+        axis = FACADE_AXES.get(o.host_facade)
+        if axis is None or not o.host_interval_m:
+            continue
+        lo = mins.get(o.host_facade)
+        if lo is None:
+            continue
+        s0, s1 = float(o.host_interval_m[0]), float(o.host_interval_m[1])
+        if o.s_center_m is not None:
+            cross = float(o.s_center_m)
+        else:
+            cross = plane.get(o.host_facade)
+        if cross is None:
+            continue
+        c = [0.0, 0.0]
+        c[axis] = lo + (s0 + s1) / 2
+        c[1 - axis] = cross
+        centers[o.id] = c
+    return centers
+
+
+FACADE_AXES = {"south": 0, "north": 0, "east": 1, "west": 1}

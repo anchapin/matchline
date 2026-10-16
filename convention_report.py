@@ -13,12 +13,17 @@ scattering the numbers across validation messages:
   LPD can be read against rooms only.
 - ``area_budget``: how far envelope simplification moved the envelope area
   against its budget.
+- ``area_definitions``: the #975 area registry (gross, construction, BOMA
+  rentable approximation, assignable), per level and per space, with the
+  deltas between definitions attributed.
 
 The report only measures. A number that cannot be measured is reported as
 unavailable with the reason, never as zero.
 """
 
 from __future__ import annotations
+
+from area_definitions import compute as _compute_area_defs
 
 SCHEMA = "matchline.convention_report/1"
 NON_ROOM_TYPES = ("shaft", "closet", "elevator_core", "unassigned")
@@ -114,6 +119,24 @@ def _area_budget(sres) -> dict:
     }
 
 
+def _area_definitions(model, report) -> dict:
+    """Compute the #975 area registry; thickness verbatim from convention_bias."""
+    r = _check(report, "convention_bias")
+    thickness = source = reason = None
+    if r is not None:
+        if r.severity == "skip" or not isinstance(r.actual, dict):
+            reason = r.message
+        else:
+            thickness = r.actual["thickness_m"]
+            source = r.actual["thickness_source"]
+    return _compute_area_defs(
+        model,
+        thickness=thickness,
+        thickness_source=source or "",
+        thickness_reason=reason or "",
+    )
+
+
 def build_convention_report(model, report=None, sres=None, constructions=None) -> dict:
     """Collect the export's measured biases into one JSON-ready dict.
 
@@ -132,6 +155,7 @@ def build_convention_report(model, report=None, sres=None, constructions=None) -
         "volume_bias": _volume_bias(report),
         "non_room_area": _non_room_area(model),
         "area_budget": _area_budget(sres),
+        "area_definitions": _area_definitions(model, report),
     }
     if constructions is not None:
         out["constructions"] = constructions.to_dict()

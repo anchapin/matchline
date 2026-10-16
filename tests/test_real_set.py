@@ -18,6 +18,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 from test_plan_walls import DOOR, PARTITION, SHELL, T_EXT, _mass, _outline, _pt  # noqa: E402
+from test_sheet_index import _fallback_plan_body  # noqa: E402
 
 import real_set  # noqa: E402
 import run_pipeline  # noqa: E402
@@ -731,7 +732,9 @@ def test_a_legend_repeated_on_two_sheets_is_one_review_item(tmp_path):
     assert "M-001, M-601" in rq.description
 
 
-def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False, east=True, tags=()):
+def _legend_mech_page(
+    number="M-101", scale=SCALE_NOTE, outside=False, east=True, tags=(), ducts=()
+):
     """A mechanical plan drawn in a second symbol style with its own legend:
     two diffusers in the west room (x < 4 m), one diffuser and a thermostat in
     the east room (none with ``east=False``). ``tags``: (text, (x, y) m)."""
@@ -751,6 +754,15 @@ def _legend_mech_page(number="M-101", scale=SCALE_NOTE, outside=False, east=True
     if outside:  # a diffuser drawn beyond the building shell
         px, py = _pt(13, 3)
         plan += xbox(px - 7, py - 7)
+    for a, b in ducts:
+        # supply runs, drawn wide enough to survive the skeleton, stopping
+        # short of the terminal so the symbol itself stays readable by NCC
+        pa, pb = _pt(*a), _pt(*b)
+        dx, dy = pb[0] - pa[0], pb[1] - pa[1]
+        n = (dx * dx + dy * dy) ** 0.5
+        ub = 8.0 / n  # stop 8 pt short of the terminal
+        end = (pb[0] - dx * ub, pb[1] - dy * ub)
+        plan += line(pa[0], pa[1], end[0], end[1], 8)
     body = _tb(number, "FIRST FLOOR MECHANICAL PLAN") + leg + plan
     return body + (text(100, 48, scale, 8) if scale else "")
 
@@ -788,10 +800,13 @@ def test_a_legend_symbol_in_no_room_is_counted_apart(tmp_path):
     assert any("in rooms: 4 of 5" in n for n in report.notes)
 
 
-def _legend_zone_set(tmp_path, tags, east=True, second_sheet=False):
+def _legend_zone_set(tmp_path, tags, east=True, second_sheet=False, ducts=()):
     from test_pdf_schedules import vav_schedule
 
-    pages = [_arch("A-101", "FIRST FLOOR PLAN", 1), _legend_mech_page(east=east, tags=tags)]
+    pages = [
+        _arch("A-101", "FIRST FLOOR PLAN", 1),
+        _legend_mech_page(east=east, tags=tags, ducts=ducts),
+    ]
     if second_sheet:  # the same plan again, as a return-air sheet of the level
         pages.append(_legend_mech_page("M-102", east=east))
     pages.append(_tb("M-601", "MECHANICAL SCHEDULES") + vav_schedule(100, 1000))
@@ -856,6 +871,29 @@ def test_legend_diffusers_in_a_room_two_zones_serve_stay_unassigned(tmp_path):
     assert sorted(model.zones) == ["L1-Z-VAV-1", "L1-Z-VAV-2"]
     assert all(not z.diffusers for z in model.zones.values())
     assert any("2 in rooms several zones serve" in n for n in report.notes)
+    assert not [r for r in model.review_queue if r.kind == "zone_no_diffuser"]
+
+
+def test_duct_tracing_assigns_a_shared_room_diffusers_to_their_zones(tmp_path):
+    """Which of two zones feeds a shared room's diffusers follows the sheet's
+    own ductwork: each diffuser sits on one terminal's run and goes on that
+    zone; the others stay counted only."""
+    model, report = _legend_zone_set(
+        tmp_path,
+        [("VAV-1", (1.5, 3.2)), ("VAV-2", (3.5, 3.2))],
+        ducts=[((1.5, 3.2), (2, 2)), ((3.5, 3.2), (2, 4.5))],
+    )
+    assert sorted(model.zones) == ["L1-Z-VAV-1", "L1-Z-VAV-2"]
+    assert len(model.zones["L1-Z-VAV-1"].diffusers) == 1
+    assert len(model.zones["L1-Z-VAV-2"].diffusers) == 1
+    assert all(
+        d.provenance.method == "duct_trace" and "that zone's ductwork" in d.provenance.note
+        for z in model.zones.values()
+        for d in z.diffusers
+    )
+    assert any(
+        "2 supply diffuser(s)" in n and "2 assigned by duct tracing" in n for n in report.notes
+    )
     assert not [r for r in model.review_queue if r.kind == "zone_no_diffuser"]
 
 
@@ -1113,6 +1151,29 @@ def test_a_provider_that_needs_the_scale_gets_it_per_sheet(tmp_path):
     assert by["sheet_001.json"]["stages"]["symbols"]["provider"] == "door_swing"
 
 
+def test_single_dimension_scale_produces_rooms_on_a_legacy_plan(tmp_path):
+    """#1019: a legacy plan sheet with no scale note or bar, one dimension
+    string, still produces rooms, flagged for review."""
+    # 10'-0" written over 90 pt drawn: exactly 1:96
+    dim = (
+        line(100, 52, 138, 52)
+        + line(152, 52, 190, 52)
+        + line(100, 48, 100, 56)
+        + line(190, 48, 190, 56)
+        + text(139, 50, "10'-0\"", 8)
+    )
+    body = _outline(_mass(SHELL + PARTITION, [DOOR])) + _labels(1)
+    page = text(1500, 150, "LEVEL ONE", 12) + dim + body + _fallback_plan_body()
+    pdf = _set(tmp_path, [page])
+    model, report = real_set.build_set_model(pdf, tmp_path / "out")
+    st = report.sheets[0].stages
+    assert st["scale"]["status"] == "ok" and "estimated" in st["scale"]["note"]
+    assert st["walls_rooms"]["status"] == "ok"
+    assert st["walls_rooms"]["review"] >= 1  # the scale_estimated review item
+    ids = {s.id for s in model.spaces.values() if s.level_id == "LX1"}
+    assert {"LX1-101", "LX1-102"} <= ids
+
+
 def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     """#743: door and window providers run together on one set; the set reader
     hands the combined provider each plan's walls and its px per metre."""
@@ -1144,3 +1205,26 @@ def test_a_combined_provider_gets_the_walls_and_the_scale(tmp_path):
     # the door part gets the same walls, for thin-partition gaps (#874)
     assert got["door_plan"] == got["plan"] and "thin_gaps" in got["plan"]["walls"]
     assert rep.detector["provider"] == "combined" and not rep.detector["eval_only"]
+
+
+def test_geometry_fallback_plan_produces_rooms(tmp_path):
+    """An unnumbered legacy plan sheet routes by geometry and yields rooms (#1016)."""
+    body = _outline(_mass(SHELL + PARTITION, [DOOR])) + _labels(1)
+    page = (
+        text(1500, 150, "LEVEL ONE", 12)  # classifies as neither type nor level
+        + text(100, 48, SCALE_NOTE, 8)
+        + body
+        + _fallback_plan_body()
+    )
+    pdf = _set(tmp_path, [page])
+    model, report = real_set.build_set_model(pdf, tmp_path / "out")
+    st = report.sheets[0].stages
+    assert st["sheet_index"]["status"] == "ok"
+    assert "routed by geometry fallback" in st["sheet_index"]["reason"]
+    assert st["walls_rooms"]["status"] == "ok"
+    assert report.levels[0]["id"] == "LX1"
+    ids = {s.id for s in model.spaces.values() if s.level_id == "LX1"}
+    assert {"LX1-101", "LX1-102"} <= ids  # the labelled building rooms
+    # the fallback body's own closed loops read as unlabeled rooms, which is
+    # faithful: plan-like geometry extracts rooms, labels or not
+    assert len(ids) >= 14

@@ -37,6 +37,8 @@ import ifcopenshell.api.geometry as _Gm  # noqa: E402
 import ifcopenshell.api.spatial as _Sp  # noqa: E402
 import ifcopenshell.guid as _guid  # noqa: E402
 
+import ifc_import  # noqa: E402
+
 H = 3.0  # wall height used by the fixture
 
 
@@ -858,3 +860,237 @@ def test_adjacent_space_id_round_trips():
     )
     back = BuildingModel.from_dict(m.to_dict())
     assert back.spaces["R-1"].openings[0].adjacent_space_id == "R-2"
+
+
+# ---------------------------------------------------------------------------
+# Tier 0 dims fallbacks for non-kernel-safe geometry (#748 real files)
+# ---------------------------------------------------------------------------
+
+
+class _FakeEnt:
+    """Minimal stand-in for an ifcopenshell entity in pure-python helpers."""
+
+    def __init__(self, kind, **kw):
+        self._kind = kind
+        self.__dict__.update(kw)
+
+    def is_a(self, name=None):
+        return self._kind == name if name else self._kind
+
+
+def _line_curve(coord_list):
+    pts = _FakeEnt("IfcCartesianPointList2D", CoordList=coord_list)
+    return _FakeEnt("IfcIndexedPolyCurve", Segments=None, Points=pts)
+
+
+def _closed_profile_solid(coord_list, depth):
+    area = _FakeEnt("IfcArbitraryClosedProfileDef", OuterCurve=_line_curve(coord_list))
+    return _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=depth)
+
+
+def test_profile_bbox_dims_line_only_curve_mm():
+    solid = _closed_profile_solid(
+        [(0.0, 0.0), (6000.0, 0.0), (6000.0, 240.0), (0.0, 240.0), (0.0, 0.0)],
+        depth=3000.0,
+    )
+    dims = ifc_import._profile_bbox_dims(solid, 0.001)
+    assert dims == (6.0, 0.24, 3.0)
+
+
+def test_profile_bbox_dims_none_on_arc_segment():
+    curve = _line_curve([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)])
+    curve.Segments = [_FakeEnt("IfcArcIndex")]
+    area = _FakeEnt("IfcArbitraryClosedProfileDef", OuterCurve=curve)
+    solid = _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=2.7)
+    assert ifc_import._profile_bbox_dims(solid, 1.0) is None
+
+
+def test_profile_bbox_dims_none_on_rectangle_profile():
+    area = _FakeEnt("IfcRectangleProfileDef", XDim=6.0, YDim=0.24)
+    solid = _FakeEnt("IfcExtrudedAreaSolid", SweptArea=area, Depth=3.0)
+    assert ifc_import._profile_bbox_dims(solid, 1.0) is None
+
+
+def test_face_set_extents_vertex_bbox_mm():
+    face_set = _FakeEnt(
+        "IfcPolygonalFaceSet",
+        Coordinates=_FakeEnt(
+            "IfcCartesianPointList3D", CoordList=[(0.0, 0.0, 0.0), (4000.0, 200.0, 2700.0)]
+        ),
+    )
+    item = _FakeEnt("IfcPolygonalFaceSetWrapper")  # unused decoy in another rep
+    other = _FakeEnt("IfcExtrudedAreaSolid")
+    el = _FakeEnt(
+        "IfcWall",
+        Representation=_FakeEnt(
+            "IfcProductDefinitionShape",
+            Representations=[
+                _FakeEnt("IfcShapeRepresentation", Items=[other]),
+                _FakeEnt("IfcShapeRepresentation", Items=[face_set, item]),
+            ],
+        ),
+    )
+    assert ifc_import._face_set_extents(el, 0.001) == (4.0, 0.2, 2.7)
+
+
+def test_face_set_extents_none_without_face_set():
+    other = _FakeEnt("IfcExtrudedAreaSolid")
+    el = _FakeEnt(
+        "IfcWall",
+        Representation=_FakeEnt(
+            "IfcProductDefinitionShape",
+            Representations=[_FakeEnt("IfcShapeRepresentation", Items=[other])],
+        ),
+    )
+    assert ifc_import._face_set_extents(el, 1.0) is None
+    assert ifc_import._face_set_extents(_FakeEnt("IfcWall"), 1.0) is None
+
+
+def test_flat_scan_fallback_storeys_not_aggregated(tmp_path):
+    # #748 regression: some real files carry IfcBuildingStorey entities that are
+    # not aggregated under IfcBuilding, so the spatial walk finds nothing and
+    # import falls back to f.by_type(), which returns a tuple; .sort() needs a list.
+    path = tmp_path / "orphan-storeys.ifc"
+    bem = _bem_fixture()
+    write_ifc4(bem, path)
+    f = ifcopenshell.open(str(path))
+    rels = f.by_type("IfcRelAggregates") or ()
+    for rel in list(rels):
+        if rel.RelatingObject.is_a("IfcBuilding"):
+            f.remove(rel)
+    f.write(str(path))
+    m = import_ifc(path)
+    assert len(m.levels) == 1
+    assert m.levels[0].elevation_z_m == pytest.approx(0.0)
+
+
+def test_site_level_spaces_without_storeys(tmp_path):
+    """#928: spaces aggregated under IfcSite with no IfcBuilding/IfcBuildingStorey.
+
+    gni-74 shape: 42 IfcSpaces aggregate directly under IfcSite, walls are
+    contained in IfcSite, and no IfcBuildingStorey exists anywhere. The
+    importer synthesizes stand-in storeys from the space elevations instead
+    of returning an empty model.
+    """
+    path = tmp_path / "site_spaces.ifc"
+    make_ifc_fixture(path)
+    f = ifcopenshell.open(str(path))
+    site = f.by_type("IfcSite")[0]
+    spaces = list(f.by_type("IfcSpace"))
+    walls = list(f.by_type("IfcWall"))
+    storeys = list(f.by_type("IfcBuildingStorey"))
+    assert storeys and spaces and walls
+
+    # move space aggregation and wall containment up to IfcSite, drop storeys
+    for rel in list(f.by_type("IfcRelAggregates")):
+        if rel.RelatingObject.is_a("IfcBuildingStorey"):
+            f.remove(rel)
+    _Ag.assign_object(f, products=spaces, relating_object=site)
+    for rel in list(f.by_type("IfcRelContainedInSpatialStructure")):
+        if rel.RelatingStructure.is_a("IfcBuildingStorey"):
+            f.remove(rel)
+    _Sp.assign_container(f, products=walls, relating_structure=site)
+    for st in storeys:
+        f.remove(st)
+    assert not f.by_type("IfcBuildingStorey")
+    f.write(str(path))
+
+    model = import_ifc(path)
+    assert len(model.levels) == 1
+    assert model.levels[0].name == "Level 1 (synthesized)"
+    assert len(model.spaces) == 4
+    assert len(model.envelope) > 0
+    assert all(sp.level_id == model.levels[0].id for sp in model.spaces.values())
+
+
+# --- #929: IFC2X3 files are upgraded in memory, then imported --------------
+
+
+def _write_ifc2x3_fixture(path):
+    """Minimal hand-built IFC2X3 file: site/storey, one wall, one space."""
+    f = ifcopenshell.file(schema_identifier="IFC2X3")
+    org = f.create_entity("IfcOrganization", Name="MATCHLINE-TEST")
+    person = f.create_entity("IfcPerson", Id="t", FamilyName="Tester")  # Id: the IFC2X3 attr name
+    pao = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=org)
+    app = f.create_entity(
+        "IfcApplication",
+        ApplicationDeveloper=org,
+        Version="1",
+        ApplicationFullName="test",
+        ApplicationIdentifier="test",
+    )
+    owner = f.create_entity(
+        "IfcOwnerHistory",
+        OwningUser=pao,
+        OwningApplication=app,
+        ChangeAction="NOCHANGE",
+        CreationDate=0,
+    )
+    ctx = f.create_entity(
+        "IfcGeometricRepresentationContext",
+        ContextType="Model",
+        CoordinateSpaceDimension=3,
+        Precision=1e-5,
+        WorldCoordinateSystem=f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=f.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+        ),
+    )
+    body = f.create_entity(
+        "IfcGeometricRepresentationSubContext",
+        ContextIdentifier="Body",
+        ContextType="Model",
+        ParentContext=ctx,
+        TargetView="MODEL_VIEW",
+    )
+    # IFC2X3 IfcSIUnit: Dimensions is derived in ifcopenshell 0.9's schema, so
+    # only UnitType/Name are settable; Name METRE keeps _length_scale happy.
+    length_unit = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+    project = f.create_entity(
+        "IfcProject",
+        GlobalId=_guid.new(),
+        OwnerHistory=owner,
+        Name="IFC2X3 PROJ",
+        UnitsInContext=f.create_entity("IfcUnitAssignment", Units=(length_unit,)),
+    )
+    site = f.create_entity("IfcSite", GlobalId=_guid.new(), OwnerHistory=owner, Name="SITE")
+    building = f.create_entity("IfcBuilding", GlobalId=_guid.new(), OwnerHistory=owner, Name="BLDG")
+    storey = f.create_entity(
+        "IfcBuildingStorey", GlobalId=_guid.new(), OwnerHistory=owner, Name="Level 1"
+    )
+    _Ag.assign_object(f, products=[site], relating_object=project)
+    _Ag.assign_object(f, products=[building], relating_object=site)
+    _Ag.assign_object(f, products=[storey], relating_object=building)
+
+    wall = f.create_entity("IfcWall", GlobalId=_guid.new(), OwnerHistory=owner, Name="W1")
+    wall.ObjectPlacement = _placement(f, (0.0, 0.0, 0.0), storey.ObjectPlacement)
+    _add_solid(f, wall, _rect_profile(f, 10.0, 0.2, -5.0, -0.1), 3.0, body)
+    _Sp.assign_container(f, products=[wall], relating_structure=storey)
+
+    space = f.create_entity("IfcSpace", GlobalId=_guid.new(), OwnerHistory=owner, Name="ROOM 101")
+    space.ObjectPlacement = _placement(f, (0.0, 0.1, 0.0), storey.ObjectPlacement)
+    _add_solid(f, space, _rect_profile(f, 10.0, 9.0, -5.0, -4.5), 3.0, body)
+    _Ag.assign_object(f, products=[space], relating_object=storey)
+
+    f.write(str(path))
+    return path
+
+
+def test_ifc2x3_file_is_upgraded_and_imported(tmp_path):
+    path = _write_ifc2x3_fixture(tmp_path / "ifc2x3.ifc")
+    assert ifcopenshell.open(str(path)).schema == "IFC2X3"
+
+    model = import_ifc(path)
+
+    assert model.source_schema == "IFC2X3"
+    assert len(model.levels) == 1
+    assert [s.name for s in model.spaces.values() if s.name] or model.spaces
+    envelope_walls = [e for e in model.envelope if e.__class__.__name__ == "EnvelopeWall"]
+    assert envelope_walls, "wall survived the schema upgrade"
+
+
+def test_ifc4_model_has_no_source_schema_marker(tmp_path):
+    path = tmp_path / "ifc4.ifc"
+    make_ifc_fixture(path)
+    model = import_ifc(path)
+    assert not hasattr(model, "source_schema")

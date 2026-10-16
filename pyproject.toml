@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "matchline"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic, auditable extraction of building energy modeling (BEM) inputs from architectural drawings and BIM"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
@@ -14,7 +14,7 @@ keywords = ["bem", "bim", "ifc", "gbxml", "floor-plan", "energy-modeling"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD Software License",
+    "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering",
 ]
@@ -31,6 +31,10 @@ dependencies = [
     "pypdfium2>=4.30",
     # trust report PDF (#750); BSD, pure Python, no system libraries
     "reportlab>=4.0",
+    # review-queue auto-triage (#1070): TypedDecider loads its .npz models
+    # through sklearn estimators, and run_review imports the classifier at
+    # module top, so a real install needs it or `matchline review` dies
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -38,8 +42,10 @@ dependencies = [
 ocr = ["rapidocr_onnxruntime"]
 # Optional second OCR backend for schedule tags (#668); needs the tesseract binary
 ocr-tesseract = ["pytesseract"]
+# COBie workbook reader for mechanical schedules (#974); lazy import
+mech = ["openpyxl"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow"]
+test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
@@ -47,12 +53,16 @@ datasets = ["pyarrow"]
 detector = ["torch", "ultralytics"]
 # OpenStudio round-trip gate (#628): CI installs it; tests skip without it
 openstudio = ["openstudio"]
+# One-page web app (#982): matchline-ui launches on 127.0.0.1:7860
+ui = ["gradio>=4.0"]
 
 [project.scripts]
 matchline = "cli:main"
+matchline-ui = "ui.app:main"
 
 [tool.setuptools]
 py-modules = [
+    "area_definitions",
     "air_loops",
     "atria",
     "below_grade",
@@ -71,9 +81,14 @@ py-modules = [
     "cli",
     "construction_library",
     "construction_library_data",
+    "atomic_io",
+    "html_page",
     "construction_library_prm_data",
     "constructions",
+    "corrections",
     "convention_report",
+    "legend_learning",
+    "mech_schedule",
     "datasets_adapter",
     "daylight_skylights",
     "detection_provider",
@@ -84,6 +99,7 @@ py-modules = [
     "elevation_windows",
     "export_package",
     "facade_takeoff",
+    "feedback_capture",
     "geometry_simplify",
     "grade",
     "grid_detect",
@@ -101,8 +117,8 @@ py-modules = [
     "jesse",
     "lighting",
     "limits",
-    "link",
     "materials",
+    "matchlines",
     "mech_tags",
     "opening_attach",
     "opening_identity",
@@ -112,9 +128,13 @@ py-modules = [
     "plan_walls",
     "polygon_classify",
     "real_set",
+    "revisions",
     "registration",
     "review_report",
+    "review_viewer",
+    "viewer_corrections",
     "roof_geometry",
+    "roof_simplify",
     "room_labels",
     "run_bem_export",
     "run_elevation_windows",
@@ -123,8 +143,10 @@ py-modules = [
     "run_multidiscipline",
     "run_pipeline",
     "run_room_labels",
+    "run_review",
     "run_symbols",
     "run_validation",
+    "sim_smoke",
     "safe_xml",
     "schedule_parse",
     "semi_exterior",
@@ -135,18 +157,24 @@ py-modules = [
     "space_use_defaults",
     "space_use_defaults_data",
     "symbols",
+    "takeoff_diff",
+    "telemetry_emitter",
+    "telemetry_spec",
     "thermal_zoning",
-    "validate",
+    "vestibules",
     "wall_types",
     "zone_airflow",
     "zone_capacity",
 ]
 packages = [
+    "assets",
     "link",
     "query",
     "sim",
     "synth",
+    "ui",
     "validate",
+    "review_classifier",
 ]
 
 [tool.pytest.ini_options]
@@ -173,3 +201,10 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["synth"]
+
+[tool.setuptools.package-data]
+# Runtime data the wheel must carry (#1070, #1071): the license ledger gates
+# detector artifacts, the schemas validate gbXML exports and detector loads,
+# and review_classifier needs its trained models for auto-triage.
+"assets" = ["*.json", "schemas/*.json", "schemas/*.xsd"]
+"review_classifier" = ["*.npz"]

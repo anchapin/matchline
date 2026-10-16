@@ -12,7 +12,7 @@ glyphs; no attempt to mimic multi-firm drafting variation.
 | `synth/sheets.py` | Full-sheet generator: footprint, rooms, walls, doors, windows, labels, schedules; `generate_sheet(seed)` → (image, ground-truth dict) |
 | `synth/make_dataset.py` | CLI: `--sheets N --crops-per-class M --seed S` → `synth/out/` |
 | `synth/gap_experiment.py` | Sim-to-real: synth-trained classifier vs 1,626 real AEC-bench crops |
-| `synth/e2e_test.py` | End-to-end: GT detections → schedule rollup → floor area → room labels → geometry simplification |
+| `scripts/synth_e2e_test.py` | End-to-end: GT detections → schedule rollup → floor area → room labels → geometry simplification |
 | `synth/out/` | Persisted sample: 6 sheets + 2,000 crops + `gap_results.json` |
 
 ## Symbol classes
@@ -85,7 +85,7 @@ only 44%: the redacted multi-firm bench is hard even in-distribution.)
 ## Reproduce
 
 ```
-~/workspace/.venv-ocr/bin/python synth/e2e_test.py        # ~20 s
+~/workspace/.venv-ocr/bin/python scripts/synth_e2e_test.py        # ~20 s
 ~/workspace/.venv-ocr/bin/python synth/gap_experiment.py  # ~20 s
 ~/workspace/.venv-ocr/bin/python synth/make_dataset.py --sheets 6 --crops-per-class 250 --seed 7
 ```

@@ -4,9 +4,50 @@ All notable changes to this project are documented here, in
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) style.
 `main` is reserved for releases; `develop` is the working branch.
 
-## [0.1.0] - 2026-10-12
-- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
+## [Unreleased]
+
 ### Added
+
+- Nothing yet; see [0.2.0] below.
+
+## [0.2.0] - 2026-10-16
+
+### Added
+
+- `hvac_trace.trace_symbols_to_terminals`: multi-source duct skeleton trace that
+  assigns each legend-referenced terminal to the zone its ductwork feeds
+  (#744). Seeds at terminal symbols, walks the skeleton with a shared
+  `ASSOC_PX` reach, and labels runs contested when two terminals claim the
+  same skeleton, and leaves a run no tagged terminal seeds unassigned; off-duct
+  terminals stay unassigned. `real_set.py` records
+  `duct` / `duct_ambiguous` stats and notes the zone each terminal feeds
+  ("it sits on that zone's ductwork (skeleton trace, ...)"), so ambiguous
+  traces surface as review instead of guesses. Five new trace tests plus a
+  shared-room duct test in the real-set fixture.
+
+### Added
+
+- `detector/train_scratch.py`: from-scratch YOLO-style single-shot detector
+  trainer for the synth track (#743). Grayscale letterbox input, stride-8 grid,
+  per-cell class + objectness + CIoU box losses, cell-relative box targets,
+  class-agnostic NMS decode, IoU-matched per-class evaluation, deterministic
+  seeded training. License-clean: custom PyTorch only, no ultralytics weights
+  or code paths in shipped artifacts. Outputs (ckpt.pt, metrics.json) are
+  written to a caller-set run directory, never the repo. 6 tests in
+  `detector/tests/test_train_scratch.py` (CI runs lint-only on detector code
+  by policy; suite verified locally).
+### Added
+
+- `detector/convert_synth.py`: synth gt.json -> Ultralytics YOLO converter (#743): maps sheet symbols through the unified taxonomy (AEC_MAP), clips and normalizes boxes, deterministic seeded train/val split, `data.yaml` output.
+- `scripts/benchmark.py`: real-building benchmark harness (#748): per-building IFC-path metrics, HVAC-terminal check, cross-frontend comparison and OpenStudio gbXML import check from an external config; scoreboard markdown, data outside the repo, `DATASETS.md` records candidates and licenses.
+- Synthetic second-style mech sheets (#744): `generate_mech_sheet(..., style=1)`
+  draws every terminal in the class's other drafting convention (alt glyphs
+  added for VAV, AHU and thermostat; diffuser and grille had theirs) and
+  `legend=True` draws an HVAC symbol legend in a band below the plan, with
+  `gt["legend"]` holding sheet-dict fragments for `hvac_legend.read_legend`.
+  End-to-end tests pin: the drawn legend reads back mapped, templates are cut
+  at the drawn size, legend-template hits are true terminals only, and the
+  ducted-terminal NCC gap stays pinned as the open limitation.
 
 - Vestibule detection (#747): a room is marked `is_vestibule` when it meets
   Alex's rule (2026-10-11): it has an exterior door, its floor area is at or
@@ -164,11 +205,31 @@ All notable changes to this project are documented here, in
 - `geometry_simplify` now raises a clear `ImportError` (install hint) instead
   of falling back to a machine-specific vendored shapely.
 
+### Added (late entries for this release)
+- Explicit area definitions (GSF, BOMA rentable, program/assignable) with reconciliation (#975).
+- Mechanical schedule parsing and system-type classification (#974).
+- Match lines, split sheets, and enlarged-plan deduplication (#994); legacy plan sheets route by plan-like geometry with a single-dimension scale fallback (#1016, #1019).
+- Review viewer: a read-only 3D view with pan/rotate and level-by-level top-down (#1001), in-viewer corrections (rename, reclass, merge, split, revert-to-auto) (#1002), MEP takeoff and trace overlays (#1004), and a provenance-method filter chip in the queue (#1080).
+- Review queue: worst-first ordering, level tracking, filters and bulk actions (#996).
+- Correction history with undo and revert-to-automatic (#997); revision/addenda tracking and takeoff diffs, including moved-opening pairs and space-identity fingerprints (#993, #1034, #1042-#1048), a `--baseline` flag on `matchline run` (#1077), and diff results fed into the review queue (#1048).
+- Export package as one zip with a self-contained share-back preview, and a feedback-log summary in the trust report (#999, #1081).
+- Progressive takeoff mode: stop after takeoff, skip BEM build and export (#998).
+- Per-project legend tag learning with a sidecar, classify override and before/after eval (#995).
+- Versioned minimum-telemetry spec with allowlist, exclusion list and consent gates, the allowlist emitter wired into the run pipeline, and in-product feedback capture wired into review decisions, stage failures and the CLI (#1003, #1037, #1038).
+- Real-building benchmark expanded to 12 licensed buildings; the scoreboard gains real simplification and surface-count columns, door recall via IfcDoor openings, and raw entity-count truth (#748, #972).
+- Wheel packaging: `pip install matchline` works as a real install - every module ships in the wheel (review_classifier and its runtime data), the CI wheel check reads packages from pyproject, and the synth e2e scripts stay out of the wheel (#1035, #1070, #1071, #1076, #1081).
+- `matchline run` reaches the `--set` and `--ifc` input paths end to end (#1036).
+- Docs: contributor review norms and a Code of Conduct (#1092), a generated repo map with a CI drift check and a complete docs index (#1096), takeoff-diff and learn-legend documented in the README (#1066).
+- Publishing: a tag-driven PyPI release workflow with trusted publishing; pushing a vX.Y.Z tag builds, smoke-tests and publishes. This release is the first publish (#1099).
+- CI and hygiene: the CLI test subprocess cap raised to 180s (#1072), configs and docstrings aligned with behavior and one shared `point_in_polygon` (#1073-#1075), the demo install exercises every CLI subcommand (#1076), orphaned elevation tests moved with a repo-root guard (#1064), dead public code removed from review_classifier (#1065), stage JSON writes go through temp-then-replace (#1039), the missing-OCR path made deterministic (#1040), one shared page head for the HTML pages (#1044), unmapped legend descriptions suggest `--tag` mappings (#1047), takeoff-diff classifies each space once (#1043).
+- Dependencies: Renovate bumps (ruff 0.17, GitHub Actions v7, CPython 3.15 with a deferral in ci.yml).
+
 ## [0.1.0] - 2026-09-19
 
 Initial public development snapshot on `develop`.
 
 ### Added
+- IFC import: dims fallbacks for real-file geometry the kernel cannot process - closed-profile bbox for `IfcExtrudedAreaSolid` with line-only `IfcIndexedPolyCurve`/`IfcPolyline` outer curves, and vertex bbox for `IfcPolygonalFaceSet`; plus `IfcIndexedPolyCurve`/`IfcPolyline` footprints in `_polyline_footprint` so space and wall extraction survive TUM GNI anonymized exports (#748).
 - WiSARD classifier reproduction (thermometer encoding, empirical-Bayes
   normalization, COM normalization, skeletonization): 94.57% on MNIST.
 - Drawing pipeline: symbol/schedule takeoffs (`count × width × height`), OCR

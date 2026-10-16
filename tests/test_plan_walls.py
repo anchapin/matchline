@@ -259,6 +259,33 @@ def test_walls_for_sheets_uses_scale_and_index(tmp_path):
     assert not (out / "walls_002.json").exists()
 
 
+def test_walls_for_sheets_flags_an_estimated_scale(tmp_path):
+    """#1019: a needs_review dimension-estimated scale still reads walls, and
+    the review rides on the walls output instead of blocking the sheet."""
+    content = _outline(_mass(SHELL + PARTITION, [DOOR]))
+    pdf = write_pdf(tmp_path / "s.pdf", [PageSpec(width=PAGE_W, height=PAGE_H, content=content)])
+    out = tmp_path / "o"
+    P.ingest_pdf(pdf, out_dir=out, dpi=18)
+    (out / "scale.json").write_text(
+        json.dumps(
+            {
+                "sheet_001.json": {
+                    "m_per_pt": M_PER_PT,
+                    "needs_review": True,
+                    "source": "single_dimension",
+                    "reason": "estimated from 1 dimension; no scale note or bar on the sheet",
+                }
+            }
+        )
+    )
+    res = W.walls_for_sheets(out)
+    kinds = [r["kind"] for r in res["sheet_001.json"]["review"]]
+    assert "scale_estimated" in kinds
+    data = json.loads((out / "walls_001.json").read_text())
+    assert any(r["kind"] == "scale_estimated" for r in data["review"])
+    assert data["rooms"]  # walls still read on the estimated scale
+
+
 def test_cli_walls(tmp_path, capsys):
     pdf = write_pdf(
         tmp_path / "s.pdf",
@@ -1163,6 +1190,55 @@ def test_double_door_gap_in_a_thin_partition_is_one_thin_gap(tmp_path):
     assert g["width_m"] == pytest.approx(1.73, abs=0.03)
     assert _gap_mid(g) == pytest.approx((4, 3), abs=0.05)
     assert not [o for o in res.openings if o["width_m"] > 0.1]
+
+
+def _thin_seg_lines(segs):
+    """Raw thin partition faces and jamb faces drawn as 0.5 pt lines."""
+    from pdf_fixtures import line
+
+    out = ""
+    for (x0, y0), (x1, y1) in segs:
+        out += line(*_pt(x0, y0), *_pt(x1, y1), 0.5)
+    return out
+
+
+def test_door_at_the_end_of_a_thin_partition_is_a_thin_gap(tmp_path):
+    # the partition ends at a cross wall that stops at the partition's face,
+    # so the gap's far jamb is that wall's end (#875)
+    thin = [
+        ((4, 0), (4, 3.75), T_THIN),
+        ((4.0125, 3.75), (6, 3.75), T_THIN),
+    ]
+    doors = [((4, 2.2), (0, 1), 0.9, T_THIN), ((4, 3.3), (0, 1), 0.9, T_THIN)]
+    res, _ = _read(tmp_path, _outline(_mass(SHELL + thin, doors)))
+    mids = sorted(_gap_mid(g)[1] for g in res.thin_gaps)
+    assert mids == pytest.approx([2.2, 3.3], abs=0.05)
+    assert all(g["width_m"] == pytest.approx(0.9, abs=0.04) for g in res.thin_gaps)
+
+
+def test_uneven_pier_faces_at_the_end_of_a_thin_partition(tmp_path):
+    # drawn like the Clinic: the pier between two doors has uneven faces
+    # (0.135 m and 0.1 m) that clip its band short of the opening's near
+    # jamb, whose face is then drawn just past the band end (#875)
+    shell = _outline(_mass(SHELL))
+    f1, f2 = 4 - T_THIN / 2, 4 + T_THIN / 2
+    segs = [
+        ((f1, 0), (f1, 1.75)),
+        ((f1, 2.65), (f1, 2.785)),
+        ((f2, 0), (f2, 1.75)),
+        ((f2, 2.65), (f2, 2.75)),
+        ((f1, 1.75), (f2, 1.75)),
+        ((f1, 2.65), (f2, 2.65)),
+        ((f1, 2.785), (f2, 2.785)),
+        ((f1, 3.75), (f2, 3.75)),
+        ((4.0, 3.7375), (6, 3.7375)),
+        ((4.0, 3.7625), (6, 3.7625)),
+    ]
+    res, _ = _read(tmp_path, shell + _thin_seg_lines(segs))
+    mids = sorted(_gap_mid(g)[1] for g in res.thin_gaps)
+    assert mids == pytest.approx([2.2, 3.27], abs=0.05)
+    widths = sorted(g["width_m"] for g in res.thin_gaps)
+    assert widths == pytest.approx([0.9, 0.965], abs=0.04)
 
 
 @pytest.mark.parametrize("width", [0.3, 3.0])

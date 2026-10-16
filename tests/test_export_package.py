@@ -36,6 +36,34 @@ def pkg(tmp_path_factory):
     return _run(tmp_path_factory.mktemp("pkg"), climate_zone="5A")
 
 
+def test_package_reports_the_feedback_summary(tmp_path):
+    from feedback_capture import FeedbackLog
+
+    log = FeedbackLog(tmp_path / "out" / "feedback.jsonl")
+    log.log_failed_parse("stage_2", "malformed_input")
+    log.log_failed_parse("stage_2", "malformed_input")
+    log.log_override("wall", "retype", confidence=0.4)
+    with (tmp_path / "out" / "feedback.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write("{not json\n")
+    pkg = _run(tmp_path, climate_zone="5A")
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    assert tr["feedback"]["present"] is True
+    assert tr["feedback"]["file"] == "feedback.jsonl"
+    assert tr["feedback"]["summary"]["total"] == 3
+    assert tr["feedback"]["skipped_lines"] == 1
+    html = (pkg / "trust_report.html").read_text()
+    assert "<h2>Feedback log</h2>" in html
+    assert "failed_parse 2" in html
+    assert "override 1" in html
+    assert "malformed log line(s) skipped" in html
+
+
+def test_package_report_unchanged_without_feedback_log(pkg):
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    assert "feedback" not in tr
+    assert "<h2>Feedback log</h2>" not in (pkg / "trust_report.html").read_text()
+
+
 def test_package_holds_the_exports_report_and_disclaimer(pkg):
     names = {p.name for p in pkg.iterdir()}
     assert {"trust_report.html", "trust_report.json", "DISCLAIMER.txt", "manifest.json"} <= names
@@ -100,6 +128,19 @@ def test_manifest_hashes_match_the_files(pkg):
     assert "Trust report" in text and "qualified" in text
 
 
+def test_signoff_block_is_dated_and_left_blank_for_the_professional(pkg):
+    """#976: the report carries a dated sign-off block matchline never signs."""
+    from datetime import datetime
+
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    so = tr["signoff"]
+    assert datetime.fromisoformat(so["generated_at"]).tzinfo is not None  # dated, UTC
+    assert so["prepared_by"] == "" and so["reviewed_by"] == "" and so["stamp"] == ""
+    page = (pkg / "trust_report.html").read_text()
+    assert "Sign-off" in page and "Prepared by" in page and "stamp / seal" in page
+    assert so["generated_at"] in page  # the HTML shows the same timestamp
+
+
 def test_input_files_are_hashed(tmp_path):
     f = tmp_path / "set.pdf"
     f.write_bytes(b"%PDF-1.4 test")
@@ -128,3 +169,103 @@ def test_numbers_display_rounded_but_json_keeps_full_value():
         assert E.fmt(v) == shown, (v, E.fmt(v))
     n = E._num("area", 361.6746126910826, "stage_02_model.json x")
     assert E._val(n) == "361.67" and n["value"] == 361.6746126910826
+
+
+# --- zip, share-back preview and contents listing (#999) ---------------------
+
+
+def test_package_contents_are_listed_in_the_trust_report(pkg):
+    tr = json.loads((pkg / "trust_report.json").read_text())
+    man = json.loads((pkg / "manifest.json").read_text())
+    listed = {c["path"] for c in tr["package_contents"]}
+    assert listed == set(man["files"]) | {
+        "manifest.json"
+    }  # the manifest lists every file but itself
+    for c in tr["package_contents"]:
+        if c.get("generated"):
+            assert c["sha256"] is None
+        else:
+            f = pkg / c["path"]
+            assert c["bytes"] == f.stat().st_size
+            assert c["sha256"] == hashlib.sha256(f.read_bytes()).hexdigest()
+    by_path = {c["path"]: c for c in tr["package_contents"]}
+    assert by_path["trust_report.html"]["generated"] is True
+    assert by_path["review/decisions.json"]["sha256"]
+
+
+def test_contents_section_renders_in_html_and_pdf(pkg):
+    page = (pkg / "trust_report.html").read_text()
+    assert "<h2>Package contents</h2>" in page
+    assert "hashed in manifest.json" in page  # the report itself is hashed there
+    import pypdfium2
+
+    doc = pypdfium2.PdfDocument(str(pkg / "trust_report.pdf"))
+    text = doc[0].get_textpage().get_text_range()
+    assert "Package contents" in text and "share_back.html" in text
+
+
+def test_share_back_preview_is_one_selfcontained_page(pkg):
+    page = (pkg / "share_back.html").read_text()
+    assert "Share-back preview" in page and "Package contents" in page
+    # #1001: the 3D review viewer rides on the share-back page, inline only
+    assert "<canvas" in page
+    assert not re.search(r"<script[^>]*\bsrc\s*=", page)
+    assert not re.search(r'(src|href)\s*=\s*["\']?https?:', page)
+
+
+def test_run_builds_the_one_zip(pkg):
+    import zipfile
+
+    zip_path = pkg.parent / "package.zip"
+    assert zip_path.exists()
+    with zipfile.ZipFile(zip_path) as zf:
+        names = set(zf.namelist())
+    assert {
+        "trust_report.html",
+        "trust_report.pdf",
+        "share_back.html",
+        "review/decisions.json",
+        "DISCLAIMER.txt",
+        "manifest.json",
+    } <= names
+    assert any(n.endswith(".xml") for n in names) and any(n.endswith(".ifc") for n in names)
+
+
+def test_cli_export_package_verifies_and_zips(pkg, tmp_path, capsys):
+    from cli import cmd_export_package
+
+    z = cmd_export_package(argparse.Namespace(out_dir=str(pkg.parent)))
+    assert z.name == "package.zip" and z.exists()
+    # a tampered file must fail the manifest check and exit 1
+    import shutil
+
+    other = tmp_path / "out"
+    shutil.copytree(pkg.parent, other)
+    (other / "package" / "DISCLAIMER.txt").write_text("tampered\n")
+    with pytest.raises(SystemExit):
+        cmd_export_package(argparse.Namespace(out_dir=str(other)))
+
+
+def test_build_package_refuses_when_the_gate_has_not_acknowledged(tmp_path):
+    from building_model import BuildingModel, Provenance, ReviewItem
+    from validate.types import ValidationReport
+
+    m = BuildingModel(name="snap999")
+    prov = Provenance(sheet_id="A-1", revision=1, method="plan", confidence=0.9)
+    m.review_queue.append(
+        ReviewItem(
+            id="R1",
+            kind="space_merge",
+            description="undecided",
+            confidence=0.9,
+            provenance=prov,
+            urgency=1,
+        )
+    )
+    rep = ValidationReport(building_name="snap999", results=[])
+    out = tmp_path / "out"
+    with pytest.raises(ValueError):
+        E.build_package(out, m, rep, {}, [], require_gate=True)
+    assert not (out / "package").exists()
+    pkg = E.build_package(out, m, rep, {}, [], require_gate=False)
+    assert (pkg / "share_back.html").exists()

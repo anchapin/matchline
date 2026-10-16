@@ -10,6 +10,9 @@ Pipeline
 --------
 1. Build the envelope footprint: union of floor-area (Room etc.) polygons ->
    exterior ring of the union. Each ring edge is one wall surface.
+   Per-part (#970): ``footprint_parts_from_regions`` keeps every connected
+   wing and each wing's interior holes (courtyards); ``simplify_footprint``
+   simplifies all rings under one shared area budget.
 2. Simplify the ring with area-budgeted greedy vertex removal (merges
    collinear segments for free, removes small notches/jogs), plus optional
    Douglas-Peucker for over-segmented curved outlines.
@@ -472,3 +475,144 @@ def simplify_report(res: SimplifyResult) -> dict:
         "skipped_ops": res.skipped,
         "valid": res.valid,
     }
+
+
+# ---------------------------------------------------------------------------
+# Per-part footprints: courtyards (holes) and multi-wing buildings (#970)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FootprintPart:
+    """One connected part of a building footprint."""
+
+    ring: list  # exterior ring vertices, no duplicated closing vertex
+    holes: list  # interior rings (courtyards), same format
+    footprint_area: float  # exterior polygon area; holes NOT subtracted
+
+
+def footprint_parts_from_regions(polygons: list[list]) -> list[FootprintPart]:
+    """Union a set of floor polygons -> every part of the envelope (#970).
+
+    Like ``footprint_from_regions``, but keeps all connected parts (multi-wing
+    campuses) and each part's interior rings (courtyards) instead of taking
+    the largest exterior and dropping holes. Returns [] for no usable input.
+    """
+    polys = []
+    for p in polygons:
+        p = np.asarray(p, dtype=np.float64)
+        if len(p) >= 3:
+            polys.append(Polygon(p))
+    if not polys:
+        return []
+    merged = unary_union(polys)
+    geoms = list(merged.geoms) if merged.geom_type == "MultiPolygon" else [merged]
+    parts = []
+    for g in geoms:
+        if g.is_empty or g.area <= 0:
+            continue
+        ext = np.asarray(g.exterior.coords, dtype=np.float64)
+        if len(ext) > 1 and np.allclose(ext[0], ext[-1]):
+            ext = ext[:-1]
+        holes = []
+        for h in g.interiors:
+            hc = np.asarray(h.coords, dtype=np.float64)
+            if len(hc) > 1 and np.allclose(hc[0], hc[-1]):
+                hc = hc[:-1]
+            if len(hc) >= 3:
+                holes.append([tuple(v) for v in hc])
+        parts.append(
+            FootprintPart(ring=[tuple(v) for v in ext], holes=holes, footprint_area=float(g.area))
+        )
+    return parts
+
+
+@dataclass
+class FootprintSimplifyResult:
+    """Per-part simplification of a multi-ring footprint (#970).
+
+    ``parts`` holds one SimplifyResult per exterior ring (one per connected
+    wing); ``holes[i]`` the simplified interior rings of ``parts[i]``. The
+    area budget is shared: each ring's own delta is capped at ``tol`` times
+    that ring's envelope-area share of the total, so the combined delta
+    across all rings stays within ``tol``. Leftover budget from a ring that
+    found nothing to simplify is not re-pooled to other rings.
+    """
+
+    parts: list  # list[SimplifyResult], one per exterior ring
+    holes: list  # list[list[SimplifyResult]] parallel to parts
+    total_original_area: float
+    total_simplified_area: float
+    area_delta_pct: float  # combined across all rings
+    tol: float = 0.02
+    method: str = "per_part_shared_budget"
+    valid: bool = True
+
+    @property
+    def ring(self) -> list:
+        """Largest part's simplified ring: the pre-#970 single-ring view."""
+        return max(self.parts, key=lambda r: r.original_area).ring
+
+    @property
+    def original_count(self) -> int:
+        """Total original edge count across every part and hole, the shape
+        the single-ring ``SimplifyResult`` exposes (#1019)."""
+        return sum(r.original_count for r in self.parts) + sum(
+            h.original_count for hs in self.holes for h in hs
+        )
+
+    @property
+    def simplified_count(self) -> int:
+        """Total simplified edge count across every part and hole."""
+        return sum(r.simplified_count for r in self.parts) + sum(
+            h.simplified_count for hs in self.holes for h in hs
+        )
+
+    @property
+    def rings(self) -> list:
+        return [r.ring for r in self.parts]
+
+
+def simplify_footprint(
+    parts: list[FootprintPart],
+    tol: float = 0.02,
+    wall_height: float | None = None,
+    **kwargs,
+) -> SimplifyResult | FootprintSimplifyResult:
+    """Simplify every ring of a multi-part footprint under one shared budget (#970).
+
+    Each ring (exterior or hole) is simplified by ``simplify_ring`` with the
+    same ``tol``; since that budget is relative to the ring's own envelope
+    area, the combined area delta across all rings stays within ``tol`` of
+    the total -- the shared budget. A single part with no holes returns the
+    plain ``SimplifyResult``, identical to calling ``simplify_ring`` directly.
+    """
+    if not parts:
+        raise ValueError("no footprint parts to simplify")
+    if len(parts) == 1 and not parts[0].holes:
+        return simplify_ring(parts[0].ring, tol=tol, wall_height=wall_height, **kwargs)
+    part_res: dict = {}
+    hole_res: dict = {}
+    total_orig = 0.0
+    total_simp = 0.0
+    for i, part in enumerate(parts):
+        res = simplify_ring(part.ring, tol=tol, wall_height=wall_height, **kwargs)
+        part_res[i] = res
+        total_orig += res.original_area
+        total_simp += res.simplified_area
+        hole_res[i] = []
+        for h in part.holes:
+            hres = simplify_ring(h, tol=tol, wall_height=wall_height, **kwargs)
+            hole_res[i].append(hres)
+            total_orig += hres.original_area
+            total_simp += hres.simplified_area
+    combined = (total_simp - total_orig) / total_orig * 100.0 if total_orig > 0 else 0.0
+    return FootprintSimplifyResult(
+        parts=[part_res[i] for i in range(len(parts))],
+        holes=[hole_res[i] for i in range(len(parts))],
+        total_original_area=total_orig,
+        total_simplified_area=total_simp,
+        area_delta_pct=combined,
+        tol=tol,
+        valid=abs(combined) <= tol * 100.0 + 1e-9,
+    )

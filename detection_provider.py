@@ -7,10 +7,14 @@ which backend ran. Which provider runs is a config value, not code:
 
     {"provider": "precomputed", "dir": "dets/", "artifact": "<ledger path>"}
     {"provider": "yolo_sahi", "weights": "best.pt", "artifact": "<ledger path>"}
+    {"provider": "scratch", "weights": "ckpt.pt", "artifact": "<ledger path>"}
     {"provider": "door_swing"}
     {"provider": "vector_glazing"}
     {"provider": "combined", "providers": [{"provider": "door_swing"},
                                            {"provider": "vector_glazing"}]}
+    {"provider": "combined", "providers": [
+        {"provider": "scratch", "weights": "window.pt", "labels": ["window"]},
+        {"provider": "scratch", "weights": "door.pt", "labels": ["door"]}]}
     {"provider": "none"}
 
 ``door_swing`` finds door swings (leaf plus quarter arc) by rule
@@ -39,7 +43,7 @@ from typing import Dict, List, Optional, Union
 from datasets_adapter import Detection, detections_from_yolo_json
 
 ROOT = Path(__file__).resolve().parent
-LEDGER = ROOT / "license_ledger.json"
+LEDGER = ROOT / "assets" / "license_ledger.json"
 SHIPPABLE = ("permissive", "share_alike")  # share-alike ships with its notice
 _RANK = {"permissive": 0, "share_alike": 1, "copyleft": 2, "noncommercial": 3, "unknown": 4}
 
@@ -179,6 +183,100 @@ class YoloSahiProvider(DetectionProvider):
             return detections_from_yolo_json(f.name, sheet_id)
         finally:
             os.unlink(f.name)
+
+
+class ScratchProvider(DetectionProvider):
+    """From-scratch detector (``detector/train_scratch.py``), whole-sheet.
+
+    Loads the ``ckpt.pt`` training writes, which carries its own config
+    (num_classes, width, imgsz, names), so the model shape never lives in the
+    detector config. One grayscale pass over the full sheet, no tiling; torch
+    is imported only inside :meth:`detect`, so the rest of matchline never
+    needs it. Training data is matchline's synthetic generators
+    (BSD-3-Clause), so a ledger-listed ``scratch-synth`` or ``scratch-tile``
+    checkpoint is permissive and may ship (#743).
+    """
+
+    name = "scratch"
+
+    def __init__(
+        self,
+        weights: Union[str, Path],
+        artifact: str = "",
+        conf: float = 0.25,
+        device: str = "cpu",
+        **kw,
+    ):
+        super().__init__(artifact or str(weights), **kw)
+        # the checked-in configs write home-relative paths, so expand ~ here
+        self.weights = os.path.expanduser(str(weights))
+        self.conf = conf
+        self.device = device
+        self._net = None
+        self._cfg: Optional[dict] = None
+        self._torch = None
+
+    def _model(self):
+        import torch
+
+        from detector.train_scratch import ScratchNet
+
+        try:
+            ckpt = torch.load(self.weights, map_location=self.device, weights_only=True)
+        except Exception:
+            # legacy checkpoints pickle non-whitelisted objects; those only
+            # come from workflows we control, so keep the permissive load
+            # as a fallback (#743 hardening)
+            ckpt = torch.load(self.weights, map_location=self.device, weights_only=False)
+        cfg = ckpt["config"]
+        model = ScratchNet(num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"])
+        model.load_state_dict(ckpt["model"])
+        model.to(self.device)
+        model.eval()
+        self._cfg = cfg
+        self._torch = torch
+        return model
+
+    def detect(self, image_path, sheet_id):
+        import numpy as np
+        from PIL import Image
+
+        from detector.train_scratch import (
+            decode,
+            letterbox_image,
+            letterbox_params,
+            untransform_boxes,
+        )
+
+        if self._net is None:
+            self._net = self._model()
+        cfg = self._cfg
+        img = np.asarray(Image.open(image_path).convert("L"))
+        oh, ow = img.shape
+        size = cfg["imgsz"]
+        scale, dx, dy = letterbox_params(ow, oh, size)
+        lb = letterbox_image(img, size, scale, dx, dy)
+        x = self._torch.from_numpy(lb / 255.0).unsqueeze(0).unsqueeze(0)
+        with self._torch.no_grad():
+            preds = self._net(x)
+        rows = decode(preds, num_classes=cfg["num_classes"], conf=self.conf)[0]
+        # decode-emission rows go in; scores come back out with their boxes,
+        # so there is no parallel list to re-align (#940 duck finding 2)
+        boxes = untransform_boxes(rows, size, scale, dx, dy, ow, oh)
+        names = list(cfg.get("names") or [])
+        out = []
+        for c, score, x0n, y0n, wn, hn in boxes:
+            out.append(
+                Detection(
+                    label=names[c] if c < len(names) else str(c),
+                    tag="",  # tag extraction is a separate OCR step (DET-02/DET-03)
+                    score=float(score),
+                    bbox=(x0n * ow, y0n * oh, (x0n + wn) * ow, (y0n + hn) * oh),
+                    source=sheet_id,
+                    drawing_type="floor_plan",
+                )
+            )
+        return out
 
 
 class DoorSwingProvider(DetectionProvider):
@@ -401,6 +499,42 @@ def _glass_pieces(op: dict) -> List[tuple]:
     return [(at(lo), at(hi)) for lo, hi in pieces]
 
 
+class LabeledProvider(DetectionProvider):
+    """A provider kept to the labels its config declares (``labels``).
+
+    The specialist freeze runs one trained checkpoint per class: windows from
+    the multi-scale checkpoint, doors from the single-scale one (#743). Two
+    full detectors joined would fire each one's other class into the other's
+    candidate pool, so a part may declare the labels it is kept to and every
+    detection outside them is dropped. The wrapper delegates the run and
+    keeps the inner provider's artifact, license class and eval-only flag:
+    filtering labels trains nothing and ships nothing new.
+    """
+
+    name = "labeled"
+
+    def __init__(self, inner: DetectionProvider, labels: List[str]):
+        self.inner = inner
+        self.labels = list(labels)
+        self.artifact = inner.artifact
+        self.info = inner.info
+        self.needs_scale = getattr(inner, "needs_scale", False)
+        self.needs_walls = getattr(inner, "needs_walls", False)
+        self.runs_without_scale = getattr(inner, "runs_without_scale", False)
+
+    def has(self, image_path) -> bool:
+        return not hasattr(self.inner, "has") or self.inner.has(image_path)
+
+    def detect(self, image_path, sheet_id, plan: Optional[dict] = None, px_per_m=None):
+        kw: dict = {}
+        if self.needs_walls:
+            kw["plan"] = plan
+        if self.needs_scale:
+            kw["px_per_m"] = px_per_m
+        rows = self.inner.detect(image_path, sheet_id, **kw)
+        return [d for d in rows if d.label in self.labels]
+
+
 class CombinedProvider(DetectionProvider):
     """Several providers on one set, their detections joined per sheet.
 
@@ -456,10 +590,15 @@ PROVIDERS: Dict[str, type] = {
     "door_swing": DoorSwingProvider,
     "none": NoneProvider,
     "precomputed": PrecomputedProvider,
+    "scratch": ScratchProvider,
     "vector_glazing": VectorGlazingProvider,
     "yolo_sahi": YoloSahiProvider,
 }
-_REQUIRED = {"precomputed": ("dir",), "yolo_sahi": ("weights",)}
+_REQUIRED = {
+    "precomputed": ("dir",),
+    "scratch": ("weights",),
+    "yolo_sahi": ("weights",),
+}
 
 
 def provider_from_config(
@@ -474,6 +613,15 @@ def provider_from_config(
     elif not isinstance(cfg, dict):
         cfg = json.loads(Path(cfg).read_text())
     cfg = dict(cfg)
+    labels = cfg.pop("labels", None)
+    if labels is not None and (
+        not isinstance(labels, list)
+        or not labels
+        or not all(isinstance(lb, str) and lb for lb in labels)
+    ):
+        raise ProviderConfigError(
+            "detector provider 'labels' must be a non-empty list of label names"
+        )
     name = cfg.pop("provider", None)
     if name == "combined":
         return _combined_from_config(cfg, release)
@@ -489,6 +637,8 @@ def provider_from_config(
         prov = PROVIDERS[name](**cfg)
     except TypeError as e:
         raise ProviderConfigError(f"detector provider {name!r}: {e}") from e
+    if labels is not None:
+        prov = LabeledProvider(prov, labels)
     if release and prov.info.eval_only:
         raise ProviderLicenseError(f"{prov.info.note()}; not allowed in a release")
     return prov
@@ -520,9 +670,11 @@ __all__ = [
     "CombinedProvider",
     "DetectionProvider",
     "DoorSwingProvider",
+    "LabeledProvider",
     "VectorGlazingProvider",
     "NoneProvider",
     "PrecomputedProvider",
+    "ScratchProvider",
     "YoloSahiProvider",
     "ProviderInfo",
     "ProviderConfigError",

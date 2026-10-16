@@ -104,10 +104,6 @@ class ReviewTriage:
             )
         return None
 
-    @property
-    def is_loaded(self) -> bool:
-        return self._needs_human_decider is not None
-
     # -- decisions ----------------------------------------------------------
 
     def triage(self, example: Example) -> TriageDecision:
@@ -164,11 +160,6 @@ class ReviewTriage:
             return str(decision.label), decision.confidence
         except (ValueError, TypeError):
             return "reassign", 0.0
-
-    # -- batch -------------------------------------------------------------
-
-    def triage_batch(self, examples: list[Example]) -> list[TriageDecision]:
-        return [self.triage(ex) for ex in examples]
 
 
 # ---------------------------------------------------------------------------

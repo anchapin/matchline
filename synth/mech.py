@@ -148,6 +148,157 @@ def _draw_tag(d: ImageDraw.ImageDraw, cx, cy, w_m, h_m, text: str):
     d.text((tx, ty), text, fill=0, font=f)
 
 
+def _draw_vav_alt(d: ImageDraw.ImageDraw, cx, cy, lw: int = 3):
+    """VAV as a plain box with a flow arrow through it (no diagonal)."""
+    w, h = VAV_W * PX_PER_M, VAV_H * PX_PER_M
+    d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], outline=0, width=lw)
+    x0, x1 = cx - w / 2 + 5, cx + w / 2 - 16
+    d.line([x0, cy, x1, cy], fill=0, width=2)
+    d.polygon([(x1 + 11, cy), (x1, cy - 5), (x1, cy + 5)], fill=0)
+
+
+def _draw_ahu_alt(d: ImageDraw.ImageDraw, cx, cy, lw: int = 3):
+    """AHU as a box with both diagonals (X-in-box, no fan circle)."""
+    w, h = AHU_W * PX_PER_M, AHU_H * PX_PER_M
+    d.rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], outline=0, width=lw)
+    d.line([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], fill=0, width=2)
+    d.line([cx - w / 2, cy + h / 2, cx + w / 2, cy - h / 2], fill=0, width=2)
+
+
+def _draw_sensor_alt(d: ImageDraw.ImageDraw, cx, cy, lw: int = 2):
+    """Thermostat as a small square with T inside (matchline's is a circle)."""
+    r = SEN_R * PX_PER_M
+    d.rectangle([cx - r, cy - r, cx + r, cy + r], outline=0, width=lw)
+    f = _font(14)
+    bb = d.textbbox((0, 0), "T", font=f)
+    tx, ty = cx - (bb[2] - bb[0]) / 2 - bb[0], cy - (bb[3] - bb[1]) / 2 - bb[1]
+    d.text((tx, ty), "T", fill=0, font=f)
+
+
+def _draw_fire_damper(d: ImageDraw.ImageDraw, cx, cy, lw: int = 2):
+    """A legend row whose description maps to no HVAC class (#744)."""
+    d.rectangle([cx - 12, cy - 6, cx + 12, cy + 6], outline=0, width=lw)
+    d.line([cx - 12, cy - 6, cx + 12, cy + 6], fill=0, width=1)
+
+
+# --- symbol legend on a synthetic sheet (#744 restart) ---------------------
+
+# white band left at the bottom of the canvas for the legend block, and the
+# vertical pitch of its rows
+LEGEND_BAND_PX = 520.0
+LEGEND_ROW_PITCH_PX = 72.0
+
+
+def _rec(prims: list, x0, y0, x1, y1, max_px: float = 70.0):
+    """One stroke as primitive boxes, split so none is longer than max_px:
+    read_legend drops any single primitive wider than MAX_SYMBOL_PT."""
+    L = math.hypot(x1 - x0, y1 - y0)
+    n = max(1, math.ceil(L / max_px))
+    for i in range(n):
+        t0, t1 = i / n, (i + 1) / n
+        prims.append(
+            {
+                "bbox": [
+                    round(x0 + (x1 - x0) * t0, 1),
+                    round(y0 + (y1 - y0) * t0, 1),
+                    round(x0 + (x1 - x0) * t1, 1),
+                    round(y0 + (y1 - y0) * t1, 1),
+                ]
+            }
+        )
+
+
+def _rec_rect(prims: list, x0, y0, x1, y1):
+    """A rectangle outline as its four edges."""
+    for seg in ((x0, y0, x1, y0), (x0, y1, x1, y1), (x0, y0, x0, y1), (x1, y0, x1, y1)):
+        _rec(prims, *seg)
+
+
+def _rec_strokes(prims: list, cls: str):
+    """Where a legend symbol's strokes sit, glyph-local px: the same drawing
+    the glyph fn lays down, so the recorded symbol box is the symbol."""
+    if cls == "vav":
+        w, h = VAV_W * PX_PER_M / 2, VAV_H * PX_PER_M / 2
+        _rec_rect(prims, -w, -h, w, h)
+        _rec(prims, -w + 5, 0, w, 0)
+    elif cls == "ahu":
+        w, h = AHU_W * PX_PER_M / 2, AHU_H * PX_PER_M / 2
+        _rec_rect(prims, -w, -h, w, h)
+        _rec(prims, -w, -h, w, h)
+        _rec(prims, -w, h, w, -h)
+    elif cls == "diffuser":
+        s = DIF_S * PX_PER_M
+        h, a = s / 2, s / 7
+        _rec_rect(prims, -h, -h, h, h)
+        for ux, uy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            _rec(prims, ux * a * 0.6, uy * a * 0.6, ux * (h - 5), uy * (h - 5))
+    elif cls == "grille":
+        s = GRI_S * PX_PER_M
+        h = s / 2
+        _rec_rect(prims, -h, -h, h, h)
+        for i in range(1, 6):
+            y = -h + i * s / 6
+            _rec(prims, -h + 2, y, h - 2, y)
+    elif cls == "sensor":
+        r = SEN_R * PX_PER_M
+        _rec_rect(prims, -r, -r, r, r)
+    else:
+        _rec_rect(prims, -12, -6, 12, 6)
+        _rec(prims, -12, -6, 12, 6)
+
+
+def draw_mech_legend(img: Image.Image, style: int = 1) -> dict:
+    """Draw an HVAC symbol legend (#744) in the white band at the bottom of a
+    synthetic mech sheet canvas: a title, then one row per detector class,
+    the class's symbol drawn at ``style`` beside a description
+    ``hvac_legend.classify`` maps, plus one row (FIRE DAMPER) that maps to
+    nothing. Returns sheet-dict fragments {"text": [...], "primitives": [...]}
+    in raster px, so read_legend reads them back with px_per_pt 1.0."""
+    d = ImageDraw.Draw(img)
+    W, H = img.size
+    x0 = MARGIN_M * PX_PER_M
+    y0 = H - LEGEND_BAND_PX + 10.0
+    texts: list = []
+    prims: list = []
+    title = "MECHANICAL SYMBOLS LEGEND"
+    f = _font(20)
+    d.text((x0, y0), title, fill=0, font=f)
+    bb = d.textbbox((x0, y0), title, font=f)
+    texts.append({"text": title, "bbox": [round(v, 1) for v in bb]})
+    rows = [
+        ("SUPPLY DIFFUSER", "diffuser"),
+        ("RETURN GRILLE", "grille"),
+        ("VAV BOX", "vav"),
+        ("AHU", "ahu"),
+        ("THERMOSTAT", "sensor"),
+        ("FIRE DAMPER", None),
+    ]
+    sym_cx = x0 + 60.0
+    dx = x0 + 130.0
+    frow = _font(15)
+    for i, (desc, cls) in enumerate(rows):
+        cy = y0 + 44.0 + i * LEGEND_ROW_PITCH_PX
+        fn = _ALT_GLYPH_FN.get(cls) if (style == 1 and cls) else None
+        (fn or (_GLYPH_FN.get(cls) or _draw_fire_damper))(d, sym_cx, cy)
+        local: list = []
+        _rec_strokes(local, cls or "damper")
+        for p in local:
+            prims.append(
+                {
+                    "bbox": [
+                        round(p["bbox"][0] + sym_cx, 1),
+                        round(p["bbox"][1] + cy, 1),
+                        round(p["bbox"][2] + sym_cx, 1),
+                        round(p["bbox"][3] + cy, 1),
+                    ]
+                }
+            )
+        d.text((dx, cy - 9), desc, fill=0, font=frow)
+        bb = d.textbbox((dx, cy - 9), desc, font=frow)
+        texts.append({"text": desc, "bbox": [round(v, 1) for v in bb]})
+    return {"text": texts, "primitives": prims}
+
+
 _GLYPH_FN = {
     "vav": _draw_vav,
     "ahu": _draw_ahu,
@@ -160,6 +311,9 @@ _GLYPH_FN = {
 _ALT_GLYPH_FN = {
     "diffuser": _draw_diffuser_arrows,
     "grille": _draw_grille_hatched,
+    "vav": _draw_vav_alt,
+    "ahu": _draw_ahu_alt,
+    "sensor": _draw_sensor_alt,
 }
 # Tight symbol extents in meters (template windows / GT bboxes).
 _GLYPH_EXT = {
@@ -699,10 +853,13 @@ def _realistic_overlay_plan(gt, rng):
     return plan
 
 
-def render_mech_sheet(net, gt, room_info, realistic_rng=None):
+def render_mech_sheet(net, gt, room_info, realistic_rng=None, style: int = 0, legend: bool = False):
     W, D = gt["W_m"], gt["D_m"]
+    band = int(LEGEND_BAND_PX) if legend else 0
     img = Image.new(
-        "L", (int((W + 2 * MARGIN_M) * PX_PER_M), int((D + 2 * MARGIN_M) * PX_PER_M)), 255
+        "L",
+        (int((W + 2 * MARGIN_M) * PX_PER_M), int((D + 2 * MARGIN_M) * PX_PER_M) + band),
+        255,
     )
     d = ImageDraw.Draw(img)
     # walls + room labels (thin: removed by the tracer's duct opening)
@@ -764,7 +921,8 @@ def render_mech_sheet(net, gt, room_info, realistic_rng=None):
     # symbols (drawn over ducts, as in real plans)
     for c in gt["components"]:
         cx, cy = _m2px(c["x_m"], c["y_m"])
-        _GLYPH_FN[c["type"]](d, cx, cy)
+        fn = _ALT_GLYPH_FN.get(c["type"]) if style == 1 else None
+        (fn or _GLYPH_FN[c["type"]])(d, cx, cy)
         if c["type"] in ("vav", "ahu"):
             _draw_tag(d, cx, cy, c["w_m"], c["h_m"], c["tag"])
         info = plan.get(c["id"])
@@ -772,23 +930,30 @@ def render_mech_sheet(net, gt, room_info, realistic_rng=None):
             tx = cx + info["tag_dx"] * PX_PER_M - (60 if info["tag_dx"] < 0 else 0)
             ty = cy + info["tag_dy"] * PX_PER_M
             d.text((tx, ty), info["tag"], fill=0, font=_font(14))
+    gt["style"] = style
+    gt["legend"] = draw_mech_legend(img, style=style) if legend else None
     return img
 
 
-def generate_mech_sheet(seed: int, realistic: bool = False):
+def generate_mech_sheet(seed: int, realistic: bool = False, style: int = 0, legend: bool = False):
     """Synthetic mechanical sheet + ground truth.
 
     realistic=True (#721) draws the same layout and ground truth with
     real-plan habits: returns fed from the side, flex diagonals into
     diffusers, air-device tags beside terminals. The tweaks use their own
     RNG stream, so the layout for a seed never changes.
+
+    style=1 (#745) draws every terminal in the class's other drafting
+    convention. legend=True (#744) draws an HVAC symbol legend in a band
+    below the plan; gt["legend"] holds its sheet-dict fragments (text +
+    primitives in raster px, px_per_pt 1.0) for hvac_legend.read_legend.
     """
     rng = np.random.default_rng(seed)
     net, gt, room_info = _layout_mech(rng)
     gt["seed"] = seed
     gt["realistic"] = realistic
     rr = np.random.default_rng([seed, 721]) if realistic else None
-    return render_mech_sheet(net, gt, room_info, realistic_rng=rr), gt
+    return render_mech_sheet(net, gt, room_info, realistic_rng=rr, style=style, legend=legend), gt
 
 
 def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:

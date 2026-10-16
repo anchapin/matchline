@@ -22,6 +22,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import revisions
+
 SCHEMA = "matchline.sheet_index/1"
 
 Box = Tuple[float, float, float, float]
@@ -216,6 +218,78 @@ def parse_sheet_number(s: str) -> Optional[dict]:
     }
 
 
+# Geometry fallback for legacy sheets whose title block gives no usable number
+# or type (#1016). Calibrated on 2006-era plan sheets: their plan pages carry
+# ~2300 primitives per square megapoint of page area, every other sheet on the
+# same sets stays below 950; room-band regions and the largest-region cap keep
+# dense schedule tables and hatch sheets out.
+PLAN_FALLBACK_MIN_DENSITY = 1200.0  # primitives per Mpt^2 of page area
+PLAN_FALLBACK_MIN_ROOMS = 10
+PLAN_FALLBACK_MAX_REGION_FRAC = 0.25
+_PLAN_MASK_SCALE = 0.3
+
+
+def _plan_fallback_evidence(sheet) -> Optional[dict]:
+    """Plan-likeness from geometry alone, for a sheet the title block left
+    unclassified (#1016). Returns an evidence dict, or None when the sheet is
+    not plan-like (or has no vector primitives to read)."""
+    kind = _attr(sheet, "kind")
+    if kind not in (None, "vector", "mixed"):
+        return None
+    prims = _attr(sheet, "primitives") or []
+    w = float(_attr(sheet, "width_pt") or 0)
+    h = float(_attr(sheet, "height_pt") or 0)
+    if not prims or w <= 0 or h <= 0:
+        return None
+    density = len(prims) / (w * h / 1e6)
+    if density < PLAN_FALLBACK_MIN_DENSITY:
+        return None
+    try:
+        import numpy as np
+        from scipy import ndimage
+    except ImportError:  # geometry fallback is best-effort, never a hard dep
+        return None
+    scale = _PLAN_MASK_SCALE
+    mask = np.zeros((max(2, int(h * scale)), max(2, int(w * scale))), dtype=bool)
+    for p in prims:
+        pts = []
+        segs = p.get("segments") if isinstance(p, dict) else getattr(p, "segments", None)
+        for cmd in segs or []:
+            if len(cmd) >= 2 and isinstance(cmd[1], list):
+                pts.extend(cmd[1])
+        for a, b in zip(pts[:-1], pts[1:]):
+            n = max(2, int(max(abs(b[0] - a[0]), abs(b[1] - a[1])) * scale))
+            xs = np.linspace(a[0], b[0], n)
+            ys = np.linspace(a[1], b[1], n)
+            xi = np.clip((xs * scale).astype(int), 0, mask.shape[1] - 1)
+            yi = np.clip((ys * scale).astype(int), 0, mask.shape[0] - 1)
+            mask[yi, xi] = True
+    st = ndimage.generate_binary_structure(2, 1)
+    fat = ndimage.binary_closing(
+        ndimage.binary_dilation(mask, structure=st, iterations=1), structure=st, iterations=1
+    )
+    labels, _ = ndimage.label(~fat)
+    sizes = np.bincount(labels.ravel())[1:]
+    total = mask.size
+    # the page background (outside the sheet border) touches the mask edge and
+    # is always the biggest region; gate on interior regions only
+    edge = np.zeros(labels.shape, dtype=bool)
+    edge[0, :] = edge[-1, :] = edge[:, 0] = edge[:, -1] = True
+    border_labels = np.unique(labels[edge])
+    interior = np.array([s for i, s in enumerate(sizes, start=1) if i not in border_labels])
+    rooms = int(((interior > total * 0.003) & (interior < total * 0.15)).sum())
+    largest = float(interior.max()) / total if interior.size else 0.0
+    if rooms < PLAN_FALLBACK_MIN_ROOMS or largest > PLAN_FALLBACK_MAX_REGION_FRAC:
+        return None
+    return {
+        "primitives": len(prims),
+        "density_per_mpt2": round(density),
+        "room_regions": rooms,
+        "largest_region_frac": round(largest, 3),
+        "mask_scale": scale,
+    }
+
+
 def _in_title_region(sp: Span, w: float, h: float) -> bool:
     """Title blocks run down the right edge or across the bottom."""
     return sp.bbox[0] >= 0.6 * w or sp.bbox[1] >= 0.75 * h
@@ -349,6 +423,7 @@ class SheetEntry:
     level: Optional[dict] = None
     revision: Optional[dict] = None
     date: Optional[dict] = None
+    addenda: bool = False
     use_for_takeoff: bool = False
     takeoff_note: str = ""
     needs_review: bool = False
@@ -365,6 +440,7 @@ class SheetIndex:
     drawing_index: Dict[str, dict]
     levels: Dict[str, Dict[str, List[str]]]
     warnings: List[str] = field(default_factory=list)
+    revisions: Dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -373,6 +449,7 @@ class SheetIndex:
             "drawing_index": self.drawing_index,
             "levels": self.levels,
             "warnings": self.warnings,
+            "revisions": self.revisions,
         }
 
     def by_number(self, number: str) -> Optional[SheetEntry]:
@@ -387,6 +464,7 @@ def read_title_block(sheet, file: Optional[str] = None) -> Tuple[SheetEntry, Dic
     w, h = float(_attr(sheet, "width_pt")), float(_attr(sheet, "height_pt"))
     spans = _spans(sheet)
     e = SheetEntry(file=file, page=_attr(sheet, "page_number"))
+    e.addenda = any(revisions.ADDENDUM_RX.search(sp.text) for sp in spans)
 
     num_span = find_sheet_number(spans, w, h)
     parsed = parse_sheet_number(num_span.text) if num_span else None
@@ -421,6 +499,21 @@ def read_title_block(sheet, file: Optional[str] = None) -> Tuple[SheetEntry, Dic
         e.type = _prov(
             NCS_TYPE_DIGIT[parsed["type_digit"]], "ncs_type_digit", None, digit=parsed["type_digit"]
         )
+
+    # legacy sheets: the title block gave no usable type, but the geometry may
+    # still say "plan" (#1016); never overrides a real classification
+    if e.value("type") in (None, "general"):
+        ev = _plan_fallback_evidence(sheet)
+        if ev:
+            e.type = _prov("plan", "geometry_fallback", None, evidence=ev)
+            if e.number is None:
+                e.warnings.append("no sheet number found; classified as a plan by geometry (#1016)")
+            else:
+                e.warnings.append(
+                    f"plan-like geometry; the title-block read may have picked up a label, "
+                    f"not the sheet number {e.value('number')} (needs review) (#1016)"
+                )
+                e.needs_review = True
 
     rev = _find_label(spans, _REV_RE, w, h)
     if rev:
@@ -544,6 +637,13 @@ def build_index(sheets: Sequence, files: Optional[Sequence[str]] = None) -> Shee
             else:
                 e.needs_review = True
                 e.takeoff_note = "floor plan with no level"
+                if e.type and e.type.get("source") == "geometry_fallback":
+                    # #1016: legacy sets route level-less geometry plans; the
+                    # set builder models each as its own level
+                    e.use_for_takeoff = True
+                    e.takeoff_note = (
+                        "floor plan with no level; modelled as its own level downstream"
+                    )
         elif kind == "enlarged_plan":
             e.takeoff_note = "enlarged plan: its area is already on a floor plan"
         elif kind == "partial_plan":
@@ -562,7 +662,8 @@ def build_index(sheets: Sequence, files: Optional[Sequence[str]] = None) -> Shee
             d.setdefault(e.discipline["designator"] if e.discipline else "?", []).append(
                 e.value("number")
             )
-    return SheetIndex(entries, drawing_index, dict(sorted(levels.items())), warnings)
+    rev_map = revisions.index_revisions([(e.value("revision"), e.addenda) for e in entries])
+    return SheetIndex(entries, drawing_index, dict(sorted(levels.items())), warnings, rev_map)
 
 
 def index_sheets(sheet_dir) -> SheetIndex:

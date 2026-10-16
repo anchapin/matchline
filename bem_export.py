@@ -50,6 +50,7 @@ from bem_helpers import (
     _assign_wall_to_space,
     _cartesian,
     _distribute_openings,
+    _edge_facades,
     _edge_spaces,
     _el,
     _fmt,
@@ -79,7 +80,9 @@ __all__ = [
     "write_ifc4",
 ]
 
-SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parent / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+)
 
 
 def _validate_out_path(path: str | Path) -> Path:
@@ -360,11 +363,27 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
 
     roofs = list(getattr(model, "roof_planes", None) or [])
     sloped = is_sloped(roofs)
-    edges = _wall_edges(model.ring_m)
+    # #984: every envelope ring (wings + courtyard holes) becomes walls.
+    # Edge indices stay contiguous so the grade/opening maps stay keyed by
+    # index; single-part models keep the pre-#984 path byte-identical.
+    parts = list(getattr(model, "rings_m", None) or [])
+    courtyard_holes = [h for part in parts for h in part["holes"]]
+    if parts:
+        edges = []
+        all_facades = []
+        for part in parts:
+            edges.extend(_wall_edges(part["ring"]))
+            all_facades.extend(_edge_facades(part["ring"]))
+            for hole in part["holes"]:
+                edges.extend(_wall_edges(hole))
+                all_facades.extend(_edge_facades(hole))
+    else:
+        edges = _wall_edges(model.ring_m)
+        all_facades = getattr(model, "ring_facades", None)
     opening_assign = _distribute_openings(
         model.openings,
         edges,
-        getattr(model, "ring_facades", None),
+        all_facades,
         _edge_spaces(edges, model.spaces),
     )
     grade = _grade_plan(model, edges, opening_assign, roofs, sloped, h)
@@ -372,17 +391,54 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     wall_cons = _write_constructions(root, model, air_walls)
     # per-space envelope (#765): roof and slab cut per space when the spaces
     # tile the footprint; shared boundaries become interior walls
-    per_space = (
-        len(model.spaces) > 1 and not sloped and covers_footprint(model.ring_m, model.spaces)
-    )
+    if parts:
+        # #984: per-part coverage: each part's spaces must tile that part's
+        # ring (courtyard holes subtracted), so a two-wing building can be
+        # per-space even though no single ring covers all spaces.
+        per_space = (
+            len(model.spaces) > 1
+            and not sloped
+            and all(
+                covers_footprint(
+                    part["ring"],
+                    [
+                        sp
+                        for sp in model.spaces
+                        if _pip(
+                            (
+                                sum(q[0] for q in sp.polygon_m) / len(sp.polygon_m),
+                                sum(q[1] for q in sp.polygon_m) / len(sp.polygon_m),
+                            ),
+                            part["ring"],
+                        )
+                    ],
+                    holes=part["holes"],
+                )
+                for part in parts
+            )
+        )
+    else:
+        per_space = (
+            len(model.spaces) > 1 and not sloped and covers_footprint(model.ring_m, model.spaces)
+        )
     if len(model.spaces) > 1 and not sloped and not per_space:
         model.notes.append(
             "gbXML: spaces do not tile the footprint, so the roof and slab stay "
             "whole on the largest space"
         )
+    if courtyard_holes and not per_space and not sloped:
+        model.notes.append(
+            "gbXML: spaces do not tile the multi-ring footprint, so the roof and "
+            "slab fallback cover the largest part's outer ring including the "
+            "courtyard void"
+        )
+    if parts:
+        all_rings = [part["ring"] for part in parts] + courtyard_holes
+    else:
+        all_rings = model.ring_m
     int_walls = shared_walls(
         model.spaces,
-        model.ring_m,
+        all_rings,
         skip_pairs={frozenset(aw.space_ids) for aw in air_walls},
     )
     if int_walls:

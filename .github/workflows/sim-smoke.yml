@@ -35,19 +35,19 @@ env:
 
 jobs:
   simulate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - name: Install package
         run: pip install --no-cache-dir -e .
 
       - name: Cache OpenStudio and weather
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/sim-cache
           key: sim-openstudio-${{ env.OS_VERSION }}-wx-chicago-tmy3-v1
@@ -115,7 +115,7 @@ jobs:
           PY
       - name: Upload report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sim-smoke
           path: |

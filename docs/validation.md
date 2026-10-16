@@ -20,7 +20,7 @@ Rule of thumb: **errors are about internal consistency** (two records of the
 same quantity disagree); **warns are about the outside world** (the numbers
 are consistent with each other but implausible for a real building).
 
-## The battery (48 checks)
+## The battery (49 checks)
 
 ### Conservation laws (error)
 
@@ -157,7 +157,7 @@ are consistent with each other but implausible for a real building).
 ### Closure laws (error) — the second battery
 
 These three live in `validate.CONSERVATION_BATTERY` rather than `BATTERY`
-and are run in addition to it, so `N_CHECKS` = 45 + 3 = 48.
+and are run in addition to it, so `N_CHECKS` = 45 + 4 = 49.
 
 - `area_closure` — gross floor area (union of space polygons) ≈ Σ of each
   room's reported area. A mismatch means the space boundaries and the area
@@ -296,6 +296,15 @@ block export but surface code-compliance issues for human review.
   the minimums for the equipment type (ASHRAE 90.1-2019 Tables
   6.8.1-6.8.3). Walks zones → `space_ids` → `space.hvac`. Skipped when no
   zones or no conditioned spaces carry HVAC data.
+- `area_definitions_reconcile` — **the #975 ordering invariants between the
+  area definitions.** gross >= rentable and assignable <= rentable must hold
+  on every level and in total: they are invariants of the definitions
+  themselves, so a violation means broken geometry or classification, not an
+  unusual building. A violation within the 3% area tolerance warns, beyond
+  it errors, matching the conservation checks. Thickness comes from the
+  same evidence chain as `convention_bias`; with no thickness or no
+  space-union ring the affected relations are unverified with a reason,
+  never failed and never zero.
 
 ## How to add a check
 
@@ -337,7 +346,12 @@ block export but surface code-compliance issues for human review.
   is roadmap item 6.
 - **`simplify_budget`** re-runs the simplifier from the raw footprint
   to verify the self-reported delta. If the re-verified original area
-  differs from the stored value by more than 0.1 m², an error is raised.
+  differs from the stored value by more than 0.1%, an error is raised.
+  The re-run also independently verifies the simplified area the
+  simplifier produced (budget-relative tolerance) and the geometric
+  closeness of the simplified ring to the raw footprint: a Hausdorff
+  offset above max(2 m, 10% of the bbox diagonal) is an error, anything
+  under it is reported in the pass message.
 - **`gbxml_wall_areas`** (new) verifies that gbXML-exported wall areas
   match the canonical model's envelope wall areas. Cross-pipeline numeric
   reconciliation closes the gap between structural-only export checks and
@@ -348,6 +362,6 @@ block export but surface code-compliance issues for human review.
 - **Conservation laws are not checked for HVAC, plumbing, or electrical**: Only envelope, lighting, and vertical transport are validated. HVAC sizing, duct/pipe routing, and electrical load conservation are out of scope.
 - **Tolerance thresholds are not calibrated against real buildings**: The 3% area/volume, 1% envelope, and 25 W/m² LPD thresholds are based on ASHRAE standards and engineering judgment, not validated against a corpus of real buildings.
 - **No cross-sheet reconciliation**: `area_conservation` and `volume_conservation` validate sheets independently; errors that cancel across sheets are not detected.
-- **Simplification delta is checked only against itself**: `simplify_budget` verifies the simplified polygon against itself; it does not verify that the simplified polygon is geometrically close to the original un-simplified polygon.
+- **Simplification offset is a divergence bound, not a fidelity guarantee**: the Hausdorff check catches wrong-polygon-scale divergence (translated, mirrored, or mis-scaled geometry); drift within the bound is reported but accepted, because the area budget already bounds the physical error at that scale.
 - **gbXML export must exist for `gbxml_wall_areas`**: The check requires a prior `bem-export --format gbxml` run; if that step is skipped, the check silently passes.
 - **No validation of occupancy or operational schedules**: The validator does not check whether occupancy schedules, internal gain profiles, or setpoint schedules are realistic or compliant.

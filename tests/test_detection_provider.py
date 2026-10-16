@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 sys.path.append(str(Path(__file__).parent))
 
@@ -28,6 +29,13 @@ def test_ledger_classes_cubicasa_weights_as_eval_only():
     assert dp.license_class(YOLO_RUN) == "noncommercial"
     assert dp.license_class("review_classifier/trained_model_route_to_review.npz") == "permissive"
     assert dp.license_class("somewhere/new.pt") == "unknown"
+    # the tiled runs are listed run by run in the ledger (#743)
+    assert (
+        dp.license_class(
+            "/home/alex/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt"
+        )
+        == "permissive"
+    )
 
 
 def test_provider_is_chosen_by_config(tmp_path):
@@ -297,6 +305,111 @@ def test_combined_runs_a_part_that_needs_no_scale_where_the_others_find_nothing(
     assert [x.label for x in out] == ["door"]
 
 
+def test_labels_freeze_one_checkpoint_per_class(tmp_path):
+    (tmp_path / "w").mkdir()
+    (tmp_path / "d").mkdir()
+    win = _preds(
+        tmp_path / "w",
+        "sheet_001",
+        [
+            {"cls": 1, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4},
+            {"cls": 0, "conf": 0.8, "x0": 5, "y0": 6, "x1": 7, "y1": 8},
+        ],
+    )
+    door = _preds(
+        tmp_path / "d", "sheet_001", [{"cls": 0, "conf": 0.7, "x0": 9, "y0": 8, "x1": 11, "y1": 12}]
+    )  # noqa: E501
+    p = dp.provider_from_config(
+        {
+            "provider": "combined",
+            "providers": [
+                {"provider": "precomputed", "dir": str(win), "labels": ["window"]},
+                {"provider": "precomputed", "dir": str(door), "labels": ["door"]},
+            ],
+        }
+    )
+    out = p.detect(win / "sheet_001.png", "s")
+    # the window side's stray door fire stays out of the door side's pool
+    assert [d.label for d in out] == ["window", "door"]
+    # without labels, both checkpoints' full output joins: three detections
+    plain = dp.provider_from_config(
+        {
+            "provider": "combined",
+            "providers": [
+                {"provider": "precomputed", "dir": str(win)},
+                {"provider": "precomputed", "dir": str(door)},
+            ],
+        }
+    )
+    assert len(plain.detect(win / "sheet_001.png", "s")) == 3
+
+
+def test_labels_filter_works_on_a_lone_provider_too(tmp_path):
+    d = _preds(
+        tmp_path,
+        "sheet_001",
+        [
+            {"cls": 1, "conf": 0.9, "x0": 1, "y0": 2, "x1": 3, "y1": 4},
+            {"cls": 0, "conf": 0.8, "x0": 5, "y0": 6, "x1": 7, "y1": 8},
+        ],
+    )
+    p = dp.provider_from_config({"provider": "precomputed", "dir": str(d), "labels": ["window"]})
+    out = p.detect(d / "sheet_001.png", "s")
+    assert [x.label for x in out] == ["window"]
+
+
+def test_the_checked_in_specialist_config_is_shippable():
+    path = Path(dp.__file__).parent / "configs" / "detector_specialists.json"
+    cfg = json.loads(path.read_text())
+    prov = dp.provider_from_config(cfg, release=True)
+    assert isinstance(prov, dp.CombinedProvider)
+    assert [p.labels for p in prov.parts] == [["window"], ["door"]]
+    assert all(p.info.license_class == "permissive" and not p.info.eval_only for p in prov.parts)
+    assert prov.info.license_class == "permissive"
+    # home-relative weights are expanded so the config runs as written
+    assert all(not p.inner.weights.startswith("~") for p in prov.parts)
+
+
+def test_labels_config_is_checked():
+    for bad in ([], "door", [""], [1], {"door": 1}):
+        with pytest.raises(dp.ProviderConfigError, match="non-empty list"):
+            dp.provider_from_config({"provider": "none", "labels": bad})
+
+
+def test_a_labeled_part_keeps_the_inner_provider_license_and_asks(tmp_path):
+    mixed = {
+        "provider": "combined",
+        "providers": [
+            {"provider": "door_swing", "labels": ["door"]},
+            {"provider": "yolo_sahi", "weights": YOLO_RUN, "labels": ["window"]},
+        ],
+    }
+    c = dp.provider_from_config(mixed)
+    assert c.info.eval_only and "noncommercial" in c.info.license_class
+    # the wrapper hands the combined provider the inner part's needs
+    assert c.needs_scale and c.needs_walls and c.runs_without_scale
+    with pytest.raises(dp.ProviderLicenseError, match="noncommercial"):
+        dp.provider_from_config(mixed, release=True)
+
+
+def test_a_labeled_part_hands_the_inner_provider_what_it_asks_for():
+    seen = []
+
+    class Glass(dp.VectorGlazingProvider):
+        def detect(self, image_path, sheet_id, plan=None):
+            seen.append(plan)
+            return [
+                dp.Detection(label="window", tag="", score=0.5, bbox=(0, 0, 1, 1), source=sheet_id),
+                dp.Detection(label="door", tag="", score=0.5, bbox=(2, 2, 3, 3), source=sheet_id),
+            ]
+
+    inner = dp.LabeledProvider(Glass(), ["window"])
+    assert inner.needs_walls and not inner.needs_scale
+    out = inner.detect("x.png", "s", plan={"walls": {}})
+    assert seen == [{"walls": {}}]
+    assert [d.label for d in out] == ["window"]
+
+
 def test_a_door_in_a_storefront_cuts_the_window_box_into_glass_either_side():
     walls = {
         "m_per_pt": 0.01,
@@ -426,3 +539,74 @@ def test_door_swing_provider_takes_a_thin_wall_door_on_a_wall_opening(tmp_path):
     assert dp.opening_segments(None) == []
     dets = dp.DoorSwingProvider().detect(png, "s", px_per_m=50.0, plan=plan)
     assert len(dets) == 1 and dets[0].label == "door"
+
+
+SCRATCH_CKPT = "/home/alex/workspace/datasets/detector_runs/scratch-synth-38319984460/ckpt.pt"
+
+
+def test_scratch_provider_is_chosen_by_config():
+    p = dp.provider_from_config({"provider": "scratch", "weights": SCRATCH_CKPT})
+    assert isinstance(p, dp.ScratchProvider)
+    # synthetic-only training data, BSD-3-Clause: the first detector weights that may ship
+    assert p.info.license_class == "permissive" and not p.info.eval_only
+    cfg = Path("scratch_det.json")
+    cfg.write_text(json.dumps({"provider": "scratch", "weights": SCRATCH_CKPT}))
+    try:
+        assert isinstance(dp.provider_from_config(cfg), dp.ScratchProvider)
+    finally:
+        cfg.unlink()
+
+
+def test_scratch_provider_needs_weights():
+    with pytest.raises(dp.ProviderConfigError, match="needs weights"):
+        dp.provider_from_config({"provider": "scratch"})
+
+
+def test_scratch_provider_detect_maps_decode_rows_to_detections(tmp_path):
+    pytest.importorskip("torch")
+    import torch
+
+    img = tmp_path / "sheet_001.png"
+    Image.new("L", (200, 200), 255).save(img)  # square: scale 0.32, dx = dy = 0
+
+    p = dp.ScratchProvider(weights="unused.pt")
+    # stub the network: decode these raw head channels to one door in cell (4, 4)
+    preds = torch.zeros(1, 7, 8, 8)
+    preds[0, 0, 4, 4] = 4.0  # door class logit
+    preds[0, 2, 4, 4] = 4.0  # objectness logit
+    preds[0, 3:7, 4, 4] = torch.tensor([0.0, 0.0, 0.05, 0.1])  # tx, ty, w, h
+    p._net = lambda x: preds
+    p._cfg = {"num_classes": 2, "imgsz": 64, "names": ["door", "window"]}
+    p._torch = torch
+
+    dets = p.detect(img, "sheet_001")
+    assert len(dets) == 1
+    d = dets[0]
+    assert d.label == "door" and d.source == "sheet_001"
+    assert d.score == pytest.approx(0.964, abs=1e-3)
+    assert d.bbox == pytest.approx((107.5, 102.5, 117.5, 122.5), abs=1e-6)
+
+
+def test_scratch_provider_loads_a_real_checkpoint(tmp_path):
+    pytest.importorskip("torch")
+    import torch
+
+    sys.path.append(str(Path(__file__).parent))
+    from detector.train_scratch import ScratchNet
+
+    model = ScratchNet(num_classes=2, width=4, imgsz=64)
+    ckpt = tmp_path / "ckpt.pt"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "config": {"num_classes": 2, "width": 4, "imgsz": 64, "names": ["door", "window"]},
+        },
+        ckpt,
+    )
+    img = tmp_path / "sheet_001.png"
+    Image.new("L", (200, 200), 255).save(img)
+
+    p = dp.ScratchProvider(weights=str(ckpt))
+    dets = p.detect(img, "sheet_001")
+    assert isinstance(dets, list)
+    assert all(d.source == "sheet_001" and d.label in ("door", "window") for d in dets)

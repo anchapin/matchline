@@ -135,10 +135,53 @@ def test_dimensions_alone(tmp_path):
     assert len([e for e in sc.evidence if e["source"] == "dimension"]) == 3
 
 
-def test_two_dimensions_are_not_enough_alone(tmp_path):
+def test_single_dimension_estimates_a_legacy_scale(tmp_path):
+    """#1019: a legacy sheet with one dimension and no note or bar still gets
+    a scale, flagged for review and snapped to the nearest standard."""
+    sc = S.sheet_scale(_sheet(tmp_path, _dim(100, 400, 180, "20'-0\"")))
+    assert sc.source == "single_dimension" and sc.ratio == pytest.approx(96, rel=0.01)
+    assert sc.m_per_pt == pytest.approx(96 * PT)
+    assert sc.needs_review and sc.confidence < 0.6
+    assert any("snapped to standard 1:96" in w and "1 dimension(s)" in w for w in sc.warnings)
+
+
+def test_two_agreeing_dimensions_estimate_a_legacy_scale(tmp_path):
     dims = _dim(100, 400, 180, "20'-0\"") + _dim(100, 300, 90, "10'-0\"")
     sc = S.sheet_scale(_sheet(tmp_path, dims))
+    assert sc.source == "dimensions" and sc.ratio == pytest.approx(96, rel=0.01)
+    assert sc.needs_review and sc.confidence < 0.6
+
+
+def test_duplicated_dimension_text_does_not_boost_confidence(tmp_path):
+    """One dimension string drawn twice is one reading, not two (#1019 duck)."""
+    dims = _dim(100, 400, 180, "20'-0\"") + _dim(100, 300, 180, "20'-0\"")
+    sc = S.sheet_scale(_sheet(tmp_path, dims))
+    assert sc.source == "single_dimension" and sc.confidence < 0.5
+    assert sc.needs_review
+
+
+def test_two_disagreeing_dimensions_do_not_estimate(tmp_path):
+    # 20'-0" at 1:96 is 180 pt; at 1:48 it is 360 pt
+    dims = _dim(100, 400, 180, "20'-0\"") + _dim(100, 300, 360, "20'-0\"")
+    sc = S.sheet_scale(_sheet(tmp_path, dims))
     assert sc.m_per_pt is None and "2 dimension(s)" in sc.reason
+
+
+def test_nts_still_blocks_the_dimension_fallback(tmp_path):
+    sc = S.sheet_scale(
+        _sheet(tmp_path, text(100, 48, "SCALE: N.T.S.") + _dim(100, 400, 180, "20'-0\""))
+    )
+    assert sc.nts and sc.m_per_pt is None and "not to scale" in sc.reason
+
+
+def test_estimate_far_from_a_standard_stays_raw(tmp_path):
+    """An estimate off every standard scale is kept, not snapped, and the
+    warning names the nearest standard and how far it sits."""
+    # 20'-0" over 165.7 pt is 1:104.3: 4.3% from 1:100, off every standard by > 3%
+    sc = S.sheet_scale(_sheet(tmp_path, _dim(100, 400, 165.7, "20'-0\"")))
+    assert sc.source == "single_dimension" and sc.ratio == pytest.approx(104.28, rel=0.01)
+    assert sc.needs_review
+    assert any("nearest standard 1:100 is" in w for w in sc.warnings)
 
 
 def test_note_confirmed_by_dimensions(tmp_path):

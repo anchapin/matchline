@@ -39,10 +39,24 @@ def test_unledgered_committed_artifact_is_caught(ledger):
 
 def test_noncommercial_and_agpl_weights_are_evaluation_only(ledger):
     det = [a for a in ledger["artifacts"] if "detector_runs" in a["path"]]
-    assert det and all(C.artifact_class(ledger, a) == "copyleft" for a in det)
+    assert det
+    yolo = [a for a in det if "yolo11n" in a["path"]]
+    assert yolo and all(C.artifact_class(ledger, a) == "copyleft" for a in yolo)
+    # the from-scratch synthetic checkpoints are the shippable exception (#743)
+    scratch = [a for a in det if "scratch-synth" in a["path"]]
+    assert scratch and all(C.artifact_class(ledger, a) == "permissive" for a in scratch)
     ds = {d["id"]: d["class"] for d in ledger["datasets"]}
     for nc in ("cubicasa5k", "aec_bench", "archcad", "floorplancad"):
         assert ds[nc] == "noncommercial"
+
+
+def test_tiled_synthetic_checkpoints_are_permissive_too(ledger):
+    # the tile-trained runs (scratch-tile640*) train on the same synthetic
+    # sheets, listed run by run so a future run on other data cannot inherit
+    # the class by name (#743)
+    det = [a for a in ledger["artifacts"] if "scratch-tile" in a["path"]]
+    assert len(det) == 4
+    assert all(C.artifact_class(ledger, a) == "permissive" for a in det)
 
 
 def _wheel(tmp_path, members):

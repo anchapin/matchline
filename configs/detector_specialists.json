@@ -1,0 +1,21 @@
+{
+  "provider": "combined",
+  "providers": [
+    {
+      "provider": "scratch",
+      "weights": "~/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt",
+      "artifact": "~/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt",
+      "labels": [
+        "window"
+      ]
+    },
+    {
+      "provider": "scratch",
+      "weights": "~/workspace/datasets/detector_runs/scratch-tile640v5-38515813872/ckpt.pt",
+      "artifact": "~/workspace/datasets/detector_runs/scratch-tile640v5-38515813872/ckpt.pt",
+      "labels": [
+        "door"
+      ]
+    }
+  ]
+}

@@ -4,7 +4,7 @@ External datasets are **not committed** to the repository. All demos and command
 require external data fail clearly when the data is absent.
 
 Licenses: each dataset's license, and every artifact trained or derived from it, is
-recorded in [`license_ledger.json`](license_ledger.json) (see
+recorded in [`license_ledger.json`](assets/license_ledger.json) (see
 [docs/license_ledger.md](docs/license_ledger.md)). Artifacts from non-commercial or
 copyleft data are evaluation-only and never ship in a release.
 
@@ -180,6 +180,41 @@ conversion script for the exact expected file layout.
 
 ---
 
+## TUM GNI BIM Dataset
+
+**Local path:** `~/workspace/datasets/matchline-bench/gni-<n>/arch.ifc` (8 candidates
+extracted from the 2025 BIMfundamentals set; the full archives stay under
+`~/workspace/datasets/gni/`)
+
+**Environment variable:** None (paths passed via the benchmark `--config`)
+
+**What it is:** 224 anonymized building models in a mix of IFC 2x3 and IFC 4 (Technical University of Munich,
+GNI research group), including commercial multi-storey office and school buildings
+with IfcSpaces, walls, windows and material layers.
+
+**Used for in matchline:**
+
+- `scripts/benchmark.py --config benchmarks.json` - real-building scoreboard (#748)
+- `ifc_import` Tier 0 robustness work: these files are why the kernel-unsafe
+  geometry fallbacks exist (IfcPolygonalFaceSet bodies, IfcIndexedPolyCurve
+  profiles)
+
+**Reference:** <https://zenodo.org/records/19722012> (CC BY 4.0)
+
+**Benchmark adoption (#929 acceptance):** `gni-18` (`model_18.ifc`, IFC2X3, 1.7 MB,
+from `2025_BIMfundamentals.zip`) is a benchmark row in `scripts/benchmarks.json`
+and licensed in `license_ledger.json` as `gni_18`. Scored on the #748 harness:
+15/15 rooms, 63/63 windows, 17/17 doors, 0.0% area error, via the in-memory
+IFC2X3 upgrade. To stage it:
+
+```bash
+curl -L -o /tmp/gni.zip "https://zenodo.org/api/records/19722012/files/2025_BIMfundamentals.zip/content"
+unzip -j /tmp/gni.zip "2025_BIMfundamentals/model_18.ifc" -d ~/workspace/datasets/matchline-bench/gni-18/
+mv ~/workspace/datasets/matchline-bench/gni-18/model_18.ifc ~/workspace/datasets/matchline-bench/gni-18/arch.ifc
+```
+
+---
+
 ## Real-building benchmark (#748)
 
 **Local path:** `~/workspace/datasets/matchline-bench/<building>/`
@@ -201,6 +236,62 @@ is not on disk shows as `missing`.
   by the Clinic gate, same terms)
 - AEC-Bench 15-sheet release, <http://aec-bench.github.io/> (CC BY-NC,
   evaluation only; see the AEC-Bench section above)
+- Esplanades architectural IFC, real multi-storey building (Estonian project),
+  <https://github.com/buildingsmart-community/Community-Sample-Test-Files> (CC
+  BY 4.0, repo-level license; no per-file README). Verified 2026-10-14: 12.1 MB
+  IFC2X3, 7 storeys, 285 IfcSpaces, 846 walls, 211 doors, 297 windows. No HVAC
+  IFC or drawing set; quantity sets sit on non-space elements.
+- Duplex Apartment architectural IFC, same repo (CC BY 4.0). Verified
+  2026-10-14: 2.4 MB IFC2X3, 4 storeys, 21 spaces each with area
+  BaseQuantities, 57 walls, 14 doors, 24 windows; a separate rooms-and-spaces
+  model (37 spaces) and MEP/plumbing/electrical files sit alongside. The MEP
+  discipline file (`Duplex_MEP_20110907.ifc`, 17.9 MB, 105 IfcFlowTerminal of
+  which 103 are space-bound) is wired as the duplex `hvac_ifc` since
+  2026-10-15. The MEP file carries each IfcSpace twice under different
+  GlobalIds with identical footprints (named e.g. `A101` and `A101-M`; 42
+  spaces, 21 distinct footprints, terminals reference only the plain copies),
+  which tied point-in-polygon assignment for every terminal. The HVAC loader
+  now collapses identical footprints per storey and remaps ground-truth ids
+  onto the kept copy (#1008, 2026-10-15): the scoreboard assigns 73/103, the
+  remaining 30 are honestly ambiguous (on boundaries) and go to review. No
+  drawing set.
+
+- Molio building IFC, same repo (CC BY 4.0, repo-level license). Verified
+  2026-10-15: 73.9 MB IFC2X3, 10 storeys, 117 IfcSpaces each with
+  BaseQuantities, 189 walls, 119 windows, 119 doors, 969,835 entities. The
+  entity count exceeds the default import cap, so benchmark runs need
+  `MATCHLINE_MAX_IFC_ELEMENTS=1500000` (~156 s import, ~1.2 GB peak RSS).
+- TUM GNI BIM dataset, <https://zenodo.org/records/19722012> (CC BY 4.0):
+  eight real-building IFC4/IFC2X3 models from TUM Georg Nemetschek Institute
+  BIM student projects. Seven more (gni-49/50/54/74/115/136/149) joined the
+  scoreboard 2026-10-15 alongside gni-18.
+
+  gni-49 window defect (documented 2026-10-15, #1009): the file's 71
+  `IfcWindow` elements carry no usable location - every placement resolves to
+  (0, 0, 0) - while the 61 wall voids are placed properly and no
+  `IfcRelFillsElement` links exist, so there is nothing to adopt geometrically.
+  The window rows are defective in the file itself: `OverallWidth` reads
+  0.1795 against a name stating 1800/2100 (mm), so even the attributes are
+  untrustworthy. The scoreboard's window column therefore reads 71 / 0 for
+  this building by design; the model reports no windows it cannot locate, and
+  never guesses positions. Doors are genuinely absent (0 `IfcDoor`).
+
+**Rejected candidates (2026-10-15 licensed-data search):** Schependomlaan
+as-planned IFCs (same community repo, CC BY 4.0) carry no IfcSpaces (no
+ground truth); the Krijnen & Hesselink balcony models
+(<https://zenodo.org/records/5047709>, CC BY 4.0) are walls-and-slabs only,
+no IfcSpaces; RestageIFC Aachen (<https://zenodo.org/records/21470658>,
+CC BY 4.0) is 189.8 MB, over the 100 MB import cap, and an assembly/schedule
+model. NIST NZERTF drawings are public domain but residential and
+drawings-only (no IFC ground truth for this harness).
+
+**IFC2X3 datasets (#929):** Esplanades and Duplex import via the in-memory
+IFC2X3 -> IFC4 schema upgrade (`model.source_schema` says "IFC2X3"; the
+scoreboard's schema column shows it). On the scoreboard, windows and doors
+truth counts come from the raw IFC entity table (`by_type`), not the imported
+model, so a model count below truth means openings were folded during
+wall/host processing. Esplanades' import is dominated by the upgrade (~450 s
+for 189k entities).
 
 **Setup:**
 
@@ -210,6 +301,9 @@ mkdir -p ~/workspace/datasets/matchline-bench/
 #   arch.ifc        ground-truth architectural IFC with IfcSpaces
 #   hvac.ifc        optional HVAC IFC (terminals)
 #   drawings.pdf    optional drawing set for the cross-frontend check
+# Esplanades and the Duplex Apartment come from the buildingSMART community
+# sample repo (git LFS): clone it with git lfs installed and copy the .ifc
+# files, or fetch the blobs through the LFS batch API.
 ```
 
 **Config format** (passed to `--config`; relative paths resolve against the
@@ -230,4 +324,11 @@ config file):
 }
 ```
 
-Run: `python scripts/benchmark.py --config benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`
+Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists twelve buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`, and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`.
+
+**2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
+score; rooms, area, window and door counts match ground truth everywhere
+except gni-49 windows (truth 71 / model 0, #1009). Two defects found by the
+first run are fixed: gni-74's gbXML export no longer divides by zero on
+sub-0.1 m walls (#1011), and the duplex MEP terminals score 73/103 after the
+loader collapses the file's duplicated spaces (#1008).

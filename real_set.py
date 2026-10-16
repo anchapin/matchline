@@ -31,6 +31,9 @@ from typing import Dict, List, Optional
 
 from shapely.geometry import LineString, Point, Polygon
 
+import revisions
+import sheet_index
+
 SCHEMA = "matchline.set_report/1"
 DEFAULT_STOREY_HEIGHT_M = 3.0
 
@@ -58,6 +61,8 @@ class SetReport:
     detector: dict = field(default_factory=dict)
     elevations: List[dict] = field(default_factory=list)
     hvac_legends: List[dict] = field(default_factory=list)
+    dedup: dict = field(default_factory=dict)
+    revisions: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         failed = sorted(
@@ -74,6 +79,8 @@ class SetReport:
             "detector": self.detector,
             "elevations": self.elevations,
             "hvac_legends": self.hvac_legends,
+            "dedup": self.dedup,
+            "revisions": self.revisions,
             "sheets": [asdict(s) for s in self.sheets],
         }
 
@@ -132,6 +139,7 @@ def build_set_model(
     storey_height_m=None,
     dpi: float = 150,
     provider=None,
+    legend_tags: Optional[dict] = None,
 ):
     """Read a PDF set and assemble a BuildingModel. Returns (model, report).
 
@@ -140,11 +148,16 @@ def build_set_model(
     already holds that sheet. The report records which provider ran and whether
     its weights are evaluation only under the license ledger.
 
+    ``legend_tags`` is a per-project legend sidecar (#995, ``legend_tags.json``
+    beside the set): descriptions it maps win over the built-in word rules on
+    every mechanical sheet.
+
     ``storey_height_m`` is one height for every level (``--storey-height``, run
     config ``wall_height: 3.5``) or a map of level id to height (``wall_height:
     {L2: 4.0}``) for those levels only; the rest come from the elevation level marks,
     then the default (#821).
     """
+    import matchlines
     from bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
     from drawing_scale import scale_sheets
@@ -173,10 +186,17 @@ def build_set_model(
         st = status[f]
         st.number, st.title = _val(e, "number"), _val(e, "title")
         st.discipline, st.level = _val(e, "discipline"), _val(e, "level")
+        routed = bool(e.get("use_for_takeoff")) and not st.number
         st.mark(
             "sheet_index",
-            "ok" if st.number else "failed",
-            "" if st.number else "no sheet number found in the title block",
+            "ok" if (st.number or routed) else "failed",
+            ""
+            if st.number
+            else (
+                "no sheet number in the title block; routed by geometry fallback (needs review)"
+                if routed
+                else "no sheet number found in the title block"
+            ),
             use_for_takeoff=bool(e.get("use_for_takeoff")),
             sheet_type=_val(e, "type"),
         )
@@ -185,7 +205,10 @@ def build_set_model(
     for f in files:
         sc = scales.get(f, {})
         if sc.get("m_per_pt"):
-            status[f].mark("scale", "ok", m_per_pt=sc["m_per_pt"], method=sc.get("method"))
+            kv = {"m_per_pt": sc["m_per_pt"], "method": sc.get("source")}
+            if sc.get("needs_review"):
+                kv["note"] = "scale estimated from dimensions; review before trusting areas"
+            status[f].mark("scale", "ok", **kv)
         elif entries.get(f, {}).get("use_for_takeoff"):
             status[f].mark("scale", "failed", "no drawing scale found on a takeoff sheet")
         else:
@@ -196,7 +219,18 @@ def build_set_model(
         sheets_dir, {f: status[f].number for f in files if status[f].number}
     )
     plan_files = [f for f in files if entries.get(f, {}).get("use_for_takeoff")]
-    arch_plans = [f for f in plan_files if _discipline(status[f]) in ("architectural", None)]
+
+    def _fallback_plan(e: dict) -> bool:
+        t = (e or {}).get("type")
+        return isinstance(t, dict) and t.get("source") == "geometry_fallback"
+
+    # a geometry-fallback plan's discipline is unverified (the number may be a
+    # label); geometry saying "plan" outranks a suspect number (#1016)
+    arch_plans = [
+        f
+        for f in plan_files
+        if _discipline(status[f]) in ("architectural", None) or _fallback_plan(entries.get(f, {}))
+    ]
     for f in files:
         if f not in plan_files:
             status[f].mark("walls_rooms", "skipped", "not a floor plan for takeoff")
@@ -360,6 +394,132 @@ def build_set_model(
     levels: List[Level] = []
     spaces: Dict[str, Space] = {}
     review: List[ReviewItem] = []
+
+    # ---- match lines, split sheets, enlarged-plan dedup (#994) -----------
+    hits = {}
+    for f in files:
+        kind = (entries.get(f, {}).get("type") or {}).get("value")
+        if kind not in sheet_index.PLAN_TYPES:
+            continue
+        hits[f] = matchlines.find_match_lines(json.loads((sheets_dir / f).read_text()), f)
+    level_of = {f: ((entries.get(f, {}).get("level") or {}).get("value")) for f in files}
+    dedup = matchlines.pair_match_lines(hits, level_of)
+    links = matchlines.link_enlarged_plans(entries, walls, scales, sheets_dir)
+    dedup.links, dedup.exclusions = links.links, links.exclusions
+    dedup.exclusions += matchlines.takeoff_exclusions(entries)
+    report.dedup = dedup.to_dict()
+
+    def _label(f: str) -> str:
+        return status[f].number or f.replace("sheet_", "").rstrip(".json").rstrip(".")
+
+    ex_by_file = {x["file"]: x for x in dedup.exclusions}
+    pair_of = {}
+    for pr in dedup.pairs:
+        for f in pr["files"]:
+            pair_of[f] = pr
+    for f, x in ex_by_file.items():
+        kv = {k: v for k, v in x.items() if k in ("linked_to", "basis") and v}
+        status[f].mark("takeoff_dedup", "excluded", x["reason"], **kv)
+    for f, pr in pair_of.items():
+        other = next(g for g in pr["files"] if g != f)
+        status[f].mark(
+            "takeoff_dedup", "ok", f"split pair with {_label(other)} at match line {pr['key']}"
+        )
+    for c in dedup.conflicts:
+        sheets_desc = ", ".join(_label(f) for f in c["files"])
+        review.append(
+            ReviewItem(
+                id=f"matchline-conflict-{c['key']}-{c['level']}",
+                kind="match_line_conflict",
+                target={"kind": "sheet", "id": c["files"][0]},
+                description=(
+                    f"match line {c['key']} appears on {sheets_desc} of level "
+                    f"{c['level'] or '?'}; a space may be taken off more than once"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(c["files"][0]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    seen_nokey: set = set()
+    for u in dedup.unpaired:
+        if not u["key"] and u["file"] in seen_nokey:
+            continue
+        if not u["key"]:
+            seen_nokey.add(u["file"])
+        review.append(
+            ReviewItem(
+                id=f"matchline-unpaired-{u['file']}-{u['key'] or 'nokey'}",
+                kind="match_line_unpaired",
+                target={"kind": "sheet", "id": u["file"]},
+                description=(
+                    f"match line {u['key'] or 'without a key'} on {_label(u['file'])}: "
+                    f"{u['reason']}"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(u["file"]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    for pr in dedup.pairs:
+        if not all(pair_of.get(f) for f in pr["files"]):
+            continue
+        if not all(
+            status[f].stages.get("walls_rooms", {}).get("status") != "skipped" for f in pr["files"]
+        ):
+            continue
+        review.append(
+            ReviewItem(
+                id=f"matchline-pair-{pr['key']}-{pr['level']}",
+                kind="match_line_pair",
+                target={"kind": "sheet", "id": pr["files"][0]},
+                description=(
+                    f"{_label(pr['files'][0])} and {_label(pr['files'][1])} share match line "
+                    f"{pr['key']}: rooms crossing it may appear as partial spaces on both "
+                    "sheets; stitching is not supported yet"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(pr["files"][0]),
+                    revision=0,
+                    method="match_line_pairing",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
+    for link in dedup.links:
+        if link["basis"] in ("title_reference", "content_overlap"):
+            continue
+        review.append(
+            ReviewItem(
+                id=f"enlarged-link-{link['file']}",
+                kind="enlarged_plan_link",
+                target={"kind": "sheet", "id": link["file"]},
+                description=(
+                    f"enlarged plan {_label(link['file'])} could not be linked to a base "
+                    f"plan: {link.get('reason', 'no title reference found')}"
+                ),
+                confidence=0.6,
+                provenance=Provenance(
+                    sheet_id=_label(link["file"]),
+                    revision=0,
+                    method="enlarged_plan_link",
+                    confidence=0.6,
+                ),
+                needs_review=True,
+            )
+        )
     envelope: List[EnvelopeWall] = []
     plan_of_level: Dict[str, tuple] = {}
     z = 0.0
@@ -561,8 +721,19 @@ def build_set_model(
         review, report,
     )  # fmt: skip
     _mech_legends(
-        files, status, sheets_dir, review, report, scales, plan_of_level, lid_of, spaces, zones
+        files,
+        status,
+        sheets_dir,
+        review,
+        report,
+        scales,
+        plan_of_level,
+        lid_of,
+        spaces,
+        zones,
+        legend_tags=legend_tags,
     )
+    _revisions(files, status, sheets_dir, entries, review, report)
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
         sched_entries, review, report,
@@ -874,16 +1045,54 @@ LEGEND_DEDUP_M = 0.3
 LEGEND_REF_FIELD = {"diffuser": "diffusers", "grille": "diffusers", "sensor": "sensors"}
 
 
-def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> None:
+def _duct_ctx(sheet, sheet_id, zones, sheets_dir):
+    """(gray raster, [(zone id, terminal tag rect in raster px), ...]) for
+    tracing legend symbols to terminals on this sheet (#744); None without a
+    raster or when no zone's terminal unit is tagged on it."""
+    import numpy as np
+
+    raster, k = sheet.get("raster_file"), sheet.get("px_per_pt")
+    if not zones or not raster or not k or not (sheets_dir / raster).exists():
+        return None
+    k = float(k)
+    rects = []
+    for z in zones.values():
+        tu = z.terminal_unit
+        p = tu.provenance if tu else None
+        if tu and p and p.sheet_id == sheet_id and p.bbox:
+            rects.append((z.id, [c * k for c in p.bbox]))
+    if not rects:
+        return None
+    from PIL import Image
+
+    gray = np.asarray(Image.open(sheets_dir / raster).convert("L"), dtype=np.float64)
+    return gray, rects
+
+
+def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms, duct_ctx=None) -> None:
     """Put legend symbols placed in a room on that room's HVAC zone (#744).
 
     A diffuser, grille or thermostat goes on the space (``hvac.diffusers`` /
     ``hvac.sensors``) and on its zone only when exactly one zone serves the
-    room: which of several zones feeds a diffuser needs duct tracing, and a
-    terminal on a room no zone serves would be an orphan. Those stay counted
-    in ``symbols_by_room`` only. ``diff_rooms`` collects every room a supply
-    diffuser landed in, assigned or not."""
+    room. When several serve it, a supply terminal follows the sheet's own
+    ductwork (``duct_ctx`` from ``_duct_ctx``, traced by
+    ``hvac_trace.trace_symbols_to_terminals``): an unambiguous trace to the
+    terminal unit of one of those zones wins; a contested pixel or a symbol
+    off the ducts stays counted in ``symbols_by_room`` only, never a guess.
+    A terminal on a room no zone serves would be an orphan and stays
+    unassigned. ``diff_rooms`` collects every room a supply diffuser landed
+    in, assigned or not."""
     from building_model import ComponentRef, Provenance
+    from hvac_trace import trace_symbols_to_terminals
+
+    traced: dict = {}
+    if duct_ctx is not None:
+        gray, rects = duct_ctx
+        zid_of = [zid for zid, _r in rects]
+        for d, (ti, why) in zip(
+            dets, trace_symbols_to_terminals(gray, dets, [r for _zid, r in rects])
+        ):  # fmt: skip
+            traced[id(d)] = (zid_of[ti] if ti is not None else None, why)
 
     for d in dets:
         fld = LEGEND_REF_FIELD.get(d["label"])
@@ -894,9 +1103,14 @@ def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> 
             diff_rooms.add(sid)
         sp = spaces[sid]
         zids = [z for z in sp.hvac.zone_ids if z in zones and sid in zones[z].space_ids]
+        tzid, why = traced.get(id(d), (None, "no_tracing"))
         if len(zids) != 1:
-            stats["no_zone" if not zids else "many_zones"] += 1
-            continue
+            if len(zids) <= 1 or duct_ctx is None or tzid not in zids:
+                stats["no_zone" if not zids else "many_zones" if len(zids) > 1 else "no_zone"] += 1
+                if len(zids) > 1:
+                    stats["duct_ambiguous"] += 1
+                continue
+            zids = [tzid]
         x, y = d["at_m"]
         held = getattr(sp.hvac, fld)
         near = [
@@ -911,20 +1125,31 @@ def _legend_refs(sheet_id, dets, spaces, zones, conf_cap, stats, diff_rooms) -> 
         stats["n"] += 1
         rc = d.get("reg_confidence")
         conf = conf_cap if rc is None else min(conf_cap, rc)
+        if tzid is not None and len(
+            [z for z in sp.hvac.zone_ids if z in zones and sid in zones[z].space_ids]
+        ) > 1:  # fmt: skip
+            method, tail = (
+                "duct_trace",
+                (f"zone {tzid}: it sits on that zone's ductwork (skeleton trace, {why})"),
+            )
+        else:
+            method, tail = "legend_symbol", "the one zone serving that room"
         ref = ComponentRef(
             id=f"{sheet_id}-{d['label'][0].upper()}{stats['n']}", type=d["label"],
             x_m=float(x), y_m=float(y),
             provenance=Provenance(
-                sheet_id, 0, "legend_symbol", conf, tuple(d["bbox_pt"]),
+                sheet_id, 0, method, conf, tuple(d["bbox_pt"]),
                 note=(
                     f"{d['label']} drawn as the sheet's own legend symbol, found by template "
-                    f"match and placed in {sid}; the one zone serving that room"
+                    f"match and placed in {sid}; {tail}"
                 ),
             ),
         )  # fmt: skip
         held.append(ref)
         getattr(zones[zids[0]], fld).append(ref)
         stats[d["label"]] += 1
+        if method == "duct_trace":
+            stats["duct"] += 1
 
 
 def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None:
@@ -947,6 +1172,12 @@ def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None
         f"{stats['grille']} grille(s), {stats['sensor']} sensor(s)"
         + (f"; {stats['no_zone']} in rooms no zone serves" if stats["no_zone"] else "")
         + (f"; {stats['many_zones']} in rooms several zones serve" if stats["many_zones"] else "")
+        + (f"; {stats['duct']} assigned by duct tracing" if stats["duct"] else "")
+        + (
+            f"; {stats['duct_ambiguous']} in shared rooms duct tracing could not settle"
+            if stats["duct_ambiguous"]
+            else ""
+        )
         + (f"; {stats['repeated']} repeated on another sheet" if stats["repeated"] else "")
         + (f"; {stats['twice']} found twice on one sheet" if stats["twice"] else "")
         + (f"; {len(bare)} zone(s) with no supply diffuser found" if bare else "")
@@ -973,8 +1204,84 @@ def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None
         )
 
 
+def _revisions(files, status, sheets_dir, entries, review, report) -> None:  # fmt: skip
+    """Revision tables, clouds, and ambiguous marks on every vector sheet (#993).
+
+    Each ingested vector sheet is read for its revision table (mark, date,
+    description) and its revision clouds; a cloud whose mark no table entry
+    names, and a table entry whose mark equals the sheet's title-block
+    revision with no cloud carrying it, become review items.  The per-set
+    picture (which mark touched which sheets, which sheets carry addenda
+    flags) lands on the report under ``revisions``.
+    """
+    from building_model import Provenance, ReviewItem
+
+    rev_of = {f: _val(entries.get(f, {}), "revision") for f in files}
+    addenda_of = {f: bool(entries.get(f, {}).get("addenda")) for f in files}
+    per_sheet: Dict[str, dict] = {}
+    ambiguous: List[dict] = []
+    for f in files:
+        st = status[f]
+        if st.stages.get("ingest", {}).get("kind") == "raster_only":
+            continue
+        try:
+            sheet = json.loads((sheets_dir / f).read_text())
+        except (OSError, ValueError):
+            continue
+        res = revisions.analyze_sheet(sheet, title_revision=rev_of.get(f))
+        per_sheet[f] = {"table_rows": len(res["table"]), "clouds": len(res["clouds"])}
+        for a in res["ambiguous"]:
+            ambiguous.append({"sheet": f, **a})
+    report.revisions = {
+        "schema": revisions.SCHEMA,
+        "marks": revisions.index_revisions(
+            [(rev_of.get(f), addenda_of.get(f, False)) for f in files]
+        ),
+        "sheets": per_sheet,
+        "ambiguous": ambiguous,
+    }  # fmt: skip
+
+    # one review item per distinct ambiguity (kind, mark, sheet), not per cloud
+    grouped: Dict[tuple, List[dict]] = {}
+    for a in ambiguous:
+        grouped.setdefault((a["kind"], a.get("mark"), a["sheet"]), []).append(a)
+    for (kind, mark, sheet), items in sorted(
+        grouped.items(), key=lambda kv: (kv[0][0], str(kv[0][1]), kv[0][2])
+    ):
+        n = len(items)
+        if kind == "cloud_without_table_entry":
+            desc = (
+                f"{n} revision cloud(s) marked {mark or '?'} on {sheet} with no matching "
+                "revision-table entry; the circled change is unrecorded"
+            )
+        else:
+            desc = (
+                f"revision {mark} on {sheet} matches the sheet's title-block revision but "
+                "no revision cloud carries it on the sheet; what changed is unclear"
+            )
+        review.append(
+            ReviewItem(
+                id=f"rq-revision-{kind}-{mark or 'x'}-{sheet}",
+                kind="revision_ambiguity",
+                target={"kind": "sheet", "id": sheet},
+                description=desc,
+                confidence=0.5,
+                provenance=Provenance(
+                    sheet_id=(
+                        status[sheet].number
+                        or sheet.replace("sheet_", "").rstrip(".json").rstrip(".")
+                    ),
+                    revision=0,
+                    method="revision_tracking",
+                    confidence=0.5,
+                ),
+                needs_review=True,
+            )
+        )
+
+
 def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_of_level=None,
-                  lid_of=None, spaces=None, zones=None) -> None:  # fmt: skip
+                  lid_of=None, spaces=None, zones=None, legend_tags=None) -> None:  # fmt: skip
     """Read the symbol legend on every vector mechanical sheet (#744).
 
     Each legend row's description is mapped to an HVAC detector class from its
@@ -994,7 +1301,7 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
     unmapped: Dict[tuple, List[tuple]] = {}
     ref_stats: Dict[str, int] = {
         "n": 0, "diffuser": 0, "grille": 0, "sensor": 0, "no_zone": 0, "many_zones": 0,
-        "repeated": 0, "twice": 0,
+        "duct": 0, "duct_ambiguous": 0, "repeated": 0, "twice": 0,
     }  # fmt: skip
     zoned_levels: set = set()
     diff_rooms: set = set()
@@ -1004,14 +1311,17 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
             continue
         sheet_id = st.number or f
         sheet = json.loads((sheets_dir / f).read_text())
-        legends = read_legend(sheet)
+        legends = read_legend(sheet, learned=legend_tags)
         per_legend = _legend_symbol_hits(sheet, legends, sheets_dir)
         rooms_of = _legend_hit_rooms(
             f, sheet, sheet_id, st, per_legend, scales, sheets_dir, plan_of_level, lid_of, spaces
         )
         for leg, dets, by_room in zip(legends, per_legend, rooms_of):
             if zones and spaces and by_room:
-                _legend_refs(sheet_id, dets, spaces, zones, CONFIDENCE, ref_stats, diff_rooms)
+                _legend_refs(
+                    sheet_id, dets, spaces, zones, CONFIDENCE, ref_stats, diff_rooms,
+                    _duct_ctx(sheet, sheet_id, zones, sheets_dir),
+                )  # fmt: skip
                 # only a level where a supply diffuser or grille was matched can
                 # say a zone has none; a thermostat-only legend says nothing
                 zoned_levels.update(
@@ -1612,7 +1922,11 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     (#747 slice 5) onto ``model.semi_exterior``. A boundary an unsettled side
     decides gets a review item; nothing is defaulted. Exports don't read it
     yet."""
-    from semi_exterior import semi_exterior_boundaries, semi_exterior_floor_boundaries
+    from semi_exterior import (
+        semi_exterior_boundaries,
+        semi_exterior_floor_boundaries,
+        vestibule_interior_boundaries,
+    )
 
     if not any(sp.conditioning for sp in model.spaces.values()):
         return
@@ -1620,7 +1934,11 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     # floor/ceiling between levels (#900); walls keep their record order,
     # floor records follow them
     floors = semi_exterior_floor_boundaries(model.spaces, model.levels)
-    model.semi_exterior = recs + floors
+    # 5.5.2 vestibule sentence: interior surfaces of unconditioned
+    # vestibules comply with the semiheated requirements (#747); pairs the
+    # records above already cover are not duplicated
+    vest = vestibule_interior_boundaries(model.spaces)
+    model.semi_exterior = recs + floors + vest
     for r in model.semi_exterior:
         if r["kind"] != "review":
             continue
@@ -1642,9 +1960,10 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
             )
         )
     semi = sum(1 for r in model.semi_exterior if r["kind"] == "semi_exterior")
+    vest = sum(1 for r in model.semi_exterior if r["kind"] == "vestibule")
     report.notes.append(
         f"semi-exterior envelope: {semi} space pair(s) settled, "
-        f"{len(model.semi_exterior) - semi} to review"
+        f"{vest} vestibule sentence, {len(model.semi_exterior) - semi - vest} to review"
     )
 
 

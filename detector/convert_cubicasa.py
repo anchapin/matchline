@@ -34,7 +34,10 @@ from collections import Counter
 import lxml.etree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from classes import CLASS_IDS, CUBICASA_MAP
+try:  # package import: python -m detector.convert_cubicasa, pytest
+    from detector.classes import CLASS_IDS, CUBICASA_MAP
+except ImportError:  # direct script execution from inside detector/
+    from classes import CLASS_IDS, CUBICASA_MAP
 
 from safe_xml import safe_xml_parser
 

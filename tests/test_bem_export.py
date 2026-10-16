@@ -368,3 +368,39 @@ def test_export_version_is_allowed_by_its_own_patched_8_01_schema():
         '\t\t\t<xsd:enumeration value="7.03"/>\n\t\t\t<xsd:enumeration value="8.01"/>\n', "", 1
     )
     assert hashlib.sha256(up.encode("utf-8")).hexdigest() == UPSTREAM_801_SHA256
+
+
+def test_place_openings_on_wall_skips_openings_on_too_short_wall():
+    # #1010: a wall run at or under the 0.1 m minimum leaves no usable run
+    # (L - 0.05 m reveal per side), so the fit-scale divides by zero at
+    # exactly L == 0.1 and goes negative below. Openings are skipped with a
+    # note instead of crashing the gbXML export.
+    from types import SimpleNamespace
+
+    from bem_helpers import _place_openings_on_wall
+
+    unit = SimpleNamespace(tag="W101", width_m=1.2, height_m=1.5, category="window")
+    placements, notes = _place_openings_on_wall([unit], 0.1, 3.0)
+    assert placements == []
+    assert any("too short" in n for n in notes)
+
+    placements, notes = _place_openings_on_wall([unit], 0.05, 3.0)
+    assert placements == []
+    assert any("too short" in n for n in notes)
+
+    # a normal wall still places and scales as before
+    placements, notes = _place_openings_on_wall([unit], 5.0, 3.0)
+    assert len(placements) == 1
+    assert placements[0]["s0"] == 0.05
+    assert not any("too short" in n for n in notes)
+
+
+def test_place_openings_on_wall_returns_early_for_empty_units_on_short_wall():
+    # #1010: an opening-free wall shorter than 0.1 m still hit the scale
+    # division (0 > usable is true when usable is negative). Early return,
+    # no note, no placements.
+    from bem_helpers import _place_openings_on_wall
+
+    placements, notes = _place_openings_on_wall([], 0.05, 3.0)
+    assert placements == []
+    assert notes == []

@@ -48,6 +48,7 @@ Unified pipeline: generate + link + validate + BEM export.
 
 ```bash
 matchline run --seed 42
+matchline run --seed 42 --mode progressive
 matchline run --aec-bench /path/to/aec-bench
 matchline run --seed 42 --config pipeline.yaml
 ```
@@ -69,6 +70,12 @@ matchline run --seed 42 --config pipeline.yaml
 
 `--simplify-tol FLOAT` (default: `0.02`)
 : Simplification tolerance as a fraction (0.02 = 2%).
+
+`--mode {full,progressive}` (default: `full`)
+: Pipeline mode (#998). `full` runs everything through BEM export. `progressive` stops after the takeoff (stage 1: symbols, areas, counts) without BEM construction, review-queue gate or export. The UI exposes the same mode choice in matchline-ui (#987/#988).
+
+`--legend-tags PATH`
+: Per-project legend sidecar (#995, `legend_tags.json` beside the drawing set by default). Descriptions it maps win over the built-in word rules on every mechanical sheet; a malformed sidecar warns and is ignored. See `docs/legend_learning.md`.
 
 `--config FILE`
 : YAML config file. Keys:
@@ -107,6 +114,10 @@ in-place using the `review_classifier` models before the BEM export stage.
 - `1` — validation errors blocked export
 
 ---
+
+## `matchline export-package`
+
+`matchline export-package <out_dir>` verifies every hash recorded in `<out_dir>/package/manifest.json` against the files on disk and builds `<out_dir>/package.zip`, the one zip to hand a reviewer (#999). A missing package or a hash mismatch prints `ERROR:` and exits 1.
 
 ## `matchline bem-export`
 
@@ -287,6 +298,33 @@ matchline review out/review/model.json --apply decisions.json
 See [`building_model.md`](building_model.md) for the `ReviewItem` data model.
 
 ---
+
+## `matchline learn-legend`
+
+Learns a project's legend tags from a stage set report and writes the
+`legend_tags.json` sidecar (#995, `docs/legend_learning.md`).
+
+```
+matchline learn-legend out_dir --tag 'SUPPLY GRILLE=grille' --out legend_tags.json
+```
+
+`report` is a `stage_00_set_report.json` or the out_dir holding it. Every
+(description, class) pair the built-in rules resolved is kept; rows they
+could not map are listed for `--tag DESC=CLASS` (repeatable), which may also
+override a built-in mapping. One description mapped to two classes is a
+conflict: dropped rather than guessed, and `--tag` settles it.
+
+## `matchline legend-eval`
+
+Before/after eval of a learned-tags run (#995):
+
+```
+matchline legend-eval baseline/stage_00_set_report.json tagged/stage_00_set_report.json
+```
+
+Prints rows and mapped counts, newly mapped rows, and every lost or flipped
+mapping; exits 1 on a regression (a row the baseline mapped that the tagged
+run leaves unmapped or maps to a different class).
 
 ## Environment variables
 
