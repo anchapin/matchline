@@ -40,3 +40,17 @@ The emitter enforces this with an allowlist (`telemetry_spec.py`): a field
 that is not on the spec's allowlist fails validation at build time rather
 than shipping to users, and a test proves emitted payloads contain no
 building-specific data (#1006).
+
+## How the emitter enforces this
+
+The emitter (`telemetry_emitter.py`, issue #1006) is the only path from
+run data to a payload. It offers one record method per metric group and
+nothing else: there is no API for attaching another top-level field, so
+a payload is allowlisted by construction. Bucket keys (a class name, a
+correction type, a check name, a bin label) are checked against the
+exclusion list at record time, and the finished payload is validated
+against the spec before `build_payload` returns it. Anything that fails
+raises `EmitterBuildError` at build time, never in front of users, and
+nothing non-conforming ships. Local-only mode disables emission
+entirely: the emitter collects nothing and `build_payload` returns
+None, consent or not.
