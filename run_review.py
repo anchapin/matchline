@@ -71,11 +71,12 @@ from review_classifier.data import Example
 from review_classifier.model import TypedDecider
 from validate import run_checks
 
-# Per-task model file names (relative to review_classifier/)
+# Per-task model file names (relative to review_classifier/). The shipped
+# models are .npz; the security guard below rejects any .pkl in this directory.
 _TASK_MODEL_NAMES: dict[str, str] = {
-    "route_to_review": "trained_model_route_to_review.pkl",
-    "schedule_match": "trained_model_schedule_match.pkl",
-    "extraction_type": "trained_model_extraction_type.pkl",
+    "route_to_review": "trained_model_route_to_review.npz",
+    "schedule_match": "trained_model_schedule_match.npz",
+    "extraction_type": "trained_model_extraction_type.npz",
 }
 
 # Task name for each ReviewItem.kind
@@ -141,8 +142,7 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
     model_file = _TASK_MODEL_NAMES.get(task)
     if model_file is None:
         return None
-    base_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
-    npz_path = base_path.with_suffix(".npz")
+    npz_path = pathlib.Path(__file__).parent / "review_classifier" / model_file
     if npz_path.exists():
         try:
             return TypedDecider.from_npz(npz_path)

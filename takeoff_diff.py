@@ -97,9 +97,12 @@ def _opening_inventory(spaces: Dict[str, dict], cat: str) -> List[dict]:
 def _moved_openings(old_inv: List[dict], new_inv: List[dict]) -> List[Tuple[int, int]]:
     """Pairs of openings present in both revisions, strongest evidence first
     (#1045): a tag that names exactly one opening per revision, then a bbox
-    overlap (IoU >= 0.5) on a sheet both revisions share.  Openings without
-    shared evidence never pair: an untagged opening with no comparable
-    geometry stays added/removed rather than being guessed into a move."""
+    overlap (IoU >= 0.5) on a sheet both revisions share.  Tag pairing looks
+    at the tag only, not where the opening sits: a tag naming exactly one
+    opening per revision pairs even when the two sit on different sheets or
+    levels.  Openings without shared evidence never pair: an untagged opening
+    with no comparable geometry stays added/removed rather than being guessed
+    into a move."""
     pairs: List[Tuple[int, int]] = []
     used_old: set = set()
     used_new: set = set()
@@ -189,10 +192,12 @@ def _reidentify_spaces(
 
     Two spaces pair only on same level and area within the same relative
     tolerance the per-id diff already uses, plus identity evidence: identical
-    normalized name, or name tokens overlapping >= 50% with a centroid close
-    enough to be the same room (distance <= max(1 m, 15% of sqrt(area)).
-    Ambiguous names (the same normalized name on several removed or several
-    added spaces at one level) never pair; greedy one-to-one otherwise."""
+    normalized name (no geometry needed), or name tokens overlapping >= 50%
+    with a centroid close enough to be the same room on BOTH sides (distance
+    <= max(1 m, 15% of sqrt(area)); a missing centroid blocks the token path,
+    it never waives it).  Ambiguous names (the same normalized name on several
+    removed or several added spaces at one level) never pair; greedy
+    one-to-one otherwise."""
     if not removed or not added:
         return []
     old_fp = {sid: _space_fingerprint(old_sp[sid]) for sid in removed}
@@ -206,9 +211,10 @@ def _reidentify_spaces(
         name_new.setdefault((fp["name"], fp["level"]), []).append(sid)
 
     def _centroid_ok(fa: dict, fb: dict) -> bool:
+        # Both centroids exist: the only caller (the token-overlap path below)
+        # requires them. Exact-name pairs need no geometry and never get here.
         ca, cb = fa["centroid"], fb["centroid"]
-        if ca is None or cb is None:
-            return True  # no geometry on a side: name and area carry the pair
+        assert ca is not None and cb is not None
         scale = max(1.0, 0.15 * ((max(fa["area"], fb["area"], 0.0)) ** 0.5))
         return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5 <= scale
 
