@@ -179,7 +179,9 @@ def test_contents_section_renders_in_html_and_pdf(pkg):
 def test_share_back_preview_is_one_selfcontained_page(pkg):
     page = (pkg / "share_back.html").read_text()
     assert "Share-back preview" in page and "Package contents" in page
-    assert "<script" not in page
+    # #1001: the 3D review viewer rides on the share-back page, inline only
+    assert "<canvas" in page
+    assert not re.search(r"<script[^>]*\bsrc\s*=", page)
     assert not re.search(r'(src|href)\s*=\s*["\']?https?:', page)
 
 
