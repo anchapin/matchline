@@ -136,6 +136,7 @@ def build_set_model(
     storey_height_m=None,
     dpi: float = 150,
     provider=None,
+    legend_tags: Optional[dict] = None,
 ):
     """Read a PDF set and assemble a BuildingModel. Returns (model, report).
 
@@ -143,6 +144,10 @@ def build_set_model(
     config; it runs on each floor plan's rendered image unless ``detections``
     already holds that sheet. The report records which provider ran and whether
     its weights are evaluation only under the license ledger.
+
+    ``legend_tags`` is a per-project legend sidecar (#995, ``legend_tags.json``
+    beside the set): descriptions it maps win over the built-in word rules on
+    every mechanical sheet.
 
     ``storey_height_m`` is one height for every level (``--storey-height``, run
     config ``wall_height: 3.5``) or a map of level id to height (``wall_height:
@@ -713,7 +718,17 @@ def build_set_model(
         review, report,
     )  # fmt: skip
     _mech_legends(
-        files, status, sheets_dir, review, report, scales, plan_of_level, lid_of, spaces, zones
+        files,
+        status,
+        sheets_dir,
+        review,
+        report,
+        scales,
+        plan_of_level,
+        lid_of,
+        spaces,
+        zones,
+        legend_tags=legend_tags,
     )
     _place_fixtures(
         files, entries, status, scales, sheets_dir, plan_of_level, lid_of, spaces,
@@ -1186,7 +1201,7 @@ def _legend_zone_check(zones, levels, stats, diff_rooms, review, report) -> None
 
 
 def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_of_level=None,
-                  lid_of=None, spaces=None, zones=None) -> None:  # fmt: skip
+                  lid_of=None, spaces=None, zones=None, legend_tags=None) -> None:  # fmt: skip
     """Read the symbol legend on every vector mechanical sheet (#744).
 
     Each legend row's description is mapped to an HVAC detector class from its
@@ -1216,7 +1231,7 @@ def _mech_legends(files, status, sheets_dir, review, report, scales=None, plan_o
             continue
         sheet_id = st.number or f
         sheet = json.loads((sheets_dir / f).read_text())
-        legends = read_legend(sheet)
+        legends = read_legend(sheet, learned=legend_tags)
         per_legend = _legend_symbol_hits(sheet, legends, sheets_dir)
         rooms_of = _legend_hit_rooms(
             f, sheet, sheet_id, st, per_legend, scales, sheets_dir, plan_of_level, lid_of, spaces

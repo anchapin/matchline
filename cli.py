@@ -429,6 +429,60 @@ def cmd_viewer_apply(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2, default=str))
 
 
+def cmd_learn_legend(args: argparse.Namespace) -> None:
+    """Learn a project's legend tags from a stage set report (#995)."""
+    import json
+
+    from legend_learning import (
+        SIDECAR_NAME,
+        LegendTagsError,
+        add_tags,
+        learn_from_set_report,
+        save_tags,
+    )
+
+    path = Path(args.report)
+    if path.is_dir():
+        path = path / "stage_00_set_report.json"
+    report = json.loads(path.read_text())
+    tags, conflicts, unmapped = learn_from_set_report(report)
+    try:
+        tags = add_tags(tags, args.tag)
+    except LegendTagsError as e:
+        sys.exit(f"error: {e}")
+    out = Path(args.out) if args.out else path.parent / SIDECAR_NAME
+    save_tags(out, tags)
+    print(f"learned {len(tags)} legend tag(s) -> {out}")
+    for c in conflicts:
+        print(f"  conflict skipped: {c}")
+    if unmapped:
+        print("unmapped descriptions (map them with --tag):")
+        for d in unmapped:
+            print(f"  {d}")
+
+
+def cmd_legend_eval(args: argparse.Namespace) -> None:
+    """Before/after eval of a learned-tags run (#995): exits 1 on regression."""
+    import json
+
+    from legend_learning import eval_before_after
+
+    before = json.loads(Path(args.before).read_text())
+    after = json.loads(Path(args.after).read_text())
+    r = eval_before_after(before, after)
+    print(
+        f"rows {r['rows_before']} -> {r['rows_after']}, "
+        f"mapped {r['mapped_before']} -> {r['mapped_after']}, "
+        f"newly mapped {r['newly_mapped']}"
+    )
+    for e in r["lost"]:
+        print(f"  LOST {e['sheet']}: {e['description']} (was {e['was']})")
+    for e in r["flipped"]:
+        print(f"  FLIPPED {e['sheet']}: {e['description']} {e['was']} -> {e['now']}")
+    if r["regressions"]:
+        sys.exit(f"error: {r['regressions']} regression(s)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="matchline",
@@ -479,6 +533,14 @@ def build_parser() -> argparse.ArgumentParser:
         "level, or a map of level id to metres such as {L1: 4.5, L2: 3.6}; default from "
         "the drawings). "
         "Example: review_confidence: 0.85  simplify_tolerance: 0.01  wall_height: 3.5",
+    )
+    p.add_argument(
+        "--legend-tags",
+        default=None,
+        dest="legend_tags",
+        metavar="PATH",
+        help="per-project legend sidecar (#995); default legend_tags.json beside "
+        "the drawing set when present",
     )
     p.add_argument(
         "--confidence-threshold",
@@ -713,6 +775,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write diff summary JSON here (default: stdout)",
     )
     p.set_defaults(func=cmd_diff)
+
+    p = sub.add_parser(
+        "learn-legend",
+        help="learn a project's legend tags from a set report (#995)",
+    )
+    p.add_argument("report", help="stage_00_set_report.json, or the out_dir holding it")
+    p.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="DESC=CLASS",
+        help="map a description the rules could not, e.g. --tag 'SUPPLY GRILLE=grille'; "
+        "repeatable. Classes: vav, ahu, diffuser, grille, sensor",
+    )
+    p.add_argument(
+        "--out",
+        metavar="PATH",
+        default=None,
+        help="sidecar to write (default: legend_tags.json beside the report)",
+    )
+    p.set_defaults(func=cmd_learn_legend)
+
+    p = sub.add_parser(
+        "legend-eval",
+        help="before/after eval of a learned-tags run (#995)",
+    )
+    p.add_argument("before", help="baseline stage_00_set_report.json")
+    p.add_argument("after", help="tagged-run stage_00_set_report.json")
+    p.set_defaults(func=cmd_legend_eval)
 
     return ap
 
