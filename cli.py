@@ -57,8 +57,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     inputs = {
         "--seed": args.seed is not None,
         "--aec-bench": args.aec_bench is not None,
-        "--set": args.set_pdf is not None,
-        "--ifc": args.ifc_path is not None,
+        "--set": getattr(args, "set_pdf", None) is not None,
+        "--ifc": getattr(args, "ifc_path", None) is not None,
     }
     named = ", ".join(name for name, given in inputs.items() if given)
     if sum(inputs.values()) != 1:
