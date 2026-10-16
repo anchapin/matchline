@@ -60,8 +60,8 @@ def test_windows_and_doors_counted_per_space():
         }
     }
     rep = takeoff_diff.diff_takeoffs(old, new)
-    assert rep["windows"] == {"added": 2, "removed": 0, "spaces_changed": 2}
-    assert rep["doors"] == {"added": 0, "removed": 1, "spaces_changed": 1}
+    assert rep["windows"] == {"added": 2, "removed": 0, "moved": 0, "spaces_changed": 2}
+    assert rep["doors"] == {"added": 0, "removed": 1, "moved": 0, "spaces_changed": 1}
 
 
 def test_symbols_from_set_reports():
@@ -115,3 +115,88 @@ def test_cli_takeoff_diff(tmp_path, capsys):
     rep = json.loads(out.read_text())
     assert rep["schema"] == "matchline.takeoff_diff/1"
     assert rep["doors"]["added"] == 1
+def _opening(cat, tag=None, sheet=None, bbox=None):
+    o = {"category": cat}
+    if tag:
+        o["tag"] = tag
+    if sheet and bbox:
+        o["provenance"] = {
+            "sheet_id": sheet,
+            "revision": 1,
+            "method": "grid_registration",
+            "confidence": 1.0,
+            "bbox": bbox,
+        }
+    return o
+
+
+def test_moved_opening_by_tag():
+    """A window tagged W1 that moved between spaces reports moved, not +1/-1."""
+    old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    new = {"spaces": {"b": {"openings": [_opening("window", tag="W1")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"] == {"added": 0, "removed": 0, "moved": 1, "spaces_changed": 2}
+
+
+def test_same_space_tag_pair_is_not_moved():
+    """W1 in the same space in both revisions is no change at all."""
+    old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    new = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 0 and rep["windows"]["added"] == 0
+    assert rep["windows"]["removed"] == 0 and rep["windows"]["spaces_changed"] == 0
+
+
+def test_moved_opening_by_bbox_overlap():
+    """Untagged openings pair on a shared sheet's bbox overlap (IoU >= 0.5)."""
+    old = {
+        "spaces": {
+            "a": {"openings": [_opening("window", sheet="elev_A201", bbox=[100, 100, 160, 260])]}
+        }
+    }
+    # same opening, shifted 10 px right and down: IoU ~ 0.77
+    new = {
+        "spaces": {
+            "b": {"openings": [_opening("window", sheet="elev_A201", bbox=[110, 110, 170, 270])]}
+        }
+    }
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 1 and rep["windows"]["added"] == 0
+    assert rep["windows"]["removed"] == 0
+
+
+def test_untagged_without_geometry_stays_added_removed():
+    """No shared identity evidence: the old +1/-1 accounting stands."""
+    old = {"spaces": {"a": {"openings": [_opening("window")]}}}
+    new = {"spaces": {"b": {"openings": [_opening("window")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"] == {"added": 1, "removed": 1, "moved": 0, "spaces_changed": 2}
+
+
+def test_duplicate_tags_never_pair():
+    """A tag naming two openings in one revision is ambiguous: no pairing."""
+    old = {
+        "spaces": {
+            "a": {"openings": [_opening("window", tag="W1")]},
+            "b": {"openings": [_opening("window", tag="W1")]},
+        }
+    }
+    new = {"spaces": {"c": {"openings": [_opening("window", tag="W1")]}}}
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 0
+    assert rep["windows"]["added"] == 1 and rep["windows"]["removed"] == 2
+
+
+def test_moved_plus_genuine_addition():
+    """A moved window and a genuinely new window report separately."""
+    old = {"spaces": {"a": {"openings": [_opening("window", tag="W1")]}}}
+    new = {
+        "spaces": {
+            "b": {"openings": [_opening("window", tag="W1")]},
+            "a": {"openings": [_opening("window", tag="W2")]},
+        }
+    }
+    rep = takeoff_diff.diff_takeoffs(old, new)
+    assert rep["windows"]["moved"] == 1
+    assert rep["windows"]["added"] == 1 and rep["windows"]["removed"] == 0
+    assert rep["windows"]["spaces_changed"] == 2
