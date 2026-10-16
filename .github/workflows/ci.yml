@@ -58,7 +58,19 @@ jobs:
             COMPARE_REF="$BEFORE_SHA"
           fi
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$BASE_REF" = "main" ]; then
+            # A release merge (develop -> main) brings develop's whole
+            # history, where historical empty commits may legitimately exist
+            # (db706a1, bb302a7). The gate for a release merge is that it
+            # changes the tree.
+            if [ -z "$(git diff --name-only "$BASE_REF...$HEAD_LOCAL_REF")" ]; then
+              echo "Release merge changes no files"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "No empty release merge detected"
+            echo "is_empty=false" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
             # Loop per-commit to catch empty commits bundled with real ones
             EMPTY_COMMITS=""
             for SHA in $(git log --no-merges --format=%H "$COMPARE_REF..$HEAD_LOCAL_REF"); do
@@ -75,6 +87,15 @@ jobs:
               echo "No empty commits detected"
               echo "is_empty=false" >> $GITHUB_OUTPUT
             fi
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # Same rationale for the post-merge push to main.
+            if [ -z "$(git diff --name-only "$BEFORE_SHA" "${{ github.sha }}")" ]; then
+              echo "Push to main changes no files"
+              echo "is_empty=true" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "No empty push to main detected"
+            echo "is_empty=false" >> $GITHUB_OUTPUT
           else
             # Loop per-commit for push events
             EMPTY_COMMITS=""
