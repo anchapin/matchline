@@ -8,6 +8,12 @@ All notable changes to this project are documented here, in
 
 ### Added
 
+- Nothing yet; see [0.2.0] below.
+
+## [0.2.0] - 2026-10-16
+
+### Added
+
 - `hvac_trace.trace_symbols_to_terminals`: multi-source duct skeleton trace that
   assigns each legend-referenced terminal to the zone its ductwork feeds
   (#744). Seeds at terminal symbols, walks the skeleton with a shared
@@ -198,6 +204,25 @@ All notable changes to this project are documented here, in
   `docs/README.md` index.
 - `geometry_simplify` now raises a clear `ImportError` (install hint) instead
   of falling back to a machine-specific vendored shapely.
+
+### Added (late entries for this release)
+- Explicit area definitions (GSF, BOMA rentable, program/assignable) with reconciliation (#975).
+- Mechanical schedule parsing and system-type classification (#974).
+- Match lines, split sheets, and enlarged-plan deduplication (#994); legacy plan sheets route by plan-like geometry with a single-dimension scale fallback (#1016, #1019).
+- Review viewer: a read-only 3D view with pan/rotate and level-by-level top-down (#1001), in-viewer corrections (rename, reclass, merge, split, revert-to-auto) (#1002), MEP takeoff and trace overlays (#1004), and a provenance-method filter chip in the queue (#1080).
+- Review queue: worst-first ordering, level tracking, filters and bulk actions (#996).
+- Correction history with undo and revert-to-automatic (#997); revision/addenda tracking and takeoff diffs, including moved-opening pairs and space-identity fingerprints (#993, #1034, #1042-#1048), a `--baseline` flag on `matchline run` (#1077), and diff results fed into the review queue (#1048).
+- Export package as one zip with a self-contained share-back preview, and a feedback-log summary in the trust report (#999, #1081).
+- Progressive takeoff mode: stop after takeoff, skip BEM build and export (#998).
+- Per-project legend tag learning with a sidecar, classify override and before/after eval (#995).
+- Versioned minimum-telemetry spec with allowlist, exclusion list and consent gates, the allowlist emitter wired into the run pipeline, and in-product feedback capture wired into review decisions, stage failures and the CLI (#1003, #1037, #1038).
+- Real-building benchmark expanded to 12 licensed buildings; the scoreboard gains real simplification and surface-count columns, door recall via IfcDoor openings, and raw entity-count truth (#748, #972).
+- Wheel packaging: `pip install matchline` works as a real install - every module ships in the wheel (review_classifier and its runtime data), the CI wheel check reads packages from pyproject, and the synth e2e scripts stay out of the wheel (#1035, #1070, #1071, #1076, #1081).
+- `matchline run` reaches the `--set` and `--ifc` input paths end to end (#1036).
+- Docs: contributor review norms and a Code of Conduct (#1092), a generated repo map with a CI drift check and a complete docs index (#1096), takeoff-diff and learn-legend documented in the README (#1066).
+- Publishing: a tag-driven PyPI release workflow with trusted publishing; pushing a vX.Y.Z tag builds, smoke-tests and publishes. This release is the first publish (#1099).
+- CI and hygiene: the CLI test subprocess cap raised to 180s (#1072), configs and docstrings aligned with behavior and one shared `point_in_polygon` (#1073-#1075), the demo install exercises every CLI subcommand (#1076), orphaned elevation tests moved with a repo-root guard (#1064), dead public code removed from review_classifier (#1065), stage JSON writes go through temp-then-replace (#1039), the missing-OCR path made deterministic (#1040), one shared page head for the HTML pages (#1044), unmapped legend descriptions suggest `--tag` mappings (#1047), takeoff-diff classifies each space once (#1043).
+- Dependencies: Renovate bumps (ruff 0.17, GitHub Actions v7, CPython 3.15 with a deferral in ci.yml).
 
 ## [0.1.0] - 2026-09-19
 
