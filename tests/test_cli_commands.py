@@ -8,6 +8,7 @@ key output.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -64,8 +65,35 @@ class TestFacadeTakeoff:
 class TestRoomLabels:
     """Tests for `room-labels` CLI command."""
 
-    def test_fails_gracefully_without_ocr(self):
-        """Fails with a clear message when the OCR dependency is absent."""
+    def test_fails_gracefully_without_ocr(self, monkeypatch):
+        """Fails with a clear message when the OCR dependency is absent (#1040).
+
+        rapidocr_onnxruntime is forced absent in sys.modules, so the
+        missing-dependency path is exercised on every machine instead of
+        only where the [ocr] extra is not installed (where the old
+        subprocess assertion wrongly expected the pipeline to fail).
+        """
+        import room_labels as rl
+
+        monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
+        monkeypatch.setattr(rl, "_ENGINE", None)
+        with pytest.raises(RuntimeError, match="rapidocr_onnxruntime is not installed"):
+            rl.ocr_engine_name()
+
+    def test_cli_path_reaches_ocr_guard(self, monkeypatch):
+        """The command path fails at the OCR import, not at sheet synthesis (#1040)."""
+        import room_labels as rl
+        import run_room_labels
+
+        monkeypatch.setitem(sys.modules, "rapidocr_onnxruntime", None)
+        monkeypatch.setattr(rl, "_ENGINE", None)
+        with pytest.raises(RuntimeError, match="rapidocr_onnxruntime is not installed"):
+            run_room_labels.main()
+
+    def test_cli_subprocess_without_ocr(self):
+        """The CLI exits non-zero with the message, on machines without the [ocr] extra (#1040)."""
+        if importlib.util.find_spec("rapidocr_onnxruntime") is not None:
+            pytest.skip("rapidocr installed; the in-process tests cover the missing path")
         r = _run(["room-labels"])
         assert r.returncode != 0
         out = r.stdout + r.stderr
