@@ -73,8 +73,10 @@ def diff_takeoffs(
         if b is None:
             removed.append(sid)
             continue
+        changed = False
         if _norm_name(a.get("name")) != _norm_name(b.get("name")):
             renamed.append(sid)
+            changed = True
         try:
             aa, ba = float(a.get("area_m2") or 0.0), float(b.get("area_m2") or 0.0)
         except (TypeError, ValueError):
@@ -82,9 +84,14 @@ def diff_takeoffs(
         bigger = max(abs(aa), abs(ba), 1e-9)
         if abs(ba - aa) / bigger > _AREA_REL_EPS:
             area_changed.append(sid)
+            changed = True
         if (a.get("level_id") or "") != (b.get("level_id") or ""):
             moved_level.append(sid)
-        if sid not in renamed + area_changed + moved_level:
+            changed = True
+        # was: `sid not in renamed + area_changed + moved_level`, three list
+        # concatenations per space (#1043); the flag is the O(1) equivalent,
+        # and a union set built before the loop would go stale as the lists grow
+        if not changed:
             unchanged += 1
 
     def opening_section(cat: str) -> dict:
