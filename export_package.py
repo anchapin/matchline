@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+from feedback_capture import summarize
 from html_page import page_head
 
 SCHEMA = "matchline.trust_report/1"
@@ -122,6 +123,30 @@ def _corrections(out_dir) -> dict:
     return {"recorded": True, "file": "corrections.json", "summary": corrections_mod.summary(doc)}
 
 
+def _feedback(out_dir) -> dict:
+    """The local friction-capture log beside the model (#1080), or why there is none."""
+    p = Path(out_dir) / "feedback.jsonl"
+    if not p.exists():
+        return {"present": False, "reason": "no feedback log for this run"}
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        return {"present": False, "reason": f"feedback.jsonl could not be read ({e})"}
+    events: list = []
+    skipped = 0
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            skipped += 1
+    out = {"present": True, "file": "feedback.jsonl", "summary": summarize(events)}
+    if skipped:
+        out["skipped_lines"] = skipped
+    return out
+
+
 def _decisions(review_dir, n_open: int) -> dict:
     """Where the reviewer records decisions (#749), or why there is nothing yet."""
     if not review_dir or not (Path(review_dir) / "decisions.json").exists():
@@ -145,6 +170,7 @@ def build_trust_report(
     inputs: Iterable[dict] = (),
     review_dir=None,
     corrections: Optional[dict] = None,
+    feedback: Optional[dict] = None,
 ) -> dict:
     """The trust report as data; every number names where it was read from."""
     spaces = list(model.spaces.values())
@@ -237,7 +263,7 @@ def build_trust_report(
         "reviewed_date": "",
         "stamp": "",
     }
-    return {
+    tr = {
         "schema": SCHEMA,
         "building": model.name,
         "disclaimer": DISCLAIMER,
@@ -251,6 +277,9 @@ def build_trust_report(
         "decisions_file": _decisions(review_dir, n_open),
         "corrections": corrections or {"recorded": False, "reason": "no corrections recorded"},
     }
+    if feedback and feedback.get("present"):
+        tr["feedback"] = feedback
+    return tr
 
 
 # ------------------------------------------------------------------- render
@@ -382,10 +411,34 @@ def render_html(tr: dict, banner: str = "") -> str:
         "<h2>Review decisions</h2>",
         f"<p>{_e(_dnote(tr))}</p>",
         _corrections_html(tr),
+        _feedback_html(tr),
         _contents_html(tr),
         "</body></html>",
     ]
     return "\n".join(p for p in parts if p) + "\n"
+
+
+def _feedback_html(tr: dict) -> str:
+    """The feedback-capture summary section (#1080); nothing at all when the log is absent."""
+    fb = tr.get("feedback") or {}
+    if not fb.get("present"):
+        return ""
+    s = fb.get("summary") or {}
+    by_kind = ", ".join(f"{k} {v}" for k, v in (s.get("by_kind") or {}).items()) or "none"
+    parts = [
+        f"{s.get('total', 0)} captured events this run, summarized from "
+        f"{fb.get('file', 'feedback.jsonl')}: {by_kind}."
+    ]
+    fric = ", ".join(f"{key} ({v})" for key, v in (s.get("top_friction") or []))
+    if fric:
+        parts.append(f"Top friction: {fric}.")
+    th = ", ".join(f"{w} ({v})" for w, v in (s.get("themes") or []))
+    if th:
+        parts.append(f"Recurring words in open responses: {th}.")
+    if fb.get("skipped_lines"):
+        parts.append(f"{fb['skipped_lines']} malformed log line(s) skipped.")
+    parts.append("Counts and generic labels only; the log itself stays local.")
+    return "<h2>Feedback log</h2><p>" + " ".join(parts) + "</p>"
 
 
 def _contents_html(tr: dict) -> str:
@@ -669,7 +722,7 @@ def build_package(
     corr = _corrections(out_dir)
     if corr.get("recorded"):
         shutil.copy2(Path(out_dir) / "corrections.json", pkg / "corrections.json")
-    tr = build_trust_report(model, report, convention, inputs, review_dir, corr)
+    tr = build_trust_report(model, report, convention, inputs, review_dir, corr, _feedback(out_dir))
     (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n")
     generated = ["trust_report.json", "trust_report.html"]
     if pdf:

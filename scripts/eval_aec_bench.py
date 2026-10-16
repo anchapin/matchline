@@ -8,7 +8,7 @@ Ground truth is ``annotations_15.xml`` in the dataset dir: every box or
 polygon labelled "Single Swing Door" / "Double Swing Door" counts as a door and
 "Window" as a window (polygons by their bounding box). Detections are one
 ``<sheet stem>.json`` per sheet in the detector output format
-(schemas/detector_output_v1.schema.json, as detector/sahi_infer.py writes it).
+(assets/schemas/detector_output_v1.schema.json, as detector/sahi_infer.py writes it).
 Its boxes are rescaled from its own ``width``/``height`` to the annotation
 frame. A sheet with no detections file counts as no detections and is listed.
 

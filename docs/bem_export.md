@@ -22,7 +22,7 @@ in the gbXML file comment.
 ## Schema choices (gbXML 8.01)
 
 - Validated with lxml against the 8.01 XSD
-  (`schemas/GreenBuildingXML_Ver8.01.xsd`, fetched from gbxml.org), with one local
+  (`assets/schemas/GreenBuildingXML_Ver8.01.xsd`, fetched from gbxml.org), with one local
   fix: the published 8.01 schema lists `versionEnum` values only up to 6.01, so a
   file declaring `version="8.01"` fails its own schema. Our copy adds `7.03` and
   `8.01` to that list and changes nothing else; a test checks that the rest is

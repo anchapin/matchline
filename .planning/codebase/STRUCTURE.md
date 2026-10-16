@@ -11,7 +11,7 @@ matchline/
 ├── detector/             # YOLO fine-tuning (separate venv, excluded from ruff)
 ├── tests/               # Pytest suite
 ├── docs/                # Module guides and design documents
-├── schemas/             # JSON schema definitions
+├── assets/              # wheel-shipped data: license ledger, schemas
 ├── review_classifier/   # Auto-triage for review queue
 └── .planning/           # GSD planning artifacts
 ```
@@ -25,7 +25,7 @@ matchline/
 
 **`synth/` (Synthetic Data Package):**
 - Purpose: Synthetic building/sheet generation for tests and demos
-- Contains: `__init__.py`, `multidiscipline.py`, `sheets.py`, `lighting.py`, `lighting_sheets.py`, `lighting_e2e_test.py`, `mech.py`, `symbols.py`, `make_dataset.py`, `e2e_test.py`, `gap_experiment.py`
+- Contains: `__init__.py`, `multidiscipline.py`, `sheets.py`, `lighting.py`, `lighting_sheets.py`, `mech.py`, `symbols.py`, `make_dataset.py`, `gap_experiment.py`
 - Key files: `multidiscipline.py` (generates linked multi-discipline buildings), `sheets.py` (sheet rendering with ground truth)
 - Note: This is a test data package listed in `pyproject.toml` as `packages = ["synth"]`
 

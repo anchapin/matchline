@@ -17,7 +17,10 @@ import pytest
 def _run_cli(args: list[str], **kwargs) -> subprocess.CompletedProcess:
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
-    kwargs.setdefault("timeout", 60)
+    # 180s: the symbols CLI takes ~1-2 min on slow machines (observed on a
+    # loaded sandbox, #1072); 60s read as a CLI hang and flaked the two
+    # TestSymbols tests while the same invocation passed standalone.
+    kwargs.setdefault("timeout", 180)
     return subprocess.run([sys.executable, "-m", "cli"] + args, **kwargs)
 
 

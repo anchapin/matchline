@@ -31,6 +31,10 @@ dependencies = [
     "pypdfium2>=4.30",
     # trust report PDF (#750); BSD, pure Python, no system libraries
     "reportlab>=4.0",
+    # review-queue auto-triage (#1070): TypedDecider loads its .npz models
+    # through sklearn estimators, and run_review imports the classifier at
+    # module top, so a real install needs it or `matchline review` dies
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -163,12 +167,14 @@ py-modules = [
     "zone_capacity",
 ]
 packages = [
+    "assets",
     "link",
     "query",
     "sim",
     "synth",
     "ui",
     "validate",
+    "review_classifier",
 ]
 
 [tool.pytest.ini_options]
@@ -195,3 +201,10 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["synth"]
+
+[tool.setuptools.package-data]
+# Runtime data the wheel must carry (#1070, #1071): the license ledger gates
+# detector artifacts, the schemas validate gbXML exports and detector loads,
+# and review_classifier needs its trained models for auto-triage.
+"assets" = ["*.json", "schemas/*.json", "schemas/*.xsd"]
+"review_classifier" = ["*.npz"]

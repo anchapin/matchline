@@ -15,7 +15,9 @@ change class, one section per takeoff:
   category, summed into added / removed with the count of spaces whose count
   changed.  Openings present in both revisions with identity evidence (a
   unique tag, or a >=50% bbox overlap on a sheet both revisions share) are
-  reported as ``moved`` instead of one added and one removed (#1045).
+  reported as ``moved`` instead of one added and one removed (#1045), with
+  ``moved_pairs`` listing each relocation's old/new space, tag, and the
+  evidence that paired it (#1078).
 * ``symbols``: legend rows mapped to HVAC detector classes (from the set
   reports, when given) summed per class into added / removed.
 
@@ -97,9 +99,12 @@ def _opening_inventory(spaces: Dict[str, dict], cat: str) -> List[dict]:
 def _moved_openings(old_inv: List[dict], new_inv: List[dict]) -> List[Tuple[int, int]]:
     """Pairs of openings present in both revisions, strongest evidence first
     (#1045): a tag that names exactly one opening per revision, then a bbox
-    overlap (IoU >= 0.5) on a sheet both revisions share.  Openings without
-    shared evidence never pair: an untagged opening with no comparable
-    geometry stays added/removed rather than being guessed into a move."""
+    overlap (IoU >= 0.5) on a sheet both revisions share.  Tag pairing looks
+    at the tag only, not where the opening sits: a tag naming exactly one
+    opening per revision pairs even when the two sit on different sheets or
+    levels.  Openings without shared evidence never pair: an untagged opening
+    with no comparable geometry stays added/removed rather than being guessed
+    into a move."""
     pairs: List[Tuple[int, int]] = []
     used_old: set = set()
     used_new: set = set()
@@ -189,10 +194,12 @@ def _reidentify_spaces(
 
     Two spaces pair only on same level and area within the same relative
     tolerance the per-id diff already uses, plus identity evidence: identical
-    normalized name, or name tokens overlapping >= 50% with a centroid close
-    enough to be the same room (distance <= max(1 m, 15% of sqrt(area)).
-    Ambiguous names (the same normalized name on several removed or several
-    added spaces at one level) never pair; greedy one-to-one otherwise."""
+    normalized name (no geometry needed), or name tokens overlapping >= 50%
+    with a centroid close enough to be the same room on BOTH sides (distance
+    <= max(1 m, 15% of sqrt(area)); a missing centroid blocks the token path,
+    it never waives it).  Ambiguous names (the same normalized name on several
+    removed or several added spaces at one level) never pair; greedy
+    one-to-one otherwise."""
     if not removed or not added:
         return []
     old_fp = {sid: _space_fingerprint(old_sp[sid]) for sid in removed}
@@ -206,9 +213,10 @@ def _reidentify_spaces(
         name_new.setdefault((fp["name"], fp["level"]), []).append(sid)
 
     def _centroid_ok(fa: dict, fb: dict) -> bool:
+        # Both centroids exist: the only caller (the token-overlap path below)
+        # requires them. Exact-name pairs need no geometry and never get here.
         ca, cb = fa["centroid"], fb["centroid"]
-        if ca is None or cb is None:
-            return True  # no geometry on a side: name and area carry the pair
+        assert ca is not None and cb is not None
         scale = max(1.0, 0.15 * ((max(fa["area"], fb["area"], 0.0)) ** 0.5))
         return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5 <= scale
 
@@ -409,6 +417,7 @@ def diff_takeoffs(
         moved_in: Dict[str, int] = {}
         moved_out: Dict[str, int] = {}
         n_moved = 0
+        moved_pairs: List[dict] = []
         for i, j in _moved_openings(old_inv, new_inv):
             s_old, s_new = old_inv[i]["space"], new_inv[j]["space"]
             if s_old == s_new:
@@ -416,6 +425,16 @@ def diff_takeoffs(
             n_moved += 1
             moved_out[s_old] = moved_out.get(s_old, 0) + 1
             moved_in[s_new] = moved_in.get(s_new, 0) + 1
+            # Evidence follows the pairing rule: a non-empty tag on both sides
+            # means the tag paired them; anything else paired on bbox overlap.
+            moved_pairs.append(
+                {
+                    "old_space": s_old,
+                    "new_space": s_new,
+                    "tag": old_inv[i]["tag"] or new_inv[j]["tag"],
+                    "evidence": "tag" if (old_inv[i]["tag"] and old_inv[j]["tag"]) else "bbox",
+                }
+            )
         n_added = n_removed = 0
         spaces_changed = 0
         for sid in set(old_c) | set(new_c):
@@ -429,6 +448,7 @@ def diff_takeoffs(
             "added": n_added,
             "removed": n_removed,
             "moved": n_moved,
+            "moved_pairs": moved_pairs,
             "spaces_changed": spaces_changed,
         }
 

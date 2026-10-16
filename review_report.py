@@ -914,12 +914,13 @@ _UI_JS = """
   try { var saved = localStorage.getItem(key); if (saved) doc = JSON.parse(saved); }
   catch (e) {}
   var sel = 0, openOnly = false, svgs = {};
-  var filters = {kind: "", band: "all", level: ""};
+  var filters = {kind: "", band: "all", level: "", method: ""};
   function bandOf(c) { return c >= 0.9 ? "high" : c >= 0.7 ? "mid" : "low"; }
   function pass(it) {
     if (filters.kind && it.kind !== filters.kind) return false;
     if (filters.band !== "all" && bandOf(it.confidence) !== filters.band) return false;
     if (filters.level && (it.level || "") !== filters.level) return false;
+    if (filters.method && (it.method || "") !== filters.method) return false;
     return true;
   }
   function visibleIdx(fs) {
@@ -1076,16 +1077,18 @@ _UI_JS = """
     sel.onchange = function () {
       if (id === "f-kind") filters.kind = sel.value;
       else if (id === "f-band") filters.band = sel.value;
+      else if (id === "f-method") filters.method = sel.value;
       else filters.level = sel.value;
       render();
     };
   }
-  var kinds = [], levels = [];
+  var kinds = [], levels = [], methods = [];
   data.items.forEach(function (it) {
     if (kinds.indexOf(it.kind) < 0) kinds.push(it.kind);
     if (it.level && levels.indexOf(it.level) < 0) levels.push(it.level);
+    if (it.method && methods.indexOf(it.method) < 0) methods.push(it.method);
   });
-  fill("f-kind", kinds); fill("f-level", levels);
+  fill("f-kind", kinds); fill("f-level", levels); fill("f-method", methods);
   document.getElementById("bulk-confirm").onclick = function () { bulk("confirm"); };
   document.getElementById("bulk-reject").onclick = function () { bulk("reject"); };
   function toggleHelp() {
@@ -1506,6 +1509,7 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
                 "<option value=high>&#8805;0.9</option><option value=mid>0.7&#8211;0.9</option>"
                 "<option value=low>&lt;0.7</option></select>"
                 "<select id=f-level><option value=''>all floors</option></select>"
+                "<select id=f-method><option value=''>all methods</option></select>"
                 "<span id=matched></span>"
                 "<button id=bulk-confirm>Confirm filtered</button>"
                 "<button id=bulk-reject>Reject filtered</button></div>",
