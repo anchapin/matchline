@@ -69,7 +69,9 @@ def auto_state(item) -> dict:
 # Fields a review edit can write, per target kind (#796). Anything else keeps
 # the #749 behaviour: the value is recorded and the item closed.
 EDITABLE = {
-    "opening": ("width_m", "space_id", "construction_id"),
+    # Space name/number edits (#1002): the viewer's rename writes through here.
+    "space": ("name", "number", "split"),
+    "opening": ("width_m", "space_id", "construction_id", "category"),
     "wall": ("opening",),
     # fixture / diffuser / sensor space assignment (#799)
     "fixture": ("space_id",),
@@ -134,7 +136,13 @@ def edit_field(model, item) -> str:
     f = t.get("field", "")
     allowed = EDITABLE.get(kind, ()) + MERGE_EDITABLE.get(getattr(item, "kind", ""), ())
     if not f:
-        f = allowed[0] if len(allowed) == 1 else ""
+        # a merge item's field comes from MERGE_EDITABLE even when its target
+        # kind also carries editable fields now (#1002: kind "space" does)
+        merge_fields = MERGE_EDITABLE.get(getattr(item, "kind", ""), ())
+        if len(merge_fields) == 1:
+            f = merge_fields[0]
+        else:
+            f = allowed[0] if len(allowed) == 1 else ""
     if f not in allowed:
         return ""
     if f == "merge_into":
@@ -195,6 +203,13 @@ def _read(model, t: dict, f: str):
     if kind == "bim_opening" and f == "space_id":
         sp = opening_attach.host_space(model, eid)
         return sp.id if sp is not None else None
+    if kind == "space" and f in ("name", "number"):
+        sp = model.spaces.get(eid)
+        return getattr(sp, f) if sp is not None else None
+    if kind == "space" and f == "split":
+        # the current cut, so a replayed identical split matches and a revert
+        # (value None) takes it back out
+        return (t.get("split_state") or {}).get("cut")
     if f == "merge_into":
         if eid in model.spaces:
             return None  # still its own space: no automatic merge to undo
@@ -256,6 +271,26 @@ def _coerce(model, t: dict, f: str, raw: str):
         if raw in model.constructions:
             return raw
         raise ValueError(f"construction {raw!r} is not in the model")
+    if f == "category":
+        if raw not in GAP_CATEGORIES:
+            raise ValueError(f"category {raw!r} is not one of {', '.join(GAP_CATEGORIES)}")
+        _sp, op = _find_opening(model, t.get("id"))
+        if op is not None and op.category == "skylight":
+            raise ValueError(
+                f"opening {t.get('id')!r} is a skylight; a door/window reclass does not apply"
+            )
+        return raw
+    if f in ("name", "number"):
+        raw = raw.strip()
+        if not raw:
+            raise ValueError("the value is empty")
+        return raw
+    if f == "split":
+        parsed = space_merge.parse_split(raw)
+        snap = (t.get("split_state") or {}).get("cut")
+        if snap and space_merge.cuts_equal(snap, parsed):
+            return parsed  # the identical cut is already applied (#1002 replay)
+        return space_merge.validate_split(model, t.get("id", ""), raw)
     return raw
 
 
@@ -266,6 +301,19 @@ def _write(model, t: dict, f: str, value) -> None:
     kind = t.get("kind", "")
     if f == "merge_into":
         _merge_into(model, t, value)
+        return
+    if kind == "space" and f in ("name", "number"):
+        setattr(model.spaces[t.get("id", "")], f, value)
+        return
+    if kind == "space" and f == "split":
+        if value is None:
+            if t.get("split_state"):
+                space_merge.un_split(model, t["split_state"])
+                del t["split_state"]
+            return
+        snap = space_merge.split_space(model, t.get("id", ""), value["a"], value["b"])
+        if snap:
+            t["split_state"] = snap
         return
     if kind == "bim_opening" and f == "space_id":
         if value is None:

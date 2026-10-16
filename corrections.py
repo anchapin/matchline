@@ -119,6 +119,12 @@ def _target_resolves(model, t: dict, f: str) -> bool:
         from opening_attach import find_bim_opening
 
         return find_bim_opening(model, eid)[0] is not None
+    if kind == "space":
+        if f == "merge_into":
+            if eid in model.spaces:
+                return True
+            return any(eid in sp.merged_from for sp in model.spaces.values())
+        return eid in model.spaces
     if kind == "wall" and f == "opening":
         gap = (t or {}).get("gap") or {}
         return (

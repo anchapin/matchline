@@ -727,6 +727,9 @@ class ReviewItem:
         "zone_airflow",
         "air_loop",
         "mech_schedule",
+        # A correction a reviewer drew in the viewer (#1002): the item exists
+        # to carry the decided state and the correction history entry.
+        "viewer_correction",
     ]
     description: str
     confidence: float

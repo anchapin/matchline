@@ -27,6 +27,8 @@ import html
 import json
 from typing import List, Optional
 
+import corrections
+
 SCHEMA = "matchline.review_viewer/1"
 
 FACADES = ("south", "north", "east", "west")
@@ -56,6 +58,14 @@ padding:8px 10px;max-width:240px;font-size:11px}
 border:1px solid #ccc;padding:4px 8px;font-size:11px;color:#444}
 .banner{background:#fff4f4;border:1px solid #b00;padding:6px 8px;margin:0}
 .note{color:#555;font-size:10px;margin-top:6px}
+#corrpanel{margin-top:8px;border-top:1px solid #ddd;padding-top:6px}
+#corrpanel h2{font-size:12px;margin:2px 0 4px}
+#corrpanel .row{margin:4px 0}
+#corrpanel input{font:11px/1.2 inherit;padding:2px 4px;border:1px solid #999;width:100px}
+#corrpanel button{font:11px/1.2 inherit;padding:2px 6px;border:1px solid #999;background:#fff;
+border-radius:3px;cursor:pointer}
+.c-msg{color:#b00;font-size:10px;margin:3px 0}
+.c-hist{color:#555;font-size:10px}
 """
 
 _BODY = """
@@ -69,9 +79,11 @@ _BODY = """
 <button id="t-heat">Heat map</button><button id="t-zones">Zones</button>
 <button id="t-env" class="on">Envelope</button><button id="t-plan">Plans</button>
 <button id="t-elev">Elevations</button><button id="t-rev">Review marks</button>
+<button id="t-corr">Correct</button>
 </div>
 <div id="stage"><canvas id="cv"></canvas>
 <div id="side"><h2>Legend</h2><div id="legend"></div><div id="revlist"></div>
+<div id="corrpanel"></div>
 <div class="note">Read-only: renders the canonical model the export wrote,
 never a second copy of its geometry. Overlays come from the same model.</div></div>
 <div id="status"></div></div>
@@ -266,8 +278,12 @@ function bind(){
     o.textContent = l.name ? l.id + " " + l.name : l.id; sel.appendChild(o);});
   sel.onchange = function(){setLevel(sel.value);};
   var drag = null;
-  cv.onmousedown = function(e){drag = {x: e.clientX, y: e.clientY, rot: !e.shiftKey};};
-  window.onmouseup = function(){drag = null;};
+  cv.onmousedown = function(e){drag = {x: e.clientX, y: e.clientY,
+    sx: e.clientX, sy: e.clientY, rot: !e.shiftKey};};
+  window.onmouseup = function(e){
+    if(drag && corr.on && Math.abs(e.clientX - drag.sx) < 4
+      && Math.abs(e.clientY - drag.sy) < 4) corrClick(e);
+    drag = null;};
   cv.onmousemove = function(e){
     if(!drag) return;
     if(drag.rot){cam.yaw += (e.clientX - drag.x) * 0.008;
@@ -288,6 +304,7 @@ function status(){
     + S.review_open + " · " + (level === "all" ? "all levels" : "level " + level);
   if(facade) t += " · " + facade + " elevation (elevations overlay places openings by "
     + "host_interval_m from the facade axis minimum)";
+  if(corr.on) t += " · correct mode: " + corr.ops.length + " op(s) queued";
   document.getElementById("status").textContent = t;
 }
 function legend(){
@@ -302,6 +319,218 @@ function legend(){
         + '"></span>' + z.id + (z.air_loop ? " · " + z.air_loop : "") + "</div>";});
   }
   lg.innerHTML = h;
+}
+
+// ------------------------------------------------- correction mode (#1002)
+// The viewer stays read-only over the model: Correct mode collects ops
+// (rename, reclassify, merge, split, revert-to-auto) into one
+// viewer_corrections.json the reviewer saves and the CLI applies through the
+// decisions workflow. It never edits the model itself.
+var corr = {on: false, ops: [], selS: null, selO: null, arm: null, armPts: [], msg: ""};
+var corrPanel = document.getElementById("corrpanel");
+document.getElementById("t-corr").onclick = function(){
+  corr.on = !corr.on;
+  document.getElementById("t-corr").className = corr.on ? "on" : "";
+  if(!corr.on){corr.selS = null; corr.selO = null;
+    corr.arm = null; corr.armPts = []; corr.msg = "";}
+  corrPanelUI(); render();
+};
+function esc(s){return String(s === null || s === undefined ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;");}
+function unproj(sx, sy, z){
+  var u = (sx - cam.px) / cam.zoom, v = (sy - cam.py) / cam.zoom;
+  var cy = Math.cos(cam.yaw), sy2 = Math.sin(cam.yaw);
+  var se = Math.sin(cam.elev), ce = Math.cos(cam.elev);
+  if(se < 0.08) return null;
+  var rx = u, ry = (v + z * ce) / se;
+  return [rx * cy + ry * sy2, -rx * sy2 + ry * cy];
+}
+function inPoly(poly, x, y){
+  var inside = false;
+  for(var i = 0, j = poly.length - 1; i < poly.length; j = i++){
+    var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if(((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function snapBoundary(poly, x, y){
+  var best = null, bd = 1e18;
+  for(var i = 0; i < poly.length; i++){
+    var a = poly[i], b = poly[(i + 1) % poly.length];
+    var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+    var t = L2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2)) : 0;
+    var px = a[0] + t * dx, py = a[1] + t * dy;
+    var d = (px - x) * (px - x) + (py - y) * (py - y);
+    if(d < bd){bd = d; best = [Math.round(px * 1000) / 1000, Math.round(py * 1000) / 1000];}
+  }
+  return best;
+}
+function opCenters(){
+  var A = {south: 0, north: 0, east: 1, west: 1}, mins = {}, plane = {}, n = {};
+  S.envelope.forEach(function(w){
+    var a = A[w.facade]; if(a === undefined || !visible(w)) return;
+    var k = w.space_level + "/" + w.facade;
+    var lo = Math.min(w.from[a], w.to[a]);
+    if(mins[k] === undefined || lo < mins[k]) mins[k] = lo;
+    plane[k] = (plane[k] || 0) + (w.from[1 - a] + w.to[1 - a]) / 2;
+    n[k] = (n[k] || 0) + 1;
+  });
+  var out = {};
+  S.openings.forEach(function(o){
+    if(!o.interval || !visible(o)) return;
+    var a = A[o.facade]; if(a === undefined) return;
+    var k = o.space_level + "/" + o.facade;
+    if(mins[k] === undefined) return;
+    var c = [0, 0];
+    c[a] = mins[k] + (o.interval[0] + o.interval[1]) / 2;
+    c[1 - a] = plane[k] / n[k];
+    out[o.id] = c;
+  });
+  return out;
+}
+function corrClick(e){
+  if(!corr.on) return;
+  if(level === "all"){corr.msg = "pick a level (the level selector) first"; corrPanelUI(); return;}
+  var z = lvl(level).elevation_z_m;
+  var w = unproj(e.clientX, e.clientY, z);
+  if(!w){corr.msg = "correction picks work on the plan (top view)"; corrPanelUI(); return;}
+  var centers = opCenters(), hitO = null, hd = 0.45;
+  for(var id in centers){
+    var c = centers[id], d = Math.hypot(c[0] - w[0], c[1] - w[1]);
+    if(d < hd){hd = d; hitO = id;}
+  }
+  if(hitO){
+    var o = S.openings.filter(function(x){return x.id === hitO;})[0] || {};
+    corr.selO = hitO; corr.selS = o.space_id || null; corr.msg = "";
+    corrPanelUI(); render(); return;
+  }
+  var hit = null;
+  S.spaces.forEach(function(sp){
+    if(hit || !visible(sp) || !sp.polygon || sp.polygon.length < 3) return;
+    if(inPoly(sp.polygon, w[0], w[1])) hit = sp;
+  });
+  if(!hit){corr.selS = null; corr.selO = null; corr.arm = null; corr.armPts = [];
+    corr.msg = ""; corrPanelUI(); render(); return;}
+  if(corr.arm === "merge" && corr.selS && hit.id !== corr.selS){
+    corr.ops.push({op: "merge_spaces", id: corr.selS, value: hit.id});
+    corr.arm = null; corr.msg = ""; corrPanelUI(); render(); return;
+  }
+  if(corr.arm === "split" && corr.selS && hit.id !== corr.selS){
+    corr.arm = null; corr.armPts = []; corr.selS = hit.id; corr.selO = null;
+    corr.msg = ""; corrPanelUI(); render(); return;
+  }
+  if(corr.arm === "split"){
+    corr.armPts.push(snapBoundary(hit.polygon, w[0], w[1]));
+    if(corr.armPts.length >= 2){
+      corr.ops.push({op: "split_space", id: corr.selS, a: corr.armPts[0], b: corr.armPts[1]});
+      corr.arm = null; corr.armPts = [];
+    }
+    corr.msg = ""; corrPanelUI(); render(); return;
+  }
+  corr.selS = hit.id; corr.selO = null; corr.msg = ""; corrPanelUI(); render();
+}
+function corrPanelUI(){
+  if(!corr.on){corrPanel.innerHTML = ""; return;}
+  var h = "<h2>Correct</h2>";
+  if(corr.msg) h += '<div class="c-msg">' + esc(corr.msg) + "</div>";
+  if(!corr.selS && !corr.selO && !corr.ops.length && !corr.msg)
+    h += '<div class="note">click a room or an opening in the plan to correct it; ops are '
+      + 'applied by <b>matchline viewer-apply</b> through the decisions workflow</div>';
+  if(corr.selO){
+    var o = S.openings.filter(function(x){return x.id === corr.selO;})[0];
+    if(o){
+      h += '<div class="row">opening <b>' + esc(o.id) + "</b> · " + esc(o.category) + "</div>";
+      if(o.category !== "skylight"){
+        var to = o.category === "door" ? "window" : "door";
+        h += '<div class="row"><button class="c-act" data-op="reclassify_opening" data-id="'
+          + esc(o.id) + '" data-val="' + to + '">make ' + to + "</button></div>";
+      }
+    }
+  }
+  if(corr.selS && spById[corr.selS]){
+    var sp = spById[corr.selS];
+    h += '<div class="row">space <b>' + esc(sp.id) + "</b> · " + esc(sp.label) + "</div>";
+    h += '<div class="row">name <input id="c-name" value="' + esc(sp.name)
+      + '"> number <input id="c-num" size="5" value="' + esc(sp.number) + '"></div>';
+    h += '<div class="row"><button class="c-act" data-op="rename_space" data-id="' + esc(sp.id)
+      + '">rename</button></div>';
+    h += '<div class="row"><button class="c-act" data-arm="merge">'
+      + "merge into… (then click the other room)" + "</button></div>";
+    h += '<div class="row"><button class="c-act" data-arm="split">'
+      + "split… (click two edge points)" + "</button></div>";
+    var cs = (S.corrections || []).filter(function(c){return c.target_id === corr.selS;});
+    if(cs.length){
+      h += '<div class="row c-hist" style="margin-top:6px"><b>corrections</b></div>';
+      cs.forEach(function(c){
+        h += '<div class="row c-hist">' + esc(c.key) + ": " + esc(c.before) + " → " + esc(c.after)
+          + ' <button class="c-act" data-revert="' + esc(c.key) + '">revert</button></div>';
+      });
+    }
+  }
+  if(corr.arm === "split") h += '<div class="row c-msg">split: ' + corr.armPts.length
+    + "/2 edge points picked" + "</div>";
+  if(corr.arm === "merge") h += '<div class="row c-msg">'
+    + "merge: now click the room to merge into" + "</div>";
+  if(corr.ops.length){
+    h += '<div class="row" style="margin-top:6px"><b>'
+      + corr.ops.length + " op(s) queued</b></div>";
+    corr.ops.forEach(function(op, i){
+      h += '<div class="row">' + esc(op.op) + " " + esc(op.id)
+        + (op.value !== undefined ? " → " + esc(op.value) : "")
+        + ' <button class="c-rm" data-rm="' + i + '">x</button></div>';
+    });
+    h += '<div class="row"><button id="c-dl">download viewer_corrections.json</button></div>';
+  }
+  corrPanel.innerHTML = h;
+}
+corrPanel.onclick = function(e){
+  var t = e.target;
+  if(t.id === "c-dl"){
+    var doc = {schema: "matchline.viewer_corrections/1", model: S.model_name, ops: corr.ops};
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)],
+      {type: "application/json"}));
+    a.download = "viewer_corrections.json"; a.click();
+    return;
+  }
+  var v = t.getAttribute ? t.getAttribute("data-rm") : null;
+  if(v !== null && v !== ""){corr.ops.splice(parseInt(v, 10), 1); corrPanelUI(); return;}
+  v = t.getAttribute ? t.getAttribute("data-revert") : null;
+  if(v){corr.ops.push({op: "revert_to_auto", key: v}); corrPanelUI(); return;}
+  v = t.getAttribute ? t.getAttribute("data-arm") : null;
+  if(v){corr.arm = v; corr.armPts = []; corrPanelUI(); return;}
+  if(t.className === "c-act" && t.getAttribute("data-op")){
+    var op = t.getAttribute("data-op"), id = t.getAttribute("data-id");
+    if(op === "rename_space"){
+      var s0 = spById[id];
+      var ni = document.getElementById("c-name"), nu = document.getElementById("c-num");
+      var name = ni ? String(ni.value).trim() : "", num = nu ? String(nu.value).trim() : "";
+      if(s0 && name !== s0.name)
+        corr.ops.push({op: "rename_space", id: id, field: "name", value: name});
+      if(s0 && num !== s0.number)
+        corr.ops.push({op: "rename_space", id: id, field: "number", value: num});
+    } else if(op === "reclassify_opening"){
+      corr.ops.push({op: "reclassify_opening", id: id, value: t.getAttribute("data-val")});
+    }
+    corrPanelUI(); return;
+  }
+};
+function drawCorrSel(){
+  var s = corr.selS && spById[corr.selS];
+  if(s && visible(s) && s.polygon && s.polygon.length > 2){
+    drawPoly(s.polygon.map(function(p){return [p[0], p[1], lvl(s.level).elevation_z_m];}),
+      null, "#1f4e79", 3);
+  }
+  if(corr.selO){
+    var c = opCenters()[corr.selO];
+    var o = S.openings.filter(function(x){return x.id === corr.selO;})[0];
+    if(c && o){
+      var z = lvl(o.space_level).elevation_z_m;
+      drawPoly([[c[0] - 0.3, c[1] - 0.3, z], [c[0] + 0.3, c[1] - 0.3, z],
+        [c[0] + 0.3, c[1] + 0.3, z], [c[0] - 0.3, c[1] + 0.3, z]], null, "#c62828", 2);
+    }
+  }
 }
 bind(); legend(); setLevel("all"); view(0, 35 * Math.PI / 180, null);
 """
@@ -352,12 +581,14 @@ def _prov_conf(prov) -> Optional[float]:
     return None if prov is None else float(getattr(prov, "confidence", 0.0) or 0.0)
 
 
-def build_scene(model) -> dict:
+def build_scene(model, corrections_doc: Optional[dict] = None) -> dict:
     """Read the canonical model into the viewer scene.
 
     Geometry is copied verbatim (polygons, wall endpoints, heights); nothing
     is recomputed, re-projected or simplified here, and no second geometry
-    file is written anywhere.
+    file is written anywhere. ``corrections_doc`` (a ``corrections.json``
+    document, #997) lists the still-standing corrections so Correct mode can
+    offer revert-to-automatic from the viewer (#1002).
     """
     levels = [
         {
@@ -390,6 +621,8 @@ def build_scene(model) -> dict:
                 "id": sid,
                 "level": sp.level_id,
                 "label": sp.label,
+                "name": sp.name,
+                "number": sp.number,
                 "polygon": [[float(p[0]), float(p[1])] for p in sp.polygon_m],
                 "height_m": sp.height_m,
                 "ceiling_height_m": sp.ceiling_height_m,
@@ -434,6 +667,7 @@ def build_scene(model) -> dict:
                     "head": o.head_m,
                     "height": o.height_m,
                     "width": o.width_m,
+                    "category": o.category,
                     "confidence": _prov_conf(o.provenance),
                 }
             )
@@ -450,6 +684,22 @@ def build_scene(model) -> dict:
         eid = t.get("id")
         if eid and (eid in space_level or eid in {o["id"] for o in openings}):
             targets.append(eid)
+    standing = []
+    for c in (corrections_doc or {}).get("corrections", []):
+        if c.get("undone"):
+            continue
+        t = c.get("target") or {}
+        standing.append(
+            {
+                "key": corrections.field_key(t, c.get("field", "")),
+                "item_id": c.get("item_id", ""),
+                "target_kind": t.get("kind", ""),
+                "target_id": t.get("id", ""),
+                "field": c.get("field", ""),
+                "before": c.get("before"),
+                "after": c.get("after"),
+            }
+        )
     return {
         "schema": SCHEMA,
         "model_name": model.name,
@@ -460,4 +710,5 @@ def build_scene(model) -> dict:
         "zones": zones,
         "review_open": review_open,
         "review_targets": targets,
+        "corrections": standing,
     }
