@@ -23,17 +23,24 @@ Golden files, each rebuilt from a pinned fixture:
   over pinned truth/prediction rows covering a full match, a crossed row,
   a missing tag, an extra tag and a duplicate tag.
 
-Volatility whitelist (anything legitimately timestamped is scrubbed to
-``@SCRUBBED`` before hashing, so a rerun stays byte-stable):
+Volatility whitelist (anything that depends on when or where the package
+was built is scrubbed to ``@SCRUBBED`` before hashing, so a rerun in any
+environment stays byte-stable):
 
 - ``export_package`` writes ``generated_at`` (wall clock) into
-  ``trust_report.json``, and the same string into the HTML renders.
+  ``trust_report.json`` (signoff block) and embeds the same string in the
+  HTML renders.
+- the trust report's ``tool_version`` comes from the local install and the
+  HTML renders print it ("matchline X.Y.Z"); it varies across checkouts.
+- ``prepared_by`` / ``prepared_date`` are whatever the builder's
+  environment supplies.
 - correction-history and feedback events carry ``at`` timestamps (not
   present in the pinned package, which has neither file, but the scrubber
   catches them anyway if a future builder adds one).
 
-A new timestamped field must land in this list, or the golden goes red on
-the next run for the wrong reason.
+A new timestamped or environment-dependent field must land in
+``VOLATILE_KEYS`` (or the ISO regex must cover it), or the golden goes red
+on the next run for the wrong reason.
 """
 
 from __future__ import annotations
@@ -64,10 +71,19 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+#: Keys whose values depend on the environment that built the package
+#: (wall-clock stamps and provenance read from the local install), not on
+#: the model. The golden scrubber replaces them with ``@SCRUBBED`` so a
+#: rerun in any environment stays byte-stable.
+VOLATILE_KEYS = frozenset({"tool_version", "prepared_by", "prepared_date", "generated_at"})
+
+
 def _scrub_obj(obj):
-    """Replace ISO-8601 timestamp values with the scrub token, recursively."""
+    """Replace timestamped and environment-dependent values, recursively."""
     if isinstance(obj, dict):
-        return {k: _scrub_obj(v) for k, v in obj.items()}
+        return {
+            k: _scrub_obj(v) if k not in VOLATILE_KEYS else _SCRUB_TOKEN for k, v in obj.items()
+        }
     if isinstance(obj, list):
         return [_scrub_obj(v) for v in obj]
     if isinstance(obj, str) and _ISO_TS.fullmatch(obj):
@@ -90,7 +106,11 @@ def scrub_package(pkg: Path) -> dict:
         if p.suffix == ".json":
             p.write_text(json.dumps(_scrub_obj(json.loads(p.read_text())), indent=2) + "\n")
         else:
-            p.write_text(_ISO_TS.sub(_SCRUB_TOKEN, p.read_text()))
+            text = _ISO_TS.sub(_SCRUB_TOKEN, p.read_text())
+            # the HTML renders embed the tool version ("matchline X.Y.Z"),
+            # which comes from the local install
+            text = re.sub(r"matchline \d+\.\d+\.\d+", f"matchline {_SCRUB_TOKEN}", text)
+            p.write_text(text)
     man["files"] = {
         p.relative_to(pkg).as_posix(): _sha256(p)
         for p in sorted(pkg.rglob("*"))
