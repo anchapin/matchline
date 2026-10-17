@@ -53,9 +53,9 @@ class SweepResult:
 
 def tracked_paths() -> list[str]:
     """Tracked file paths in this git repository."""
-    out = subprocess.run(
-        ["git", "ls-files", "-z"], check=True, capture_output=True
-    ).stdout.decode("utf-8")
+    out = subprocess.run(["git", "ls-files", "-z"], check=True, capture_output=True).stdout.decode(
+        "utf-8"
+    )
     return [p for p in out.split("\0") if p]
 
 
@@ -130,9 +130,11 @@ def load_baseline(path: str) -> dict:
 
 def write_baseline(path: str, paths: list[str]) -> dict:
     files, dirs = count_paths(paths)
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], check=True, capture_output=True
-    ).stdout.decode("utf-8").strip()
+    head = (
+        subprocess.run(["git", "rev-parse", "HEAD"], check=True, capture_output=True)
+        .stdout.decode("utf-8")
+        .strip()
+    )
     data = {
         "updated": datetime.date.today().isoformat(),
         "commit": head,
