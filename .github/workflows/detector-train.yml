@@ -71,6 +71,10 @@ on:
         description: path to an existing ckpt.pt; skips dataset prep and training, runs train_scratch --eval-only (val F1 + AP50, #1119) and uploads eval_metrics.json
         required: false
         default: ""
+      train_env_extra:
+        description: extra env assignments for the Train step, space-separated KEY=VALUE (e.g. HIP_LAUNCH_BLOCKING=1 AMD_SERIALIZE_KERNEL=3 to localize a faulting kernel, #1116)
+        required: false
+        default: ""
       conf:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
@@ -154,6 +158,11 @@ jobs:
       - name: Train
         if: github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         run: |
+          # Optional fault-localization env (KEY=VALUE pairs, #1116)
+          if [ -n "${{ github.event.inputs.train_env_extra }}" ]; then
+            # shellcheck disable=SC2086
+            export ${{ github.event.inputs.train_env_extra }}
+          fi
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
             --imgsz "${{ github.event.inputs.imgsz }}" \
