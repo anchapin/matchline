@@ -33,6 +33,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
+try:  # package import: python -m detector.train_scratch, pytest
+    from detector.ap50 import average_precision, mean_average_precision
+except ImportError:  # direct script execution from inside detector/
+    from ap50 import average_precision, mean_average_precision
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
@@ -404,6 +409,10 @@ def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
     tp = [0] * C
     fp = [0] * C
     fn = [0] * C
+    # Per-detection (confidence, matched) pairs feed the AP50 computation;
+    # they come from the same greedy matching pass as the P/R/F1 counts,
+    # so both metrics always describe identical detections (#1119).
+    pairs: list[list[tuple[float, bool]]] = [[] for _ in range(C)]
     with torch.no_grad():
         for imgs, targets, _meta in loader:
             preds = model(imgs.to(device))
@@ -426,6 +435,7 @@ def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
                     else:
                         fn[int(gt[0])] += 1
                 for idx, d in enumerate(dets):
+                    pairs[int(d[0])].append((float(d[1]), matched[idx]))
                     if not matched[idx]:
                         fp[int(d[0])] += 1
     per_class = {}
@@ -440,6 +450,11 @@ def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
             "tp": tp[c],
             "fp": fp[c],
             "fn": fn[c],
+            # AP50 (all-point interpolated, same greedy matches). None when
+            # the class has no ground truth: AP is undefined there.
+            "ap50": None
+            if (ap := average_precision(pairs[c], tp[c] + fn[c])) is None
+            else round(ap, 4),
         }
     return per_class
 
@@ -592,6 +607,7 @@ def train(args):
                 "epochs": args.epochs,
                 "history": history,
                 "final_per_class": metrics,
+                "map50": mean_average_precision(metrics),
             },
             indent=1,
         )
@@ -643,8 +659,9 @@ def main():
         metrics = evaluate(model, val_ld, device, names)
         out_dir = Path(args.out or Path(args.ckpt).parent)
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "eval_metrics.json").write_text(json.dumps(metrics, indent=1))
-        print(json.dumps(metrics, indent=1))
+        payload = {**metrics, "map50": mean_average_precision(metrics)}
+        (out_dir / "eval_metrics.json").write_text(json.dumps(payload, indent=1))
+        print(json.dumps(payload, indent=1))
         return
     train(args)
 
