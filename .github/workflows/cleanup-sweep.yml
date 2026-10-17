@@ -1,0 +1,46 @@
+name: cleanup sweep
+
+# Weekly housekeeping check: fails when too many new tracked files or folders
+# appeared since the committed baseline. Renames never trip it (net count stays
+# flat); after intentional growth, re-run this workflow manually with
+# update_baseline checked to accept the new counts.
+
+on:
+  schedule:
+    # Mondays 13:00 UTC = 9:00 AM ET (8:00 AM in winter). Scheduled workflows
+    # only fire from the default branch.
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: Re-baseline current counts instead of checking (use after intentional growth)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.update_baseline }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sweep for unexpected file and folder growth
+        run: python3 scripts/cleanup_sweep.py --baseline .github/cleanup-sweep-baseline.json
+
+  update-baseline:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_baseline }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Re-baseline counts
+        run: |
+          python3 scripts/cleanup_sweep.py --baseline .github/cleanup-sweep-baseline.json --update
+          git config user.name "Fo"
+          git config user.email "fo@wajo.ai"
+          git add .github/cleanup-sweep-baseline.json
+          git commit -m "chore(cleanup-sweep): re-baseline file and folder counts"
+          git push

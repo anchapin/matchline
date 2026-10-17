@@ -14,15 +14,12 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 ## Install
 
 ```bash
-git checkout develop
-pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # ~3,500 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
+pip install matchline        # from PyPI; extras: [ocr] [mech] [ui] (see pyproject.toml)
 ```
 
-Python ≥ 3.10. External datasets (AEC Bench, CMP Facade, CubiCasa5K,
-FloorPlanCAD) live outside the repo under `~/workspace/datasets/`
-(see `CONTRIBUTING.md` for the full convention); demos that need them
-say so and fail clearly without them.
+Python ≥ 3.10. The [Quickstart](#quickstart) below runs a full demo on the
+installed package. To work on the repo itself, see
+[Local development](#local-development).
 
 ## CLI
 
@@ -119,7 +116,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 One command, sample project to finished package:
 
 ```bash
-pip install -e .
+pip install matchline          # if you have not installed it yet
 matchline demo                 # ~1 minute: model, gbXML + IFC, review and trust report
 ```
 
@@ -149,6 +146,23 @@ Research prototype. Synthetic end-to-end paths are green; real-drawing
 validation against clean commercial sheets is the next milestone. The WiSARD
 classifier is a deterministic/explainable asset; production symbol spotting
 follows a fine-tuned YOLO + tiling/legend-learning pattern.
+
+## Local development
+
+Clone the repo and install in editable mode with the test extras:
+
+```bash
+git clone https://github.com/anchapin/matchline.git
+cd matchline
+git checkout develop         # develop is the working branch; main is reserved for releases
+pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
+python -m pytest tests/ -q   # ~3,500 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
+```
+
+External datasets (AEC Bench, CMP Facade, CubiCasa5K,
+FloorPlanCAD) live outside the repo under `~/workspace/datasets/`
+(see `CONTRIBUTING.md` for the full convention); demos that need them
+say so and fail clearly without them.
 
 ## Contributing
 
