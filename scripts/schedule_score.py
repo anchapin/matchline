@@ -12,6 +12,14 @@ in the harness both scores exist:
   field is credited independently, so a row with three right fields and
   one wrong one earns partial credit. Flat flatters crossed rows; the gap
   between the two scores is the row-integrity error the flat score hides.
+- **KR / EM / VF1** (#1114, noise-conditioned schedule evaluation):
+  KR is key recall, identity-agnostic — the fraction of truth cells whose
+  value is recovered anywhere in the prediction, so a shuffled or
+  re-tagged table still shows what the extractor recovered at all. EM is
+  exact-match row rate (the same number as ``grouped``, named for the
+  KR/EM/VF1 protocol). VF1 is value F1 over the tag-matched pairs with
+  value normalization (case and whitespace do not count as errors;
+  numeric capacity compares value and unit).
 
 Identity is the equipment tag (exact match), which mech_schedule parses
 from the component name (``parse_tag``). Matching is intentionally strict:
@@ -40,6 +48,17 @@ def mech_row_to_dict(row: Any) -> Dict[str, Any]:
     }
 
 
+def _norm(x: Any) -> Any:
+    """Normalize a cell value for KR/VF1: strings fold case and spaces,
+    numbers round, capacity compares as (value, unit)."""
+    if isinstance(x, dict):
+        v = x.get("value")
+        return (None if v is None else round(float(v), 3), x.get("unit"))
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        return round(float(x), 3)
+    return " ".join(str(x).split()).casefold()
+
+
 def _field_eq(a: Any, b: Any) -> bool:
     return a == b
 
@@ -61,6 +80,9 @@ class ScheduleScore:
         duplicate_tags: tags appearing more than once on either side
             (reported, excluded from matching: identity must be unique
             for a grouped score to mean anything).
+        kr: key recall, identity-agnostic (see module docstring).
+        em: exact-match row rate; the same number as ``grouped``.
+        vf1: value F1 with normalization (see module docstring).
     """
 
     grouped: float
@@ -69,6 +91,9 @@ class ScheduleScore:
     flat_f1: float
     matched: int
     crossed: int
+    kr: float
+    em: float
+    vf1: float
     missing_tags: List[str] = field(default_factory=list)
     extra_tags: List[str] = field(default_factory=list)
     duplicate_tags: List[str] = field(default_factory=list)
@@ -77,6 +102,7 @@ class ScheduleScore:
         return (
             f"grouped {self.grouped:.3f} | flat F1 {self.flat_f1:.3f} "
             f"(P {self.flat_precision:.3f} / R {self.flat_recall:.3f}) | "
+            f"KR {self.kr:.3f} | EM {self.em:.3f} | VF1 {self.vf1:.3f} | "
             f"matched {self.matched}, crossed {self.crossed}, "
             f"missing {len(self.missing_tags)}, extra {len(self.extra_tags)}"
             + (f", duplicate tags {self.duplicate_tags}" if self.duplicate_tags else "")
@@ -112,23 +138,45 @@ def score_schedule_rows(
     crossed = 0
     tp = fn = 0
     fp = 0
+    tp_v = fn_v = fp_v = 0
     fully_correct = 0
     for tag, trow in truth_by_tag.items():
         prow = pred_by_tag.get(tag)
         if prow is None:
             fn += len(fields)
+            fn_v += len(fields)
             continue
         matched_pairs.append((trow, prow))
         agreements = [_field_eq(trow["fields"].get(f), prow["fields"].get(f)) for f in fields]
+        v_agreements = [
+            _norm(trow["fields"].get(f)) == _norm(prow["fields"].get(f)) for f in fields
+        ]
         if all(agreements):
             fully_correct += 1
         elif any(agreements):
             crossed += 1
         tp += sum(agreements)
         fn += sum(1 for a in agreements if not a)
+        tp_v += sum(v_agreements)
+        fn_v += sum(1 for a in v_agreements if not a)
     pred_tags = set(pred_by_tag)
     truth_tags = set(truth_by_tag)
     fp += len(pred_tags - truth_tags) * len(fields)
+    fp_v += len(pred_tags - truth_tags) * len(fields)
+
+    # KR: identity-agnostic recovery. A truth cell counts when its
+    # normalized value shows up in any predicted row's same field.
+    pred_cells = {
+        (f, _norm(prow["fields"].get(f))) for prow in pred_by_tag.values() for f in fields
+    }
+    truth_cells = len(truth_by_tag) * len(fields)
+    recovered = sum(
+        1
+        for trow in truth_by_tag.values()
+        for f in fields
+        if (f, _norm(trow["fields"].get(f))) in pred_cells
+    )
+    kr = recovered / truth_cells if truth_cells else 1.0
 
     total_truth = len(truth_by_tag)
     grouped = (fully_correct / total_truth) if total_truth else (1.0 if not pred else 0.0)
@@ -138,6 +186,12 @@ def score_schedule_rows(
         flat_f1 = 1.0 if (total_truth == 0 and not pred) else 0.0
     else:
         flat_f1 = 2 * precision * recall / (precision + recall)
+    v_prec = tp_v / (tp_v + fp_v) if (tp_v + fp_v) else None
+    v_rec = tp_v / (tp_v + fn_v) if (tp_v + fn_v) else None
+    if v_prec is None or v_rec is None or (v_prec + v_rec) == 0:
+        vf1 = 1.0 if (total_truth == 0 and not pred) else 0.0
+    else:
+        vf1 = 2 * v_prec * v_rec / (v_prec + v_rec)
     return ScheduleScore(
         grouped=grouped,
         flat_precision=precision if precision is not None else flat_f1,
@@ -145,6 +199,9 @@ def score_schedule_rows(
         flat_f1=flat_f1,
         matched=len(matched_pairs),
         crossed=crossed,
+        kr=kr,
+        em=grouped,
+        vf1=vf1,
         missing_tags=sorted(truth_tags - pred_tags),
         extra_tags=sorted(pred_tags - truth_tags),
         duplicate_tags=dupes,
