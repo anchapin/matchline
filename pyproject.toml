@@ -198,6 +198,21 @@ omit = [
 precision = 1
 show_missing = false
 
+[tool.mypy]
+# #1138: baseline type checking, deliberately scoped small. The module list
+# grows only intentionally, module by module, as code is annotated; the rest
+# of the tree stays out until then. follow_imports = "silent" means imported
+# repo modules are resolved but not checked, so widening the list is a
+# choice, never an accident.
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"
+files = [
+  "opening_identity.py",
+  "opening_attach.py",
+  "construction_library_prm_data.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
