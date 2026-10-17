@@ -76,3 +76,23 @@ each scheduled AHU/RTU becomes one gbXML AirLoop).
 - Air-loop assembly and zone binding: the follow-on MEP slice.
 - Parsing `clinic-handover.xlsx` (the O&M workbook): the design
   workbook is the schedule source of record for equipment.
+
+## Scoring schedule extraction (grouped vs flat, #1112)
+
+`scripts/schedule_score.py` scores predicted schedule rows against truth
+rows both ways, so a row-shuffle error can no longer pass as correct:
+
+- **grouped** (whole-row credit): a truth row scores only when the
+  prediction carries the same equipment tag and every compared field
+  (`system_type`, `service_area`, `capacity` value+unit) agrees.
+- **flat** (field-level credit, KIEval-style): over the same tag-matched
+  pairs each field is credited independently, so a crossed row still
+  earns partial credit. The gap between the two scores is the
+  row-integrity error the flat number hides; `crossed` rows are counted.
+
+Identity is the exact tag (`mech_schedule.parse_tag`); duplicate or
+missing tags are reported, never guessed. Feed it
+`mech_schedule.MechScheduleRow` objects via `mech_row_to_dict`, or plain
+`{"tag", "fields"}` dicts from fixtures. The benchmark harness (#748)
+has no schedule-row path yet (its buildings are IFC-based); this scorer
+is what that path reports when it lands.
