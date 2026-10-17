@@ -1,0 +1,13 @@
+{
+  "schema": "matchline.review_decisions/1",
+  "model_sha256": "d6b4ba4db00e8b19defe947e45005711ac235568d0cff58f26151ef60de39a73",
+  "auto": {
+    "rq-001": {
+      "status": "open",
+      "needs_review": true,
+      "acknowledged": false,
+      "resolution": ""
+    }
+  },
+  "decisions": []
+}

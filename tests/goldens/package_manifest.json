@@ -1,0 +1,14 @@
+{
+  "schema": "matchline.package/1",
+  "files": {
+    "DISCLAIMER.txt": "35bd2fc99969e0a392dd60dc61ad80059ca2797340118350afca8a638a2002ea",
+    "convention_report.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "share_back.html": "21e07045c2319a96ddee393d4f59d721756bc51b31f24b0bd529d351ade6963d",
+    "trust_report.html": "358f99114e68f8b0ac1a246d8bea378187f81540e17d890f85561a4b360fee56",
+    "trust_report.json": "21137c6db9d4324cba5dcf291e7c0644a75bd72d1952645ab30af7688d81eb1f"
+  },
+  "pdf": {
+    "produced": false,
+    "reason": "PDF not requested"
+  }
+}

@@ -1,4 +1,8 @@
 {
   "clean_report.json": "ff95d415f5e63bbafc310167aa19bea51a178c673132da250016cb34c2bc6b67",
-  "defective_report.json": "7f3d50c0b97b60956fc86dec11c7fbf629f4b408b19a4534cc169e4e65f6050a"
+  "defective_report.json": "7f3d50c0b97b60956fc86dec11c7fbf629f4b408b19a4534cc169e4e65f6050a",
+  "clean_model.gbxml": "5164b873925a921890f17ff5333bc2c791945fd5f09955d771f2af8d6bd6ef42",
+  "review_decisions.json": "08f6954100ba0c55689abe1f571d76387b1a9185f1ef6795bbc1a1026700e763",
+  "package_manifest.json": "7be038f98323753327cc90b9355e18b565842fb1af9c3f22efb5a50d192d60f5",
+  "schedule_score.json": "1952e7b413662c967bab0a3be7915415b68c3089319640b6ac25f518f3aeae83"
 }
