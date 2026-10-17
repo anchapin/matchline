@@ -1,0 +1,20 @@
+{
+  "grouped": 0.0,
+  "flat_precision": 0.4,
+  "flat_recall": 0.3333333333333333,
+  "flat_f1": 0.3636363636363636,
+  "matched": 1,
+  "crossed": 1,
+  "kr": 0.3333333333333333,
+  "em": 0.0,
+  "vf1": 0.3636363636363636,
+  "missing_tags": [
+    "FCU-3"
+  ],
+  "extra_tags": [
+    "MAU-9"
+  ],
+  "duplicate_tags": [
+    "AHU-1"
+  ]
+}
