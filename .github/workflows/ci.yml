@@ -204,7 +204,8 @@ jobs:
   quality:
     name: ruff + format + pytest
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # #1137: coverage tracing slows pytest; headroom raised 20 -> 30.
+    timeout-minutes: 30
     needs: [no-empty-commits]
     if: needs.no-empty-commits.outputs.is_empty != 'true'
     steps:
@@ -236,7 +237,17 @@ jobs:
       - name: Run pytest
         # pytest-xdist spreads the suite across the runner's cores; pytest was
         # ~88% of this merge-gating job when it ran on one core.
-        run: python -m pytest tests/ -q -n auto
+        # #1137: coverage measures the shipped surface (pyproject
+        # [tool.coverage]); informational, no fail_under yet.
+        run: python -m pytest tests/ -q -n auto --cov --cov-report=term --cov-report=xml:coverage.xml
+
+      - name: Coverage summary (informational, no gate yet)
+        if: always()
+        run: |
+          {
+            echo "### Coverage (informational, no gate yet, #1137)"
+            python -m coverage report --skip-covered
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check test count
         run: |
