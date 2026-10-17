@@ -147,6 +147,33 @@ jobs:
       - name: Run ruff check on detector/
         run: ruff check detector/
 
+  pip-audit:
+    # #1139: scan the resolved runtime dependency set for known CVEs.
+    # Runtime-only by design: a noisy transitive finding in test-only
+    # tooling must not block the suite. When a finding lands, add an
+    # --ignore <id> pin here with the reason and the upgrade that clears it.
+    name: dependency security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies and pip-audit
+        run: pip install --no-cache-dir -e . pip-audit && pip-audit --version
+
+      - name: Run pip-audit (fail on known runtime vulnerabilities)
+        run: pip-audit --strict
+
   review-page-browser:
     # #802: drive review.html in headless Chromium (keys, edit prompt, layer
     # toggle, sheet highlight, export -> matchline review --apply).
