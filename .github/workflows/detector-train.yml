@@ -67,6 +67,10 @@ on:
         description: run dir with an existing ckpt.pt; skips dataset prep and training, evals it (implies eval_clinic)
         required: false
         default: ""
+      eval_scratch_only:
+        description: path to an existing ckpt.pt; skips dataset prep and training, runs train_scratch --eval-only (val F1 + AP50, #1119) and uploads eval_metrics.json
+        required: false
+        default: ""
       conf:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
@@ -91,7 +95,7 @@ jobs:
         run: rocm-smi || true
 
       - name: Prepare synth dataset
-        if: github.event.inputs.eval_only_ckpt == ''
+        if: github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         run: |
           DATA="${{ github.event.inputs.data }}"
           if [ ! -f "$DATA/data.yaml" ]; then
@@ -129,7 +133,7 @@ jobs:
           "$VENV/bin/python" -c "import torch; print('venv torch:', torch.__version__, 'cuda:', torch.cuda.is_available())"
 
       - name: Loss device smoke
-        if: github.event.inputs.eval_only_ckpt == ''
+        if: github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         run: |
           # Fast-fail guard: a CPU/CUDA mix in ScratchLoss killed run
           # 38311804719 eight seconds into Train, after venv setup. This
@@ -148,7 +152,7 @@ jobs:
           PY
 
       - name: Train
-        if: github.event.inputs.eval_only_ckpt == ''
+        if: github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         run: |
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
@@ -159,6 +163,15 @@ jobs:
             --seed "${{ github.event.inputs.seed }}" \
             --name "${{ github.event.inputs.name }}" \
             --device cuda \
+            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+
+      - name: Eval-only val metrics (F1 + AP50)
+        if: github.event.inputs.eval_scratch_only != ''
+        run: |
+          "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
+            --eval-only \
+            --data "${{ github.event.inputs.data }}" \
+            --ckpt "${{ github.event.inputs.eval_scratch_only }}" \
             --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
 
       - name: Resolve run dir
@@ -233,6 +246,15 @@ jobs:
             ${{ steps.outdir.outputs.out_dir }}/clinic_eval.json
             ${{ steps.outdir.outputs.out_dir }}/detections.json
             ${{ steps.outdir.outputs.out_dir }}/clinic_eval_png/
+          if-no-files-found: error
+
+      - name: Upload eval-only metrics
+        if: always() && github.event.inputs.eval_scratch_only != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
+          path: >
+            ~/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}/eval_metrics.json
           if-no-files-found: error
 
       - name: Upload metrics

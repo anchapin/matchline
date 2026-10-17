@@ -60,6 +60,8 @@ correctness (perfect/empty/duplicate/below-threshold predictions), and a full
 - **Greedy matching, not mAP.** The matcher is the repo's existing greedy IoU
   matcher (as in `eval_zero_shot.py`), reporting P/R at IoU 0.5 — not COCO-style
   mAP. Deltas are comparable across variants within this harness, not against
-  published mAP numbers.
+  published mAP numbers. Since #1119, `train_scratch.evaluate` also emits
+  per-class AP50 and an mAP50 computed from the same greedy matches; the
+  robustness harness itself still reports P/R/F1 only.
 - **Explicit non-goal (issue #499):** this does not replace the detector with a
   fly-vision or any other model; it only measures the current detector's margin.
