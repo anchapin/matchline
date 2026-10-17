@@ -38,6 +38,7 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
 - **Lint:** `ruff check .`
 - **Format:** `ruff format --check .`
 - **Pytest:** `python -m pytest tests/ -q`
+- **Python pin:** all workflows (ci.yml jobs, release.yml, archcad-smoke.yml) run the same interpreter (3.12). A Python version change moves every workflow together; the archcad-smoke pin is not an independent knob (#1140).
 
 All gates must be green before merging to `develop`.
 
