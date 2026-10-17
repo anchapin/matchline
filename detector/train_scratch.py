@@ -29,6 +29,7 @@ import json
 import math
 import os
 import random
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -526,6 +527,55 @@ def init_box_head_bias(model, labels_dir, num_classes=2):
     return mean_w, mean_h, len(ws)
 
 
+def save_train_state(path, model, opt, sched, epoch, best_f1, history, cfg):
+    """Persist resumable training state (#1116 ROCm crash recovery).
+
+    Saves everything needed to continue an interrupted run at the next
+    epoch boundary: model/optimizer/scheduler state, loop position, best
+    F1, history, config, and the torch/numpy/python RNG states so a
+    resumed run reproduces the uninterrupted trajectory's batch order.
+    Written every N epochs when --checkpoint-every is set; separate from
+    the best-F1-only ckpt.pt, which stays the eval artifact.
+    """
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "opt": opt.state_dict(),
+            "sched": sched.state_dict(),
+            "epoch": epoch,
+            "best_f1": best_f1,
+            "history": history,
+            "config": cfg,
+            "rng_torch": torch.get_rng_state(),
+            "rng_numpy": np.random.get_state(),
+            "rng_python": random.getstate(),
+        },
+        path,
+    )
+
+
+def load_train_state(path, model, opt, sched):
+    """Restore a save_train_state checkpoint; returns the loop position.
+
+    Loads on CPU and lets load_state_dict move tensors to the model's
+    device. weights_only=False because numpy/python RNG states carry
+    non-whitelisted objects; these files only come from runs we control
+    (same tradeoff as the legacy ckpt.pt fallback).
+    """
+    state = torch.load(path, map_location="cpu", weights_only=False)
+    model.load_state_dict(state["model"])
+    opt.load_state_dict(state["opt"])
+    sched.load_state_dict(state["sched"])
+    torch.set_rng_state(state["rng_torch"])
+    np.random.set_state(state["rng_numpy"])
+    random.setstate(state["rng_python"])
+    return {
+        "epoch": state["epoch"],
+        "best_f1": state["best_f1"],
+        "history": state["history"],
+    }
+
+
 def train(args):
     device = torch.device(
         args.device
@@ -573,7 +623,21 @@ def train(args):
     }
     history = []
     best_f1 = -1.0
-    for epoch in range(args.epochs):
+    start_epoch = 0
+    if args.resume:
+        src = Path(os.path.expanduser(args.resume))
+        state = load_train_state(src / "ckpt_last.pt", model, opt, sched)
+        start_epoch = state["epoch"] + 1
+        best_f1 = state["best_f1"]
+        history = state["history"]
+        best_src = src / "ckpt.pt"
+        if best_src.exists() and best_src.resolve() != (out_dir / "ckpt.pt").resolve():
+            shutil.copyfile(best_src, out_dir / "ckpt.pt")
+        print(
+            f"resumed from {src} at epoch {start_epoch}/{args.epochs} (best_f1 {best_f1:.4f})",
+            flush=True,
+        )
+    for epoch in range(start_epoch, args.epochs):
         model.train()
         tot = 0.0
         for imgs, targets, _meta in train_ld:
@@ -596,6 +660,10 @@ def train(args):
         if mean_f1 >= best_f1:
             best_f1 = mean_f1
             torch.save({"model": model.state_dict(), "config": cfg}, out_dir / "ckpt.pt")
+        if args.checkpoint_every and (epoch + 1) % args.checkpoint_every == 0:
+            save_train_state(
+                out_dir / "ckpt_last.pt", model, opt, sched, epoch, best_f1, history, cfg
+            )
         print(
             f"epoch {epoch}: loss {history[-1]['loss']} mean_f1 {history[-1]['mean_f1']}",
             flush=True,
@@ -635,6 +703,18 @@ def main():
         help="load --ckpt and evaluate, write metrics.json to --out",
     )
     ap.add_argument("--ckpt", default=None)
+    ap.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=0,
+        help="save resumable train state to <out>/ckpt_last.pt every N epochs (0 = off, #1116)",
+    )
+    ap.add_argument(
+        "--resume",
+        default="",
+        help="dir holding ckpt_last.pt from an interrupted run; resumes training"
+        " and copies its best ckpt.pt into --out (#1116)",
+    )
     args = ap.parse_args()
     if args.eval_only:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
