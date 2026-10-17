@@ -75,6 +75,14 @@ on:
         description: extra env assignments for the Train step, space-separated KEY=VALUE (e.g. HIP_LAUNCH_BLOCKING=1 AMD_SERIALIZE_KERNEL=3 to localize a faulting kernel, #1116)
         required: false
         default: ""
+      checkpoint_every:
+        description: save resumable train state (ckpt_last.pt) every N epochs (0 = off; #1116 crash recovery)
+        required: false
+        default: "0"
+      resume_from:
+        description: dir holding ckpt_last.pt from an interrupted run; resumes training into this run's out dir (#1116)
+        required: false
+        default: ""
       conf:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
@@ -163,8 +171,13 @@ jobs:
             # shellcheck disable=SC2086
             export ${{ github.event.inputs.train_env_extra }}
           fi
+          RESUME_ARGS=""
+          if [ -n "${{ github.event.inputs.resume_from }}" ]; then
+            RESUME_ARGS="--resume ${{ github.event.inputs.resume_from }}"
+          fi
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
+            --checkpoint-every "${{ github.event.inputs.checkpoint_every }}" \
             --imgsz "${{ github.event.inputs.imgsz }}" \
             --epochs "${{ github.event.inputs.epochs }}" \
             --batch "${{ github.event.inputs.batch }}" \
@@ -172,7 +185,8 @@ jobs:
             --seed "${{ github.event.inputs.seed }}" \
             --name "${{ github.event.inputs.name }}" \
             --device cuda \
-            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}" \
+            $RESUME_ARGS
 
       - name: Eval-only val metrics (F1 + AP50)
         if: github.event.inputs.eval_scratch_only != ''
