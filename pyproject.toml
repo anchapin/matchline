@@ -45,7 +45,7 @@ ocr-tesseract = ["pytesseract"]
 # COBie workbook reader for mechanical schedules (#974); lazy import
 mech = ["openpyxl"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
+test = ["pytest", "pytest-cov", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
@@ -176,6 +176,27 @@ packages = [
     "validate",
     "review_classifier",
 ]
+
+[tool.coverage.run]
+# #1137: measure the shipped surface (all 103 root py-modules plus the 8
+# packages the wheel ships). detector/ has its own lint-only gate and is
+# not shipped from this wheel; tests, scripts and docs are not package code.
+source = ["."]
+omit = [
+  "tests/*",
+  "detector/*",
+  "scripts/*",
+  "docs/*",
+  "build/*",
+  "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+# Informational for now (#1137): CI prints the percentage in the job
+# summary. Once the baseline number is known, set fail_under slightly
+# below it and raise it only intentionally.
+precision = 1
+show_missing = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
