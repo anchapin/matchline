@@ -83,6 +83,10 @@ on:
         description: dir holding ckpt_last.pt from an interrupted run; resumes training into this run's out dir (#1116)
         required: false
         default: ""
+      wall_head:
+        description: auxiliary wall-class head classes (0 = off, 2 = partition vs structural; needs a dataset converted by #1113 convert_synth so .wallcls.txt labels exist) (#1113)
+        required: false
+        default: "0"
       conf:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
@@ -182,6 +186,7 @@ jobs:
             --epochs "${{ github.event.inputs.epochs }}" \
             --batch "${{ github.event.inputs.batch }}" \
             --width "${{ github.event.inputs.width }}" \
+            --wall-head "${{ github.event.inputs.wall_head }}" \
             --seed "${{ github.event.inputs.seed }}" \
             --name "${{ github.event.inputs.name }}" \
             --device cuda \

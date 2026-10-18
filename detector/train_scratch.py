@@ -135,12 +135,13 @@ class ScratchNet(nn.Module):
     Head outputs C + 1 + 4 channels per cell.
     """
 
-    def __init__(self, num_classes=2, width=32, imgsz=640):
+    def __init__(self, num_classes=2, width=32, imgsz=640, wall_classes=0):
         super().__init__()
         assert imgsz % 8 == 0, "imgsz must be divisible by 8"
         self.num_classes = num_classes
         self.imgsz = imgsz
         self.grid = imgsz // 8
+        self.wall_classes = int(wall_classes)
         w2, w4 = width * 2, width * 4
         self.backbone = nn.Sequential(
             _conv(1, width, 2),  # /2
@@ -153,9 +154,23 @@ class ScratchNet(nn.Module):
             _conv(w4, w4, 1),
             nn.Conv2d(w4, num_classes + 1 + 4, 1),
         )
+        if self.wall_classes > 0:
+            # Auxiliary wall-class head (#1113): coarse wall TYPE per grid
+            # cell (partition vs structural) on wall-covered cells. Shares
+            # the backbone; supervision comes from the generator's wall
+            # kinds via .wallcls.txt labels. Coarse class only: physical
+            # width regression off raster pixels is out of scope (#1113).
+            self.wall_head = nn.Sequential(
+                _conv(w4, w4, 1),
+                nn.Conv2d(w4, self.wall_classes, 1),
+            )
 
     def forward(self, x):
-        return self.head(self.backbone(x))  # (B, C+5, G, G)
+        feat = self.backbone(x)
+        det = self.head(feat)  # (B, C+5, G, G)
+        if self.wall_classes > 0:
+            return det, self.wall_head(feat)  # ((B, C+5, G, G), (B, W, G, G))
+        return det
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +207,13 @@ def ciou_loss(pred, target):
 
 class ScratchLoss(nn.Module):
     def __init__(
-        self, num_classes=2, obj_weight=1.0, cls_weight=1.0, box_weight=5.0, neg_sample=3.0
+        self,
+        num_classes=2,
+        obj_weight=1.0,
+        cls_weight=1.0,
+        box_weight=5.0,
+        neg_sample=3.0,
+        wall_cls_weight=0.5,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -200,9 +221,15 @@ class ScratchLoss(nn.Module):
         self.cls_weight = cls_weight
         self.box_weight = box_weight
         self.neg_sample = neg_sample
+        self.wall_cls_weight = wall_cls_weight
 
-    def forward(self, preds, targets):
-        """preds: (B, C+5, G, G) raw logits. targets: list of (n, 5) tensors."""
+    def forward(self, preds, targets, wall_preds=None, wall_t=None):
+        """preds: (B, C+5, G, G) raw logits. targets: list of (n, 5) tensors.
+
+        wall_preds/wall_t activate the auxiliary wall-class term (#1113):
+        wall_preds (B, W, G, G) raw logits, wall_t (B, G, G) long with 0 =
+        no wall (ignored), 1 = partition, 2 = structural.
+        """
         B, CH, G, _ = preds.shape
         C = self.num_classes
         device = preds.device
@@ -289,7 +316,21 @@ class ScratchLoss(nn.Module):
             box_loss = torch.zeros((), device=device)
 
         total = self.obj_weight * obj_loss + self.cls_weight * cls_loss + self.box_weight * box_loss
-        return total, {"obj": obj_loss.item(), "cls": cls_loss.item(), "box": box_loss.item()}
+        parts = {"obj": obj_loss.item(), "cls": cls_loss.item(), "box": box_loss.item()}
+        if wall_preds is not None and wall_t is not None:
+            wt = wall_t.to(device)
+            wsel = wt > 0
+            if wsel.any():
+                # map values are 1/2 (1 = partition, 2 = structural); head
+                # classes are 0/1, so shift down before the CE
+                wall_loss = F.cross_entropy(
+                    wall_preds.permute(0, 2, 3, 1)[wsel], (wt[wsel] - 1).long()
+                )
+            else:
+                wall_loss = torch.zeros((), device=device)
+            total = total + self.wall_cls_weight * wall_loss
+            parts["wall"] = wall_loss.item()
+        return total, parts
 
 
 # ---------------------------------------------------------------------------
@@ -352,10 +393,42 @@ def decode(preds, num_classes=2, conf=0.25):
 # ---------------------------------------------------------------------------
 
 
-class YoloDataset(torch.utils.data.Dataset):
-    """YOLO-format dataset tree (images/{train,val}, labels/{train,val})."""
+def rasterize_wall_rows(rows, imgsz):
+    """wallcls rows (cls cx cy w h, size-normalized) -> (G, G) long class map.
 
-    def __init__(self, root, split, imgsz=640, flip=True):
+    0 = no wall, 1 = partition, 2 = structural (cls + 1). A cell is marked
+    when its area overlaps the wall band (pure overlap, not a center test),
+    so even a sub-cell-thin wall at whole-sheet scale marks the cell it sits
+    in. Structural wins overlaps: walls meet at corners and a partition
+    endpoint can sit inside a structural wall's band (#1113).
+    """
+    G = imgsz // 8
+    wall = torch.zeros(G, G, dtype=torch.long)
+    for r in rows:
+        cls = int(r[0])
+        _, cx, cy, w, h = r
+        x0n, x1n = cx - w / 2.0, cx + w / 2.0
+        y0n, y1n = cy - h / 2.0, cy + h / 2.0
+        j0 = max(0, int(math.floor(x0n * G)))
+        j1 = min(G - 1, int(math.ceil(x1n * G)) - 1)
+        i0 = max(0, int(math.floor(y0n * G)))
+        i1 = min(G - 1, int(math.ceil(y1n * G)) - 1)
+        for i in range(i0, i1 + 1):
+            for j in range(j0, j1 + 1):
+                if wall[i, j].item() == 0 or cls == 1:
+                    wall[i, j] = cls + 1
+    return wall
+
+
+class YoloDataset(torch.utils.data.Dataset):
+    """YOLO-format dataset tree (images/{train,val}, labels/{train,val}).
+
+    load_wall=True additionally reads labels/<stem>.wallcls.txt (#1113) and
+    returns a per-cell wall-class map; missing files degrade to all-zero
+    maps (no supervised wall cells), so older datasets keep training.
+    """
+
+    def __init__(self, root, split, imgsz=640, flip=True, load_wall=False):
         self.img_dir = Path(root) / "images" / split
         self.lbl_dir = Path(root) / "labels" / split
         self.items = sorted(p.stem for p in self.img_dir.glob("*.png"))
@@ -363,6 +436,7 @@ class YoloDataset(torch.utils.data.Dataset):
             raise FileNotFoundError(f"no images under {self.img_dir}")
         self.imgsz = imgsz
         self.flip = flip
+        self.load_wall = load_wall
 
     def __len__(self):
         return len(self.items)
@@ -380,20 +454,38 @@ class YoloDataset(torch.utils.data.Dataset):
                 parts = line.split()
                 if len(parts) >= 5:
                     rows.append([float(parts[0])] + [float(v) for v in parts[1:5]])
-        if self.flip and random.random() < 0.5:
+        wrows = []
+        if self.load_wall:
+            wlbl = self.lbl_dir / f"{stem}.wallcls.txt"
+            if wlbl.exists():
+                for line in wlbl.read_text().splitlines():
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        wrows.append([float(parts[0])] + [float(v) for v in parts[1:5]])
+        do_flip = self.flip and random.random() < 0.5
+        if do_flip:
             lb = lb[:, ::-1].copy()
             rows = [[r[0], 1.0 - r[1], r[2], r[3], r[4]] for r in rows]
+            wrows = [[r[0], 1.0 - r[1], r[2], r[3], r[4]] for r in wrows]
         x = torch.from_numpy(lb / 255.0).unsqueeze(0)  # (1, S, S)
         t = torch.tensor(
             transform_rows(rows, self.imgsz, scale, dx, dy, ow, oh), dtype=torch.float32
         ).reshape(-1, 5)
         meta = {"stem": stem, "scale": scale, "dx": dx, "dy": dy, "orig_w": ow, "orig_h": oh}
-        return x, t, meta
+        if not self.load_wall:
+            return x, t, meta
+        wall = rasterize_wall_rows(
+            transform_rows(wrows, self.imgsz, scale, dx, dy, ow, oh), self.imgsz
+        )
+        return x, t, wall, meta
 
 
 def collate(batch):
     xs = torch.stack([b[0] for b in batch])
     ts = [b[1] for b in batch]
+    if len(batch[0]) == 4:  # wall-head mode: (x, t, wall, meta)
+        ws = torch.stack([b[2] for b in batch])
+        return xs, ts, ws, [b[3] for b in batch]
     meta = [b[2] for b in batch]
     return xs, ts, meta
 
@@ -403,8 +495,12 @@ def collate(batch):
 # ---------------------------------------------------------------------------
 
 
-def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
-    """IoU-matched precision/recall/F1 per class. Returns {name: {...}}."""
+def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25, wall_out=None):
+    """IoU-matched precision/recall/F1 per class. Returns {name: {...}}.
+
+    wall_out: optional list; one wall-class accuracy entry (float, or None
+    when no wall-labelled cells were seen) is appended per call (#1113).
+    """
     model.eval()
     C = model.num_classes
     tp = [0] * C
@@ -414,9 +510,27 @@ def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
     # they come from the same greedy matching pass as the P/R/F1 counts,
     # so both metrics always describe identical detections (#1119).
     pairs: list[list[tuple[float, bool]]] = [[] for _ in range(C)]
+    wall_ok = 0
+    wall_n = 0
     with torch.no_grad():
-        for imgs, targets, _meta in loader:
-            preds = model(imgs.to(device))
+        for batch in loader:
+            if len(batch) == 4:  # wall-head mode: (x, t, wall, meta)
+                imgs, targets, wall_t, _meta = batch
+            else:
+                imgs, targets, _meta = batch
+                wall_t = None
+            out = model(imgs.to(device))
+            if isinstance(out, tuple):  # (det, wall) when the wall head is on
+                preds, wall_preds = out
+            else:
+                preds, wall_preds = out, None
+            if wall_t is not None and wall_preds is not None:
+                wt = wall_t.to(device)
+                mask = wt > 0
+                if mask.any():
+                    # head class ids sit 1 below the map values (see ScratchLoss)
+                    wall_ok += int(((wall_preds.argmax(1) + 1)[mask] == wt[mask]).sum())
+                    wall_n += int(mask.sum())
             decoded = decode(preds, num_classes=C, conf=conf)
             for b in range(len(decoded)):
                 gts = [g for g in targets[b].tolist() if g]
@@ -457,6 +571,8 @@ def evaluate(model, loader, device, names, iou_thresh=0.5, conf=0.25):
             if (ap := average_precision(pairs[c], tp[c] + fn[c])) is None
             else round(ap, 4),
         }
+    if wall_out is not None:
+        wall_out.append((wall_ok / wall_n) if wall_n else None)
     return per_class
 
 
@@ -573,6 +689,7 @@ def load_train_state(path, model, opt, sched):
         "epoch": state["epoch"],
         "best_f1": state["best_f1"],
         "history": state["history"],
+        "config": state.get("config", {}),
     }
 
 
@@ -586,18 +703,23 @@ def train(args):
     )
     set_seed(args.seed)
     names = load_names(args.data)
-    train_ds = YoloDataset(args.data, "train", imgsz=args.imgsz)
-    val_ds = YoloDataset(args.data, "val", imgsz=args.imgsz, flip=False)
+    train_ds = YoloDataset(args.data, "train", imgsz=args.imgsz, load_wall=args.wall_head > 0)
+    val_ds = YoloDataset(
+        args.data, "val", imgsz=args.imgsz, flip=False, load_wall=args.wall_head > 0
+    )
     train_ld = torch.utils.data.DataLoader(
         train_ds, batch_size=args.batch, shuffle=True, num_workers=args.workers, collate_fn=collate
     )
     val_ld = torch.utils.data.DataLoader(
         val_ds, batch_size=args.batch, shuffle=False, num_workers=args.workers, collate_fn=collate
     )
-    model = ScratchNet(num_classes=max(2, len(names)) or 2, width=args.width, imgsz=args.imgsz).to(
-        device
-    )
-    criterion = ScratchLoss(num_classes=model.num_classes)
+    model = ScratchNet(
+        num_classes=max(2, len(names)) or 2,
+        width=args.width,
+        imgsz=args.imgsz,
+        wall_classes=args.wall_head,
+    ).to(device)
+    criterion = ScratchLoss(num_classes=model.num_classes, wall_cls_weight=args.wall_cls_weight)
     init = init_box_head_bias(
         model, Path(args.data) / "labels" / "train", num_classes=model.num_classes
     )
@@ -620,6 +742,7 @@ def train(args):
         "width": args.width,
         "imgsz": args.imgsz,
         "names": names,
+        "wall_classes": args.wall_head,
     }
     history = []
     best_f1 = -1.0
@@ -627,6 +750,12 @@ def train(args):
     if args.resume:
         src = Path(os.path.expanduser(args.resume))
         state = load_train_state(src / "ckpt_last.pt", model, opt, sched)
+        saved_wc = int((state.get("config") or {}).get("wall_classes", 0))
+        if saved_wc != args.wall_head:
+            raise ValueError(
+                f"resume mismatch: ckpt_last.pt was trained with wall_classes={saved_wc} "
+                f"but --wall-head is {args.wall_head}; the head shape cannot change mid-run"
+            )
         start_epoch = state["epoch"] + 1
         best_f1 = state["best_f1"]
         history = state["history"]
@@ -637,26 +766,39 @@ def train(args):
             f"resumed from {src} at epoch {start_epoch}/{args.epochs} (best_f1 {best_f1:.4f})",
             flush=True,
         )
+    wall_stats: list = []
     for epoch in range(start_epoch, args.epochs):
         model.train()
         tot = 0.0
-        for imgs, targets, _meta in train_ld:
+        for batch in train_ld:
+            if len(batch) == 4:  # wall-head mode: (x, t, wall, meta)
+                imgs, targets, wall_t, _meta = batch
+            else:
+                imgs, targets, _meta = batch
+                wall_t = None
             opt.zero_grad()
-            loss, parts = criterion(model(imgs.to(device)), targets)
+            out = model(imgs.to(device))
+            if isinstance(out, tuple):  # (det, wall) when the wall head is on
+                det, wall_preds = out
+            else:
+                det, wall_preds = out, None
+            loss, parts = criterion(det, targets, wall_preds, wall_t)
             loss.backward()
             opt.step()
             tot += loss.item()
         sched.step()
-        metrics = evaluate(model, val_ld, device, names)
+        wall_stats.clear()
+        metrics = evaluate(model, val_ld, device, names, wall_out=wall_stats)
         mean_f1 = sum(m["f1"] for m in metrics.values()) / len(metrics) if metrics else 0.0
-        history.append(
-            {
-                "epoch": epoch,
-                "loss": round(tot / max(len(train_ld), 1), 4),
-                "mean_f1": round(mean_f1, 4),
-                **parts,
-            }
-        )
+        entry = {
+            "epoch": epoch,
+            "loss": round(tot / max(len(train_ld), 1), 4),
+            "mean_f1": round(mean_f1, 4),
+            **parts,
+        }
+        if wall_stats and wall_stats[-1] is not None:
+            entry["wall_cls_acc"] = round(wall_stats[-1], 4)
+        history.append(entry)
         if mean_f1 >= best_f1:
             best_f1 = mean_f1
             torch.save({"model": model.state_dict(), "config": cfg}, out_dir / "ckpt.pt")
@@ -668,18 +810,16 @@ def train(args):
             f"epoch {epoch}: loss {history[-1]['loss']} mean_f1 {history[-1]['mean_f1']}",
             flush=True,
         )
-    (out_dir / "metrics.json").write_text(
-        json.dumps(
-            {
-                "best_mean_f1": round(best_f1, 4),
-                "epochs": args.epochs,
-                "history": history,
-                "final_per_class": metrics,
-                "map50": mean_average_precision(metrics),
-            },
-            indent=1,
-        )
-    )
+    final_payload = {
+        "best_mean_f1": round(best_f1, 4),
+        "epochs": args.epochs,
+        "history": history,
+        "final_per_class": metrics,
+        "map50": mean_average_precision(metrics),
+    }
+    if wall_stats and wall_stats[-1] is not None:
+        final_payload["final_wall_cls_acc"] = round(wall_stats[-1], 4)
+    (out_dir / "metrics.json").write_text(json.dumps(final_payload, indent=1))
     print(f"saved -> {out_dir} (best_mean_f1 {best_f1:.4f})")
     return out_dir
 
@@ -691,6 +831,18 @@ def main():
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--width", type=int, default=32)
+    ap.add_argument(
+        "--wall-head",
+        type=int,
+        default=0,
+        help="auxiliary wall-class head classes (0 = off, 2 = partition vs structural, #1113)",
+    )
+    ap.add_argument(
+        "--wall-cls-weight",
+        type=float,
+        default=0.5,
+        help="weight of the auxiliary wall-class loss term (#1113)",
+    )
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--device", default="auto")
@@ -727,19 +879,37 @@ def main():
             # as a fallback (#743 hardening)
             ckpt = torch.load(args.ckpt, map_location=device, weights_only=False)
         cfg = ckpt["config"]
+        state_dict = ckpt["model"]
+        wall_classes = int(cfg.get("wall_classes", 0)) if isinstance(cfg, dict) else 0
+        if wall_classes == 0:
+            # older checkpoints carry no wall head; infer from state-dict keys
+            # so eval-only keeps working on pre-#1113 ckpt.pt files
+            wc_conv = [
+                k for k in state_dict if k.startswith("wall_head.") and state_dict[k].dim() == 4
+            ]
+            if wc_conv:
+                wall_classes = int(state_dict[sorted(wc_conv)[-1]].shape[0])
         model = ScratchNet(
-            num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"]
+            num_classes=cfg["num_classes"],
+            width=cfg["width"],
+            imgsz=cfg["imgsz"],
+            wall_classes=wall_classes,
         ).to(device)
         model.load_state_dict(ckpt["model"])
         val_ld = torch.utils.data.DataLoader(
-            YoloDataset(args.data, "val", imgsz=cfg["imgsz"], flip=False),
+            YoloDataset(
+                args.data, "val", imgsz=cfg["imgsz"], flip=False, load_wall=wall_classes > 0
+            ),
             batch_size=8,
             collate_fn=collate,
         )
-        metrics = evaluate(model, val_ld, device, names)
+        wall_stats = []
+        metrics = evaluate(model, val_ld, device, names, wall_out=wall_stats)
         out_dir = Path(args.out or Path(args.ckpt).parent)
         out_dir.mkdir(parents=True, exist_ok=True)
         payload = {**metrics, "map50": mean_average_precision(metrics)}
+        if wall_stats and wall_stats[-1] is not None:
+            payload["wall_cls_acc"] = round(wall_stats[-1], 4)
         (out_dir / "eval_metrics.json").write_text(json.dumps(payload, indent=1))
         print(json.dumps(payload, indent=1))
         return
