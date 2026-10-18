@@ -29,10 +29,15 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_TORCH, reason="torch not installed")
 
 
-class Tiny(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lin = torch.nn.Linear(4, 3)
+def _make_tiny():
+    """Build a tiny model lazily so module import never touches torch."""
+
+    class Tiny(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = torch.nn.Linear(4, 3)
+
+    return Tiny()
 
 
 def _fresh_opt_sched(model, lr=0.1):
@@ -43,7 +48,7 @@ def _fresh_opt_sched(model, lr=0.1):
 
 def test_round_trip_restores_model_opt_sched_and_position(tmp_path):
     torch.manual_seed(0)
-    m = Tiny()
+    m = _make_tiny()
     opt, sched = _fresh_opt_sched(m)
     sched.step()  # lr 0.1 -> 0.01 (StepLR default gamma 0.1)
     save_train_state(
@@ -58,7 +63,7 @@ def test_round_trip_restores_model_opt_sched_and_position(tmp_path):
     )
     weights_saved = m.lin.weight.detach().clone()
 
-    m2 = Tiny()
+    m2 = _make_tiny()
     opt2, sched2 = _fresh_opt_sched(m2, lr=0.9)
     state = load_train_state(tmp_path / "ckpt_last.pt", m2, opt2, sched2)
 
@@ -74,7 +79,7 @@ def test_rng_states_resume_the_stream(tmp_path):
     torch.manual_seed(1)
     np.random.seed(1)
     random.seed(1)
-    m = Tiny()
+    m = _make_tiny()
     opt, sched = _fresh_opt_sched(m)
     save_train_state(tmp_path / "ckpt_last.pt", m, opt, sched, 0, -1.0, [], {})
 
@@ -86,7 +91,7 @@ def test_rng_states_resume_the_stream(tmp_path):
     np.random.seed(999)
     random.seed(999)
 
-    m2 = Tiny()
+    m2 = _make_tiny()
     opt2, sched2 = _fresh_opt_sched(m2)
     load_train_state(tmp_path / "ckpt_last.pt", m2, opt2, sched2)
 
