@@ -281,7 +281,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload metrics
-        if: always() && github.event.inputs.eval_only_ckpt == ''
+        if: always() && github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         uses: actions/upload-artifact@v7
         with:
           name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
