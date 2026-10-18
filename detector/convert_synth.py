@@ -9,6 +9,9 @@ Output (default ~/workspace/datasets/detector_yolo/synth/):
   images/{train,val}/sheet_<seed>[_s<pxm>]_t<r>x<c>.png (tiles, --tile-size N;
       the _s<pxm> suffix marks multi-scale renders of the same layout)
   labels/{train,val}/sheet_<seed>[_t<r>x<c>].txt   (YOLO rows: cls cx cy w h, normalized)
+  labels/{train,val}/sheet_<seed>[...].wallcls.txt (wall-class rows, #1113:
+      cls cx cy w h normalized, own namespace: 0 = partition/interior,
+      1 = structural/exterior; empty or absent for older gt.json files)
   data.yaml                             (Ultralytics dataset spec)
 
 Class mapping follows the unified taxonomy (detector/classes.py): synth
@@ -135,6 +138,56 @@ def _tile_rows(claimed, tile_size):
     return rows, n_dropped
 
 
+# Wall-class supervision (#1113): coarse wall TYPE per grid cell, separate
+# namespace from the detector classes. 0 = partition (interior), 1 =
+# structural (exterior). The detector head consumes these rows rasterized to
+# its stride-8 grid; physical width regression stays out of scope (#1113).
+WALL_CLASS_IDS = {"interior": 0, "exterior": 1}
+
+
+def _wall_box_px(w):
+    """Axis-aligned bbox (x0, y0, x1, y1) of one gt wall segment, sheet px."""
+    ax, ay = w["a_px"]
+    bx, by = w["b_px"]
+    t = float(w.get("t_px", 0.0))
+    if abs(ay - by) <= 1e-9:  # horizontal wall
+        x0, x1 = sorted((float(ax), float(bx)))
+        y0, y1 = ay - t / 2.0, ay + t / 2.0
+    else:  # vertical wall
+        y0, y1 = sorted((float(ay), float(by)))
+        x0, x1 = ax - t / 2.0, ax + t / 2.0
+    return x0, y0, x1, y1
+
+
+def _wall_rows(walls, sheet_w, sheet_h, x0=0.0, y0=0.0, tw=None, th=None):
+    """wallcls rows (cls cx cy w h, normalized) for walls inside a view.
+
+    Unlike symbols, a wall is labelled in EVERY tile whose view it crosses,
+    clipped to that view: wall-class supervision is dense per-cell, so each
+    tile needs its own slice of every wall it shows. tw/th None means the
+    whole sheet. Degenerate (zero-area) clips are skipped.
+    """
+    rows = []
+    vw = float(tw) if tw is not None else float(sheet_w)
+    vh = float(th) if th is not None else float(sheet_h)
+    for w in walls:
+        cls = WALL_CLASS_IDS.get(w.get("kind"))
+        if cls is None:
+            continue
+        bx0, by0, bx1, by1 = _wall_box_px(w)
+        cx0, cy0 = max(bx0, x0), max(by0, y0)
+        cx1 = min(bx1, x0 + vw) if tw is not None else bx1
+        cy1 = min(by1, y0 + vh) if th is not None else by1
+        w_n, h_n = (cx1 - cx0) / vw, (cy1 - cy0) / vh
+        if w_n <= 0.0 or h_n <= 0.0:
+            continue
+        rows.append(
+            f"{cls} {((cx0 + cx1) / 2.0 - x0) / vw:.6f} {((cy0 + cy1) / 2.0 - y0) / vh:.6f}"
+            f" {w_n:.6f} {h_n:.6f}"
+        )
+    return rows
+
+
 def convert(
     in_dir, out_dir, val_fraction=0.2, seed=0, include_empty=False, tile_size=0, stride=512
 ):
@@ -165,6 +218,7 @@ def convert(
         "sheets_val": 0,
         "sheets_skipped_missing_png": 0,
         "boxes_written": 0,
+        "wall_rows_written": 0,
         "boxes_skipped_unmapped": 0,
         "boxes_skipped_degenerate": 0,
         "sheets_kept_empty": 0,
@@ -179,6 +233,7 @@ def convert(
             continue
         gt = json.loads(js.read_text())
         scales_seen.add(gt.get("scale_px_per_m"))
+        walls = gt.get("walls", [])
         sheet_w, sheet_h = gt["sheet_size_px"]
         split = "val" if re.sub(r"_s\d+$", "", stem) in val_bases else "train"
         if tile_size > 0:
@@ -208,6 +263,11 @@ def convert(
                     (out_dir / "labels" / split / f"{name}.txt").write_text(
                         "".join(rr + "\n" for rr in rows)
                     )
+                    wall_rows = _wall_rows(walls, sheet_w, sheet_h, x0, y0, tw, th)
+                    (out_dir / "labels" / split / f"{name}.wallcls.txt").write_text(
+                        "".join(rr + "\n" for rr in wall_rows)
+                    )
+                    summary["wall_rows_written"] += len(wall_rows)
                     summary["boxes_written"] += len(rows)
                     n_tiles += 1
                     if not rows:
@@ -223,6 +283,11 @@ def convert(
             continue
         shutil.copyfile(png, out_dir / "images" / split / f"{stem}.png")
         (out_dir / "labels" / split / f"{stem}.txt").write_text("".join(r + "\n" for r in rows))
+        wall_rows = _wall_rows(walls, sheet_w, sheet_h)
+        (out_dir / "labels" / split / f"{stem}.wallcls.txt").write_text(
+            "".join(rr + "\n" for rr in wall_rows)
+        )
+        summary["wall_rows_written"] += len(wall_rows)
         summary["boxes_written"] += len(rows)
         summary[f"sheets_{split}"] += 1
         if not rows:

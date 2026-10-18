@@ -168,6 +168,10 @@ def test_train_artifacts_contract(tmp_path):
         device = "cpu"
         seed = 0
         name = "t"
+        wall_head = 0  # #1113
+        wall_cls_weight = 0.5  # #1113
+        checkpoint_every = 0  # #1116
+        resume = ""  # #1116
         out = str(tmp_path / "run")
 
     out_dir = Path(train(A))
@@ -213,6 +217,10 @@ class _Args:
         self.lr = 2e-3
         self.workers = 0
         self.device = "cpu"
+        self.wall_head = 0  # #1113
+        self.wall_cls_weight = 0.5  # #1113
+        self.checkpoint_every = 0  # #1116
+        self.resume = ""  # #1116
         self.seed = 0
         self.name = "t"
         self.out = out
