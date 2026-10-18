@@ -610,3 +610,28 @@ def test_scratch_provider_loads_a_real_checkpoint(tmp_path):
     dets = p.detect(img, "sheet_001")
     assert isinstance(dets, list)
     assert all(d.source == "sheet_001" and d.label in ("door", "window") for d in dets)
+
+
+def test_scratch_provider_loads_a_wall_class_checkpoint(tmp_path):
+    pytest.importorskip("torch")
+    import torch
+
+    sys.path.append(str(Path(__file__).parent))
+    from detector.train_scratch import ScratchNet
+
+    model = ScratchNet(num_classes=2, width=4, imgsz=64, wall_classes=2)
+    ckpt = tmp_path / "ckpt.pt"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "config": {"num_classes": 2, "width": 4, "imgsz": 64, "names": ["door", "window"]},
+        },
+        ckpt,
+    )
+    img = tmp_path / "sheet_001.png"
+    Image.new("L", (200, 200), 255).save(img)
+
+    p = dp.ScratchProvider(weights=str(ckpt))
+    dets = p.detect(img, "sheet_001")
+    assert isinstance(dets, list)
+    assert all(d.source == "sheet_001" and d.label in ("door", "window") for d in dets)
