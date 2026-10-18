@@ -44,7 +44,15 @@ def test_gt_walls_section(tmp_path):
             assert 0 <= a[0] <= sheet_w and 0 <= a[1] <= sheet_h
             assert 0 <= b[0] <= sheet_w and 0 <= b[1] <= sheet_h
     # shared edges collapse: no two walls carry identical geometry
-    segs = {(round(w["a_px"][0], 4), round(w["a_px"][1], 4), round(w["b_px"][0], 4), round(w["b_px"][1], 4)) for w in walls}
+    segs = {
+        (
+            round(w["a_px"][0], 4),
+            round(w["a_px"][1], 4),
+            round(w["b_px"][0], 4),
+            round(w["b_px"][1], 4),
+        )
+        for w in walls
+    }
     assert len(segs) == len(walls)
 
 
