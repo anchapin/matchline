@@ -137,16 +137,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
 
-      - name: Install ruff
-        run: pip install --no-cache-dir "ruff==0.17.1" && ruff --version
-
       - name: Run ruff check on detector/
-        run: ruff check detector/
+        run: uvx ruff@0.17.1 check detector/
 
   pip-audit:
     # #1139: scan the resolved runtime dependency set for known CVEs.
@@ -164,13 +161,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
 
-      - name: Install runtime dependencies and pip-audit
-        run: pip install --no-cache-dir -e . pip-audit && pip-audit --version
+      - name: Sync the locked runtime environment
+        # audit group carries pip-audit so the scanner version is locked too;
+        # --no-default-groups keeps dev tooling out of the audit scope (#1139)
+        run: uv sync --frozen --no-default-groups --group audit
 
       - name: Run pip-audit (fail on known runtime vulnerabilities)
         # The project itself is installed editable only to pull in its
@@ -180,7 +177,7 @@ jobs:
         # yet, and an environment scan trips --strict on it
         # (--skip-editable still reports editable distributions as an
         # error, so uninstalling is the reliable exclusion).
-        run: pip uninstall -y matchline && pip-audit --strict
+        run: uv pip uninstall matchline && uv run --no-sync pip-audit --strict
 
   review-page-browser:
     # #802: drive review.html in headless Chromium (keys, edit prompt, layer
@@ -194,20 +191,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
 
-      - name: Install package and Playwright Chromium
+      - name: Sync the locked dev environment and install Playwright Chromium
+        # playwright is a CI-only dep, added ephemerally with --with
         run: |
-          pip install --no-cache-dir -e ".[test,openstudio]" "playwright>=1.48,<2"
-          python -m playwright install --with-deps chromium
+          uv sync --frozen --extra test --extra openstudio
+          uv run --with "playwright>=1.48,<2" python -m playwright install --with-deps chromium
 
       - name: Run browser test
         env:
           MATCHLINE_BROWSER_TESTS: "1"  # a missing browser fails instead of skipping
-        run: python -m pytest tests/test_review_page_browser.py -q -rs
+        run: uv run --no-sync python -m pytest tests/test_review_page_browser.py -q -rs
 
   quality:
     name: ruff + format + pytest
@@ -222,49 +220,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.12"
 
-      - name: Install package
-        run: pip install --no-cache-dir -e ".[test,openstudio]" "ruff==0.17.1" && ruff --version
+      - name: Sync the locked dev environment
+        run: uv sync --frozen --extra test --extra openstudio
 
       - name: Run ruff check
-        run: ruff check .
+        run: uv run --no-sync ruff check .
 
       - name: Run ruff format check
-        run: ruff format --check .
+        run: uv run --no-sync ruff format --check .
 
       - name: Run mypy (scoped baseline, #1138)
-        run: pip install --no-cache-dir "mypy==2.4.0" && python -m mypy
+        run: uv run --no-sync python -m mypy
 
       - name: Check licenses (ledger, committed artifacts, built wheel)
         # #751: nothing trained on non-commercial or copyleft data may ship
         run: |
-          pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
-          python scripts/check_release_licenses.py "$RUNNER_TEMP"/dist/*.whl
+          uv build --wheel --out-dir "$RUNNER_TEMP/dist"
+          uv run --no-sync python scripts/check_release_licenses.py "$RUNNER_TEMP"/dist/*.whl
 
       - name: Run pytest
         # pytest-xdist spreads the suite across the runner's cores; pytest was
         # ~88% of this merge-gating job when it ran on one core.
         # #1137: coverage measures the shipped surface (pyproject
         # [tool.coverage]); informational, no fail_under yet.
-        run: python -m pytest tests/ -q -n auto --cov --cov-report=term --cov-report=xml:coverage.xml
+        run: uv run --no-sync python -m pytest tests/ -q -n auto --cov --cov-report=term --cov-report=xml:coverage.xml
 
       - name: Coverage summary (informational, no gate yet)
         if: always()
         run: |
           {
             echo "### Coverage (informational, no gate yet, #1137)"
-            python -m coverage report --skip-covered
+            uv run --no-sync python -m coverage report --skip-covered
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check test count
         run: |
           EXPECTED_TEST_COUNT=3752  # +1 repo-map bem-package scan test (#1179) # +1 API reference doc sync test (#1167) # +2 canonical-model and telemetry goldens + 3 model reader-policy tests (#1164) # +3 font-fallback tests (#1163) # +5 perf-budget benchmark mechanics tests (#1162) # +16 IFC robustness corpus tests (#1161) # +3 convention report emission + schema pin tests (#1166) # +1 wall-class ckpt load in detection provider (#1152) # +8 wall-class head tests (#1113)  # +2 train-state resume tests (#1116)  # +29 point-in-polygon contract pins (#1129)  # +40 direct unit tests for opening_identity/opening_attach/construction_library_prm_data (#1128)  # +4 golden artifact tests (#1127)  # +4 telemetry/feedback round-trip tests (#1126)  # +7 tile-boundary straddle dedup tests (#1125)  # +10 degenerate-input battery tests (#1124)  # +14 help coverage for the remaining subcommands + 9 CLI contract dispatch tests (#1123)  # +5 cleanup-sweep tests  # +8 AP50 metric tests (#1119)  # +7 schedule KR/EM/VF1 + noise tests (#1114)  # +8 schedule-score tests (#1112)  # +6 repo-map generator tests (#1096)  # +2 feedback-summary tests (#1080)  # +1 review-page provenance-method test (#1079)  # +4 run --baseline tests (#1077)  # +2 moved-pairs detail tests (#1078)  # +3 shared-html-page tests (#1044) # +6 moved-opening pairing tests (#1045) # +7 space-fingerprint reidentification tests (#1046) # +7 legend tag suggestion tests (#1047) # +7 takeoff-diff review-item tests (#1048)  # +1 takeoff-diff legacy legend-key fallback test (#1034)  # +2 cloud chain false-positive guards (#993)  # +18 revision tracking + takeoff diff tests (#993)  # +12 review queue filters, bulk and worst-first tests (#996)  # +17 in-viewer corrections tests (#1002)  # +20 review-viewer scene/page/CLI tests (#1001)  # +13 telemetry-spec tests (#1003) + 5 progressive-mode tests (#998)  # +6 export-package zip / share-back / contents tests (#999)  # +12 match-line pairing / enlarged-plan dedup tests (#994)  # +16 correction-history tests (#997)  # +5 single-dimension scale tests + 1 walls_for_sheets review-item test + 1 real-set fallback end-to-end test + 1 multi-part edge-count test + 1 duplicate-dimension-text test (#1019)  # +13 mech_schedule tests (#974) +7 area-definitions registry/report/battery tests (#975)  # +1 duplicate-room dedupe test (#1008)  # +1 empty-units short-wall early-return test (#1010)  # +1 too-short-wall opening skip test (#1010)  # +1 trust-report sign-off block test (#976)  # +1 zip basename-collision test (duck review, #988)  # +4 matchline-ui input-mode tests (#988)  # +7 drawing-set zip tests (#988)  # +2 run_pipeline --ifc tests (#988)  # +10 matchline-ui app tests (#982)  # +1 checked-in specialist config test (#743)  # +1 tiled-checkpoint ledger test (#743)  # +5 specialist labels tests (#743)  # +4 multi-scale sheet tests (#743)  # +2 tiled NMS IoU tests (#743)  # +2 raw-detection dump tests (#743)  # +4 synth stroke-weight regime tests (#743)  # +5 tile-based eval + conversion tests (#743)  # +4 scratch provider tests (#743)  # +5 consistent-frame loss + box bias-init tests (#743)  # +2 converter package-import regression tests (#743)  # +7 ScratchLoss/decode/NMS device tests (#743)  # +2 benchmark door-recall column tests (#743)  # +6 IFC4 export of semi-exterior/vestibule walls (#747)  # +13 5.5.2 vestibule sentence tests (#747)  # +2 IFC2X3 upgrade regression tests (#929)  # +3 simplify_budget simplified-area + ring-offset re-verification tests (#971)  # +2 benchmark surface-count column tests (#972)  # +3 multi-storey per-space wall-split tests (#986)  # +21 legend tag learning tests (#995) # +5 public API surface pin tests (#1159) # +3 wall-clock budget verdict tests (#1160) # +2 --acknowledge-review tests (#1160)
           # Count tests using --collect-only (fast path)
-          COLLECT_OUT=$(python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
+          COLLECT_OUT=$(uv run --no-sync python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
           ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
           if [ -z "$ACTUAL_TEST_COUNT" ] || [ "$ACTUAL_TEST_COUNT" = "No" ]; then
             echo "WARNING: pytest --collect-only returned no useful output; skipping count check"
