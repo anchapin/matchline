@@ -20,8 +20,9 @@ from building_model import (
     SpaceLighting,
 )
 from datasets_adapter import polygon_area_px2
-from ifc_export import _export_ifc
+from ifc_export import _export_ifc, export_ifc
 from tests.conftest import _linked
+from tests.model_factory import make_clean_model
 from validate import _build_ctx, _check_ifc_counts, run_checks
 
 _ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
@@ -227,3 +228,20 @@ def test_skylights_export_as_ifcwindow_skylight_on_a_roof_slab(tmp_path):
     (fill_rel,) = skys[0].FillsVoids
     (void_rel,) = fill_rel.RelatingOpeningElement.VoidsElements
     assert void_rel.RelatingBuildingElement == slabs[0]
+
+
+def test_export_ifc_writes_convention_report(tmp_path):
+    import json
+
+    from convention_report import SCHEMA
+
+    model = make_clean_model()
+    model_path = tmp_path / "model.json"
+    model_path.write_text(model.to_json())
+    out_path = tmp_path / "model.ifc"
+    export_ifc(str(model_path), str(out_path))
+    report_path = tmp_path / "convention_report.json"
+    assert report_path.exists()
+    report = json.loads(report_path.read_text())
+    assert report["schema"] == SCHEMA
+    assert report["building"] == model.name
