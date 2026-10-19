@@ -29,9 +29,11 @@ SCHEMA = "matchline.api_surface/1"
 # `matchline` CLI or the docs guides. Rule (docs/api.md): a top-level module
 # is public when it has a module-named guide under docs/, plus run_pipeline
 # (documented at docs/pipeline.md). Packages are public when the README
-# module table documents them. Everything else is internal.
+# module table documents them. Everything else is internal. Dotted names are
+# modules that moved into a package (#1179 chunk 1 moved the bem_* modules
+# into bem/); the guide still lives at docs/bem_export.md.
 PUBLIC_MODULES = [
-    "bem_export",
+    "bem.bem_export",
     "building_model",
     "cli",
     "construction_library",
@@ -98,7 +100,7 @@ def _public_defs(tree: ast.Module) -> dict:
 def build() -> dict:
     surface: dict = {"schema": SCHEMA, "modules": {}, "packages": {}}
     for name in PUBLIC_MODULES:
-        path = ROOT / f"{name}.py"
+        path = ROOT / (name.replace(".", "/") + ".py")
         tree = ast.parse(path.read_text(), filename=str(path))
         surface["modules"][name] = _public_defs(tree)
     for name in PUBLIC_PACKAGES:

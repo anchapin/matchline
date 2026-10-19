@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from shapely.geometry import Polygon
 
-from bem_ifc4 import validate_ifc4, write_ifc4
-from bem_multistorey import _grade_pieces
+from bem.bem_ifc4 import validate_ifc4, write_ifc4
+from bem.bem_multistorey import _grade_pieces
 from building_model import SpaceOpening
 from grade import Terrain
 from ifc_export import _bem_from_model

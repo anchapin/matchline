@@ -299,7 +299,7 @@ class TestNoUnprotectedXmlParsing:
     def test_no_et_parse_in_bem_export(self):
         """bem_export.py must not use xml.etree.ElementTree.parse for untrusted input."""
         # Read the source to verify safe_xml usage
-        bem_export_path = Path(__file__).parents[1] / "bem_export.py"
+        bem_export_path = Path(__file__).parents[1] / "bem" / "bem_export.py"
         content = bem_export_path.read_text()
         # Must import safe_xml
         assert "from safe_xml import" in content

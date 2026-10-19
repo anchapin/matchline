@@ -6,6 +6,12 @@ All notable changes to this project are documented here, in
 
 ## [Unreleased]
 
+### Changed
+
+- Moved the eleven `bem_*` root modules into a new `bem/` package (#1179,
+  chunk 1): import them as `bem.bem_export`, `bem.bem_geometry`, and so on.
+  The public API surface pin now points at the new names.
+
 ### Added
 
 - Nothing yet; see [0.2.1] below.

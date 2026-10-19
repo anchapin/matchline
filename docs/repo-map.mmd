@@ -4,17 +4,17 @@ graph LR
   subgraph BEM
     atria
     below_grade
-    bem_export
-    bem_geometry
-    bem_helpers
-    bem_ifc4
-    bem_layers
-    bem_levels
-    bem_loads
-    bem_multistorey
-    bem_roof
-    bem_shading
-    bem_space_split
+    bem_bem_export
+    bem_bem_geometry
+    bem_bem_helpers
+    bem_bem_ifc4
+    bem_bem_layers
+    bem_bem_levels
+    bem_bem_loads
+    bem_bem_multistorey
+    bem_bem_roof
+    bem_bem_shading
+    bem_bem_space_split
     construction_library
     construction_library_data
     construction_library_prm_data
@@ -84,6 +84,7 @@ graph LR
     air_loops
     area_definitions
     atomic_io
+    bem
     building_model
     cli
     datasets_adapter
@@ -139,40 +140,40 @@ graph LR
   below_grade --> building_model
   below_grade --> grade
   below_grade --> interstory
-  bem_export --> bem_geometry
-  bem_export --> bem_helpers
-  bem_export --> bem_ifc4
-  bem_export --> bem_layers
-  bem_export --> bem_loads
-  bem_export --> bem_multistorey
-  bem_export --> bem_roof
-  bem_export --> bem_space_split
-  bem_export --> grade
-  bem_export --> room_labels
-  bem_export --> safe_xml
-  bem_helpers --> room_labels
-  bem_ifc4 --> bem_geometry
-  bem_ifc4 --> bem_helpers
-  bem_ifc4 --> bem_loads
-  bem_ifc4 --> bem_multistorey
-  bem_ifc4 --> bem_roof
-  bem_ifc4 --> grade
-  bem_layers --> bem_helpers
-  bem_levels --> below_grade
-  bem_levels --> bem_geometry
-  bem_levels --> ifc_export
-  bem_levels --> interstory
-  bem_levels --> thermal_zoning
-  bem_loads --> bem_helpers
-  bem_loads --> space_use_defaults
-  bem_multistorey --> bem_export
-  bem_multistorey --> bem_helpers
-  bem_multistorey --> bem_levels
-  bem_multistorey --> bem_loads
-  bem_multistorey --> bem_space_split
-  bem_multistorey --> grade
-  bem_roof --> bem_helpers
-  bem_shading --> bem_geometry
+  bem_bem_export --> bem_bem_geometry
+  bem_bem_export --> bem_bem_helpers
+  bem_bem_export --> bem_bem_ifc4
+  bem_bem_export --> bem_bem_layers
+  bem_bem_export --> bem_bem_loads
+  bem_bem_export --> bem_bem_multistorey
+  bem_bem_export --> bem_bem_roof
+  bem_bem_export --> bem_bem_space_split
+  bem_bem_export --> grade
+  bem_bem_export --> room_labels
+  bem_bem_export --> safe_xml
+  bem_bem_helpers --> room_labels
+  bem_bem_ifc4 --> bem_bem_geometry
+  bem_bem_ifc4 --> bem_bem_helpers
+  bem_bem_ifc4 --> bem_bem_loads
+  bem_bem_ifc4 --> bem_bem_multistorey
+  bem_bem_ifc4 --> bem_bem_roof
+  bem_bem_ifc4 --> grade
+  bem_bem_layers --> bem_bem_helpers
+  bem_bem_levels --> below_grade
+  bem_bem_levels --> bem_bem_geometry
+  bem_bem_levels --> ifc_export
+  bem_bem_levels --> interstory
+  bem_bem_levels --> thermal_zoning
+  bem_bem_loads --> bem_bem_helpers
+  bem_bem_loads --> space_use_defaults
+  bem_bem_multistorey --> bem_bem_export
+  bem_bem_multistorey --> bem_bem_helpers
+  bem_bem_multistorey --> bem_bem_levels
+  bem_bem_multistorey --> bem_bem_loads
+  bem_bem_multistorey --> bem_bem_space_split
+  bem_bem_multistorey --> grade
+  bem_bem_roof --> bem_bem_helpers
+  bem_bem_shading --> bem_bem_geometry
   building_model --> datasets_adapter
   cli --> atomic_io
   cli --> building_model
@@ -231,12 +232,12 @@ graph LR
   hvac_trace --> jesse
   hvac_trace --> synth_mech
   ifc_errors --> pipeline_exceptions
-  ifc_export --> bem_export
-  ifc_export --> bem_geometry
-  ifc_export --> bem_helpers
-  ifc_export --> bem_levels
-  ifc_export --> bem_roof
-  ifc_export --> bem_shading
+  ifc_export --> bem_bem_export
+  ifc_export --> bem_bem_geometry
+  ifc_export --> bem_bem_helpers
+  ifc_export --> bem_bem_levels
+  ifc_export --> bem_bem_roof
+  ifc_export --> bem_bem_shading
   ifc_export --> building_model
   ifc_export --> constructions
   ifc_export --> convention_report
@@ -283,7 +284,7 @@ graph LR
   pdf_schedules --> schedule_parse
   plan_walls --> room_labels
   real_set --> air_loops
-  real_set --> bem_helpers
+  real_set --> bem_bem_helpers
   real_set --> building_model
   real_set --> construction_library
   real_set --> drawing_scale
@@ -319,7 +320,7 @@ graph LR
   roof_simplify --> solar_aperture
   room_labels --> building_model
   room_labels --> datasets_adapter
-  run_bem_export --> bem_export
+  run_bem_export --> bem_bem_export
   run_bem_export --> datasets_adapter
   run_bem_export --> geometry_simplify
   run_bem_export --> room_labels
@@ -334,10 +335,10 @@ graph LR
   run_multidiscipline --> synth_multidiscipline
   run_pipeline --> air_loops
   run_pipeline --> atomic_io
-  run_pipeline --> bem_export
-  run_pipeline --> bem_helpers
-  run_pipeline --> bem_levels
-  run_pipeline --> bem_shading
+  run_pipeline --> bem_bem_export
+  run_pipeline --> bem_bem_helpers
+  run_pipeline --> bem_bem_levels
+  run_pipeline --> bem_bem_shading
   run_pipeline --> building_model
   run_pipeline --> construction_library
   run_pipeline --> constructions
@@ -369,7 +370,7 @@ graph LR
   run_validation --> geometry_simplify
   run_validation --> synth_multidiscipline
   schedule_parse --> building_model
-  semi_exterior --> bem_space_split
+  semi_exterior --> bem_bem_space_split
   sheet_index --> revisions
   solar_aperture --> roof_geometry
   space_merge --> building_model
@@ -392,8 +393,8 @@ graph LR
   synth_sheets --> synth_symbols
   synth_symbols --> datasets_adapter
   telemetry_emitter --> telemetry_spec
-  thermal_zoning --> bem_helpers
-  thermal_zoning --> bem_multistorey
+  thermal_zoning --> bem_bem_helpers
+  thermal_zoning --> bem_bem_multistorey
   viewer_corrections --> building_model
   viewer_corrections --> corrections
   viewer_corrections --> review_report

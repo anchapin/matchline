@@ -16,8 +16,8 @@ import xml.etree.ElementTree as ET
 import pytest
 from shapely.geometry import Polygon
 
-from bem_export import validate_gbxml, write_gbxml
-from bem_layers import FILM_R_SI
+from bem.bem_export import validate_gbxml, write_gbxml
+from bem.bem_layers import FILM_R_SI
 from building_model import BuildingModel, Construction, EnvelopeWall, Level, Space
 from construction_library import (
     DEFAULT_SEMIEXT_FLOOR_ID,

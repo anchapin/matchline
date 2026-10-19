@@ -13,7 +13,7 @@ from collections import defaultdict
 
 import pytest
 
-from bem_export import validate_ifc4
+from bem.bem_export import validate_ifc4
 from building_model import (
     BuildingModel,
     Level,
@@ -125,7 +125,7 @@ def test_ifc_export_validates(tmp_path):
 
     _export_ifc(model, str(ifc_path))
 
-    validate_ifc4 = __import__("bem_export", fromlist=["validate_ifc4"]).validate_ifc4
+    validate_ifc4 = __import__("bem.bem_export", fromlist=["validate_ifc4"]).validate_ifc4
     ok, errors = validate_ifc4(str(ifc_path))
     assert ok, f"validate_ifc4 failed: {errors}"
 

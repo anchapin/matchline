@@ -18,7 +18,7 @@ import math
 from pathlib import Path
 from typing import List
 
-from bem_export import (
+from bem.bem_export import (
     BEMModel,
     BEMOpeningUnit,
     BEMSpace,
@@ -27,9 +27,9 @@ from bem_export import (
     validate_ifc4,
     write_ifc4,
 )
-from bem_geometry import BEMRoof
-from bem_helpers import _edge_facades
-from bem_roof import is_sloped, shell_volume, space_shell
+from bem.bem_geometry import BEMRoof
+from bem.bem_helpers import _edge_facades
+from bem.bem_roof import is_sloped, shell_volume, space_shell
 from building_model import BuildingModel, EnvelopeWall
 from space_use_defaults import lighting_watts
 from validate import validate_bem_conservation
@@ -206,7 +206,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     # ring_m must be CCW in y-north for write_ifc4
     ring_ccw = _ensure_ccw(ring) if ring else []
 
-    from bem_shading import shades_from_model
+    from bem.bem_shading import shades_from_model
     from constructions import roof_u_value, slab_u_value
 
     shades, shade_notes = shades_from_model(
@@ -243,7 +243,7 @@ def _bem_from_model(model: BuildingModel) -> BEMModel:
     if len(model.levels) > 1:
         # several storeys (#639): per-level wall loops, floors/ceilings/roofs
         # between levels, ground and outdoor boundary types
-        from bem_levels import add_levels
+        from bem.bem_levels import add_levels
 
         add_levels(model, bem, sloped=is_sloped(roofs))
     elif getattr(model, "terrain", None):

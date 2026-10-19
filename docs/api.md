@@ -1,6 +1,6 @@
 # Public API surface (gate #1159)
 
-matchline ships 100+ top-level modules. This page states the line between the
+matchline ships its modules under the repo root and in small packages (`bem/`, `synth/`, `link/`, `validate/`, ...). This page states the line between the
 public API and internals, what counts as a breaking change, and how
 deprecation works. The CI guard that enforces it lives in
 `tests/test_api_surface.py` against the pinned snapshot
@@ -23,7 +23,7 @@ purpose.
 
 | Module | Guide |
 |---|---|
-| `bem_export.py` | [docs/bem_export.md](docs/bem_export.md) |
+| `bem.bem_export` (moved from the root by #1179) | [docs/bem_export.md](docs/bem_export.md) |
 | `building_model.py` | [docs/building_model.md](docs/building_model.md) |
 | `cli.py` | [docs/cli.md](docs/cli.md) |
 | `construction_library.py` | [docs/construction_library.md](docs/construction_library.md) |

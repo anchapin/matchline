@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from atria import find_atria
-from bem_export import write_gbxml
+from bem.bem_export import write_gbxml
 from ifc_export import _bem_from_model
 from interstory import match_interstory
 from tests.test_multistorey_export import NS, _adj, _model, _surfaces, _write, _zs
@@ -122,7 +122,7 @@ def test_atrium_ifc4_air_walls_on_upper_storey(tmp_path):
     import ifcopenshell
     import ifcopenshell.util.element as El
 
-    from bem_export import validate_ifc4, write_ifc4
+    from bem.bem_export import validate_ifc4, write_ifc4
 
     p = write_ifc4(_bem_from_model(_atrium_model()), tmp_path / "a.ifc")
     ok, errs = validate_ifc4(p)

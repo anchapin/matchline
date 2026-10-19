@@ -125,7 +125,7 @@ def scrub_package(pkg: Path) -> dict:
 
 
 def _pinned_bem_model():
-    from bem_export import BEMModel, BEMOpeningUnit, BEMSpace
+    from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace
 
     space = BEMSpace(
         sid="L1-101",
@@ -153,7 +153,7 @@ def _pinned_bem_model():
 
 def golden_gbxml() -> bytes:
     """The gbXML bytes for the pinned BEM model; fresh model every call."""
-    import bem_export
+    import bem.bem_export as bem_export
 
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "clean_model.gbxml"

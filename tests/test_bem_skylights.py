@@ -14,8 +14,8 @@ import math
 import pytest
 from shapely.geometry import Polygon
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
-from bem_helpers import (
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_helpers import (
     SKYLIGHT_CLEARANCE_M,
     SKYLIGHT_SETBACK_M,
     _opening_type,
@@ -143,7 +143,7 @@ def test_gbxml_without_skylights_has_no_roof_openings(tmp_path):
 
 def test_ifc4_notes_count_roof_skylights(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from bem_export import write_ifc4
+    from bem.bem_export import write_ifc4
 
     m = _model(_sky(2))
     write_ifc4(m, tmp_path / "sky.ifc")

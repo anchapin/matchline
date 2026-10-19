@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import validate_gbxml, write_gbxml
+from bem.bem_export import validate_gbxml, write_gbxml
 from constructions import apply_wall_u_rollup
 from geometry_simplify import footprint_from_regions
 from ifc_export import _bem_from_model
@@ -98,7 +98,7 @@ def test_ifc_walls_carry_thermal_transmittance(tmp_path):
     ifcopenshell = pytest.importorskip("ifcopenshell")
     import ifcopenshell.util.element as E
 
-    from bem_ifc4 import write_ifc4
+    from bem.bem_ifc4 import write_ifc4
 
     m = _rolled()
     p = tmp_path / "b.ifc"
@@ -116,7 +116,7 @@ def test_ifc_walls_without_u_get_no_pset(tmp_path):
     ifcopenshell = pytest.importorskip("ifcopenshell")
     import ifcopenshell.util.element as E
 
-    from bem_ifc4 import write_ifc4
+    from bem.bem_ifc4 import write_ifc4
 
     p = tmp_path / "b.ifc"
     write_ifc4(_bem_from_model(make_clean_model()), p)

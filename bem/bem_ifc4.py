@@ -6,8 +6,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from bem_geometry import BEMModel
-from bem_helpers import (
+from bem.bem_geometry import BEMModel
+from bem.bem_helpers import (
     _assign_wall_to_space,
     _distribute_openings,
     _edge_spaces,
@@ -17,8 +17,8 @@ from bem_helpers import (
     _validate_out_path,
     _wall_edges,
 )
-from bem_loads import ifc_load_psets
-from bem_roof import is_sloped, place_skylights_on_pieces, plane_frame, roof_pieces
+from bem.bem_loads import ifc_load_psets
+from bem.bem_roof import is_sloped, place_skylights_on_pieces, plane_frame, roof_pieces
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
 GROUND_SLAB_THICKNESS_M = 0.15  # nominal; geometry only, the U-value is what matters
@@ -225,7 +225,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         storey.ObjectPlacement = storey_pl
     space_level = {}
     if multi:
-        from bem_multistorey import level_walls, space_levels
+        from bem.bem_multistorey import level_walls, space_levels
 
         space_level = space_levels(model, levels)
 
@@ -861,7 +861,7 @@ def _grade_boundary_pieces(terrain, p0, p1, L, z0, h, placements):
     is all above or all below grade is one piece. Openings ``(s0, s1, sill,
     top)`` are in the bottom-left frame, so the exposed boundary leaves them out.
     """
-    from bem_multistorey import _grade_pieces, _wall_frame
+    from bem.bem_multistorey import _grade_pieces, _wall_frame
 
     bl, br, _L, _az = _wall_frame(p0, p1)
     rects = []
@@ -981,7 +981,7 @@ def _write_level_slabs(
     """
     import ifcopenshell.api.pset as _Ps
 
-    from bem_multistorey import _signed_area
+    from bem.bem_multistorey import _signed_area
 
     notes, roofs, n = [], {}, 0
     base = storey_of[levels[0].id]

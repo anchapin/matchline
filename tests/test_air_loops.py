@@ -13,8 +13,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 from air_loops import apply_air_loops, build_air_loops, loop_id, zone_air_loops
-from bem_export import validate_gbxml, write_gbxml
-from bem_geometry import BEMModel, BEMSpace
+from bem.bem_export import validate_gbxml, write_gbxml
+from bem.bem_geometry import BEMModel, BEMSpace
 from building_model import AirLoop, BuildingModel, ComponentRef, Zone
 
 NS = {"g": "http://www.gbxml.org/schema"}

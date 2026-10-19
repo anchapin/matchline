@@ -76,7 +76,7 @@ def _wall_pair_records(spaces: Dict[str, object], verdict) -> List[dict]:
     from shapely.geometry import Point
     from shapely.ops import unary_union
 
-    from bem_space_split import MIN_PIECE_M, TOL_M, _lines, _poly
+    from bem.bem_space_split import MIN_PIECE_M, TOL_M, _lines, _poly
 
     by_level: Dict[str, list] = {}
     for sid, sp in spaces.items():
@@ -188,7 +188,7 @@ def semi_exterior_floor_boundaries(spaces: Dict[str, object], levels: List[objec
     wall boundaries plus ``area_m2`` and ``plane: "floor"``, sorted by
     pair. No construction is attached here, so exports are unchanged.
     """
-    from bem_space_split import TOL_M, _poly
+    from bem.bem_space_split import TOL_M, _poly
 
     elev = {}
     for lv in levels or []:

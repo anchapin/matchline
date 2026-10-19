@@ -97,7 +97,7 @@ class TestValidateBlocksExport:
 
     def test_write_functions_not_called_when_gate_blocks(self, tmp_path, monkeypatch):
         """write_gbxml and write_ifc4 must never be called when validation errors exist."""
-        import bem_export
+        import bem.bem_export as bem_export
         import run_pipeline
 
         out_dir = tmp_path / "run_mock_export"

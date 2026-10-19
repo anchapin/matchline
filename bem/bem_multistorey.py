@@ -33,7 +33,7 @@ from shapely.geometry import Polygon, box
 from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
 
-from bem_helpers import (
+from bem.bem_helpers import (
     _assign_wall_to_space,
     _cartesian,
     _distribute_openings,
@@ -46,9 +46,9 @@ from bem_helpers import (
     _place_skylights_on_roof,
     _wall_edges,
 )
-from bem_levels import hole_free
-from bem_loads import write_schedules, write_space_loads
-from bem_space_split import keep_openings_whole, split_edge
+from bem.bem_levels import hole_free
+from bem.bem_loads import write_schedules, write_space_loads
+from bem.bem_space_split import keep_openings_whole, split_edge
 from grade import GRADE_TOL_M, Terrain
 
 MIN_PIECE_M2 = 1e-4
@@ -280,7 +280,7 @@ def space_levels(model, levels) -> dict:
 
 
 def write_gbxml_levels(model, path: str | Path) -> Path:
-    from bem_export import _gbxml_root, _validate_out_path, _write_constructions, _write_zones
+    from bem.bem_export import _gbxml_root, _validate_out_path, _write_constructions, _write_zones
 
     root, campus = _gbxml_root(model)
     bldg = _el(campus, "Building", id="bldg-1", buildingType="Office")

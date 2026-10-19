@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET
 # IFC helpers: bem_ifc4.py
 from pathlib import Path
 
-from bem_geometry import (
+from bem.bem_geometry import (
     BEMModel,
     BEMOpeningUnit,  # noqa: F401
     BEMSpace,  # noqa: F401
@@ -43,7 +43,7 @@ from bem_geometry import (
     _shoelace,  # noqa: F401
     model_from_takeoff,  # noqa: F401
 )
-from bem_helpers import (
+from bem.bem_helpers import (
     DOOR_SILL_M,
     GBXML_NS,
     WINDOW_SILL_M,
@@ -61,11 +61,11 @@ from bem_helpers import (
     _wall_edges,
     glazing_exportable,
 )
-from bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
-from bem_layers import write_layered, write_partition
-from bem_loads import write_schedules, write_space_loads
-from bem_roof import is_sloped, roof_pieces, shell_volume, space_shell, wall_top
-from bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
+from bem.bem_ifc4 import validate_ifc4, write_ifc4  # noqa: F401
+from bem.bem_layers import write_layered, write_partition
+from bem.bem_loads import write_schedules, write_space_loads
+from bem.bem_roof import is_sloped, roof_pieces, shell_volume, space_shell, wall_top
+from bem.bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
 from room_labels import point_in_polygon as _pip
 from safe_xml import safe_xml_parse, safe_xml_parser
 
@@ -81,7 +81,7 @@ __all__ = [
 ]
 
 SCHEMA_PATH = (
-    Path(__file__).resolve().parent / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+    Path(__file__).resolve().parents[1] / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
 )
 
 
@@ -345,7 +345,7 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
     """Write a gbXML 8.01 file for the model. Returns the path written."""
     if len(getattr(model, "levels", None) or []) > 1:
         # several storeys (#639): its own writer; single-storey output is unchanged
-        from bem_multistorey import write_gbxml_levels
+        from bem.bem_multistorey import write_gbxml_levels
 
         return write_gbxml_levels(model, path)
     h = model.wall_height_m
@@ -837,7 +837,7 @@ def _grade_plan(model, edges, opening_assign, roofs, sloped, h) -> dict:
     """
     from shapely.geometry import Polygon
 
-    from bem_multistorey import _grade_pieces, _wall_frame
+    from bem.bem_multistorey import _grade_pieces, _wall_frame
     from grade import Terrain
 
     terrain = Terrain(getattr(model, "terrain", None) or [])
@@ -879,7 +879,7 @@ def _write_grade_pieces(
     """Write one wall cut at grade (#649); openings go on the exposed part holding them."""
     from shapely.geometry import box
 
-    from bem_multistorey import _write_piece
+    from bem.bem_multistorey import _write_piece
 
     ux, uy = (br[0] - bl[0]) / L, (br[1] - bl[1]) / L
     left = list(ops)
@@ -946,7 +946,7 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
     """
     from shapely.geometry import Polygon
 
-    from bem_roof import place_skylights_on_pieces
+    from bem.bem_roof import place_skylights_on_pieces
 
     pieces, overhang = roof_pieces(model.ring_m, roofs)
     if overhang > 1e-4:

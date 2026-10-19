@@ -127,7 +127,7 @@ def test_json_round_trip_keeps_toplit():
 
 def test_ifc_round_trip_computes_daylight_under_skylights(tmp_path, monkeypatch):
     pytest.importorskip("ifcopenshell")
-    from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4
+    from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4
     from ifc_import import import_ifc
 
     west = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bem_multistorey import level_walls, space_levels
+from bem.bem_multistorey import level_walls, space_levels
 from building_model import BimElement, BimOpening, SpaceOpening
 from ifc_export import _bem_from_model
 from tests.test_atria import _atrium_model

@@ -2,8 +2,8 @@
 
 import pytest
 
-from bem_geometry import BEMOpeningUnit
-from bem_helpers import _distribute_openings, _edge_facades, _wall_edges
+from bem.bem_geometry import BEMOpeningUnit
+from bem.bem_helpers import _distribute_openings, _edge_facades, _wall_edges
 
 RECT_NORTH_UP = [(0.0, 0.0), (10.0, 0.0), (10.0, 6.0), (0.0, 6.0)]  # CCW, y=north
 

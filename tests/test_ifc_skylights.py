@@ -14,8 +14,8 @@ import pytest
 
 ifcopenshell = pytest.importorskip("ifcopenshell")
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
-from bem_ifc4 import validate_ifc4  # noqa: E402
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
+from bem.bem_ifc4 import validate_ifc4  # noqa: E402
 from ifc_import import import_ifc  # noqa: E402
 
 RING = [(0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (0.0, 10.0)]
@@ -57,7 +57,7 @@ def test_ifc_with_skylights_validates(tmp_path):
 
 
 def test_skylight_kept_over_its_space(tmp_path):
-    from bem_helpers import _place_skylights_on_roof
+    from bem.bem_helpers import _place_skylights_on_roof
 
     units = [_sky("SK-E", "sp-e"), _sky("SK-W", "sp-w")]
     placed, notes = _place_skylights_on_roof(units, RING, regions={"sp-w": WEST, "sp-e": EAST})
@@ -68,7 +68,7 @@ def test_skylight_kept_over_its_space(tmp_path):
 
 
 def test_skylight_too_big_for_its_space_is_named(tmp_path):
-    from bem_helpers import _place_skylights_on_roof
+    from bem.bem_helpers import _place_skylights_on_roof
 
     placed, notes = _place_skylights_on_roof(
         [_sky("SK-BIG", "sp-w", w=12.0, h=2.0)], RING, regions={"sp-w": WEST}

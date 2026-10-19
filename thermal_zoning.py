@@ -432,7 +432,7 @@ def appendix_g_split(model, depth_m: float = PERIMETER_DEPTH_M):
     on the opening's facade (or any of its exterior walls when the facade is
     unknown). The input model is not modified.
     """
-    from bem_helpers import _edge_spaces, _wall_edges
+    from bem.bem_helpers import _edge_spaces, _wall_edges
 
     blocks = perimeter_core(model.ring_m, depth_m=depth_m)
     res = split_spaces(blocks, model.spaces)
@@ -580,8 +580,8 @@ def appendix_g_split_levels(model, depth_m: float = PERIMETER_DEPTH_M):
     levels = sorted(getattr(model, "levels", None) or [], key=lambda lv: (lv.elevation_m, lv.id))
     if len(levels) <= 1:
         return appendix_g_split(model, depth_m=depth_m)
-    from bem_helpers import _edge_spaces, _wall_edges
-    from bem_multistorey import _facade, _signed_area
+    from bem.bem_helpers import _edge_spaces, _wall_edges
+    from bem.bem_multistorey import _facade, _signed_area
 
     spaces, air, zones, split_from, notes = [], [], [], {}, []
     by_parent: Dict[str, Dict[str, float]] = {}

@@ -267,7 +267,7 @@ def place_skylights_on_pieces(units, pieces, regions):
     ``roof``, ``centre`` (x, y, z), ``corners`` (4 x (x, y, z), CCW from
     above) and the plane ``frame`` (n, u, v).
     """
-    from bem_helpers import _place_skylights_on_roof
+    from bem.bem_helpers import _place_skylights_on_roof
 
     shaped = []
     for r, lp in pieces:

@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
 from building_model import Provenance, Space, SpaceOpening
 from datasets_adapter import (
     DrawingScale,
@@ -355,7 +355,7 @@ def test_export_version_is_allowed_by_its_own_patched_8_01_schema():
     import hashlib
     import re
 
-    from bem_export import SCHEMA_PATH
+    from bem.bem_export import SCHEMA_PATH
 
     s = SCHEMA_PATH.read_text(encoding="utf-8")
     assert SCHEMA_PATH.name == "GreenBuildingXML_Ver8.01.xsd"
@@ -377,7 +377,7 @@ def test_place_openings_on_wall_skips_openings_on_too_short_wall():
     # note instead of crashing the gbXML export.
     from types import SimpleNamespace
 
-    from bem_helpers import _place_openings_on_wall
+    from bem.bem_helpers import _place_openings_on_wall
 
     unit = SimpleNamespace(tag="W101", width_m=1.2, height_m=1.5, category="window")
     placements, notes = _place_openings_on_wall([unit], 0.1, 3.0)
@@ -399,7 +399,7 @@ def test_place_openings_on_wall_returns_early_for_empty_units_on_short_wall():
     # #1010: an opening-free wall shorter than 0.1 m still hit the scale
     # division (0 > usable is true when usable is negative). Early return,
     # no note, no placements.
-    from bem_helpers import _place_openings_on_wall
+    from bem.bem_helpers import _place_openings_on_wall
 
     placements, notes = _place_openings_on_wall([], 0.05, 3.0)
     assert placements == []

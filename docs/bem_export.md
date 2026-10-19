@@ -1,4 +1,4 @@
-# BEM Export — `bem_export.py`
+# BEM Export — `bem/bem_export.py`
 
 Exports Jesse-Vision takeoff results to formats that building energy
 modeling (BEM) software can import: **gbXML 8.01** (primary) and **IFC4**

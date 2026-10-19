@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import BEMModel, BEMSpace, validate_gbxml, write_gbxml
-from bem_layers import FILM_R_SI
+from bem.bem_export import BEMModel, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_layers import FILM_R_SI
 from building_model import BuildingModel, Construction, EnvelopeWall, Space
 from construction_library import (
     DEFAULT_SEMIEXT_WALL_ID,

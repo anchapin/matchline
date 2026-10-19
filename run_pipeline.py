@@ -30,7 +30,7 @@ from typing import Any
 
 import numpy as np
 
-from bem_export import (
+from bem.bem_export import (
     BEMModel,
     BEMOpeningUnit,
     BEMSpace,
@@ -40,7 +40,7 @@ from bem_export import (
     write_gbxml,
     write_ifc4,
 )
-from bem_helpers import _edge_facades
+from bem.bem_helpers import _edge_facades
 from construction_library import apply_construction_library
 from convention_report import build_convention_report
 from datasets_adapter import (
@@ -247,7 +247,7 @@ def model_from_linked_model(
 
         area_delta_pct = ((simp_area - orig_area) / orig_area * 100.0) if orig_area > 0 else 0.0
 
-    from bem_shading import shades_from_model
+    from bem.bem_shading import shades_from_model
 
     shades, shade_notes = shades_from_model(
         model, lambda p: (p[0], -p[1]), [sp.polygon_m for sp in bem_spaces]
@@ -823,7 +823,7 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
     )
     if len(model.levels) > 1:
         # several storeys (#639): levels, floors, ceilings and roofs
-        from bem_levels import add_levels
+        from bem.bem_levels import add_levels
 
         add_levels(model, bem_model)
     # scheduled zone airflow onto the gbXML thermal zones (#746)

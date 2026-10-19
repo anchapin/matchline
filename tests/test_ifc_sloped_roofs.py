@@ -10,8 +10,8 @@ pytest.importorskip("ifcopenshell")
 
 import ifcopenshell  # noqa: E402
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
-from bem_geometry import BEMRoof  # noqa: E402
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
+from bem.bem_geometry import BEMRoof  # noqa: E402
 from ifc_export import _export_ifc  # noqa: E402
 from ifc_import import import_ifc  # noqa: E402
 from roof_geometry import roof_plane  # noqa: E402

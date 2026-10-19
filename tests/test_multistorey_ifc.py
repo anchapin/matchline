@@ -10,7 +10,7 @@ import ifcopenshell  # noqa: E402
 import ifcopenshell.util.element as _El  # noqa: E402
 import ifcopenshell.util.placement as _Pl  # noqa: E402
 
-from bem_export import validate_ifc4, write_ifc4  # noqa: E402
+from bem.bem_export import validate_ifc4, write_ifc4  # noqa: E402
 from building_model import SpaceOpening  # noqa: E402
 from ifc_export import _bem_from_model  # noqa: E402
 from ifc_import import import_ifc  # noqa: E402

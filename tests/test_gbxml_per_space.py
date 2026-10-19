@@ -16,9 +16,9 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
-from bem_layers import FILM_R_SI, GYPSUM_13MM, layer_r_si
-from bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_layers import FILM_R_SI, GYPSUM_13MM, layer_r_si
+from bem.bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
 
 NS = {"g": "http://www.gbxml.org/schema"}
 RING = [(0.0, 0.0), (30.0, 0.0), (30.0, 12.0), (0.0, 12.0)]

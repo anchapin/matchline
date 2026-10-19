@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from typing import Callable, Iterable, List, Tuple
 
-from bem_geometry import BEMShade
+from bem.bem_geometry import BEMShade
 
 _PROBE_M = 0.05  # how far off the wall face to test inside/outside
 

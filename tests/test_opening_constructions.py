@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
 from building_model import BuildingModel, Construction, Space, SpaceOpening
 from construction_library import apply_construction_library
 from constructions import opening_constructions

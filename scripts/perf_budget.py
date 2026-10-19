@@ -177,8 +177,8 @@ def run_benchmark(workdir: Path) -> dict:
     high-water mark); the report's top-level ``peak_rss_mb`` is the final
     process peak, which is what the memory budget applies to.
     """
-    from bem_export import write_gbxml
-    from bem_ifc4 import write_ifc4
+    from bem.bem_export import write_gbxml
+    from bem.bem_ifc4 import write_ifc4
     from ifc_export import _bem_from_model
     from ifc_import import import_ifc
     from validate import export_gate, run_checks
@@ -233,7 +233,7 @@ def prepare_reference_dir(levels: int, grid: tuple[int, int], workdir: Path) -> 
 
     Returns the reference metadata for the report.
     """
-    from bem_ifc4 import write_ifc4
+    from bem.bem_ifc4 import write_ifc4
     from ifc_export import _bem_from_model
 
     model = build_reference_model(levels=levels, grid=grid)

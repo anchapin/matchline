@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from bem_ifc4 import write_ifc4
+from bem.bem_ifc4 import write_ifc4
 from building_model import Construction, Provenance
 from constructions import semi_exterior_walls
 from ifc_export import _bem_from_model

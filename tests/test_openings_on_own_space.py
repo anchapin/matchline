@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bem_export import write_gbxml
-from bem_helpers import _distribute_openings, _edge_spaces
+from bem.bem_export import write_gbxml
+from bem.bem_helpers import _distribute_openings, _edge_spaces
 from ifc_export import _bem_from_model
 from tests.model_factory import add_wall_constructions, make_clean_model
 
