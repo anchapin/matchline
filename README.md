@@ -126,8 +126,14 @@ The run leaves everything in `matchline-demo/`: the one-page trust report
 the trust report in your browser; pass `--no-open` to skip that. See
 `docs/cli.md` for the full command set.
 
+The full walkthrough (an IFC, a drawing set, the review loop, the
+exports) is in [docs/quickstart.md](docs/quickstart.md). Upgrading from
+0.x: see [docs/migrations.md](docs/migrations.md).
+
 The public API surface, what counts as a breaking change, and the
-deprecation policy are documented in `docs/api.md`.
+deprecation policy are documented in `docs/api.md`; every public symbol
+with its signature is in the generated
+[docs/api_reference.md](docs/api_reference.md).
 
 ## Validation
 

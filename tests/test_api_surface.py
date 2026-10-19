@@ -75,3 +75,14 @@ def test_run_pipeline_is_public_and_documented():
     gen = _gen()
     assert "run_pipeline" in gen.PUBLIC_MODULES
     assert (ROOT / "docs" / "pipeline.md").exists()
+
+
+def test_api_reference_doc_in_sync():
+    """docs/api_reference.md is generated from the same surface as the pins."""
+    doc = ROOT / "docs" / "api_reference.md"
+    assert doc.exists(), "docs/api_reference.md missing; run scripts/generate_api_surface.py"
+    gen = _gen()
+    assert doc.read_text() == gen.render_reference(gen.build()), (
+        "docs/api_reference.md drifted from the pinned surface; "
+        "regenerate with scripts/generate_api_surface.py"
+    )
