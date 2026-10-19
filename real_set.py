@@ -31,8 +31,9 @@ from typing import Dict, List, Optional
 
 from shapely.geometry import LineString, Point, Polygon
 
-import review.revisions as revisions
 import ingest.sheet_index as sheet_index
+import review.revisions as revisions
+
 SCHEMA = "matchline.set_report/1"
 DEFAULT_STOREY_HEIGHT_M = 3.0
 
@@ -159,12 +160,12 @@ def build_set_model(
     import matchlines
     from bem.bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
-    from ingest.drawing_scale import scale_sheets
     from geometry.geometry_simplify import footprint_from_regions
+    from ingest.drawing_scale import scale_sheets
     from ingest.pdf_ingest import ingest_pdf
     from ingest.pdf_schedules import schedules_for_sheets
-    from plan_walls import walls_for_sheets
     from ingest.sheet_index import index_sheets
+    from plan_walls import walls_for_sheets
 
     out = Path(out_dir)
     sheets_dir = out / "sheets"
@@ -876,8 +877,8 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     as ``(ElevationRead, Provenance)`` pairs, with the footprint box they share.
     """
     from building_model import Provenance, ReviewItem
-    from ingest.elevation_sheets import facade_from_title, read_elevation
     from grid_detect import detect_grids, plan_grid_m
+    from ingest.elevation_sheets import facade_from_title, read_elevation
 
     elev_files = [f for f in files if entries.get(f, {}).get("type") == "elevation"
                   or _val(entries.get(f, {}), "type") == "elevation"]  # fmt: skip

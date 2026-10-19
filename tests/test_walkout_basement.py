@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from shapely.geometry import Polygon
 
-from geometry.below_grade import boundary_types, wall_by_grade
 from building_model import SpaceOpening
+from geometry.below_grade import boundary_types, wall_by_grade
 from geometry.grade import Terrain
 from tests.test_multistorey_export import NS, _model, _surfaces, _write, _zs
 
