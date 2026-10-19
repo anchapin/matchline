@@ -1,0 +1,625 @@
+{
+ "model_version": "1.2",
+ "model": {
+  "name": "test_bldg",
+  "model_version": "1.2",
+  "auto_triage": null,
+  "levels": [
+   {
+    "id": "L1",
+    "name": "Level 1",
+    "elevation_z_m": 0.0,
+    "wall_height_m": 3.0,
+    "above_ground": null,
+    "above_ground_source": ""
+   }
+  ],
+  "spaces": {
+   "L1-101": {
+    "id": "L1-101",
+    "level_id": "L1",
+    "name": "OFFICE",
+    "number": "101",
+    "polygon_m": [
+     [
+      0,
+      0
+     ],
+     [
+      5,
+      0
+     ],
+     [
+      5,
+      6
+     ],
+     [
+      0,
+      6
+     ]
+    ],
+    "area_m2": 30.0,
+    "volume_m3": 90.0,
+    "openings": [
+     {
+      "id": "south-W1",
+      "tag": "A",
+      "category": "window",
+      "width_m": 1.5,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "head_m": 2.1,
+      "host_facade": "south",
+      "host_interval_m": [
+       1.0,
+       2.5
+      ],
+      "s_center_m": 1.75,
+      "area_m2": 1.8,
+      "provenance": {
+       "sheet_id": "elev_A201",
+       "revision": 1,
+       "method": "grid_registration",
+       "confidence": 0.95,
+       "bbox": null,
+       "note": ""
+      },
+      "needs_review": true,
+      "history": [],
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "plan_center_m": null,
+      "source_provenance": [],
+      "adjacent_space_id": null,
+      "construction_id": ""
+     },
+     {
+      "id": "south-W2",
+      "tag": "A",
+      "category": "window",
+      "width_m": 1.5,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "head_m": 2.1,
+      "host_facade": "south",
+      "host_interval_m": [
+       3.0,
+       4.5
+      ],
+      "s_center_m": 3.75,
+      "area_m2": 1.8,
+      "provenance": {
+       "sheet_id": "elev_A201",
+       "revision": 1,
+       "method": "grid_registration",
+       "confidence": 0.95,
+       "bbox": null,
+       "note": ""
+      },
+      "needs_review": true,
+      "history": [],
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "plan_center_m": null,
+      "source_provenance": [],
+      "adjacent_space_id": null,
+      "construction_id": ""
+     }
+    ],
+    "lighting": {
+     "fixtures": [
+      {
+       "id": "F1",
+       "tag": "T84",
+       "fixture_class": "Troffer 2x4",
+       "x_m": 1.0,
+       "y_m": 3.0,
+       "watts": 64.0,
+       "provenance": {
+        "sheet_id": "light_E101",
+        "revision": 1,
+        "method": "point_in_polygon",
+        "confidence": 0.95,
+        "bbox": null,
+        "note": ""
+       }
+      },
+      {
+       "id": "F2",
+       "tag": "T84",
+       "fixture_class": "Troffer 2x4",
+       "x_m": 3.0,
+       "y_m": 3.0,
+       "watts": 64.0,
+       "provenance": {
+        "sheet_id": "light_E101",
+        "revision": 1,
+        "method": "point_in_polygon",
+        "confidence": 0.95,
+        "bbox": null,
+        "note": ""
+       }
+      }
+     ],
+     "total_w": 128.0,
+     "lpd_w_m2": 4.266666666666667,
+     "lpd_w_ft2": 0.3963866876008386,
+     "provenance": {
+      "sheet_id": "light_E101",
+      "revision": 1,
+      "method": "schedule_join",
+      "confidence": 0.95,
+      "bbox": null,
+      "note": ""
+     },
+     "unmatched_tags": []
+    },
+    "hvac": {
+     "zone_ids": [
+      "L1-Z1"
+     ],
+     "diffusers": [
+      {
+       "id": "D1",
+       "type": "diffuser",
+       "x_m": 2.5,
+       "y_m": 3.0,
+       "tag": "D1",
+       "provenance": {
+        "sheet_id": "mech_M101",
+        "revision": 1,
+        "method": "symbol_detection",
+        "confidence": 0.9,
+        "bbox": null,
+        "note": ""
+       },
+       "history": []
+      }
+     ],
+     "sensors": [
+      {
+       "id": "T1",
+       "type": "sensor",
+       "x_m": 1.0,
+       "y_m": 1.0,
+       "tag": "T1",
+       "provenance": {
+        "sheet_id": "mech_M101",
+        "revision": 1,
+        "method": "symbol_detection",
+        "confidence": 0.9,
+        "bbox": null,
+        "note": ""
+       },
+       "history": []
+      }
+     ],
+     "terminal_units": [
+      {
+       "id": "VAV-1",
+       "type": "vav",
+       "x_m": 2.5,
+       "y_m": 5.0,
+       "tag": "VAV-1",
+       "provenance": {
+        "sheet_id": "mech_M101",
+        "revision": 1,
+        "method": "symbol_detection",
+        "confidence": 0.9,
+        "bbox": null,
+        "note": ""
+       },
+       "history": []
+      }
+     ],
+     "provenance": {
+      "sheet_id": "mech_M101",
+      "revision": 1,
+      "method": "duct_tracing",
+      "confidence": 0.9,
+      "bbox": null,
+      "note": ""
+     }
+    },
+    "use": {
+     "space_type": "",
+     "people_per_m2": null,
+     "equipment_w_m2": null,
+     "lighting_schedule": "",
+     "occupancy_schedule": "",
+     "equipment_schedule": "",
+     "activity_w_per_person": null,
+     "provenance": null
+    },
+    "daylight": {
+     "primary": [],
+     "secondary": [],
+     "params_note": "",
+     "provenance": null,
+     "toplit": [],
+     "toplit_m2": 0.0,
+     "unplaced_skylights": []
+    },
+    "core_provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "test",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "OFFICE 101"
+    },
+    "label_confidence": 1.0,
+    "poly_type": "room",
+    "poly_type_confidence": null,
+    "is_vestibule": false,
+    "wall_u_value_w_m2k": null,
+    "floor_finishes": [],
+    "ceiling_height_m": null,
+    "plenum_depth_m": null,
+    "height_m": null,
+    "merged_from": [],
+    "conditioning": null,
+    "history": []
+   },
+   "L1-102": {
+    "id": "L1-102",
+    "level_id": "L1",
+    "name": "CONF",
+    "number": "102",
+    "polygon_m": [
+     [
+      5,
+      0
+     ],
+     [
+      10,
+      0
+     ],
+     [
+      10,
+      6
+     ],
+     [
+      5,
+      6
+     ]
+    ],
+    "area_m2": 30.0,
+    "volume_m3": 90.0,
+    "openings": [],
+    "lighting": {
+     "fixtures": [
+      {
+       "id": "F3",
+       "tag": "T84",
+       "fixture_class": "Troffer 2x4",
+       "x_m": 7.5,
+       "y_m": 3.0,
+       "watts": 64.0,
+       "provenance": {
+        "sheet_id": "light_E101",
+        "revision": 1,
+        "method": "point_in_polygon",
+        "confidence": 0.95,
+        "bbox": null,
+        "note": ""
+       }
+      }
+     ],
+     "total_w": 64.0,
+     "lpd_w_m2": 2.1333333333333333,
+     "lpd_w_ft2": 0.1981933438004193,
+     "provenance": {
+      "sheet_id": "light_E101",
+      "revision": 1,
+      "method": "schedule_join",
+      "confidence": 0.95,
+      "bbox": null,
+      "note": ""
+     },
+     "unmatched_tags": []
+    },
+    "hvac": {
+     "zone_ids": [],
+     "diffusers": [],
+     "sensors": [],
+     "terminal_units": [],
+     "provenance": null
+    },
+    "use": {
+     "space_type": "",
+     "people_per_m2": null,
+     "equipment_w_m2": null,
+     "lighting_schedule": "",
+     "occupancy_schedule": "",
+     "equipment_schedule": "",
+     "activity_w_per_person": null,
+     "provenance": null
+    },
+    "daylight": {
+     "primary": [],
+     "secondary": [],
+     "params_note": "",
+     "provenance": null,
+     "toplit": [],
+     "toplit_m2": 0.0,
+     "unplaced_skylights": []
+    },
+    "core_provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "test",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "CONF 102"
+    },
+    "label_confidence": 1.0,
+    "poly_type": "room",
+    "poly_type_confidence": null,
+    "is_vestibule": false,
+    "wall_u_value_w_m2k": null,
+    "floor_finishes": [],
+    "ceiling_height_m": null,
+    "plenum_depth_m": null,
+    "height_m": null,
+    "merged_from": [],
+    "conditioning": null,
+    "history": []
+   }
+  },
+  "zones": {
+   "L1-Z1": {
+    "id": "L1-Z1",
+    "level_id": "L1",
+    "space_ids": [
+     "L1-101"
+    ],
+    "terminal_unit": {
+     "id": "VAV-1",
+     "type": "vav",
+     "x_m": 2.5,
+     "y_m": 5.0,
+     "tag": "VAV-1",
+     "provenance": {
+      "sheet_id": "mech_M101",
+      "revision": 1,
+      "method": "symbol_detection",
+      "confidence": 0.9,
+      "bbox": null,
+      "note": ""
+     },
+     "history": []
+    },
+    "diffusers": [
+     {
+      "id": "D1",
+      "type": "diffuser",
+      "x_m": 2.5,
+      "y_m": 3.0,
+      "tag": "D1",
+      "provenance": {
+       "sheet_id": "mech_M101",
+       "revision": 1,
+       "method": "symbol_detection",
+       "confidence": 0.9,
+       "bbox": null,
+       "note": ""
+      },
+      "history": []
+     }
+    ],
+    "sensors": [
+     {
+      "id": "T1",
+      "type": "sensor",
+      "x_m": 1.0,
+      "y_m": 1.0,
+      "tag": "T1",
+      "provenance": {
+       "sheet_id": "mech_M101",
+       "revision": 1,
+       "method": "symbol_detection",
+       "confidence": 0.9,
+       "bbox": null,
+       "note": ""
+      },
+      "history": []
+     }
+    ],
+    "duct_length_m": 12.0,
+    "design_airflow_max_m3s": null,
+    "design_airflow_min_m3s": null,
+    "air_loop": "",
+    "provenance": {
+     "sheet_id": "mech_M101",
+     "revision": 1,
+     "method": "duct_tracing",
+     "confidence": 0.9,
+     "bbox": null,
+     "note": ""
+    },
+    "history": []
+   }
+  },
+  "air_loops": [],
+  "envelope": [
+   {
+    "id": "L1-EW1",
+    "facade": "south",
+    "from_m": [
+     0,
+     6
+    ],
+    "to_m": [
+     10,
+     6
+    ],
+    "length_m": 10.0,
+    "height_m": 3.0,
+    "area_m2": 30.0,
+    "provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "arch_plan_parse",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": ""
+    },
+    "construction_id": "",
+    "space_id": ""
+   },
+   {
+    "id": "L1-EW2",
+    "facade": "north",
+    "from_m": [
+     10,
+     0
+    ],
+    "to_m": [
+     0,
+     0
+    ],
+    "length_m": 10.0,
+    "height_m": 3.0,
+    "area_m2": 30.0,
+    "provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "arch_plan_parse",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": ""
+    },
+    "construction_id": "",
+    "space_id": ""
+   },
+   {
+    "id": "L1-EW3",
+    "facade": "east",
+    "from_m": [
+     10,
+     0
+    ],
+    "to_m": [
+     10,
+     6
+    ],
+    "length_m": 6.0,
+    "height_m": 3.0,
+    "area_m2": 18.0,
+    "provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "arch_plan_parse",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": ""
+    },
+    "construction_id": "",
+    "space_id": ""
+   },
+   {
+    "id": "L1-EW4",
+    "facade": "west",
+    "from_m": [
+     0,
+     6
+    ],
+    "to_m": [
+     0,
+     0
+    ],
+    "length_m": 6.0,
+    "height_m": 3.0,
+    "area_m2": 18.0,
+    "provenance": {
+     "sheet_id": "arch_A101",
+     "revision": 1,
+     "method": "arch_plan_parse",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": ""
+    },
+    "construction_id": "",
+    "space_id": ""
+   }
+  ],
+  "constructions": {},
+  "roof_construction_id": "",
+  "slab_construction_id": "",
+  "slab_heated_by": "",
+  "slab_heated_spaces": [],
+  "climate_zone": "",
+  "building_category": "",
+  "shading": [],
+  "space_adjacencies": [],
+  "semi_exterior": [],
+  "roof_planes": [],
+  "source_roof_planes": [],
+  "site_latitude_deg": null,
+  "terrain": [],
+  "bim_elements": [],
+  "schedules": {
+   "A": {
+    "tag": "A",
+    "category": "window",
+    "width_m": 1.5,
+    "height_m": 1.2,
+    "note": "",
+    "watts": null,
+    "description": "",
+    "lamp_type": ""
+   },
+   "T84": {
+    "tag": "T84",
+    "category": "lighting",
+    "width_m": null,
+    "height_m": null,
+    "note": "",
+    "watts": 64.0,
+    "description": "2x4 troffer",
+    "lamp_type": "LED"
+   }
+  },
+  "revision_log": [
+   {
+    "seq": 1,
+    "sheet_id": "arch_A101",
+    "revision": 1,
+    "action": "ingest",
+    "note": "2 spaces from arch plan"
+   },
+   {
+    "seq": 2,
+    "sheet_id": "light_E101",
+    "revision": 1,
+    "action": "ingest",
+    "note": "3 fixtures assigned"
+   },
+   {
+    "seq": 3,
+    "sheet_id": "mech_M101",
+    "revision": 1,
+    "action": "ingest",
+    "note": "1 zone attached"
+   },
+   {
+    "seq": 4,
+    "sheet_id": "elev_A201",
+    "revision": 1,
+    "action": "ingest",
+    "note": "2 windows linked via grid"
+   }
+  ],
+  "review_queue": [],
+  "symbol_linkages": [],
+  "opening_attachment_summary": {
+   "no_envelope_edge": 0,
+   "ambiguous_tie": 0,
+   "no_ref_direction": 0,
+   "outside_spaces": 0,
+   "ref_direction_fallback": 0,
+   "adjacency_ambiguous": 0
+  }
+ }
+}

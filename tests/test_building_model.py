@@ -232,3 +232,63 @@ def test_model_version_1_0_payload_migrates_source_provenance():
     op = restored.spaces["L1-101"].openings[0]
     assert [p.sheet_id for p in op.source_provenance] == ["elev_A201"]
     assert "source_provenance" not in old["model"]["spaces"]["L1-101"]["openings"][0]
+
+
+def _reversioned_dict(d: dict, version: str) -> dict:
+    """Copy a to_dict payload stamped with an arbitrary wrapper version."""
+    import copy
+    import json
+
+    out = copy.deepcopy(d)
+    out["model_version"] = version
+    out["model"]["model_version"] = version
+    return json.loads(json.dumps(out))
+
+
+def test_model_version_newer_than_current_is_rejected():
+    """Reader policy: a payload from a newer build is rejected, not migrated."""
+    import pytest
+
+    from building_model import BuildingModel
+
+    d = _reversioned_dict(BuildingModel(name="newer").to_dict(), "9.9")
+    with pytest.raises(ValueError, match="unsupported model_version"):
+        BuildingModel.from_dict(d)
+
+
+def test_model_version_malformed_is_rejected():
+    """A version string that is not a version is rejected with remediation."""
+    import pytest
+
+    from building_model import BuildingModel
+
+    d = _reversioned_dict(BuildingModel(name="odd").to_dict(), "banana")
+    with pytest.raises(ValueError, match="unsupported model_version"):
+        BuildingModel.from_dict(d)
+
+
+def test_model_version_1_1_payload_loads_with_adjacency_default():
+    """A 1.1 payload loads: adjacent_space_id (added in 1.2) falls back to None."""
+    from building_model import MODEL_VERSION, BuildingModel, Level, Space, SpaceOpening
+
+    m = BuildingModel(name="one-one")
+    m.levels.append(Level(id="L1", name="L1"))
+    sp = Space(id="L1-101", level_id="L1", polygon_m=[[0, 0], [5, 0], [5, 4], [0, 4]])
+    sp.openings.append(
+        SpaceOpening(
+            id="W1",
+            tag="W1",
+            category="window",
+            width_m=1.0,
+            height_m=1.0,
+            adjacent_space_id="L1-102",
+        )
+    )
+    m.spaces[sp.id] = sp
+    d = _reversioned_dict(m.to_dict(), "1.1")
+    for s in d["model"]["spaces"].values():
+        for o in s["openings"]:
+            o.pop("adjacent_space_id")
+    restored = BuildingModel.from_dict(d)
+    assert restored.model_version == MODEL_VERSION
+    assert restored.spaces["L1-101"].openings[0].adjacent_space_id is None

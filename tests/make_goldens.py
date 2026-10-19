@@ -22,6 +22,10 @@ Golden files, each rebuilt from a pinned fixture:
 - ``schedule_score.json``: ``scripts.schedule_score.score_schedule_rows``
   over pinned truth/prediction rows covering a full match, a crossed row,
   a missing tag, an extra tag and a duplicate tag.
+- ``model.json``: the canonical model's versioned JSON (the
+  ``model_version`` wrapper) for the pinned clean model.
+- ``telemetry.json``: a deterministic ``TelemetryEmitter`` payload,
+  pinned through the spec validator (``spec_version`` included).
 
 Volatility whitelist (anything that depends on when or where the package
 was built is scrubbed to ``@SCRUBBED`` before hashing, so a rerun in any
@@ -185,6 +189,41 @@ def golden_review_decisions() -> bytes:
         return (d / "decisions.json").read_bytes()
 
 
+def golden_model_json() -> bytes:
+    """The canonical model's versioned JSON for the pinned clean model.
+
+    Pins the ``model_version`` wrapper and the full field shape
+    (provenance and revision log included); timestamp-free by construction.
+    """
+    return (make_clean_model().to_json() + "\n").encode()
+
+
+def golden_telemetry() -> bytes:
+    """A deterministic telemetry payload pinned through the spec validator.
+
+    The recorded sequence is fixed, so the binned counts are byte-stable;
+    the ``spec_version`` field pins the telemetry spec itself.
+    """
+    from telemetry_emitter import TelemetryEmitter
+
+    emitter = TelemetryEmitter(consent=True)
+    for value in (0.0, 0.05, 0.25, 0.55, 0.75, 0.95, 1.0):
+        emitter.record_confidence("wall", value)
+    emitter.record_confidence("door", 0.5)
+    emitter.record_correction("swap_door_window")
+    emitter.record_correction("swap_door_window")
+    emitter.record_correction("rescale")
+    for _ in range(3):
+        emitter.record_check_failure("u_value_window")
+    emitter.record_check_failure("orientation_rule")
+    emitter.record_binned("wall_area", "0-500", 3)
+    emitter.record_binned("wall_area", "500-1000")
+    emitter.record_stage("takeoff", "ok", seconds=4.25)
+    emitter.record_stage("takeoff", "error", seconds=0.75)
+    emitter.record_stage("bem", "ok", seconds=10.0)
+    return (json.dumps(emitter.build_payload(), indent=2) + "\n").encode()
+
+
 def golden_package_manifest() -> bytes:
     """The scrubbed manifest of a package built from a clean model."""
     import export_package
@@ -286,6 +325,8 @@ def main():
         "review_decisions.json": golden_review_decisions,
         "package_manifest.json": golden_package_manifest,
         "schedule_score.json": golden_schedule_score,
+        "model.json": golden_model_json,
+        "telemetry.json": golden_telemetry,
     }
     checksums: dict[str, str] = {}
     for name, build in builders.items():

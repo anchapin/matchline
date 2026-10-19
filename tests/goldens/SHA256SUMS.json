@@ -4,5 +4,7 @@
   "clean_model.gbxml": "5164b873925a921890f17ff5333bc2c791945fd5f09955d771f2af8d6bd6ef42",
   "review_decisions.json": "08f6954100ba0c55689abe1f571d76387b1a9185f1ef6795bbc1a1026700e763",
   "package_manifest.json": "c8aaa8d2a4b0055d047ec83903d9560090b6d8ea527a633e7a479b6cbfb37328",
-  "schedule_score.json": "1952e7b413662c967bab0a3be7915415b68c3089319640b6ac25f518f3aeae83"
+  "schedule_score.json": "1952e7b413662c967bab0a3be7915415b68c3089319640b6ac25f518f3aeae83",
+  "model.json": "65d5d01f67be203d08adfd6f39a4afdfe6618762dcbba1cb2a2f6a9aaf26bf1c",
+  "telemetry.json": "5d319b5fab2bb6d9d2e15880f3ca2972539cc1ad32a30a20c0616dd0b8425141"
 }

@@ -1151,16 +1151,37 @@ class BuildingModel:
         return cls.from_dict(json.loads(s))
 
 
+#: Every serialized model version this build can read. The reader policy
+#: (docs/schema_versioning.md): accept the current version as-is, accept an
+#: older version on this chain by migrating it forward, and reject anything
+#: else with a clear error instead of silently re-versioning a payload this
+#: build does not understand.
+_SUPPORTED_MODEL_VERSIONS = ("1.0", "1.1", MODEL_VERSION)
+
+
 def _migrate_model_dict(version: str, m: dict) -> dict:
     """Upgrade an older serialized model dict to the current MODEL_VERSION shape.
 
     1.0 -> 1.1: seed ``SpaceOpening.source_provenance`` with the single
     ``provenance`` record so single-sheet openings look the same whether
-    they were built in memory or loaded from an old file. Pure: returns a
-    new dict, never mutates the caller's payload.
+    they were built in memory or loaded from an old file (the seed also
+    covers 1.0's shape on later loads). 1.1 -> 1.2 added
+    ``SpaceOpening.adjacent_space_id`` with a default, so 1.1 payloads
+    need no data migration. Pure: returns a new dict, never mutates the
+    caller's payload. A version newer than this build, or a string that
+    is not a version, raises ValueError with remediation per
+    docs/schema_versioning.md.
     """
     if version == MODEL_VERSION:
         return m
+    if version not in _SUPPORTED_MODEL_VERSIONS:
+        supported = ", ".join(repr(v) for v in _SUPPORTED_MODEL_VERSIONS)
+        raise ValueError(
+            f"unsupported model_version {version!r}: this build reads "
+            f"{supported} and writes {MODEL_VERSION!r}. Re-export the model "
+            "with a current matchline, or upgrade matchline to read newer "
+            "payloads (docs/migrations.md)."
+        )
     import copy
 
     m = copy.deepcopy(m)
