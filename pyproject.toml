@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "matchline"
-version = "0.2.0"
+version = "0.2.1"
 description = "Deterministic, auditable extraction of building energy modeling (BEM) inputs from architectural drawings and BIM"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
@@ -45,7 +45,7 @@ ocr-tesseract = ["pytesseract"]
 # COBie workbook reader for mechanical schedules (#974); lazy import
 mech = ["openpyxl"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
+test = ["pytest", "pytest-cov", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
@@ -175,6 +175,42 @@ packages = [
     "ui",
     "validate",
     "review_classifier",
+]
+
+[tool.coverage.run]
+# #1137: measure the shipped surface (all 103 root py-modules plus the 8
+# packages the wheel ships). detector/ has its own lint-only gate and is
+# not shipped from this wheel; tests, scripts and docs are not package code.
+source = ["."]
+omit = [
+  "tests/*",
+  "detector/*",
+  "scripts/*",
+  "docs/*",
+  "build/*",
+  "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+# Informational for now (#1137): CI prints the percentage in the job
+# summary. Once the baseline number is known, set fail_under slightly
+# below it and raise it only intentionally.
+precision = 1
+show_missing = false
+
+[tool.mypy]
+# #1138: baseline type checking, deliberately scoped small. The module list
+# grows only intentionally, module by module, as code is annotated; the rest
+# of the tree stays out until then. follow_imports = "silent" means imported
+# repo modules are resolved but not checked, so widening the list is a
+# choice, never an accident.
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"
+files = [
+  "opening_identity.py",
+  "opening_attach.py",
+  "construction_library_prm_data.py",
 ]
 
 [tool.pytest.ini_options]

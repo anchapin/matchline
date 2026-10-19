@@ -525,6 +525,29 @@ def generate_sheet(seed: int, px_per_m: float = PX_PER_M):
         exp[cat] += a
         exp["counts"][s["tag"]] = exp["counts"].get(s["tag"], 0) + 1
 
+    # ---- ground-truth wall lines (#1113) ------------------------------------
+    # One entry per wall segment: shared edges are drawn twice above (once per
+    # adjoining room) but collapse here. A collinear run split across rooms
+    # keeps its own entry because its s_range differs. Geometry is in sheet
+    # pixels so the detector's wall-class converter needs no scale knowledge.
+    walls_px = []
+    seen_wall_segs = set()
+    for e in edges:
+        seg_key = (e["key"], tuple(e["s_range"]))
+        if seg_key in seen_wall_segs:
+            continue
+        seen_wall_segs.add(seg_key)
+        ax, ay = e["a"]
+        bx, by = e["b"]
+        walls_px.append(
+            {
+                "kind": e["kind"],
+                "a_px": [X(ax), Y(ay)],
+                "b_px": [X(bx), Y(by)],
+                "t_px": t_m_by_line[e["key"]] * S,
+            }
+        )
+
     gt = {
         "sheet_id": f"sheet_{seed:03d}" + (f"_s{int(S)}" if S != PX_PER_M else ""),
         "seed": seed,
@@ -532,6 +555,7 @@ def generate_sheet(seed: int, px_per_m: float = PX_PER_M):
         "sheet_size_px": [sheet_w, sheet_h],
         "footprint": "L" if len(rects) == 2 else "rect",
         "rooms": gt_rooms,
+        "walls": walls_px,
         "symbols": symbols,
         "labels": labels,
         "schedule": SCHEDULE,

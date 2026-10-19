@@ -62,6 +62,26 @@ nohup python3 train.py --data configs/cubicasa.yaml --epochs 25 \
 
 Runs go to `~/workspace/datasets/detector_runs/` (never committed).
 
+`train_scratch.py` — the from-scratch baseline trainer (#743) — also takes an
+optional auxiliary wall-class head (#1113):
+
+```bash
+python3 detector/train_scratch.py --data <ds> --epochs 50 --wall-head 2
+```
+
+`--wall-head 2` adds a stride-8 head predicting coarse wall TYPE per grid cell
+on wall-covered cells: 0 = partition (interior), 1 = structural (exterior).
+Supervision comes from the generator: `synth.sheets` writes a `walls` section
+into gt.json, `detector.convert_synth` emits `labels/<stem>.wallcls.txt` rows
+(cls cx cy w h, own namespace), and the dataset rasterizes them to the grid
+(structural wins overlaps). The term is CE with `--wall-cls-weight` (0.5) on
+wall-covered cells only; it shares the backbone and regularizes early
+features. Deliberately coarse: physical width regression off raster pixels is
+out of scope (#1113). Old checkpoints eval fine (`--eval-only` infers the
+head from state-dict keys); old datasets without `.wallcls.txt` degrade to
+zero wall supervision. Consumers aggregate a per-cell map to a per-segment
+class with `detector/wall_head.py` (`segment_cells` + `majority_wall_class`).
+
 ## Inference (SAHI tiling)
 
 `sahi_infer.py` — sliding window (default 1024px tiles, 20% overlap) + NMS

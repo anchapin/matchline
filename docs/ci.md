@@ -14,7 +14,7 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (3552), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3708), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**
@@ -38,6 +38,10 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
 - **Lint:** `ruff check .`
 - **Format:** `ruff format --check .`
 - **Pytest:** `python -m pytest tests/ -q`
+- **Type checking:** `mypy` on a deliberately small module baseline (pyproject `[tool.mypy]`); imported repo modules are resolved but not checked, and the list grows module by module only intentionally (#1138). CI pins `mypy==2.4.0`; match it locally when widening the list.
+- **Coverage (informational):** the pytest run measures the shipped surface (`--cov`, config in pyproject `[tool.coverage]`) and posts the percentage plus per-module lines to the job summary. No gate yet (#1137): once the baseline is known, set `fail_under` slightly below it and raise only intentionally.
+- **Dependency security:** `pip-audit --strict` against the resolved runtime dependency set (job `pip-audit`). Fails on known CVEs in runtime deps; test-only tooling is out of its scope by design (#1139). A finding that cannot be fixed yet gets an `--ignore <id>` pin with the reason and the upgrade that clears it.
+- **Python pin:** all workflows (ci.yml jobs, release.yml, archcad-smoke.yml) run the same interpreter (3.12). A Python version change moves every workflow together; the archcad-smoke pin is not an independent knob (#1140).
 
 All gates must be green before merging to `develop`.
 

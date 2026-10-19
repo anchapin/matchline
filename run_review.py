@@ -333,6 +333,7 @@ def _decide(
     item_id: str,
     action: str,
     corrections_path=None,
+    emitter=None,
 ) -> tuple[BuildingModel, str]:
     """Same state and revision log entry as the HTML review report (#749)."""
     from review_report import decide
@@ -341,6 +342,9 @@ def _decide(
     changed = decide(model, item_id, action, corrections_path=corrections_path)
     if changed:
         _log_review_override(model, item_id, action, corrections_path)
+        if emitter is not None:
+            # the same 1:1 vocabulary the feedback log uses (#1126)
+            emitter.record_correction({"confirm": "accept", "reject": "reject"}[action])
     return (
         model,
         f"{done} {item_id}."
@@ -350,17 +354,39 @@ def _decide(
 
 
 def _confirm_item(
-    model: BuildingModel, item_id: str, corrections_path=None
+    model: BuildingModel, item_id: str, corrections_path=None, emitter=None
 ) -> tuple[BuildingModel, str]:
     """Mark a review item as confirmed. Returns (updated_model, message)."""
-    return _decide(model, item_id, "confirm", corrections_path=corrections_path)
+    return _decide(model, item_id, "confirm", corrections_path=corrections_path, emitter=emitter)
 
 
 def _reject_item(
-    model: BuildingModel, item_id: str, corrections_path=None
+    model: BuildingModel, item_id: str, corrections_path=None, emitter=None
 ) -> tuple[BuildingModel, str]:
     """Mark a review item as rejected. Returns (updated_model, message)."""
-    return _decide(model, item_id, "reject", corrections_path=corrections_path)
+    return _decide(model, item_id, "reject", corrections_path=corrections_path, emitter=emitter)
+
+
+def _write_review_telemetry(emitter, dest) -> None:
+    """Write the consent-gated telemetry payload beside the run's outputs (#1126).
+
+    The payload lands next to feedback.jsonl (the model's directory) and is
+    written only when the reviewer granted consent; emission failure never
+    blocks the review.
+    """
+    if not emitter.enabled:
+        return
+    from telemetry_emitter import EmitterBuildError
+
+    try:
+        payload = emitter.build_payload()
+    except EmitterBuildError as e:
+        print(f"warning: telemetry payload skipped: {e}", file=sys.stderr)
+        return
+    if payload is not None:
+        import json
+
+        (pathlib.Path(dest) / "telemetry.json").write_text(json.dumps(payload, indent=2) + "\n")
 
 
 def _summarize_validation(report) -> str:
@@ -386,6 +412,12 @@ def main(args: argparse.Namespace | None = None) -> None:
     if not model_path.exists():
         print(f"Error: model file not found: {model_path}", file=sys.stderr)
         sys.exit(1)
+
+    from telemetry_emitter import TelemetryEmitter
+
+    # consent comes from the --telemetry flag only; the review session has no
+    # config plumbing, and telemetry_local_only has nothing to win over here
+    emitter = TelemetryEmitter(consent=bool(getattr(args, "telemetry", False)))
 
     raw = model_path.read_text()
     model = BuildingModel.from_json(raw)
@@ -486,9 +518,13 @@ def main(args: argparse.Namespace | None = None) -> None:
         try:
             for item in matched:
                 if is_confirm:
-                    model, msg = _confirm_item(model, item.id, corrections_path=model_path)
+                    model, msg = _confirm_item(
+                        model, item.id, corrections_path=model_path, emitter=emitter
+                    )
                 else:
-                    model, msg = _reject_item(model, item.id, corrections_path=model_path)
+                    model, msg = _reject_item(
+                        model, item.id, corrections_path=model_path, emitter=emitter
+                    )
                 changed += 1
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
@@ -498,6 +534,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         action = "confirmed" if is_confirm else "rejected"
         print(f"Bulk {action}: {len(matched)} item(s) matched the filters, {changed} changed.")
         print(_summarize_validation(run_checks(model)))
+        _write_review_telemetry(emitter, model_path.parent)
         return
 
     # --- Confirm or Reject ---
@@ -514,10 +551,14 @@ def main(args: argparse.Namespace | None = None) -> None:
         try:
             if is_confirm:
                 assert args.confirm is not None
-                model, msg = _confirm_item(model, args.confirm, corrections_path=model_path)
+                model, msg = _confirm_item(
+                    model, args.confirm, corrections_path=model_path, emitter=emitter
+                )
             else:
                 assert args.reject is not None
-                model, msg = _reject_item(model, args.reject, corrections_path=model_path)
+                model, msg = _reject_item(
+                    model, args.reject, corrections_path=model_path, emitter=emitter
+                )
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -530,6 +571,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         # Re-run validation
         report = run_checks(model)
         print(_summarize_validation(report))
+        _write_review_telemetry(emitter, model_path.parent)
         return
 
     # --- Correction history (#997): undo, revert-to-automatic, listing ---
@@ -691,6 +733,13 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--report",
         metavar="DIR",
         help="Write the HTML review report to DIR/review (model, decisions template, page)",
+    )
+    parser.add_argument(
+        "--telemetry",
+        action="store_true",
+        help="grant consent for this review session's anonymous telemetry payload (#1003); "
+        "off by default. The payload lands beside the model as telemetry.json; "
+        "nothing is transmitted",
     )
     parser.add_argument(
         "--undo",

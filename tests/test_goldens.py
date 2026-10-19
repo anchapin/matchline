@@ -69,3 +69,63 @@ def test_golden_defective():
     break_fixture_no_schedule_flagged(m)
     report = run_checks(m)
     assert report.to_dict() == _load("defective_report.json")
+
+
+# --- artifact goldens (#1127) -------------------------------------------------
+# Each artifact golden is rebuilt from its pinned fixture and compared
+# byte-for-byte; the volatility whitelist in tests/make_goldens.py scrubs
+# legitimately timestamped fields before hashing.
+
+
+def test_golden_gbxml():
+    from tests.make_goldens import golden_gbxml
+
+    _verify_golden("clean_model.gbxml")
+    assert golden_gbxml() == (GOLDEN_DIR / "clean_model.gbxml").read_bytes()
+
+
+def test_golden_review_decisions():
+    from tests.make_goldens import golden_review_decisions
+
+    _verify_golden("review_decisions.json")
+    assert golden_review_decisions() == (GOLDEN_DIR / "review_decisions.json").read_bytes()
+
+
+def test_golden_schedule_score():
+    from tests.make_goldens import golden_schedule_score
+
+    _verify_golden("schedule_score.json")
+    assert golden_schedule_score() == (GOLDEN_DIR / "schedule_score.json").read_bytes()
+
+
+def test_golden_package_manifest():
+    """Manifest golden: byte-stable after scrubbing, digests verify on disk."""
+    import json as _json
+    import tempfile
+    from pathlib import Path as _Path
+
+    from tests.make_goldens import golden_package_manifest, scrub_package
+    from tests.make_goldens import make_clean_model as _mcm
+    from tests.make_goldens import run_checks as _rc
+
+    _verify_golden("package_manifest.json")
+    assert golden_package_manifest() == (GOLDEN_DIR / "package_manifest.json").read_bytes()
+    # the scrubber must actually fire: the real build stamps generated_at
+    with tempfile.TemporaryDirectory() as td:
+        out_dir = _Path(td)
+        model = _mcm()
+        import export_package
+
+        export_package.build_package(out_dir, model, _rc(model), {}, [], pdf=False)
+        pkg = out_dir / "package"
+        raw = (pkg / "trust_report.json").read_text()
+        assert "@SCRUBBED" not in raw, "scrub token leaked into the raw build"
+        scrub_package(pkg)
+        assert "@SCRUBBED" in (pkg / "trust_report.json").read_text(), "scrubber matched nothing"
+        man = _json.loads((pkg / "manifest.json").read_text())
+        for name, digest in man["files"].items():
+            f = pkg / name
+            assert f.exists(), f"manifest lists missing file {name}"
+            import hashlib
+
+            assert hashlib.sha256(f.read_bytes()).hexdigest() == digest, f"digest drift on {name}"

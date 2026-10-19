@@ -30,6 +30,7 @@ from train_scratch import (  # noqa: E402
     ScratchLoss,
     ScratchNet,
     YoloDataset,
+    build_parser,
     collate,
     decode,
     evaluate,
@@ -123,6 +124,19 @@ def _make_tiny_dataset(tmp_path, n_train=4, n_val=2, img_px=64):
     return root
 
 
+def _train_args(data, out, **over):
+    """Seed a train() args namespace from the CLI parser defaults (#1151).
+
+    Every field train() reads is parser-defined, so seeding from
+    build_parser() keeps these tests from drifting red each time the CLI
+    gains an arg; overrides touch only what the test cares about.
+    """
+    ns = build_parser().parse_args(["--data", str(data), "--out", str(out)])
+    for k, v in over.items():
+        setattr(ns, k, v)
+    return ns
+
+
 def test_overfit_tiny_set_recall_one(tmp_path):
     """The wiring proof: a tiny net trained on 4 images detects every box."""
     root = _make_tiny_dataset(tmp_path)
@@ -157,20 +171,22 @@ def test_train_artifacts_contract(tmp_path):
     """train() writes ckpt.pt + metrics.json under a caller-set out dir."""
     root = _make_tiny_dataset(tmp_path)
 
-    class A:
-        data = str(root)
-        epochs = 2
-        imgsz = 128
-        batch = 2
-        width = 8
-        lr = 2e-3
-        workers = 0
-        device = "cpu"
-        seed = 0
-        name = "t"
-        out = str(tmp_path / "run")
-
-    out_dir = Path(train(A))
+    out_dir = Path(
+        train(
+            _train_args(
+                root,
+                tmp_path / "run",
+                epochs=2,
+                imgsz=128,
+                batch=2,
+                width=8,
+                lr=2e-3,
+                workers=0,
+                device="cpu",
+                name="t",
+            )
+        )
+    )
     assert (out_dir / "ckpt.pt").exists()
     m = json.loads((out_dir / "metrics.json").read_text())
     assert {"best_mean_f1", "epochs", "history", "final_per_class"} <= set(m)
@@ -181,7 +197,22 @@ def test_train_artifacts_contract(tmp_path):
 
 def test_eval_only_roundtrip(tmp_path, monkeypatch):
     root = _make_tiny_dataset(tmp_path)
-    out_dir = Path(train(_Args(str(root), str(tmp_path / "run2"))))
+    out_dir = Path(
+        train(
+            _train_args(
+                root,
+                tmp_path / "run2",
+                epochs=1,
+                imgsz=128,
+                batch=2,
+                width=8,
+                lr=2e-3,
+                workers=0,
+                device="cpu",
+                name="t",
+            )
+        )
+    )
     # eval-only via main()
     import train_scratch
 
@@ -201,20 +232,3 @@ def test_eval_only_roundtrip(tmp_path, monkeypatch):
     )
     train_scratch.main()
     assert (out_dir / "eval_metrics.json").exists()
-
-
-class _Args:
-    def __init__(self, data, out):
-        self.data = data
-        self.epochs = 1
-        self.imgsz = 128
-        self.batch = 2
-        self.width = 8
-        self.lr = 2e-3
-        self.workers = 0
-        self.device = "cpu"
-        self.seed = 0
-        self.name = "t"
-        self.out = out
-        self.eval_only = False
-        self.ckpt = None

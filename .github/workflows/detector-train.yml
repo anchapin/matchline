@@ -71,6 +71,22 @@ on:
         description: path to an existing ckpt.pt; skips dataset prep and training, runs train_scratch --eval-only (val F1 + AP50, #1119) and uploads eval_metrics.json
         required: false
         default: ""
+      train_env_extra:
+        description: extra env assignments for the Train step, space-separated KEY=VALUE (e.g. HIP_LAUNCH_BLOCKING=1 AMD_SERIALIZE_KERNEL=3 to localize a faulting kernel, #1116)
+        required: false
+        default: ""
+      checkpoint_every:
+        description: save resumable train state (ckpt_last.pt) every N epochs (0 = off; #1116 crash recovery)
+        required: false
+        default: "0"
+      resume_from:
+        description: dir holding ckpt_last.pt from an interrupted run; resumes training into this run's out dir (#1116)
+        required: false
+        default: ""
+      wall_head:
+        description: auxiliary wall-class head classes (0 = off, 2 = partition vs structural; needs a dataset converted by #1113 convert_synth so .wallcls.txt labels exist) (#1113)
+        required: false
+        default: "0"
       conf:
         description: provider detection confidence (lower it on a dump run to sweep thresholds offline)
         required: true
@@ -154,16 +170,28 @@ jobs:
       - name: Train
         if: github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         run: |
+          # Optional fault-localization env (KEY=VALUE pairs, #1116)
+          if [ -n "${{ github.event.inputs.train_env_extra }}" ]; then
+            # shellcheck disable=SC2086
+            export ${{ github.event.inputs.train_env_extra }}
+          fi
+          RESUME_ARGS=""
+          if [ -n "${{ github.event.inputs.resume_from }}" ]; then
+            RESUME_ARGS="--resume ${{ github.event.inputs.resume_from }}"
+          fi
           "$HOME/workspace/venvs/det-rocm/bin/python" detector/train_scratch.py \
             --data "${{ github.event.inputs.data }}" \
+            --checkpoint-every "${{ github.event.inputs.checkpoint_every }}" \
             --imgsz "${{ github.event.inputs.imgsz }}" \
             --epochs "${{ github.event.inputs.epochs }}" \
             --batch "${{ github.event.inputs.batch }}" \
             --width "${{ github.event.inputs.width }}" \
+            --wall-head "${{ github.event.inputs.wall_head }}" \
             --seed "${{ github.event.inputs.seed }}" \
             --name "${{ github.event.inputs.name }}" \
             --device cuda \
-            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}"
+            --out "$HOME/workspace/datasets/detector_runs/${{ github.event.inputs.name }}-${{ github.run_id }}" \
+            $RESUME_ARGS
 
       - name: Eval-only val metrics (F1 + AP50)
         if: github.event.inputs.eval_scratch_only != ''
@@ -258,7 +286,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload metrics
-        if: always() && github.event.inputs.eval_only_ckpt == ''
+        if: always() && github.event.inputs.eval_only_ckpt == '' && github.event.inputs.eval_scratch_only == ''
         uses: actions/upload-artifact@v7
         with:
           name: train-metrics-${{ github.event.inputs.name }}-${{ github.run_id }}
