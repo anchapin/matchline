@@ -14,8 +14,8 @@ import pytest
 pytest.importorskip("ifcopenshell")
 
 from building_model import EnvelopeWall, Provenance  # noqa: E402
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import (  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import (  # noqa: E402
     _own_envelope_edge,
     _wall_direction_from_envelope,
     import_ifc,

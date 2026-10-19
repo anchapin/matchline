@@ -11,7 +11,7 @@ import ifcopenshell.util.element as _El  # noqa: E402
 from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
 from construction_library import apply_construction_library  # noqa: E402
 from constructions import opening_constructions  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 
 RING = [(0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (0.0, 10.0)]
 

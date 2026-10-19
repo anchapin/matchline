@@ -39,15 +39,15 @@ graph LR
     space_use_defaults_data
   end
   subgraph IFC
-    ifc_errors
-    ifc_export
-    ifc_import
-    ifc_roof_planes
-    ifc_space_borders
-    ifc_wall_joins
-    ifc_wall_linings
-    ifc_wall_loops
-    ifc_wall_split
+    ifc_ifc_errors
+    ifc_ifc_export
+    ifc_ifc_import
+    ifc_ifc_roof_planes
+    ifc_ifc_space_borders
+    ifc_ifc_wall_joins
+    ifc_ifc_wall_linings
+    ifc_ifc_wall_loops
+    ifc_ifc_wall_split
   end
   subgraph HVAC
     hvac_legend
@@ -97,6 +97,7 @@ graph LR
     cli
     datasets_adapter
     geometry_simplify
+    ifc
     jesse
     lighting
     limits
@@ -169,7 +170,7 @@ graph LR
   bem_bem_layers --> bem_bem_helpers
   bem_bem_levels --> below_grade
   bem_bem_levels --> bem_bem_geometry
-  bem_bem_levels --> ifc_export
+  bem_bem_levels --> ifc_ifc_export
   bem_bem_levels --> interstory
   bem_bem_levels --> thermal_zoning
   bem_bem_loads --> bem_bem_helpers
@@ -190,8 +191,8 @@ graph LR
   cli --> drawing_scale
   cli --> export_package
   cli --> feedback_capture
-  cli --> ifc_export
-  cli --> ifc_import
+  cli --> ifc_ifc_export
+  cli --> ifc_ifc_import
   cli --> legend_learning
   cli --> pdf_ingest
   cli --> pdf_schedules
@@ -239,37 +240,37 @@ graph LR
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
-  ifc_errors --> pipeline_exceptions
-  ifc_export --> bem_bem_export
-  ifc_export --> bem_bem_geometry
-  ifc_export --> bem_bem_helpers
-  ifc_export --> bem_bem_levels
-  ifc_export --> bem_bem_roof
-  ifc_export --> bem_bem_shading
-  ifc_export --> building_model
-  ifc_export --> constructions
-  ifc_export --> convention_report
-  ifc_export --> space_use_defaults
-  ifc_import --> atria
-  ifc_import --> building_model
-  ifc_import --> construction_library
-  ifc_import --> constructions
-  ifc_import --> daylight_skylights
-  ifc_import --> ifc_errors
-  ifc_import --> ifc_roof_planes
-  ifc_import --> ifc_space_borders
-  ifc_import --> ifc_wall_joins
-  ifc_import --> ifc_wall_linings
-  ifc_import --> ifc_wall_loops
-  ifc_import --> ifc_wall_split
-  ifc_import --> materials
-  ifc_import --> pipeline_exceptions
-  ifc_import --> solar_aperture
-  ifc_import --> space_merge
-  ifc_roof_planes --> roof_geometry
-  ifc_space_borders --> building_model
-  ifc_wall_loops --> building_model
-  ifc_wall_split --> ifc_wall_joins
+  ifc_ifc_errors --> pipeline_exceptions
+  ifc_ifc_export --> bem_bem_export
+  ifc_ifc_export --> bem_bem_geometry
+  ifc_ifc_export --> bem_bem_helpers
+  ifc_ifc_export --> bem_bem_levels
+  ifc_ifc_export --> bem_bem_roof
+  ifc_ifc_export --> bem_bem_shading
+  ifc_ifc_export --> building_model
+  ifc_ifc_export --> constructions
+  ifc_ifc_export --> convention_report
+  ifc_ifc_export --> space_use_defaults
+  ifc_ifc_import --> atria
+  ifc_ifc_import --> building_model
+  ifc_ifc_import --> construction_library
+  ifc_ifc_import --> constructions
+  ifc_ifc_import --> daylight_skylights
+  ifc_ifc_import --> ifc_ifc_errors
+  ifc_ifc_import --> ifc_ifc_roof_planes
+  ifc_ifc_import --> ifc_ifc_space_borders
+  ifc_ifc_import --> ifc_ifc_wall_joins
+  ifc_ifc_import --> ifc_ifc_wall_linings
+  ifc_ifc_import --> ifc_ifc_wall_loops
+  ifc_ifc_import --> ifc_ifc_wall_split
+  ifc_ifc_import --> materials
+  ifc_ifc_import --> pipeline_exceptions
+  ifc_ifc_import --> solar_aperture
+  ifc_ifc_import --> space_merge
+  ifc_ifc_roof_planes --> roof_geometry
+  ifc_ifc_space_borders --> building_model
+  ifc_ifc_wall_loops --> building_model
+  ifc_ifc_wall_split --> ifc_ifc_wall_joins
   interstory --> atria
   interstory --> building_model
   jesse --> building_model
@@ -284,7 +285,7 @@ graph LR
   mech_tags --> datasets_adapter
   opening_attach --> building_model
   opening_attach --> daylight_skylights
-  opening_attach --> ifc_import
+  opening_attach --> ifc_ifc_import
   pdf_ingest --> limits
   pdf_schedules --> building_model
   pdf_schedules --> datasets_adapter
@@ -356,8 +357,8 @@ graph LR
   run_pipeline --> export_package
   run_pipeline --> feedback_capture
   run_pipeline --> geometry_simplify
-  run_pipeline --> ifc_export
-  run_pipeline --> ifc_import
+  run_pipeline --> ifc_ifc_export
+  run_pipeline --> ifc_ifc_import
   run_pipeline --> legend_learning
   run_pipeline --> pipeline_exceptions
   run_pipeline --> real_set

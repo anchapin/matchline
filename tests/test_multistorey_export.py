@@ -13,7 +13,7 @@ from shapely.geometry import Polygon
 from bem.bem_export import validate_gbxml, write_gbxml
 from bem.bem_levels import hole_free
 from building_model import BuildingModel, EnvelopeWall, Level, Space, SpaceOpening
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 
 NS = {"g": "http://www.gbxml.org/schema"}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -258,7 +258,7 @@ def test_export_bytes_identical_across_hash_seeds(tmp_path):
     code = (
         "import sys; sys.path.insert(0, %r); sys.path.insert(0, %r)\n"
         "from tests.test_multistorey_export import _model\n"
-        "from ifc_export import _bem_from_model\nfrom bem.bem_export import write_gbxml\n"
+        "from ifc.ifc_export import _bem_from_model\nfrom bem.bem_export import write_gbxml\n"
         "m = _model([('B1', -3.0, False), ('L1', 0.0, True), ('L2', 3.0, True)],"
         " [('B1-001', 'B1', (0, 0, 20, 10)), ('L1-101', 'L1', (0, 0, 20, 10)),"
         " ('L1-102', 'L1', (20, 0, 30, 10)), ('L2-201', 'L2', (0, 0, 12, 10))])\n"

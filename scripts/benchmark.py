@@ -52,7 +52,7 @@ if str(ROOT) not in sys.path:
 
 from building_model import BuildingModel  # noqa: E402
 from geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 
 # Rooms whose id/number match are paired; area error is mean |a_model - a_truth|
 # over paired rooms as a fraction of truth. Room-count error is the raw delta.

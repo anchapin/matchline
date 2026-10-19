@@ -12,8 +12,8 @@ import ifcopenshell  # noqa: E402
 import ifcopenshell.guid  # noqa: E402
 
 from constructions import roof_u_value  # noqa: E402
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import (  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import (  # noqa: E402
     RSE_ROOF_M2K_W,
     RSI_ROOF_M2K_W,
     RSI_WALL_M2K_W,

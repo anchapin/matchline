@@ -13,7 +13,7 @@ import math
 import pytest
 
 from building_model import EnvelopeWall
-from ifc_export import _bem_from_model, _build_ring
+from ifc.ifc_export import _bem_from_model, _build_ring
 from tests.model_factory import make_clean_model
 
 
@@ -76,7 +76,7 @@ def test_gap_falls_back_to_nearer_endpoint():
 
 def test_ifc_has_four_walls_for_the_clean_model(tmp_path):
     ifcopenshell = pytest.importorskip("ifcopenshell")
-    from ifc_export import _export_ifc
+    from ifc.ifc_export import _export_ifc
 
     path = _export_ifc(make_clean_model(), tmp_path / "ring.ifc")
     walls = ifcopenshell.open(str(path)).by_type("IfcWall")

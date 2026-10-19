@@ -258,11 +258,11 @@ module's guide under `docs/`.
 - `trace_symbols_to_terminals(gray: np.ndarray, dets: list, term_rects_px: list, assoc_px: int=ASSOC_PX, seed_pad: int=10)`
 - `validate_hvac_solution(seeds, clf, templates, realistic: bool=False)`
 
-## `ifc_export`
+## `ifc.ifc_export`
 
 - `export_ifc(model_path: str, out_path: str)`
 
-## `ifc_import`
+## `ifc.ifc_import`
 
 - `import_ifc(path, sheet_id=None, revision=1)`
 

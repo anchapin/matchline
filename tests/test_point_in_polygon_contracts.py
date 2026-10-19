@@ -21,7 +21,7 @@ from types import SimpleNamespace as NS
 
 from shapely.geometry import Point, Polygon
 
-import ifc_import
+import ifc.ifc_import as ifc_import
 import room_labels
 import space_merge
 from bem.bem_helpers import _place_skylights_on_roof

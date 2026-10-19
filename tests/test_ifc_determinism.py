@@ -23,7 +23,7 @@ pytest.importorskip("ifcopenshell")
 REPO = Path(__file__).resolve().parents[1]
 SEEDS = ("0", "1", "4242")
 _IMPORT = (
-    "import hashlib, sys; from ifc_import import import_ifc; "
+    "import hashlib, sys; from ifc.ifc_import import import_ifc; "
     "print(hashlib.sha256(import_ifc(sys.argv[1]).to_json().encode()).hexdigest())"
 )
 
@@ -95,7 +95,7 @@ def test_import_is_identical_across_hash_seeds(tmp_path, build):
 
 
 def test_in_process_matches_subprocess(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     path = _base(tmp_path)
     here = hashlib.sha256(import_ifc(path).to_json().encode()).hexdigest()

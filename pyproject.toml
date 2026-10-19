@@ -69,7 +69,6 @@ matchline-ui = "ui.app:main"
 
 [tool.setuptools]
 py-modules = [
-    "ifc_errors",
     "area_definitions",
     "air_loops",
     "atria",
@@ -102,14 +101,6 @@ py-modules = [
     "grid_detect",
     "hvac_legend",
     "hvac_trace",
-    "ifc_export",
-    "ifc_import",
-    "ifc_roof_planes",
-    "ifc_space_borders",
-    "ifc_wall_joins",
-    "ifc_wall_linings",
-    "ifc_wall_loops",
-    "ifc_wall_split",
     "interstory",
     "jesse",
     "lighting",
@@ -165,6 +156,7 @@ py-modules = [
 ]
 packages = [
     "assets",
+    "ifc",
     "bem",
     "link",
     "query",
@@ -176,8 +168,8 @@ packages = [
 ]
 
 [tool.coverage.run]
-# #1137: measure the shipped surface (all 93 root py-modules plus the 9
-# packages the wheel ships; #1179 chunk 1 moved the bem_* modules into bem/). detector/ has its own lint-only gate and is
+# #1137: measure the shipped surface (the root py-modules plus the
+# packages the wheel ships; #1179 moves module groups into packages). detector/ has its own lint-only gate and is
 # not shipped from this wheel; tests, scripts and docs are not package code.
 source = ["."]
 omit = [

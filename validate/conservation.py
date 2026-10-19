@@ -564,7 +564,7 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
 
 def _unclaimed_note(model) -> str:
     """Unclaimed wall-loop area flagged on IFC import (#581), for the area summary."""
-    from ifc_wall_loops import unclaimed_loop_area
+    from ifc.ifc_wall_loops import unclaimed_loop_area
 
     n, total = unclaimed_loop_area(model)
     if not n:

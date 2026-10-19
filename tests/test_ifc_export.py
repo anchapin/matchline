@@ -20,12 +20,12 @@ from building_model import (
     SpaceLighting,
 )
 from datasets_adapter import polygon_area_px2
-from ifc_export import _export_ifc, export_ifc
+from ifc.ifc_export import _export_ifc, export_ifc
 from tests.conftest import _linked
 from tests.model_factory import make_clean_model
 from validate import _build_ctx, _check_ifc_counts, run_checks
 
-_ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
+_ensure_ifc = __import__("ifc.ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
 
 _ensure_ifc()
 import ifcopenshell  # noqa: E402
@@ -194,7 +194,7 @@ def test_skylights_export_as_ifcwindow_skylight_on_a_roof_slab(tmp_path):
     # Roadmap item 3, wave 2b: a skylight leaves as IfcWindow
     # PredefinedType=SKYLIGHT voiding a roof IfcSlab, never as a wall door.
     from building_model import SpaceOpening
-    from ifc_export import _bem_from_model
+    from ifc.ifc_export import _bem_from_model
 
     m = _simple_model(n_spaces=1)
     before = _export_ifc(m, tmp_path / "before.ifc")

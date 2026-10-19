@@ -8,7 +8,7 @@ import pytest
 
 from atria import find_atria
 from bem.bem_export import write_gbxml
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 from interstory import match_interstory
 from tests.test_multistorey_export import NS, _adj, _model, _surfaces, _write, _zs
 
@@ -229,7 +229,7 @@ def test_ifc_import_folds_open_to_below_rooms(tmp_path):
     import ifcopenshell.api.root as Root
     import ifcopenshell.guid as guid
 
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.ifc_builder import IfcBuilder
 
     b = IfcBuilder()

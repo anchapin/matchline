@@ -2,7 +2,7 @@
 
 import pytest
 
-from ifc_wall_linings import MAX_CLADDING_THICKNESS_M, find_linings
+from ifc.ifc_wall_linings import MAX_CLADDING_THICKNESS_M, find_linings
 
 
 def _w(key, a, b, t, level="L1"):
@@ -126,7 +126,7 @@ def _exterior_area(model):
 
 
 def test_ifc_cladding_and_buried_wall_leave_envelope_area_unchanged(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     base = import_ifc(_ifc_with(tmp_path, ()))
     # the base south wall's axis runs (0,0)->(20,0) in IFC on its exterior
@@ -152,7 +152,7 @@ def test_ifc_cladding_and_buried_wall_leave_envelope_area_unchanged(tmp_path):
 
 
 def test_plain_fixture_has_no_linings(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     model = import_ifc(_ifc_with(tmp_path, ()))
     assert all(e.role == "" for e in model.bim_elements)
@@ -161,7 +161,7 @@ def test_plain_fixture_has_no_linings(tmp_path):
 
 def test_lining_that_hosts_an_opening_is_kept(tmp_path):
     from building_model import BimElement, BimOpening, BuildingModel, EnvelopeWall, Provenance
-    from ifc_wall_linings import exclude_linings
+    from ifc.ifc_wall_linings import exclude_linings
 
     def prov(g):
         return Provenance(

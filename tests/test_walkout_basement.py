@@ -140,7 +140,7 @@ def test_ifc_import_reads_terrain_element(tmp_path):
     import ifcopenshell.api.geometry as Gm
     import ifcopenshell.api.root as Root
 
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.ifc_builder import IfcBuilder
 
     b = IfcBuilder()

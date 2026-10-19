@@ -68,8 +68,8 @@ def test_facade_split_over_several_edges_of_that_facade():
 
 def test_ifc_roundtrip_keeps_windows_on_south(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from ifc_export import _export_ifc
-    from ifc_import import import_ifc
+    from ifc.ifc_export import _export_ifc
+    from ifc.ifc_import import import_ifc
     from tests.model_factory import make_clean_model
 
     m = make_clean_model()

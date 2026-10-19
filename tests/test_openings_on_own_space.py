@@ -9,7 +9,7 @@ import pytest
 
 from bem.bem_export import write_gbxml
 from bem.bem_helpers import _distribute_openings, _edge_spaces
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 from tests.model_factory import add_wall_constructions, make_clean_model
 
 G = "{http://www.gbxml.org/schema}"
@@ -78,8 +78,8 @@ def test_split_model_gbxml_keeps_windows_on_own_space(tmp_path):
 
 def test_split_model_ifc_roundtrip_keeps_space_ownership(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from ifc_export import _export_ifc
-    from ifc_import import import_ifc
+    from ifc.ifc_export import _export_ifc
+    from ifc.ifc_import import import_ifc
 
     m = _split()
     p = tmp_path / "b.ifc"

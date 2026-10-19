@@ -12,8 +12,8 @@ import pytest
 
 pytest.importorskip("ifcopenshell")
 
-from ifc_export import _bem_from_model, _export_ifc  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_export import _bem_from_model, _export_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.ifc_builder import IfcBuilder, box_plan  # noqa: E402
 
 

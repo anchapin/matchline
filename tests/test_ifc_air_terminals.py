@@ -7,8 +7,8 @@ import pytest
 ifcopenshell = pytest.importorskip("ifcopenshell")
 
 from building_model import ComponentRef, Zone  # noqa: E402
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.model_factory import make_clean_model  # noqa: E402
 from validate import run_checks  # noqa: E402
 

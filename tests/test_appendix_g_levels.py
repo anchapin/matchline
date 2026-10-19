@@ -9,7 +9,7 @@ from shapely.geometry import Polygon
 
 from bem.bem_export import validate_gbxml, write_gbxml
 from building_model import SpaceOpening
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 from tests.test_atria import _atrium_model
 from tests.test_multistorey_export import NS, _adj, _model, _zs
 from thermal_zoning import appendix_g_split, appendix_g_split_levels

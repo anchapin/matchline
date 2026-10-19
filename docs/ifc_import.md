@@ -1,6 +1,6 @@
 # IFC import frontend (Tier 0)
 
-`ifc_import.py`: `import_ifc(path) -> BuildingModel`. Reads an IFC4 file into
+`ifc/ifc_import.py`: `import_ifc(path) -> BuildingModel`. Reads an IFC4 file into
 the canonical building model **without** `IfcRelSpaceBoundary` (ROADMAP.md
 item 7). The drawing pipeline and the IFC pipeline converge on the same
 `BuildingModel`; everything downstream (simplify → validate → export) is

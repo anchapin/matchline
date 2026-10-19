@@ -28,7 +28,7 @@ from construction_library import (
 )
 from construction_library_data import CONSTRUCTION_LIBRARY
 from constructions import semi_exterior_floors, semi_exterior_walls
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 
 NS = {"g": "http://www.gbxml.org/schema"}
 SEMI_4 = CONSTRUCTION_LIBRARY[("Semiheated", "4", "ExteriorFloor", "SteelFramed")]

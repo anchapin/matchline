@@ -12,8 +12,8 @@ import ifcopenshell.util.placement as _Pl  # noqa: E402
 
 from bem.bem_export import validate_ifc4, write_ifc4  # noqa: E402
 from building_model import SpaceOpening  # noqa: E402
-from ifc_export import _bem_from_model  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_export import _bem_from_model  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.test_multistorey_export import _model, _two_storey  # noqa: E402
 
 

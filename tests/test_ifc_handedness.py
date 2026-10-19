@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("ifcopenshell")
 
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.ifc_builder import IfcBuilder, box_plan  # noqa: E402
 
 L_SHAPE = [(0, 0), (4, 0), (4, 1), (1, 1), (1, 2), (0, 2)]

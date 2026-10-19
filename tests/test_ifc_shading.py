@@ -16,7 +16,7 @@ import ifcopenshell.util.element as _El  # noqa: E402
 
 from bem.bem_geometry import BEMShade  # noqa: E402
 from bem.bem_ifc4 import SHADE_THICKNESS_M, validate_ifc4, write_ifc4  # noqa: E402
-from ifc_export import _bem_from_model, _export_ifc  # noqa: E402
+from ifc.ifc_export import _bem_from_model, _export_ifc  # noqa: E402
 from tests.model_factory import add_shading, make_clean_model  # noqa: E402
 
 

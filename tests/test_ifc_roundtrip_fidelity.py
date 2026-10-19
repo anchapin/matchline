@@ -10,8 +10,8 @@ import pytest
 pytest.importorskip("ifcopenshell")
 
 from building_model import BuildingModel, EnvelopeWall, Provenance, Space  # noqa: E402
-from ifc_export import _bem_from_model, _export_ifc  # noqa: E402
-from ifc_import import _classify_envelope, import_ifc  # noqa: E402
+from ifc.ifc_export import _bem_from_model, _export_ifc  # noqa: E402
+from ifc.ifc_import import _classify_envelope, import_ifc  # noqa: E402
 from tests.model_factory import make_clean_model  # noqa: E402
 from validate import run_checks  # noqa: E402
 

@@ -43,7 +43,7 @@ def _seg(model, gid):
 
 
 def test_face_axis_moves_to_body_centre(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     # axis on one face, body 0.2 m to the +y side (IFC): centre is 0.1 m over,
     # which is canonical y = -30.1
@@ -56,7 +56,7 @@ def test_face_axis_moves_to_body_centre(tmp_path):
 
 
 def test_centred_axis_stays_put(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     path, gids = _with_walls(tmp_path, [("Centred", (40, 30, 0), (1, 0, 0), 5.0, 0.0)])
     model = import_ifc(path)
@@ -80,7 +80,7 @@ def test_shading_keeps_face_offset(tmp_path):
 def test_own_line_needs_placement_near_an_end():
     from types import SimpleNamespace
 
-    from ifc_import import _on_own_line
+    from ifc.ifc_import import _on_own_line
 
     ew = SimpleNamespace(from_m=[0.1, -0.1], to_m=[9.9, -0.1])
     assert _on_own_line(ew, (0.0, 0.0), 0.3)  # face placement, centreline segment
