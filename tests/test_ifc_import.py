@@ -31,12 +31,13 @@ from ifc.ifc_import import (
 from run_pipeline import StageError
 
 _ensure_ifc()  # bootstraps the vendored IfcOpenShell before these imports
-import ifc.ifc_import as ifc_import  # noqa: E402
 import ifcopenshell  # noqa: E402
 import ifcopenshell.api.aggregate as _Ag  # noqa: E402
 import ifcopenshell.api.geometry as _Gm  # noqa: E402
 import ifcopenshell.api.spatial as _Sp  # noqa: E402
 import ifcopenshell.guid as _guid  # noqa: E402
+
+import ifc.ifc_import as ifc_import  # noqa: E402
 
 H = 3.0  # wall height used by the fixture
 
