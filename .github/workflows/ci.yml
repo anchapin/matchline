@@ -172,7 +172,11 @@ jobs:
         run: pip install --no-cache-dir -e . pip-audit && pip-audit --version
 
       - name: Run pip-audit (fail on known runtime vulnerabilities)
-        run: pip-audit --strict
+        # --skip-editable keeps this project itself out of the audit:
+        # between a version bump and its release the version is not on
+        # PyPI yet, and --strict refuses to audit a package it cannot
+        # resolve there. Everything else in the env is still audited.
+        run: pip-audit --strict --skip-editable
 
   review-page-browser:
     # #802: drive review.html in headless Chromium (keys, edit prompt, layer
