@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from review.feedback_capture import summarize
 from html_page import page_head
+from review.feedback_capture import summarize
 
 SCHEMA = "matchline.trust_report/1"
 DISCLAIMER = (
@@ -115,6 +115,7 @@ def _corrections(out_dir) -> dict:
     if not p.exists():
         return {"recorded": False, "reason": "no accepted corrections beside the model yet"}
     import review.corrections as corrections_mod
+
     try:
         doc = corrections_mod.read(p)
     except (ValueError, OSError) as e:
@@ -608,6 +609,7 @@ def _viewer_fragment(scene: dict, banner: str = "") -> str:
     core shared with the ``matchline viewer`` page, embedded here in the
     share-back preview (#999)."""
     import review.review_viewer as review_viewer
+
     return review_viewer.fragment(scene, banner=banner)
 
 
@@ -615,6 +617,7 @@ def review_viewer_scene(model, corrections_doc: Optional[dict] = None) -> dict:
     """The viewer scene built from the model the package is built around
     (#1001); read verbatim, nothing re-derived."""
     import review.review_viewer as review_viewer
+
     return review_viewer.build_scene(model, corrections_doc=corrections_doc)
 
 

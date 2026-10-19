@@ -253,6 +253,7 @@ def test_share_back_embeds_the_viewer():
     # the same fragment the CLI page renders
     import export_package
     import review.review_report as review_report
+
     assert hasattr(review_viewer_export := export_package, "_viewer_fragment")
     fr = review_viewer_export._viewer_fragment(build_scene(_model()), banner="")
     assert "<canvas" in fr

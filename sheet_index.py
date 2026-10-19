@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import review.revisions as revisions
+
 SCHEMA = "matchline.sheet_index/1"
 
 Box = Tuple[float, float, float, float]
