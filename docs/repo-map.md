@@ -39,6 +39,7 @@ graph LR
     space_use_defaults_data
   end
   subgraph IFC
+    ifc_errors
     ifc_export
     ifc_import
     ifc_roof_planes
@@ -237,6 +238,7 @@ graph LR
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
+  ifc_errors --> pipeline_exceptions
   ifc_export --> bem_export
   ifc_export --> bem_geometry
   ifc_export --> bem_helpers
@@ -252,6 +254,7 @@ graph LR
   ifc_import --> construction_library
   ifc_import --> constructions
   ifc_import --> daylight_skylights
+  ifc_import --> ifc_errors
   ifc_import --> ifc_roof_planes
   ifc_import --> ifc_space_borders
   ifc_import --> ifc_wall_joins
@@ -260,7 +263,6 @@ graph LR
   ifc_import --> ifc_wall_split
   ifc_import --> materials
   ifc_import --> pipeline_exceptions
-  ifc_import --> run_pipeline
   ifc_import --> solar_aperture
   ifc_import --> space_merge
   ifc_roof_planes --> roof_geometry
@@ -356,6 +358,7 @@ graph LR
   run_pipeline --> ifc_export
   run_pipeline --> ifc_import
   run_pipeline --> legend_learning
+  run_pipeline --> pipeline_exceptions
   run_pipeline --> real_set
   run_pipeline --> review_report
   run_pipeline --> room_labels
