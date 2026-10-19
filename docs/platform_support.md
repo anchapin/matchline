@@ -36,6 +36,12 @@ the trust and review reports checked.
 
 ## Known gaps
 
+- **Found and fixed by the matrix gate itself (#1163)**: synthetic sheet
+  rendering hardcoded the Linux DejaVu font path and died on macOS/Windows
+  ("cannot open resource"); font resolution is now per-platform
+  (DejaVu on Linux, Arial/Helvetica on macOS/Windows, Pillow's bitmap font
+  as the last resort), and Python 3.10 installs the `tomli` backport for
+  the stdlib `tomllib` it predates.
 - **openstudio extra**: Windows wheels exist for cp310-cp313 only; on 3.14+
   Windows there is no openstudio wheel, so the round-trip extra is
   unavailable there. The macOS and Linux wheels are `py3-none` (they install

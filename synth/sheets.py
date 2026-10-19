@@ -26,17 +26,21 @@ import math
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 from . import symbols as sym_mod
-from .symbols import glyph_double_door, glyph_single_door, glyph_window_plan
+from .symbols import (
+    _render_font,
+    glyph_double_door,
+    glyph_single_door,
+    glyph_window_plan,
+)
 
 PX_PER_M = 50.0
 WALL_T_M = 0.30
 MARGIN_M = 2.0
 MIN_ROOM_M = 3.2
 
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 ROOM_NAMES = [
     "OPEN OFFICE",
@@ -64,7 +68,7 @@ SCHED_BY_TAG = {s["tag"]: s for s in SCHEDULE}
 
 
 def _font(size: int):
-    return ImageFont.truetype(FONT_PATH, size)
+    return _render_font(size)
 
 
 # ---------------------------------------------------------------------------

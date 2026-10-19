@@ -39,6 +39,9 @@ dependencies = [
     # through sklearn estimators, and run_review imports the classifier at
     # module top, so a real install needs it or `matchline review` dies
     "scikit-learn",
+    # stdlib tomllib landed in Python 3.11; the 3.10 support line needs the
+    # backport (#1163, found by the python-matrix install job)
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
