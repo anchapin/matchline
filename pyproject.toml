@@ -62,6 +62,7 @@ matchline-ui = "ui.app:main"
 
 [tool.setuptools]
 py-modules = [
+    "ifc_errors",
     "area_definitions",
     "air_loops",
     "atria",
