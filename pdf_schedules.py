@@ -999,7 +999,9 @@ def schedules_for_sheets(sheets_dir, sheet_ids: Optional[Dict[str, str]] = None)
             "sheet": p.name,
             "schedules": [s.to_dict() for s in found],
         }
-        (d / p.name.replace("sheet_", "schedules_")).write_text(json.dumps(res, indent=2))
+        (d / p.name.replace("sheet_", "schedules_")).write_text(
+            json.dumps(res, indent=2), encoding="utf-8"
+        )
         results[p.name] = res
     return results
 

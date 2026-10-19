@@ -319,7 +319,7 @@ def build_set_model(
         if f in detections:
             # kept beside the sheet so the review report can draw them (#749)
             (sheets_dir / f.replace("sheet_", "detections_")).write_text(
-                json.dumps([_det_dict(x) for x in detections[f]], indent=1)
+                json.dumps([_det_dict(x) for x in detections[f]], indent=1), encoding="utf-8"
             )
         sch = schedules.get(f, {}).get("schedules", [])
         bad = [x for x in sch if x["status"] != "ok"]
@@ -954,7 +954,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
             continue
         reads.append((er, prov))
         out = f.replace("sheet_", "elevation_")
-        (sheets_dir / out).write_text(json.dumps(er.to_dict(), indent=1))
+        (sheets_dir / out).write_text(json.dumps(er.to_dict(), indent=1), encoding="utf-8")
         st.mark(
             "elevation", "ok", facade=er.facade, windows=len(er.windows),
             doors=len(er.openings) - len(er.windows),
@@ -2927,7 +2927,7 @@ def _join_elevations(
                         op = pairs.get(od["id"])
                         od["plan_opening"] = op.id if op else None
                         od["plan_point"] = plan_end_of(op).get("point") if op else None
-                    fp.write_text(json.dumps(d, indent=1))
+                    fp.write_text(json.dumps(d, indent=1), encoding="utf-8")
 
 
 def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, Provenance):
@@ -2968,4 +2968,6 @@ def _envelope(lid, spaces, h, sheet_id, footprint, edge_facades, EnvelopeWall, P
 
 def _write(out: Path, report: SetReport) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    (out / "stage_00_set_report.json").write_text(json.dumps(report.to_dict(), indent=2))
+    (out / "stage_00_set_report.json").write_text(
+        json.dumps(report.to_dict(), indent=2), encoding="utf-8"
+    )

@@ -107,7 +107,7 @@ def main(argv=None) -> int:
         cb.update(band(a.csv, cb))
         print(ref["building_type"], ref["climate_zone"], json.dumps(cb["percentiles_mj_m2"]))
     if a.write:
-        path.write_text(json.dumps(data, indent=2) + "\n")
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     return 0
 
 

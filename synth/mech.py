@@ -962,7 +962,7 @@ def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
     img, gt = generate_mech_sheet(seed)
     pp, jp = outdir / f"mech_{seed:03d}.png", outdir / f"mech_{seed:03d}.json"
     img.save(pp)
-    jp.write_text(json.dumps(gt, indent=1))
+    jp.write_text(json.dumps(gt, indent=1), encoding="utf-8")
     return pp, jp
 
 

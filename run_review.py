@@ -386,7 +386,9 @@ def _write_review_telemetry(emitter, dest) -> None:
     if payload is not None:
         import json
 
-        (pathlib.Path(dest) / "telemetry.json").write_text(json.dumps(payload, indent=2) + "\n")
+        (pathlib.Path(dest) / "telemetry.json").write_text(
+            json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+        )
 
 
 def _summarize_validation(report) -> str:
@@ -466,7 +468,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
         dest = pathlib.Path(getattr(args, "out", None) or model_path)
-        dest.write_text(model.to_json())
+        dest.write_text(model.to_json(), encoding="utf-8")
         for w in summary["warnings"]:
             print(f"Warning: {w}", file=sys.stderr)
         print(review_report.summarize(summary))
@@ -530,7 +532,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
-        model_path.write_text(model.to_json())
+        model_path.write_text(model.to_json(), encoding="utf-8")
         action = "confirmed" if is_confirm else "rejected"
         print(f"Bulk {action}: {len(matched)} item(s) matched the filters, {changed} changed.")
         print(_summarize_validation(run_checks(model)))
@@ -564,7 +566,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             sys.exit(1)
 
         # Save updated model
-        model_path.write_text(model.to_json())
+        model_path.write_text(model.to_json(), encoding="utf-8")
         print(msg)
         print(f"Model saved: {model_path}")
 
@@ -587,7 +589,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             except ValueError as e:
                 print(f"Error: {e}", file=sys.stderr)
                 sys.exit(1)
-            model_path.write_text(model.to_json())
+            model_path.write_text(model.to_json(), encoding="utf-8")
             for c in undone:
                 field = f" ({c['field']} back to {c['before']!r})" if c.get("field") else ""
                 print(f"Undid [{c['seq']}] {c['action']} {c['item_id']}{field}")
@@ -603,7 +605,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             except ValueError as e:
                 print(f"Error: {e}", file=sys.stderr)
                 sys.exit(1)
-            model_path.write_text(model.to_json())
+            model_path.write_text(model.to_json(), encoding="utf-8")
             print(
                 f"Reverted {r['field']} to automatic output "
                 f"({r['from']!r} -> {r['to']!r}); {r['reverted']} correction(s) marked undone."

@@ -164,7 +164,7 @@ def full_sweep(data_root: "str | Path | None" = None, out_json: "str | Path | No
             "{facade,window,door,blind,shop}. Glazing = window+blind+shop."
         ),
     }
-    out_path.write_text(json.dumps(out, indent=1))
+    out_path.write_text(json.dumps(out, indent=1), encoding="utf-8")
     print(f"\nwrote {out_path}")
     return out
 

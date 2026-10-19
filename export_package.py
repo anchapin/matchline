@@ -711,7 +711,9 @@ def build_package(
     for f in files:
         if f and Path(f).exists():
             shutil.copy2(f, pkg / Path(f).name)
-    (pkg / "convention_report.json").write_text(json.dumps(convention, indent=2, default=str))
+    (pkg / "convention_report.json").write_text(
+        json.dumps(convention, indent=2, default=str), encoding="utf-8"
+    )
     if review_dir and Path(review_dir).is_dir():
         rv = pkg / "review"
         rv.mkdir(exist_ok=True)
@@ -723,15 +725,15 @@ def build_package(
     if corr.get("recorded"):
         shutil.copy2(Path(out_dir) / "corrections.json", pkg / "corrections.json")
     tr = build_trust_report(model, report, convention, inputs, review_dir, corr, _feedback(out_dir))
-    (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n")
+    (pkg / "DISCLAIMER.txt").write_text(DISCLAIMER + "\n", encoding="utf-8")
     generated = ["trust_report.json", "trust_report.html"]
     if pdf:
         generated.append("trust_report.pdf")
     generated += ["share_back.html", "manifest.json"]
     tr["package_contents"] = _contents(pkg, generated)
-    (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str))
+    (pkg / "trust_report.json").write_text(json.dumps(tr, indent=2, default=str), encoding="utf-8")
     html_path = pkg / "trust_report.html"
-    html_path.write_text(render_html(tr))
+    html_path.write_text(render_html(tr), encoding="utf-8")
     share_html = render_html(tr, banner=SHARE_BACK_BANNER)
     # the 3D preview rides on the same page, from the same render core the
     # CLI viewer uses (#1001): the canonical model is the only geometry
@@ -744,7 +746,7 @@ def build_package(
             corr_doc = None
     viewer_frag = _viewer_fragment(review_viewer_scene(model, corrections_doc=corr_doc), banner="")
     share_html = share_html.replace("</body>", viewer_frag + "\n</body>", 1)
-    (pkg / "share_back.html").write_text(share_html)
+    (pkg / "share_back.html").write_text(share_html, encoding="utf-8")
     why = _pdf(tr, pkg / "trust_report.pdf") if pdf else "PDF not requested"
     manifest = {
         "schema": "matchline.package/1",
@@ -755,6 +757,6 @@ def build_package(
         },
         "pdf": {"produced": why is None, **({"reason": why} if why else {})},
     }
-    (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     zip_package(pkg, Path(out_dir) / "package.zip")
     return pkg

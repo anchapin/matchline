@@ -40,8 +40,10 @@ the trust and review reports checked.
   rendering hardcoded the Linux DejaVu font path and died on macOS/Windows
   ("cannot open resource"); font resolution is now per-platform
   (DejaVu on Linux, Arial/Helvetica on macOS/Windows, Pillow's bitmap font
-  as the last resort), and Python 3.10 installs the `tomli` backport for
-  the stdlib `tomllib` it predates.
+  as the last resort), Python 3.10 installs the `tomli` backport for
+  the stdlib `tomllib` it predates, and every text write in the shipped
+  modules now passes an explicit `encoding="utf-8"` so Windows' cp1252
+  locale cannot crash report writing on non-ASCII characters.
 - **openstudio extra**: Windows wheels exist for cp310-cp313 only; on 3.14+
   Windows there is no openstudio wheel, so the round-trip extra is
   unavailable there. The macOS and Linux wheels are `py3-none` (they install

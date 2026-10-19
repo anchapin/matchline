@@ -1892,6 +1892,6 @@ def walls_for_sheets(sheet_dir) -> Dict[str, dict]:
             }
         res = extract_walls(json.loads(p.read_text()), sc.get("m_per_pt"), scale_review=est)
         name = p.name.replace("sheet_", "walls_")
-        (d / name).write_text(json.dumps(res.to_dict(), indent=2))
+        (d / name).write_text(json.dumps(res.to_dict(), indent=2), encoding="utf-8")
         out[p.name] = res.to_dict()
     return out
