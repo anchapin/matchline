@@ -824,7 +824,11 @@ def train(args):
     return out_dir
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Define the train_scratch CLI. Single source of truth for defaults,
+    including the test-seeded train() namespaces (#1151): tests seed
+    argparse from here, so a new CLI arg can no longer drift them red.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True, help="converted dataset dir (data.yaml)")
     ap.add_argument("--epochs", type=int, default=25)
@@ -867,7 +871,11 @@ def main():
         help="dir holding ckpt_last.pt from an interrupted run; resumes training"
         " and copies its best ckpt.pt into --out (#1116)",
     )
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     if args.eval_only:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         names = load_names(args.data)
