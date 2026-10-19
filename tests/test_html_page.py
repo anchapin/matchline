@@ -33,7 +33,7 @@ def test_page_head_escapes_and_none():
 def test_both_renderers_start_from_the_shared_prefix():
     from pathlib import Path
 
-    for name in ("export_package.py", "review_report.py"):
+    for name in ("export_package.py", "review/review_report.py"):
         src = (Path(__file__).parent.parent / name).read_text()
         body = src.split("def render_html")[1]
         assert "page_head(" in body, name
