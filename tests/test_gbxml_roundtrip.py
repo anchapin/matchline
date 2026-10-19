@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from bem.bem_export import write_gbxml
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry.geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from run_pipeline import model_from_linked_model
 from synth.multidiscipline import generate_building

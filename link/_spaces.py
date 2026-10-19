@@ -6,7 +6,7 @@ from building_model import (
     Space,
 )
 from datasets_adapter import polygon_area_px2
-from polygon_classify import classify_polygons
+from geometry.polygon_classify import classify_polygons
 
 FT2_PER_M2 = 10.7639
 OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup

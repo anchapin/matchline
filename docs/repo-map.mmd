@@ -2,8 +2,6 @@
 %% Regenerate with: python scripts/generate_repo_map.py
 graph LR
   subgraph BEM
-    atria
-    below_grade
     bem_bem_export
     bem_bem_geometry
     bem_bem_helpers
@@ -20,11 +18,17 @@ graph LR
     construction_library_prm_data
     constructions
     daylight_skylights
-    grade
-    interstory
+    geometry_atria
+    geometry_below_grade
+    geometry_geometry_simplify
+    geometry_grade
+    geometry_interstory
+    geometry_polygon_classify
+    geometry_roof_geometry
+    geometry_roof_simplify
+    geometry_semi_exterior
+    geometry_vestibules
     materials
-    roof_geometry
-    roof_simplify
     space_conditioning
     space_merge
     space_use_defaults
@@ -77,7 +81,6 @@ graph LR
     pdf_ingest
     pdf_schedules
     plan_walls
-    polygon_classify
     registration
     room_labels
     sheet_index
@@ -90,7 +93,7 @@ graph LR
     building_model
     cli
     datasets_adapter
-    geometry_simplify
+    geometry
     ifc
     jesse
     lighting
@@ -110,7 +113,6 @@ graph LR
     run_validation
     safe_xml
     schedule_parse
-    semi_exterior
     sim_smoke
     solar_aperture
     synth
@@ -126,7 +128,6 @@ graph LR
     telemetry_emitter
     telemetry_spec
     thermal_zoning
-    vestibules
     wall_types
     zone_airflow
     zone_capacity
@@ -136,12 +137,7 @@ graph LR
   air_loops --> zone_airflow
   air_loops --> zone_capacity
   area_definitions --> datasets_adapter
-  area_definitions --> geometry_simplify
-  atria --> building_model
-  atria --> interstory
-  below_grade --> building_model
-  below_grade --> grade
-  below_grade --> interstory
+  area_definitions --> geometry_geometry_simplify
   bem_bem_export --> bem_bem_geometry
   bem_bem_export --> bem_bem_helpers
   bem_bem_export --> bem_bem_ifc4
@@ -150,7 +146,7 @@ graph LR
   bem_bem_export --> bem_bem_multistorey
   bem_bem_export --> bem_bem_roof
   bem_bem_export --> bem_bem_space_split
-  bem_bem_export --> grade
+  bem_bem_export --> geometry_grade
   bem_bem_export --> room_labels
   bem_bem_export --> safe_xml
   bem_bem_helpers --> room_labels
@@ -159,12 +155,12 @@ graph LR
   bem_bem_ifc4 --> bem_bem_loads
   bem_bem_ifc4 --> bem_bem_multistorey
   bem_bem_ifc4 --> bem_bem_roof
-  bem_bem_ifc4 --> grade
+  bem_bem_ifc4 --> geometry_grade
   bem_bem_layers --> bem_bem_helpers
-  bem_bem_levels --> below_grade
   bem_bem_levels --> bem_bem_geometry
+  bem_bem_levels --> geometry_below_grade
+  bem_bem_levels --> geometry_interstory
   bem_bem_levels --> ifc_ifc_export
-  bem_bem_levels --> interstory
   bem_bem_levels --> thermal_zoning
   bem_bem_loads --> bem_bem_helpers
   bem_bem_loads --> space_use_defaults
@@ -173,7 +169,7 @@ graph LR
   bem_bem_multistorey --> bem_bem_levels
   bem_bem_multistorey --> bem_bem_loads
   bem_bem_multistorey --> bem_bem_space_split
-  bem_bem_multistorey --> grade
+  bem_bem_multistorey --> geometry_grade
   bem_bem_roof --> bem_bem_helpers
   bem_bem_shading --> bem_bem_geometry
   building_model --> datasets_adapter
@@ -225,6 +221,18 @@ graph LR
   export_package --> review_review_viewer
   facade_takeoff --> building_model
   facade_takeoff --> limits
+  geometry_atria --> building_model
+  geometry_atria --> geometry_interstory
+  geometry_below_grade --> building_model
+  geometry_below_grade --> geometry_grade
+  geometry_below_grade --> geometry_interstory
+  geometry_interstory --> building_model
+  geometry_interstory --> geometry_atria
+  geometry_roof_geometry --> building_model
+  geometry_roof_simplify --> building_model
+  geometry_roof_simplify --> geometry_roof_geometry
+  geometry_roof_simplify --> solar_aperture
+  geometry_semi_exterior --> bem_bem_space_split
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
@@ -239,11 +247,11 @@ graph LR
   ifc_ifc_export --> constructions
   ifc_ifc_export --> review_convention_report
   ifc_ifc_export --> space_use_defaults
-  ifc_ifc_import --> atria
   ifc_ifc_import --> building_model
   ifc_ifc_import --> construction_library
   ifc_ifc_import --> constructions
   ifc_ifc_import --> daylight_skylights
+  ifc_ifc_import --> geometry_atria
   ifc_ifc_import --> ifc_ifc_errors
   ifc_ifc_import --> ifc_ifc_roof_planes
   ifc_ifc_import --> ifc_ifc_space_borders
@@ -255,12 +263,10 @@ graph LR
   ifc_ifc_import --> pipeline_exceptions
   ifc_ifc_import --> solar_aperture
   ifc_ifc_import --> space_merge
-  ifc_ifc_roof_planes --> roof_geometry
+  ifc_ifc_roof_planes --> geometry_roof_geometry
   ifc_ifc_space_borders --> building_model
   ifc_ifc_wall_loops --> building_model
   ifc_ifc_wall_split --> ifc_ifc_wall_joins
-  interstory --> atria
-  interstory --> building_model
   jesse --> building_model
   jesse --> datasets_adapter
   legend_learning --> atomic_io
@@ -286,7 +292,9 @@ graph LR
   real_set --> construction_library
   real_set --> drawing_scale
   real_set --> elevation_sheets
-  real_set --> geometry_simplify
+  real_set --> geometry_geometry_simplify
+  real_set --> geometry_semi_exterior
+  real_set --> geometry_vestibules
   real_set --> grid_detect
   real_set --> hvac_legend
   real_set --> hvac_trace
@@ -296,9 +304,7 @@ graph LR
   real_set --> pdf_schedules
   real_set --> plan_walls
   real_set --> review_revisions
-  real_set --> semi_exterior
   real_set --> sheet_index
-  real_set --> vestibules
   real_set --> wall_types
   real_set --> zone_capacity
   registration --> building_model
@@ -319,15 +325,11 @@ graph LR
   review_viewer_corrections --> building_model
   review_viewer_corrections --> review_corrections
   review_viewer_corrections --> review_review_report
-  roof_geometry --> building_model
-  roof_simplify --> building_model
-  roof_simplify --> roof_geometry
-  roof_simplify --> solar_aperture
   room_labels --> building_model
   room_labels --> datasets_adapter
   run_bem_export --> bem_bem_export
   run_bem_export --> datasets_adapter
-  run_bem_export --> geometry_simplify
+  run_bem_export --> geometry_geometry_simplify
   run_bem_export --> room_labels
   run_elevation_windows --> building_model
   run_elevation_windows --> elevation_windows
@@ -350,7 +352,7 @@ graph LR
   run_pipeline --> datasets_adapter
   run_pipeline --> detection_provider
   run_pipeline --> export_package
-  run_pipeline --> geometry_simplify
+  run_pipeline --> geometry_geometry_simplify
   run_pipeline --> ifc_ifc_export
   run_pipeline --> ifc_ifc_import
   run_pipeline --> legend_learning
@@ -372,12 +374,11 @@ graph LR
   run_room_labels --> room_labels
   run_symbols --> jesse
   run_symbols --> symbols
-  run_validation --> geometry_simplify
+  run_validation --> geometry_geometry_simplify
   run_validation --> synth_multidiscipline
   schedule_parse --> building_model
-  semi_exterior --> bem_bem_space_split
   sheet_index --> review_revisions
-  solar_aperture --> roof_geometry
+  solar_aperture --> geometry_roof_geometry
   space_merge --> building_model
   space_use_defaults --> building_model
   space_use_defaults --> space_use_defaults_data

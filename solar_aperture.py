@@ -103,7 +103,7 @@ def facet_aperture(vertices: Sequence[Sequence[float]], latitude_deg: float) -> 
     """Aperture of one planar facet straight from its corners (canonical
     frame). Uses the Newell normal, so it does not depend on how the facet is
     split into triangles."""
-    from roof_geometry import newell_normal
+    from geometry.roof_geometry import newell_normal
 
     n = newell_normal(vertices)
     ln = math.sqrt(sum(x * x for x in n))

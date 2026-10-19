@@ -2,7 +2,7 @@
 
 import pytest
 
-from polygon_classify import (
+from geometry.polygon_classify import (
     PolyClassEvidence,
     _aspect_ratio,
     _classify_from_evidence,
@@ -353,7 +353,7 @@ class TestDefectInjection:
 
 def test_public_api_coverage():
     """All public names in polygon_classify are exercised by these tests."""
-    import polygon_classify as pc
+    import geometry.polygon_classify as pc
 
     public_names = [
         name

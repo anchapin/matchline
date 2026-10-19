@@ -312,7 +312,7 @@ class TestBEMExportRoundtripBATTERY:
         This is the equivalent of test_write_gbxml_and_validate_gbxml_roundtrip
         but using full BATTERY validation instead of just validate_gbxml (XSD).
         """
-        from geometry_simplify import footprint_from_regions, simplify_ring
+        from geometry.geometry_simplify import footprint_from_regions, simplify_ring
         from link import build_model as link_build_model
         from run_pipeline import model_from_linked_model
         from synth.multidiscipline import generate_building

@@ -212,7 +212,7 @@ def read_roof_planes(model, f, level_by_storey, prov):
     kernel cannot mesh, or that give no upward face, go to the review queue
     and give no plane. Returns (planes, roof elements read, elements flagged).
     """
-    from roof_geometry import RoofGeometryError, roof_plane
+    from geometry.roof_geometry import RoofGeometryError, roof_plane
 
     elements = roof_elements(f)
     if not elements:

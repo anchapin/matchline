@@ -7,7 +7,7 @@ import math
 import pytest
 
 from building_model import BuildingModel, Provenance, RoofPlane
-from roof_geometry import (
+from geometry.roof_geometry import (
     RoofGeometryError,
     plan_area,
     plane_orientation,

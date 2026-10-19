@@ -11,7 +11,7 @@ at model_from_linked_model / model_from_takeoff time.
 
 import pytest
 
-from geometry_simplify import SimplifyResult, footprint_from_regions, simplify_ring
+from geometry.geometry_simplify import SimplifyResult, footprint_from_regions, simplify_ring
 from link import build_model
 from run_pipeline import model_from_linked_model
 from synth.multidiscipline import generate_building

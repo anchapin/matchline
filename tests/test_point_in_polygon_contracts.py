@@ -25,7 +25,7 @@ import ifc.ifc_import as ifc_import
 import room_labels
 import space_merge
 from bem.bem_helpers import _place_skylights_on_roof
-from grade import Terrain
+from geometry.grade import Terrain
 from mech_tags import room_of
 from registration import assign_points_to_spaces
 from synth.sheets import _point_in_rooms

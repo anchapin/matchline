@@ -6,10 +6,10 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from atria import find_atria
+from geometry.atria import find_atria
 from bem.bem_export import write_gbxml
 from ifc.ifc_export import _bem_from_model
-from interstory import match_interstory
+from geometry.interstory import match_interstory
 from tests.test_multistorey_export import NS, _adj, _model, _surfaces, _write, _zs
 
 # L1 0 m, L2 3 m, L3 6 m (3 m storeys). Atrium A on L1 (0..8 x 0..10), 6 m
@@ -134,7 +134,7 @@ def test_atrium_ifc4_air_walls_on_upper_storey(tmp_path):
 
 
 # --- stacks of rooms over slab openings (#640) ------------------------------
-from atria import merge_atrium_stacks  # noqa: E402
+from geometry.atria import merge_atrium_stacks  # noqa: E402
 
 
 def _stack_model():

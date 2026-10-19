@@ -14,7 +14,7 @@ from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noq
 from bem.bem_geometry import BEMRoof  # noqa: E402
 from ifc.ifc_export import _export_ifc  # noqa: E402
 from ifc.ifc_import import import_ifc  # noqa: E402
-from roof_geometry import roof_plane  # noqa: E402
+from geometry.roof_geometry import roof_plane  # noqa: E402
 from tests.ifc_builder import IfcBuilder, box_plan  # noqa: E402
 
 T30 = math.tan(math.radians(30))

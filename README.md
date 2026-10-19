@@ -92,7 +92,7 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `symbols.py` | Synthetic symbol/floor-plan generation + detection experiments |
 | `datasets_adapter.py` | Detection → schedule join → `count × width × height` takeoffs |
 | `room_labels.py` | OCR room names/numbers, associate to floor-space polygons |
-| `geometry_simplify.py` | Area-budgeted BEM geometry reduction (default ≤2% area drift) |
+| `geometry/geometry_simplify.py` | Area-budgeted BEM geometry reduction (default ≤2% area drift) |
 | `lighting.py` | Fixture detection → installed watts, per-space LPD |
 | `hvac_trace.py` | Duct tracing → terminal units → HVAC zone graphs |
 | `building_model.py` | Canonical `Space`-centric model, provenance, review queue |

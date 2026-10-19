@@ -2,7 +2,7 @@
 connects to a lobby or main entrance."""
 
 from building_model import BuildingModel, Level, Space, SpaceOpening
-from vestibules import detect_vestibules
+from geometry.vestibules import detect_vestibules
 
 VES_POLY = [[0, 0], [3, 0], [3, 4], [0, 4]]
 LOB_POLY = [[3, 0], [10, 0], [10, 4], [3, 4]]

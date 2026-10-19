@@ -1,4 +1,4 @@
-# Non-Room Polygon Classification — `polygon_classify.py`
+# Non-Room Polygon Classification — `geometry/polygon_classify.py`
 
 Classifies architectural plan polygons that are not rooms — shafts, closets, elevator cores — using only geometric evidence from the building dict. No ML.
 

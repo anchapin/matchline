@@ -838,7 +838,7 @@ def _grade_plan(model, edges, opening_assign, roofs, sloped, h) -> dict:
     from shapely.geometry import Polygon
 
     from bem.bem_multistorey import _grade_pieces, _wall_frame
-    from grade import Terrain
+    from geometry.grade import Terrain
 
     terrain = Terrain(getattr(model, "terrain", None) or [])
     if not terrain:

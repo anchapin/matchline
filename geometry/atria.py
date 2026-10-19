@@ -58,7 +58,7 @@ def _prov(note: str) -> Provenance:
 
 def find_atria(model, flag: bool = True) -> AtriaResult:
     """Spaces open through the storeys above their own, from stated heights."""
-    from interstory import _poly
+    from geometry.interstory import _poly
 
     levels = sorted(model.levels, key=lambda lv: (lv.elevation_z_m, lv.id))
     res = AtriaResult()

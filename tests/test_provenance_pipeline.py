@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry.geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
 
