@@ -60,6 +60,7 @@ disclosed, not hidden.
 | `ifc_import.md` | Tier-0 IFC import: what recovers without space boundaries |
 | `ifc_export.md` | IFC4 export pathway: geometry + space boundaries + classification |
 | `export_package.md` | Export package and trust report (#750) |
+| `quickstart.md` | One building from IFC/drawings through takeoff, validation, review and exports |
 | `schema_versioning.md` | Schema versioning policy: version fields, reader rules, bump rules (#1164) |
 | `migrations.md` | Migrations: 0.x to 1.0 breaking changes and how artifacts move forward |
 

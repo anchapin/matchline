@@ -7,6 +7,10 @@ tests/api_surface.json (schema "matchline.api_surface/1"). The CI guard test
 compares the live surface against that snapshot; on drift, regenerate this
 file and add a deprecation notice per docs/api.md before changing the pins.
 
+Also renders docs/api_reference.md, the human-readable page of every
+public symbol with its signature, generated from the same walk; the CI
+guard keeps that page in sync with the pins (gate #1167).
+
 Run:  python3 scripts/generate_api_surface.py
 """
 
@@ -18,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "tests" / "api_surface.json"
+DOC = ROOT / "docs" / "api_reference.md"
 SCHEMA = "matchline.api_surface/1"
 
 # Public surface: every module or package a 1.0 user drives through the
@@ -103,9 +108,52 @@ def build() -> dict:
     return surface
 
 
+def render_reference(surface: dict) -> str:
+    """Render the public API reference page from a built surface dict.
+
+    Same walk, same pins as the snapshot: functions with their signatures,
+    classes with their ``__init__`` signatures (empty when none is
+    defined). Sorted so the page is byte-stable across runs.
+    """
+    lines = [
+        "# Public API reference (gate #1167)",
+        "",
+        "Every public symbol matchline ships, generated from the same surface",
+        "walk that pins `tests/api_surface.json` (schema",
+        "`matchline.api_surface/1`). Regenerate with",
+        "`python3 scripts/generate_api_surface.py`; the CI guard keeps this",
+        "page in sync with the pins. What counts as public, breaking, or",
+        "deprecated is in [api.md](api.md); per-module usage is in each",
+        "module's guide under `docs/`.",
+        "",
+    ]
+    for name in sorted(surface["modules"]):
+        sigs = surface["modules"][name]
+        lines.append(f"## `{name}`")
+        lines.append("")
+        for fn in sorted(sigs["functions"]):
+            lines.append(f"- `{fn}({sigs['functions'][fn]})`")
+        for cls in sorted(sigs["classes"]):
+            init = sigs["classes"][cls]
+            lines.append(f"- class `{cls}({init})`" if init else f"- class `{cls}`")
+        lines.append("")
+    for name in sorted(surface["packages"]):
+        sigs = surface["packages"][name]
+        lines.append(f"## Package `{name}`")
+        lines.append("")
+        for fn in sorted(sigs["functions"]):
+            lines.append(f"- `{fn}({sigs['functions'][fn]})`")
+        for cls in sorted(sigs["classes"]):
+            init = sigs["classes"][cls]
+            lines.append(f"- class `{cls}({init})`" if init else f"- class `{cls}`")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
     surface = build()
     OUT.write_text(json.dumps(surface, indent=2, sort_keys=True) + "\n")
+    DOC.write_text(render_reference(surface))
     n = sum(len(s["functions"]) + len(s["classes"]) for s in surface["modules"].values())
     n += sum(len(s["functions"]) + len(s["classes"]) for s in surface["packages"].values())
     print(f"{len(PUBLIC_MODULES)}+{len(PUBLIC_PACKAGES)} files, {n} public symbols -> {OUT}")
