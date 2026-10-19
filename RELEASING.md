@@ -35,6 +35,10 @@ only ever receive release PRs.
 SemVer. While pre-1.0, minor bumps may include breaking changes to the
 `BuildingModel` schema; patch bumps are fixes only.
 
+A `BuildingModel` schema change bumps `model_version`, adds a migration
+step, regenerates the goldens, and adds a row to `docs/migrations.md`
+(see `docs/schema_versioning.md`).
+
 ## What "release" means here
 
 A release is a tagged, changelogged snapshot of `main` that a downstream

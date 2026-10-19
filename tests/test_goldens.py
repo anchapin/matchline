@@ -129,3 +129,39 @@ def test_golden_package_manifest():
             import hashlib
 
             assert hashlib.sha256(f.read_bytes()).hexdigest() == digest, f"digest drift on {name}"
+
+
+def test_golden_model_json():
+    """Canonical-model golden: pins the versioned wrapper and field shape."""
+    import json as _json
+
+    from building_model import MODEL_VERSION
+    from tests.make_goldens import golden_model_json
+
+    _verify_golden("model.json")
+    assert golden_model_json() == (GOLDEN_DIR / "model.json").read_bytes()
+    doc = _json.loads((GOLDEN_DIR / "model.json").read_text())
+    assert doc["model_version"] == MODEL_VERSION
+    assert set(doc) == {"model_version", "model"}
+
+
+def test_golden_telemetry():
+    """Telemetry golden: pins spec_version and the five metric groups."""
+    import json as _json
+
+    from telemetry_emitter import SPEC_VERSION
+    from tests.make_goldens import golden_telemetry
+
+    _verify_golden("telemetry.json")
+    assert golden_telemetry() == (GOLDEN_DIR / "telemetry.json").read_bytes()
+    doc = _json.loads((GOLDEN_DIR / "telemetry.json").read_text())
+    assert doc["spec_version"] == SPEC_VERSION
+    assert set(doc) == {
+        "spec_version",
+        "consent",
+        "conf_distributions",
+        "corrections_by_type",
+        "check_failures",
+        "binned_aggregates",
+        "stage_outcomes",
+    }
