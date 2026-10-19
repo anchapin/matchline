@@ -13,6 +13,7 @@ Future extensions (zones, lighting) can layer on top of _bem_from_model.
 
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 from typing import List
@@ -423,10 +424,23 @@ def _export_ifc(model: BuildingModel, path: str | Path) -> Path:
 def export_ifc(model_path: str, out_path: str) -> None:
     """Load a BuildingModel from JSON and export to IFC4.
 
+    Emits the convention report (#1166) next to the IFC file: the measured
+    biases of the exported model (volume bias, non-room area, area budget,
+    area definitions) in one auditable artifact, per the ROADMAP cross-cutting
+    note that every export carries one.
+
     Args:
         model_path: path to BuildingModel JSON file
         out_path:   output IFC4 file path
     """
     _validate_in_path(model_path)
     model = BuildingModel.from_json(Path(model_path).read_text())
-    _export_ifc(model, _validate_out_path(out_path))
+    ifc_path = _export_ifc(model, _validate_out_path(out_path))
+    # Local import: convention_report pulls the validation battery, which is
+    # heavier than this module's own import surface needs at load time.
+    from convention_report import build_convention_report
+
+    report = build_convention_report(model)
+    (Path(ifc_path).parent / "convention_report.json").write_text(
+        json.dumps(report, indent=2, default=str)
+    )

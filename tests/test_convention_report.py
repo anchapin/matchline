@@ -92,3 +92,19 @@ def test_area_budget_from_sres():
 def test_area_budget_without_sres_is_unavailable():
     ab = build_convention_report(make_clean_model())["area_budget"]
     assert ab["available"] is False and "reason" in ab
+
+
+def test_schema_version_is_pinned():
+    assert SCHEMA == "matchline.convention_report/1"
+
+
+def test_top_level_keys_are_pinned():
+    out = build_convention_report(make_clean_model())
+    assert set(out) == {
+        "schema",
+        "building",
+        "volume_bias",
+        "non_room_area",
+        "area_budget",
+        "area_definitions",
+    }
