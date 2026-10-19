@@ -97,7 +97,8 @@ jobs:
         run: |
           python run_pipeline.py \
             --ifc "$RUNNER_TEMP/pipe/stage_06_bem/bldg_101.ifc" \
-            --out-dir "$RUNNER_TEMP/ifc"
+            --out-dir "$RUNNER_TEMP/ifc" \
+            --acknowledge-review  # IFC import flags space-merge items; headless leg acknowledges them
       - name: Simulate the roundtrip
         run: |
           python sim_smoke.py \
