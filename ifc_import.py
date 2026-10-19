@@ -48,8 +48,8 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
+from ifc_errors import IfcImportError
 from pipeline_exceptions import PipelineDependencyError
-from run_pipeline import StageError
 
 
 def _ensure_ifc():
@@ -118,11 +118,11 @@ def _length_scale(f) -> float:
     try:
         ua = f.by_type("IfcUnitAssignment")[0]
     except IndexError:
-        raise StageError(
-            stage_name="ifc_import",
-            stage_index=1,
-            msg="No IfcUnitAssignment found in IFC file",
-            hint="IFC files should define a length unit via IfcUnitAssignment",
+        raise IfcImportError(
+            "ifc.missing_units",
+            "No IfcUnitAssignment found in IFC file",
+            "Re-export with units defined; IFC files should define a length "
+            "unit via IfcUnitAssignment.",
         )
     for u in ua.Units or []:
         utype = getattr(u, "UnitType", None)
@@ -135,17 +135,15 @@ def _length_scale(f) -> float:
             try:
                 return float(cf.ValueComponent) * _si_scale(cf.UnitComponent)
             except Exception as exc:
-                raise StageError(
-                    stage_name="ifc_import",
-                    stage_index=1,
-                    msg=f"Cannot read length unit conversion: {exc}",
-                    hint="Check that IfcConversionBasedUnit has a valid ConversionFactor",
+                raise IfcImportError(
+                    "ifc.broken_length_unit",
+                    f"Cannot read length unit conversion: {exc}",
+                    "Check that IfcConversionBasedUnit has a valid ConversionFactor.",
                 )
-    raise StageError(
-        stage_name="ifc_import",
-        stage_index=1,
-        msg="No LENGTHUNIT found in IfcUnitAssignment",
-        hint="Ensure the IFC file defines a length unit (e.g. meters, feet)",
+    raise IfcImportError(
+        "ifc.missing_units",
+        "No LENGTHUNIT found in IfcUnitAssignment",
+        "Ensure the IFC file defines a length unit (e.g. meters, feet).",
     )
 
 
@@ -3107,34 +3105,107 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         try:
             path_resolved.relative_to(cwd_resolved)
         except ValueError:
-            raise ValueError(
+            raise IfcImportError(
+                "ifc.path_outside_workspace",
                 f"Input path '{path}' resolves to '{path_resolved}' which escapes "
-                f"the working directory '{cwd_resolved}'. "
-                "Rejecting to prevent path traversal."
+                f"the working directory '{cwd_resolved}'.",
+                "Run the pipeline from the project directory and pass a path "
+                "underneath it (the refusal guards against path traversal).",
             )
     max_mb = int(os.environ.get("MATCHLINE_MAX_IFC_SIZE_MB", 100))
     file_size_mb = path.stat().st_size / (1024 * 1024)
     if file_size_mb > max_mb:
-        raise ValueError(
-            f"IFC file '{path}' is {file_size_mb:.1f} MB, "
-            f"exceeds the {max_mb} MB limit. "
-            "Set MATCHLINE_MAX_IFC_SIZE_MB to increase the limit."
+        raise IfcImportError(
+            "ifc.file_too_large",
+            f"IFC file '{path}' is {file_size_mb:.1f} MB, exceeds the {max_mb} MB limit.",
+            f"Split the model or set MATCHLINE_MAX_IFC_SIZE_MB above {max_mb} "
+            "if the machine has the memory for it.",
         )
-    f = ifcopenshell.open(str(path))
+    # STEP sanity pre-checks (#1161): ifcopenshell happily opens truncated
+    # STEP files and silently returns a partial model, so verify the STEP
+    # magic and the END-ISO-10303-21 terminator before parsing.
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(256)
+            fh.seek(0, os.SEEK_END)
+            byte_size = fh.tell()
+            tail = head if byte_size <= 256 else b""
+            if tail == b"":
+                fh.seek(-256, os.SEEK_END)
+                tail = fh.read(256)
+    except OSError as exc:
+        raise IfcImportError(
+            "ifc.unreadable_file",
+            f"Cannot read IFC file '{path}': {exc}",
+            "Check the file exists and is readable by this user.",
+        ) from exc
+    if byte_size == 0:
+        raise IfcImportError(
+            "ifc.unreadable_file",
+            f"IFC file '{path}' is empty (0 bytes).",
+            "Re-export the IFC from the BIM tool; an empty file carries no model.",
+        )
+    if b"ISO-10303-21" not in head:
+        raise IfcImportError(
+            "ifc.invalid_header",
+            f"IFC file '{path}' does not start with the ISO-10303-21 STEP magic.",
+            "Verify the file is an IFC STEP (.ifc) export, not another format "
+            "renamed or truncated at the start.",
+        )
+    if b"END-ISO-10303-21" not in tail:
+        raise IfcImportError(
+            "ifc.truncated_file",
+            f"IFC file '{path}' ends without the END-ISO-10303-21 terminator.",
+            "The file was likely cut off during export or transfer; re-export "
+            "or re-download it. A partial IFC would import as a silently "
+            "partial building.",
+        )
+    try:
+        f = ifcopenshell.open(str(path))
+    except OSError as exc:
+        raise IfcImportError(
+            "ifc.unreadable_file",
+            f"Cannot open IFC file '{path}': {exc}",
+            "Check the file exists and is readable by this user.",
+        ) from exc
+    except Exception as exc:
+        raw = str(exc)
+        if "Unsupported schema" in raw:
+            code = "ifc.unsupported_schema"
+            remediation = "Re-export as IFC4 or IFC2X3; other schema variants are not read."
+        elif "SPF header" in raw:
+            code = "ifc.invalid_header"
+            remediation = (
+                "The STEP header does not match the entity payload; the file is "
+                "likely corrupt or hand-edited. Re-export it from the BIM tool."
+            )
+        else:
+            code = "ifc.parse_error"
+            remediation = (
+                "Re-export the IFC from the BIM tool. If the file opens in "
+                "other tools but not here, file an issue with the exporter name."
+            )
+        raise IfcImportError(code, f"IFC parse failed for '{path}': {raw}", remediation) from exc
 
     max_elements = int(os.environ.get("MATCHLINE_MAX_IFC_ELEMENTS", 500_000))
     # Count all entities via the native 0.9 API (wrapped_data was removed in 0.9.0).
     total_elements = len(f.entity_names())
     if total_elements > max_elements:
-        raise ValueError(
+        raise IfcImportError(
+            "ifc.element_limit_exceeded",
             f"IFC file '{path}' has {total_elements} elements, "
-            f"exceeds the {max_elements} element limit. "
-            "Set MATCHLINE_MAX_IFC_ELEMENTS to increase the limit."
+            f"exceeds the {max_elements} element limit.",
+            f"Split the model or set MATCHLINE_MAX_IFC_ELEMENTS above "
+            f"{max_elements} if the machine has the memory for it.",
         )
     upgrade_skipped = None  # (entity, error) pairs, only when we upgraded
     if f.schema != "IFC4":
         if f.schema != "IFC2X3":
-            raise ValueError(f"expected IFC4 or IFC2X3 schema, got {f.schema}")
+            raise IfcImportError(
+                "ifc.unsupported_schema",
+                f"expected IFC4 or IFC2X3 schema, got {f.schema}",
+                "Re-export as IFC4 or IFC2X3; other schema variants are not read.",
+            )
         # Translation-first (#929): upgrade IFC2X3 to IFC4 in memory via the
         # vendored ifcopenshell schema Migrator, then run the unchanged IFC4
         # pipeline. Entities the migrator cannot map are collected, never
@@ -3148,6 +3219,16 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         return Provenance(sheet_id=sheet, revision=revision, method=method, confidence=conf, note=n)
 
     projects = f.by_type("IfcProject")
+    if not projects:
+        # degrade-with-warning (#1161): a file with no IfcProject still imports
+        # with a fallback name, but the omission is never silent.
+        import warnings
+
+        warnings.warn(
+            "IFC file contains no IfcProject entity; importing with a "
+            "fallback building name and no site context",
+            stacklevel=2,
+        )
     project = projects[0] if projects else None
     bname = ""
     if project is not None:
@@ -3192,11 +3273,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         try:
             return float(getattr(s, "Elevation", 0.0) or 0.0)
         except (RuntimeError, TypeError, ValueError):
-            raise StageError(
-                stage_name="ifc_import",
-                stage_index=1,
-                msg=f"Failed to read elevation from storey: {getattr(s, 'Name', 'unknown')}",
-                hint="Ensure storeys have a valid Elevation attribute in the IFC file",
+            raise IfcImportError(
+                "ifc.storey_elevation",
+                f"Failed to read elevation from storey: {getattr(s, 'Name', 'unknown')}",
+                "Ensure storeys have a valid Elevation attribute in the IFC file.",
             )
 
     storeys.sort(key=_storey_elevation)
