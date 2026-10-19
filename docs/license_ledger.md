@@ -19,7 +19,7 @@ An artifact takes the most restrictive class among its datasets.
 
 | Artifact | Trained on | Class | Committed |
 |---|---|---|---|
-| `facade_priors.json` | CMP Facade | share_alike | yes, with `NOTICE.md` |
+| `configs/facade_priors.json` | CMP Facade | share_alike | yes, with `NOTICE.md` |
 | `review_classifier/trained_model_*.npz` (3) | synthetic + review corpus | permissive | yes |
 | YOLO11n door/window weights (`~/workspace/datasets/detector_runs/yolo11n_{baseline,eca}_s*/`) | CubiCasa5K + YOLO11n COCO weights | copyleft (and noncommercial) | no |
 | from-scratch detector checkpoints (`~/workspace/datasets/detector_runs/scratch-synth-*/ckpt.pt`) | matchline synthetic generators | permissive | no (produced by the `detector-train.yml` workflow) |

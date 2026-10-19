@@ -55,3 +55,4 @@ dist/
 # Runtime feedback log (PR C of the #1093 top-level clean):
 # regenerates via `matchline feedback --log` / demo runs; never commit working logs
 /feedback.jsonl
+.coverage

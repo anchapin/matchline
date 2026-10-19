@@ -799,7 +799,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--full",
         action="store_true",
-        help="also run the full 606-facade sweep -> facade_priors.json",
+        help="also run the full 606-facade sweep -> configs/facade_priors.json",
     )
     p.add_argument("--out-json", default=None, help="where the sweep writes priors")
     p.set_defaults(func=cmd_facade_takeoff)

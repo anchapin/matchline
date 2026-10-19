@@ -160,7 +160,7 @@ matchline facade-takeoff --full --data-root ~/workspace/datasets/cmp-facade
 : Override the default CMP Facade dataset root (`~/workspace/datasets/cmp-facade`).
 
 `--full`
-: Run the full 606-facade sweep and write results to `facade_priors.json`.
+: Run the full 606-facade sweep and write results to `configs/facade_priors.json`.
 
 `--out-json PATH`
 : Override the output path for the full sweep results.

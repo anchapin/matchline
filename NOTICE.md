@@ -5,9 +5,9 @@ are derived from third-party data and carry that data's license instead.
 `license_ledger.json` lists every dataset and derived artifact; see
 `docs/license_ledger.md`.
 
-## facade_priors.json: CC BY-SA
+## configs/facade_priors.json: CC BY-SA
 
-`facade_priors.json` holds window-to-wall, door and opaque fractions measured
+`configs/facade_priors.json` holds window-to-wall, door and opaque fractions measured
 on the 606 facades of the CMP Facade Database (Radim Tylecek and Radim Sara,
 "Spatial Pattern Templates for Recognition of Objects with Regular Structure",
 GCPR 2013, https://cmp.felk.cvut.cz/~tylecr1/facade/). The database is released

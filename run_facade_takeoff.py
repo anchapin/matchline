@@ -2,7 +2,7 @@
 
 Part 1: detailed takeoff + XML cross-check on a handful of facades.
 Part 2: full 606-facade sweep -> priors table + agreement stats,
-        saved to facade_priors.json.
+        saved to configs/facade_priors.json.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from facade_takeoff import (
 )
 
 DATA_ROOT = Path.home() / "workspace" / "datasets" / "cmp-facade"
-OUT_JSON = Path(__file__).resolve().parent / "facade_priors.json"
+OUT_JSON = Path(__file__).resolve().parent / "configs" / "facade_priors.json"
 
 
 def demo_facades(n: int = 5, data_root: "str | Path | None" = None) -> None:

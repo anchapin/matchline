@@ -8,7 +8,7 @@ dimensioned CAD elevations: the CMP Facade dataset (606 rectified facade
 photos with per-pixel semantic masks, `~/workspace/datasets/cmp-facade/`).
 
 Code: `facade_takeoff.py` · demo/stats: `run_facade_takeoff.py` ·
-priors: `facade_priors.json` · tests: `tests/test_facade_takeoff.py`.
+priors: `configs/facade_priors.json` · tests: `tests/test_facade_takeoff.py`.
 
 ## The scale problem (and how it's handled)
 
