@@ -224,6 +224,7 @@ def list_review_items(
     # Worst-first (#996): open first, highest urgency, lowest confidence.
     # Same ordering the HTML review page renders (#749).
     import review.review_report as review_report
+
     items = review_report.worst_first(items)
 
     n_auto = sum(1 for i in items if i.auto_resolved)
@@ -453,6 +454,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         import json
 
         import review.review_report as review_report
+
         try:
             doc = json.loads(pathlib.Path(args.apply).read_text())
             dest_apply = pathlib.Path(getattr(args, "out", None) or model_path)
@@ -477,6 +479,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     # --- Write the HTML review report (#749) ---
     if getattr(args, "report", None):
         import review.review_report as review_report
+
         d = review_report.write_review(pathlib.Path(args.report), model)
         print(f"Review report: {d / 'review.html'}")
         return
@@ -498,6 +501,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         is_confirm = getattr(args, "bulk_confirm", False)
         import review.review_report as review_report
+
         lvl_idx = review_report._level_index(model)
         matched = [
             item
@@ -574,6 +578,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # --- Correction history (#997): undo, revert-to-automatic, listing ---
     import review.corrections as corrections_mod
+
     if any(history_modes):
         if getattr(args, "undo", None) is not None:
             if args.undo < 1:
@@ -642,6 +647,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             import json
 
             import review.review_report as review_report
+
             lvl_idx = review_report._level_index(model)
             print(
                 json.dumps(

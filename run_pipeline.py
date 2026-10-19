@@ -42,7 +42,6 @@ from bem.bem_export import (
 )
 from bem.bem_helpers import _edge_facades
 from construction_library import apply_construction_library
-from review.convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
     extract_with_tags,
@@ -58,6 +57,7 @@ from geometry.geometry_simplify import (  # noqa: F401  (footprint_from_regions 
 )
 from link import build_model
 from pipeline_exceptions import StageError
+from review.convention_report import build_convention_report
 from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
 from telemetry_emitter import TelemetryEmitter

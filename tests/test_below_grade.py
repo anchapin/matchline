@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from geometry.below_grade import boundary_types
 from building_model import BuildingModel, EnvelopeWall, Level, Space
+from geometry.below_grade import boundary_types
 from geometry.interstory import match_interstory
 
 

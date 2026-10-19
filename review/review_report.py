@@ -771,6 +771,7 @@ def _set(
     model.log_revision(sheet, rev, "review", f"{item.id} {note}")
     if corrections_path is not None:
         import review.corrections as _corrections
+
         _corrections.record(
             model,
             item,

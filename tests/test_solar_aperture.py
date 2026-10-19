@@ -5,8 +5,8 @@ import math
 import pytest
 
 from building_model import BuildingModel
-from ifc.ifc_import import import_ifc
 from geometry.roof_geometry import roof_plane
+from ifc.ifc_import import import_ifc
 from solar_aperture import (
     compound_angle_deg,
     facet_aperture,
