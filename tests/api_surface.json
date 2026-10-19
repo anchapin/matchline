@@ -484,9 +484,7 @@
       }
     },
     "run_pipeline": {
-      "classes": {
-        "StageError": "self, stage_name: str, stage_index: int, msg: str, hint: str=''"
-      },
+      "classes": {},
       "functions": {
         "main": "args, config: dict | None=None",
         "model_from_linked_model": "model, simplified_ring: list, wall_height_m: float, simplify_tolerance: float",

@@ -57,6 +57,7 @@ from geometry_simplify import (  # noqa: F401  (footprint_from_regions reused be
     simplify_ring,
 )
 from link import build_model
+from pipeline_exceptions import StageError
 from room_labels import attach_room_labels
 from synth.multidiscipline import generate_building
 from telemetry_emitter import TelemetryEmitter
@@ -65,16 +66,6 @@ from validate import export_gate, run_checks, validate_bem_conservation
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class StageError(Exception):
-    """Structured error raised when a pipeline stage fails with a defined recovery contract."""
-
-    def __init__(self, stage_name: str, stage_index: int, msg: str, hint: str = ""):
-        self.stage_name = stage_name
-        self.stage_index = stage_index
-        self.hint = hint
-        super().__init__(f"[{stage_name}] {msg}")
 
 
 def write_json(p: Path, data: Any) -> None:
