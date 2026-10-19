@@ -48,13 +48,13 @@ mkdir -p ~/workspace/datasets/aec-geometric-bench/
 **Environment variable:** None (overridden via `--data-root` CLI flag or `DATA_ROOT` in scripts)
 
 **What it is:** Annotated facade images with bounding-box XML annotations for windows,
-doors, and facade elements. License: CC BY-SA (no version named). `facade_priors.json`
+doors, and facade elements. License: CC BY-SA (no version named). `configs/facade_priors.json`
 is derived from it and stays CC BY-SA; see `NOTICE.md`.
 
 **Used for in matchline:**
 
 - `matchline facade-takeoff --n 5` — CMP Facade area takeoffs (wall/glazing/door fractions)
-- `run_facade_takeoff.py` — generates `facade_priors.json` for the BEM review queue
+- `run_facade_takeoff.py` — generates `configs/facade_priors.json` for the BEM review queue
 - `facade_takeoff.py` — core extraction logic for facade elements
 
 **Setup:**

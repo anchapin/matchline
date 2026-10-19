@@ -84,19 +84,19 @@ def test_a_build_with_an_unknown_model_file_fails(tmp_path, ledger):
 
 
 def test_share_alike_needs_the_notice_in_the_build(tmp_path, ledger):
-    bare = _wheel(tmp_path, ["cli.py", "facade_priors.json"])
+    bare = _wheel(tmp_path, ["cli.py", "configs/facade_priors.json"])
     assert "no NOTICE.md" in C.check_dist(ledger, bare.name, C.dist_members(bare))[0]
     (tmp_path / "ok").mkdir()
-    ok = _wheel(tmp_path / "ok", ["cli.py", "facade_priors.json", "x.dist-info/NOTICE.md"])
+    ok = _wheel(tmp_path / "ok", ["cli.py", "configs/facade_priors.json", "x.dist-info/NOTICE.md"])
     assert C.check_dist(ledger, ok.name, C.dist_members(ok)) == []
 
 
 def test_facade_priors_share_alike_obligation_is_stated(ledger):
-    a = next(a for a in ledger["artifacts"] if a["path"] == "facade_priors.json")
+    a = next(a for a in ledger["artifacts"] if a["path"] == "configs/facade_priors.json")
     assert C.artifact_class(ledger, a) == "share_alike"
     assert "CC BY-SA" in a["notice"] and "Tylecek" in a["notice"]
     notice = (ROOT / "NOTICE.md").read_text()
-    assert "facade_priors.json" in notice and "CC BY-SA" in notice
+    assert "configs/facade_priors.json" in notice and "CC BY-SA" in notice
 
 
 def test_malformed_ledger_is_rejected(ledger):

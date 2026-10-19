@@ -1,234 +1,234 @@
 {
-  "schema": "matchline.license_ledger/1",
-  "classes": {
-    "permissive": "may ship in a release",
-    "share_alike": "may ship only with its notice, and the file stays under the source's share-alike license",
-    "noncommercial": "evaluation only: never ships in a release",
-    "copyleft": "evaluation only: never ships in a BSD-3-Clause release"
+ "schema": "matchline.license_ledger/1",
+ "classes": {
+  "permissive": "may ship in a release",
+  "share_alike": "may ship only with its notice, and the file stays under the source's share-alike license",
+  "noncommercial": "evaluation only: never ships in a release",
+  "copyleft": "evaluation only: never ships in a BSD-3-Clause release"
+ },
+ "datasets": [
+  {
+   "id": "matchline_synthetic",
+   "name": "matchline synthetic generators (synth/, review_classifier/data.py)",
+   "license": "BSD-3-Clause",
+   "class": "permissive",
+   "source": "this repository"
   },
-  "datasets": [
-    {
-      "id": "matchline_synthetic",
-      "name": "matchline synthetic generators (synth/, review_classifier/data.py)",
-      "license": "BSD-3-Clause",
-      "class": "permissive",
-      "source": "this repository"
-    },
-    {
-      "id": "review_corpus",
-      "name": "review_classifier/corpus/*.jsonl (90 labelled feature strings, no drawing content)",
-      "license": "BSD-3-Clause",
-      "class": "permissive",
-      "source": "this repository, committed with the phase-4 review queue (1bd31f7, 2026-09-22)"
-    },
-    {
-      "id": "cmp_facade",
-      "name": "CMP Facade Database",
-      "license": "CC BY-SA (the source names no version; 4.0 is the closest match)",
-      "class": "share_alike",
-      "source": "https://cmp.felk.cvut.cz/~tylecr1/facade/",
-      "attribution": "Radim Tylecek and Radim Sara, Spatial Pattern Templates for Recognition of Objects with Regular Structure, GCPR 2013"
-    },
-    {
-      "id": "cubicasa5k",
-      "name": "CubiCasa5K",
-      "license": "CC BY-NC 4.0 (repository LICENSE; some mirrors list CC BY-NC-SA)",
-      "class": "noncommercial",
-      "source": "https://github.com/CubiCasa/CubiCasa5k"
-    },
-    {
-      "id": "aec_bench",
-      "name": "AEC Geometric Bench",
-      "license": "CC BY-NC 4.0",
-      "class": "noncommercial",
-      "source": "see DATASETS.md"
-    },
-    {
-      "id": "archcad",
-      "name": "ArchCAD (gated)",
-      "license": "CC BY-NC 4.0",
-      "class": "noncommercial",
-      "source": "https://huggingface.co/datasets/jackluoluo/ArchCAD"
-    },
-    {
-      "id": "floorplancad",
-      "name": "FloorPlanCAD",
-      "license": "CC BY-NC 4.0",
-      "class": "noncommercial",
-      "source": "https://floorplancad.github.io/"
-    },
-    {
-      "id": "bsi_clinic",
-      "name": "buildingSMART Clinic sample model (IFC2X3)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "buildingSMART sample files; held out, never committed"
-    },
-    {
-      "id": "bsi_esplanades",
-      "name": "buildingSMART Esplanades architectural IFC (IFC2X3)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "buildingSMART community sample files; held out, never committed"
-    },
-    {
-      "id": "bsi_duplex",
-      "name": "buildingSMART Duplex Apartment architectural + MEP discipline IFCs (IFC2X3)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "buildingSMART community sample files; held out, never committed"
-    },
-    {
-      "id": "ultralytics_yolo11n",
-      "name": "Ultralytics YOLO11n COCO-pretrained weights (yolo11n.pt)",
-      "license": "AGPL-3.0 (or an Ultralytics enterprise license)",
-      "class": "copyleft",
-      "source": "https://github.com/ultralytics/ultralytics"
-    },
-    {
-      "id": "cbecs_2018",
-      "name": "EIA Commercial Buildings Energy Consumption Survey 2018, public use microdata",
-      "license": "Public domain (U.S. government data, EIA)",
-      "class": "permissive",
-      "source": "https://www.eia.gov/consumption/commercial/data/2018/index.php?view=microdata",
-      "use": "weighted site-EUI percentiles for the simulation smoke test band (sim/cbecs_band.py); the CSV is downloaded, never committed"
-    },
-    {
-      "id": "gni_18",
-      "name": "TUM GNI BIM Dataset model_18 (IFC2X3, single-discipline student submission)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "zenodo.org/records/19722012 (DOI 10.5281/zenodo.19722012); held out, never committed"
-    },
-    {
-      "id": "bsi_molio",
-      "name": "buildingSMART Molio sample building IFC (IFC2X3, 969,835 entities; needs MATCHLINE_MAX_IFC_ELEMENTS=1500000)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "buildingSMART community sample files; held out, never committed"
-    },
-    {
-      "id": "bsi_clinic_cobie",
-      "name": "buildingSMART Medical-Dental Clinic design workbook (COBie 2.4 xlsx, #974 fixture)",
-      "license": "CC BY 4.0",
-      "class": "permissive",
-      "source": "github.com/buildingsmart-community/Community-Sample-Test-Files (IFC 2.3.0.1 (IFC 2x3)/Medical-Dental Clinic)"
-    }
-  ],
-  "artifacts": [
-    {
-      "path": "facade_priors.json",
-      "kind": "statistics",
-      "datasets": [
-        "cmp_facade"
-      ],
-      "committed": true,
-      "produced_by": "run_facade_takeoff.py --full (606 facades)",
-      "notice": "facade_priors.json is derived from the CMP Facade Database (Radim Tylecek and Radim Sara, GCPR 2013) and is licensed CC BY-SA, not BSD-3-Clause. Redistributed copies or adaptations must credit the source and carry the same license."
-    },
-    {
-      "path": "review_classifier/trained_model_extraction_type.npz",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic",
-        "review_corpus"
-      ],
-      "committed": true,
-      "produced_by": "python -m review_classifier.train"
-    },
-    {
-      "path": "review_classifier/trained_model_route_to_review.npz",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic",
-        "review_corpus"
-      ],
-      "committed": true,
-      "produced_by": "python -m review_classifier.train"
-    },
-    {
-      "path": "review_classifier/trained_model_schedule_match.npz",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic",
-        "review_corpus"
-      ],
-      "committed": true,
-      "produced_by": "python -m review_classifier.train"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/yolo11n_baseline_s*/weights/best.pt",
-      "kind": "weights",
-      "datasets": [
-        "cubicasa5k",
-        "ultralytics_yolo11n"
-      ],
-      "committed": false,
-      "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/yolo11n_eca_s*/weights/best.pt",
-      "kind": "weights",
-      "datasets": [
-        "cubicasa5k",
-        "ultralytics_yolo11n"
-      ],
-      "committed": false,
-      "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
-    },
-    {
-      "path": "sim/reference_eui.json",
-      "kind": "statistics",
-      "datasets": [
-        "cbecs_2018"
-      ],
-      "committed": true,
-      "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write (prototype EUI from sim_smoke.py --reference-only)"
-    },
-    {
-      "path": "*/detector_runs/scratch-synth-*/ckpt.pt",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic"
-      ],
-      "committed": false,
-      "produced_by": "gh workflow detector-train.yml (from-scratch training on matchline synthetic sheets only)"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/scratch-tile640v3-38442234997/ckpt.pt",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic"
-      ],
-      "committed": false,
-      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/scratch-tile640v4-38503747552/ckpt.pt",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic"
-      ],
-      "committed": false,
-      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/scratch-tile640v5-38515813872/ckpt.pt",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic"
-      ],
-      "committed": false,
-      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
-    },
-    {
-      "path": "~/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt",
-      "kind": "weights",
-      "datasets": [
-        "matchline_synthetic"
-      ],
-      "committed": false,
-      "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
-    }
-  ]
+  {
+   "id": "review_corpus",
+   "name": "review_classifier/corpus/*.jsonl (90 labelled feature strings, no drawing content)",
+   "license": "BSD-3-Clause",
+   "class": "permissive",
+   "source": "this repository, committed with the phase-4 review queue (1bd31f7, 2026-09-22)"
+  },
+  {
+   "id": "cmp_facade",
+   "name": "CMP Facade Database",
+   "license": "CC BY-SA (the source names no version; 4.0 is the closest match)",
+   "class": "share_alike",
+   "source": "https://cmp.felk.cvut.cz/~tylecr1/facade/",
+   "attribution": "Radim Tylecek and Radim Sara, Spatial Pattern Templates for Recognition of Objects with Regular Structure, GCPR 2013"
+  },
+  {
+   "id": "cubicasa5k",
+   "name": "CubiCasa5K",
+   "license": "CC BY-NC 4.0 (repository LICENSE; some mirrors list CC BY-NC-SA)",
+   "class": "noncommercial",
+   "source": "https://github.com/CubiCasa/CubiCasa5k"
+  },
+  {
+   "id": "aec_bench",
+   "name": "AEC Geometric Bench",
+   "license": "CC BY-NC 4.0",
+   "class": "noncommercial",
+   "source": "see DATASETS.md"
+  },
+  {
+   "id": "archcad",
+   "name": "ArchCAD (gated)",
+   "license": "CC BY-NC 4.0",
+   "class": "noncommercial",
+   "source": "https://huggingface.co/datasets/jackluoluo/ArchCAD"
+  },
+  {
+   "id": "floorplancad",
+   "name": "FloorPlanCAD",
+   "license": "CC BY-NC 4.0",
+   "class": "noncommercial",
+   "source": "https://floorplancad.github.io/"
+  },
+  {
+   "id": "bsi_clinic",
+   "name": "buildingSMART Clinic sample model (IFC2X3)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "buildingSMART sample files; held out, never committed"
+  },
+  {
+   "id": "bsi_esplanades",
+   "name": "buildingSMART Esplanades architectural IFC (IFC2X3)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "buildingSMART community sample files; held out, never committed"
+  },
+  {
+   "id": "bsi_duplex",
+   "name": "buildingSMART Duplex Apartment architectural + MEP discipline IFCs (IFC2X3)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "buildingSMART community sample files; held out, never committed"
+  },
+  {
+   "id": "ultralytics_yolo11n",
+   "name": "Ultralytics YOLO11n COCO-pretrained weights (yolo11n.pt)",
+   "license": "AGPL-3.0 (or an Ultralytics enterprise license)",
+   "class": "copyleft",
+   "source": "https://github.com/ultralytics/ultralytics"
+  },
+  {
+   "id": "cbecs_2018",
+   "name": "EIA Commercial Buildings Energy Consumption Survey 2018, public use microdata",
+   "license": "Public domain (U.S. government data, EIA)",
+   "class": "permissive",
+   "source": "https://www.eia.gov/consumption/commercial/data/2018/index.php?view=microdata",
+   "use": "weighted site-EUI percentiles for the simulation smoke test band (sim/cbecs_band.py); the CSV is downloaded, never committed"
+  },
+  {
+   "id": "gni_18",
+   "name": "TUM GNI BIM Dataset model_18 (IFC2X3, single-discipline student submission)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "zenodo.org/records/19722012 (DOI 10.5281/zenodo.19722012); held out, never committed"
+  },
+  {
+   "id": "bsi_molio",
+   "name": "buildingSMART Molio sample building IFC (IFC2X3, 969,835 entities; needs MATCHLINE_MAX_IFC_ELEMENTS=1500000)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "buildingSMART community sample files; held out, never committed"
+  },
+  {
+   "id": "bsi_clinic_cobie",
+   "name": "buildingSMART Medical-Dental Clinic design workbook (COBie 2.4 xlsx, #974 fixture)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "github.com/buildingsmart-community/Community-Sample-Test-Files (IFC 2.3.0.1 (IFC 2x3)/Medical-Dental Clinic)"
+  }
+ ],
+ "artifacts": [
+  {
+   "path": "configs/facade_priors.json",
+   "kind": "statistics",
+   "datasets": [
+    "cmp_facade"
+   ],
+   "committed": true,
+   "produced_by": "run_facade_takeoff.py --full (606 facades)",
+   "notice": "configs/facade_priors.json is derived from the CMP Facade Database (Radim Tylecek and Radim Sara, GCPR 2013) and is licensed CC BY-SA, not BSD-3-Clause. Redistributed copies or adaptations must credit the source and carry the same license."
+  },
+  {
+   "path": "review_classifier/trained_model_extraction_type.npz",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic",
+    "review_corpus"
+   ],
+   "committed": true,
+   "produced_by": "python -m review_classifier.train"
+  },
+  {
+   "path": "review_classifier/trained_model_route_to_review.npz",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic",
+    "review_corpus"
+   ],
+   "committed": true,
+   "produced_by": "python -m review_classifier.train"
+  },
+  {
+   "path": "review_classifier/trained_model_schedule_match.npz",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic",
+    "review_corpus"
+   ],
+   "committed": true,
+   "produced_by": "python -m review_classifier.train"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/yolo11n_baseline_s*/weights/best.pt",
+   "kind": "weights",
+   "datasets": [
+    "cubicasa5k",
+    "ultralytics_yolo11n"
+   ],
+   "committed": false,
+   "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/yolo11n_eca_s*/weights/best.pt",
+   "kind": "weights",
+   "datasets": [
+    "cubicasa5k",
+    "ultralytics_yolo11n"
+   ],
+   "committed": false,
+   "produced_by": "detector/run_ab_eca.sh (detector/results/ab_2026-09-28)"
+  },
+  {
+   "path": "sim/reference_eui.json",
+   "kind": "statistics",
+   "datasets": [
+    "cbecs_2018"
+   ],
+   "committed": true,
+   "produced_by": "python sim/cbecs_band.py --csv cbecs2018_final_public.csv --write (prototype EUI from sim_smoke.py --reference-only)"
+  },
+  {
+   "path": "*/detector_runs/scratch-synth-*/ckpt.pt",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic"
+   ],
+   "committed": false,
+   "produced_by": "gh workflow detector-train.yml (from-scratch training on matchline synthetic sheets only)"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/scratch-tile640v3-38442234997/ckpt.pt",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic"
+   ],
+   "committed": false,
+   "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/scratch-tile640v4-38503747552/ckpt.pt",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic"
+   ],
+   "committed": false,
+   "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/scratch-tile640v5-38515813872/ckpt.pt",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic"
+   ],
+   "committed": false,
+   "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+  },
+  {
+   "path": "~/workspace/datasets/detector_runs/scratch-tile640v6ms-38530008572/ckpt.pt",
+   "kind": "weights",
+   "datasets": [
+    "matchline_synthetic"
+   ],
+   "committed": false,
+   "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+  }
+ ]
 }
