@@ -57,7 +57,7 @@
       ]
     },
     {
-      "description": "Defer Python 3.15 in ci.yml: openstudio 3.11.0 bindings segfault under 3.15 (PR #966 CI evidence, 2026-10-14). Lift when NREL ships compatible wheels. Non-OpenStudio workflows (sim-smoke, archcad-smoke, already on 3.15) are unaffected.",
+      "description": "Defer Python upgrades in ci.yml: the pytest job segfaults under 3.14 (openstudio extension modules loaded at crash; PR #1154 run 39189032104, 2026-10-19) and under 3.15 (openstudio 3.11.0 bindings segfault, PR #966 CI evidence, 2026-10-14). One-interpreter rule: ci.yml stays 3.12 until a coordinated move with fresh wheels. Non-OpenStudio workflows (sim-smoke, archcad-smoke, already on 3.15) are unaffected.",
       "matchManagers": [
         "github-actions"
       ],
@@ -67,7 +67,7 @@
       "matchFileNames": [
         ".github/workflows/ci.yml"
       ],
-      "allowedVersions": "<3.15"
+      "allowedVersions": "<3.13"
     }
   ]
 }

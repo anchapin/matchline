@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ class TestHelp:
         [
             "run",
             "validate",
+            "demo",
             "bem-export",
             "elevation-windows",
             "facade-takeoff",
@@ -37,7 +39,20 @@ class TestHelp:
             "symbols",
             "ifc-import",
             "ifc-export",
+            "ingest",
+            "scale",
+            "export-package",
+            "index",
+            "walls",
+            "schedules",
+            "feedback",
             "review",
+            "viewer",
+            "viewer-apply",
+            "diff",
+            "takeoff-diff",
+            "learn-legend",
+            "legend-eval",
         ],
     )
     def test_subcommand_help(self, sub):
@@ -346,3 +361,99 @@ def test_set_storey_height_flag_then_config():
         "L2": 4
     }
     assert _set_storey_height(SimpleNamespace(), None) is None
+
+
+class TestContractDispatch:
+    """Per-subcommand contract: happy path plus one degenerate input (#1123).
+
+    Covers the dispatches that had no CLI-level tests at all: export-package,
+    diff, viewer-apply, feedback, schedules. A degenerate input must exit
+    nonzero with a clean error message, never a traceback.
+    """
+
+    def test_export_package_missing_dir(self, tmp_path):
+        r = _run(["export-package", str(tmp_path / "nope")])
+        assert r.returncode == 1
+        assert "ERROR:" in r.stderr
+        assert "Traceback" not in r.stderr
+
+    def test_export_package_minimal_package(self, tmp_path):
+        import hashlib
+
+        pkg = tmp_path / "run" / "package"
+        pkg.mkdir(parents=True)
+        payload = b'{"hello": "world"}'
+        (pkg / "model.json").write_bytes(payload)
+        (pkg / "manifest.json").write_text(
+            json.dumps({"files": {"model.json": hashlib.sha256(payload).hexdigest()}})
+        )
+        r = _run(["export-package", str(tmp_path / "run")])
+        assert r.returncode == 0, r.stderr
+        assert "zip:" in r.stdout
+        assert (tmp_path / "run" / "package.zip").exists()
+
+    def test_diff_reports_changes(self, tmp_path):
+        from tests.model_factory import break_area, make_clean_model
+
+        (tmp_path / "old.json").write_text(make_clean_model().to_json())
+        new = make_clean_model()
+        break_area(new)
+        (tmp_path / "new.json").write_text(new.to_json())
+        r = _run(["diff", "--old", str(tmp_path / "old.json"), "--new", str(tmp_path / "new.json")])
+        assert r.returncode == 0, r.stderr
+        assert isinstance(json.loads(r.stdout), dict)
+
+    def test_diff_missing_file_is_clean(self, tmp_path):
+        r = _run(
+            ["diff", "--old", str(tmp_path / "gone.json"), "--new", str(tmp_path / "also.json")]
+        )
+        assert r.returncode == 1
+        assert "Traceback" not in r.stderr
+        assert "Error:" in r.stderr
+
+    def test_viewer_apply_missing_model_is_clean(self, tmp_path):
+        ops = tmp_path / "ops.json"
+        ops.write_text("{}")
+        r = _run(["viewer-apply", str(tmp_path / "nope.json"), str(ops)])
+        assert r.returncode == 1
+        assert "Traceback" not in r.stderr
+        assert "Error:" in r.stderr
+
+    def test_viewer_apply_rename_round_trip(self, tmp_path):
+        from tests.test_viewer_corrections import _model, _ops
+
+        model_path = tmp_path / "model.json"
+        model_path.write_text(_model().to_json())
+        ops_path = tmp_path / "ops.json"
+        ops_path.write_text(
+            json.dumps(
+                _ops({"op": "rename_space", "id": "L1-101", "field": "name", "value": "CONFERENCE"})
+            )
+        )
+        out_path = tmp_path / "out.json"
+        r = _run(["viewer-apply", str(model_path), str(ops_path), "--out", str(out_path)])
+        assert r.returncode == 0, r.stderr
+        applied = json.loads(out_path.read_text())
+        assert applied["model"]["spaces"]["L1-101"]["name"] == "CONFERENCE"
+
+    def test_feedback_record_then_summarize(self, tmp_path):
+        log = tmp_path / "fb.jsonl"
+        r = _run(["feedback", "--text", "contract test", "--topic", "cli", "--log", str(log)])
+        assert r.returncode == 0, r.stderr
+        assert "Feedback recorded" in r.stdout
+        assert log.exists()
+        r = _run(["feedback", "--summary", "--log", str(log)])
+        assert r.returncode == 0, r.stderr
+        assert isinstance(json.loads(r.stdout), dict)
+
+    def test_feedback_requires_text_or_summary(self, tmp_path):
+        r = _run(["feedback", "--log", str(tmp_path / "fb.jsonl")])
+        assert r.returncode == 2
+        assert "Traceback" not in r.stderr
+        assert "Error:" in r.stderr
+
+    def test_schedules_missing_dir_is_clean(self, tmp_path):
+        r = _run(["schedules", str(tmp_path / "nosheets")])
+        assert r.returncode == 1
+        assert "Traceback" not in r.stderr
+        assert "Error:" in r.stderr

@@ -10,6 +10,57 @@ the same everywhere — don't pretend the bias is zero; measure it, attribute it
 to the convention that caused it, and report it. The validation battery
 (`validate/`) is the natural home for these "convention bias" numbers.
 
+# Part 0 - Path to 1.0
+
+Added 2026-10-19. What 1.0 means for matchline: the first version a
+professional can lean on. It is a **stability and validation milestone, not a
+feature milestone**: the seven hard problems in Part I stay post-1.0 features,
+except the two pieces already promised by decisions (item 1's validation check
+and item 4's absorbed-area accounting), which land through the convention
+report gate below.
+
+## The 1.0 promise
+
+1. A documented, versioned public API (Python and CLI) with semver and a
+   deprecation policy, so a user can pin to it.
+2. Every generated model simulates: an end-to-end EnergyPlus gate on CI.
+3. Bad inputs fail loudly: coded, actionable diagnostics instead of bare
+   tracebacks, plus a documented IFC flavor coverage matrix.
+4. Stated performance budgets (wall-clock and memory) on a reference large
+   model, tracked in CI so regressions surface before release.
+5. Published accuracy numbers per slice from real licensed buildings (#748),
+   with the convention report attached, so claims are measured, not asserted.
+6. Versioned schemas (canonical model, review artifacts, telemetry) with
+   migration guides for every breaking change.
+7. Docs to standard: API reference, quickstart, tutorial, upgrade guide.
+8. A stated and tested support matrix (Python versions, Linux/macOS/Windows).
+
+## The gates
+
+Each gate has an issue with acceptance criteria. Gates 1-6 and 8-9 can start
+now; the benchmark gate (7) stays blocked on licensed building data (#748).
+
+| # | Gate | Issue |
+|---|------|-------|
+| 1 | Public API surface frozen and documented | #1159 |
+| 2 | End-to-end simulation gate on CI | #1160 |
+| 3 | IFC frontend robustness battery | #1161 |
+| 4 | Performance and memory budgets | #1162 |
+| 5 | Platform and Python support matrix | #1163 |
+| 6 | Schema versioning and migration guides | #1164 |
+| 7 | Real-building benchmark numbers published | #1165 |
+| 8 | Convention report artifact | #1166 |
+| 9 | Docs to standard | #1167 |
+
+## Non-goals for 1.0
+
+Kept out of the 1.0 bar so the freeze stays about stability: Part I items 2
+(sloped roofs), 3 (skylights), 5 (shading surfaces), 6 (per-space
+constructions) and the R1/R2 research tracks. They remain the 1.x feature
+roadmap exactly as Part I frames them. The convention report (gate 8) is the
+one Part I piece pulled in, because "measured bias, never silent" is already
+the project's stated answer and the report is what a 1.0 user audits.
+
 ## 1. Wall thickness → planar BEM surfaces
 
 **Chosen approach: keep thick walls internally** (per convention at export).

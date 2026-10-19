@@ -30,7 +30,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.15"
+          # Keep in step with ci.yml/release.yml (3.12). The 3.15 pin here was
+          # a renovate bump (#913), not a deliberate forward-compat probe;
+          # a Python version change moves ALL workflows together (#1140).
+          python-version: "3.12"
       - name: Install
         run: pip install --no-cache-dir -e . huggingface_hub
       - name: Download data/json.zip

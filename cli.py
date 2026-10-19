@@ -328,6 +328,9 @@ def cmd_schedules(args: argparse.Namespace) -> None:
     """Schedule tables (door, window, lighting, mechanical) from ingested sheets."""
     from pdf_schedules import schedules_for_sheets
 
+    if not Path(args.sheets).is_dir():
+        print(f"Error: sheets folder not found: {args.sheets}", file=sys.stderr)
+        sys.exit(1)
     res = schedules_for_sheets(args.sheets)
     for name, r in res.items():
         for s in r["schedules"]:
@@ -400,10 +403,14 @@ def cmd_diff(args: argparse.Namespace) -> None:
     from building_model import BuildingModel
     from diff import diff_models
 
-    with open(args.old) as f:
-        old_model = BuildingModel.from_json(json.load(f))
-    with open(args.new) as f:
-        new_model = BuildingModel.from_json(json.load(f))
+    try:
+        with open(args.old) as f:
+            old_model = BuildingModel.from_json(f.read())
+        with open(args.new) as f:
+            new_model = BuildingModel.from_json(f.read())
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     summary = diff_models(old_model, new_model)
 
@@ -548,8 +555,12 @@ def cmd_viewer_apply(args: argparse.Namespace) -> None:
     from building_model import BuildingModel
 
     model_path = Path(args.model)
-    model = BuildingModel.from_json(model_path.read_text())
-    doc = viewer_corrections.read(args.ops)
+    try:
+        model = BuildingModel.from_json(model_path.read_text())
+        doc = viewer_corrections.read(args.ops)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     summary = viewer_corrections.apply_ops(model, doc, model_path)
     dest = Path(args.out) if args.out else model_path
     dest.write_text(model.to_json())

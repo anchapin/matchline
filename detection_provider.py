@@ -229,8 +229,22 @@ class ScratchProvider(DetectionProvider):
             # as a fallback (#743 hardening)
             ckpt = torch.load(self.weights, map_location=self.device, weights_only=False)
         cfg = ckpt["config"]
-        model = ScratchNet(num_classes=cfg["num_classes"], width=cfg["width"], imgsz=cfg["imgsz"])
-        model.load_state_dict(ckpt["model"])
+        state = ckpt["model"]
+        # #1113 wall-class checkpoints carry wall_head.* keys; build the
+        # network with the head so the strict load keeps working
+        wall_classes = int(cfg.get("wall_classes", 0)) if isinstance(cfg, dict) else 0
+        if wall_classes == 0:
+            # older checkpoints carry no wall head; infer from state-dict keys
+            wc_conv = [k for k in state if k.startswith("wall_head.") and state[k].dim() == 4]
+            if wc_conv:
+                wall_classes = int(state[sorted(wc_conv)[-1]].shape[0])
+        model = ScratchNet(
+            num_classes=cfg["num_classes"],
+            width=cfg["width"],
+            imgsz=cfg["imgsz"],
+            wall_classes=wall_classes,
+        )
+        model.load_state_dict(state)
         model.to(self.device)
         model.eval()
         self._cfg = cfg
@@ -259,6 +273,9 @@ class ScratchProvider(DetectionProvider):
         x = self._torch.from_numpy(lb / 255.0).unsqueeze(0).unsqueeze(0)
         with self._torch.no_grad():
             preds = self._net(x)
+        if isinstance(preds, tuple):
+            # wall-class models return (det, wall); detection only needs det
+            preds = preds[0]
         rows = decode(preds, num_classes=cfg["num_classes"], conf=self.conf)[0]
         # decode-emission rows go in; scores come back out with their boxes,
         # so there is no parallel list to re-align (#940 duck finding 2)
