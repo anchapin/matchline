@@ -31,7 +31,7 @@ from typing import Dict, List, Optional
 
 from shapely.geometry import LineString, Point, Polygon
 
-import revisions
+import review.revisions as revisions
 import sheet_index
 
 SCHEMA = "matchline.set_report/1"

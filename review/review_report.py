@@ -770,7 +770,7 @@ def _set(
     rev = int(getattr(item.provenance, "revision", 0) or 0) if item.provenance else 0
     model.log_revision(sheet, rev, "review", f"{item.id} {note}")
     if corrections_path is not None:
-        import corrections as _corrections
+        import review.corrections as _corrections
 
         _corrections.record(
             model,

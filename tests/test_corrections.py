@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-import corrections as C
-import review_report as R
+import review.corrections as C
+import review.review_report as R
 from building_model import BuildingModel, Construction, Provenance, Space, SpaceOpening
 
 

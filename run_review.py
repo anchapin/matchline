@@ -223,7 +223,7 @@ def list_review_items(
 
     # Worst-first (#996): open first, highest urgency, lowest confidence.
     # Same ordering the HTML review page renders (#749).
-    import review_report
+    import review.review_report as review_report
 
     items = review_report.worst_first(items)
 
@@ -306,7 +306,7 @@ def _log_review_override(
     telemetry exclusion list, "review_item" otherwise. Capture failure
     never blocks the review.
     """
-    from feedback_capture import FeedbackCaptureError, FeedbackLog
+    from review.feedback_capture import FeedbackCaptureError, FeedbackLog
 
     item = next((i for i in model.review_queue if i.id == item_id), None)
     kind = item.kind if item is not None else "unknown"
@@ -336,7 +336,7 @@ def _decide(
     emitter=None,
 ) -> tuple[BuildingModel, str]:
     """Same state and revision log entry as the HTML review report (#749)."""
-    from review_report import decide
+    from review.review_report import decide
 
     done = {"confirm": "Confirmed", "reject": "Rejected"}[action]
     changed = decide(model, item_id, action, corrections_path=corrections_path)
@@ -453,7 +453,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     if getattr(args, "apply", None):
         import json
 
-        import review_report
+        import review.review_report as review_report
 
         try:
             doc = json.loads(pathlib.Path(args.apply).read_text())
@@ -478,7 +478,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # --- Write the HTML review report (#749) ---
     if getattr(args, "report", None):
-        import review_report
+        import review.review_report as review_report
 
         d = review_report.write_review(pathlib.Path(args.report), model)
         print(f"Review report: {d / 'review.html'}")
@@ -500,7 +500,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             sys.exit(1)
 
         is_confirm = getattr(args, "bulk_confirm", False)
-        import review_report
+        import review.review_report as review_report
 
         lvl_idx = review_report._level_index(model)
         matched = [
@@ -577,7 +577,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         return
 
     # --- Correction history (#997): undo, revert-to-automatic, listing ---
-    import corrections as corrections_mod
+    import review.corrections as corrections_mod
 
     if any(history_modes):
         if getattr(args, "undo", None) is not None:
@@ -646,7 +646,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         if args.format == "json":
             import json
 
-            import review_report
+            import review.review_report as review_report
 
             lvl_idx = review_report._level_index(model)
             print(

@@ -49,14 +49,16 @@ graph LR
     mech_tags
   end
   subgraph REVIEW
-    convention_report
-    corrections
     diff
     export_package
-    feedback_capture
     html_page
-    review_report
-    review_viewer
+    review_convention_report
+    review_corrections
+    review_feedback_capture
+    review_review_report
+    review_review_viewer
+    review_revisions
+    review_viewer_corrections
   end
   subgraph DETECTION
     detection_provider
@@ -95,7 +97,7 @@ graph LR
     limits
     pipeline_exceptions
     real_set
-    revisions
+    review
     run_bem_export
     run_elevation_windows
     run_facade_takeoff
@@ -125,7 +127,6 @@ graph LR
     telemetry_spec
     thermal_zoning
     vestibules
-    viewer_corrections
     wall_types
     zone_airflow
     zone_capacity
@@ -178,19 +179,20 @@ graph LR
   building_model --> datasets_adapter
   cli --> atomic_io
   cli --> building_model
-  cli --> corrections
   cli --> diff
   cli --> drawing_scale
   cli --> export_package
-  cli --> feedback_capture
   cli --> ifc_ifc_export
   cli --> ifc_ifc_import
   cli --> legend_learning
   cli --> pdf_ingest
   cli --> pdf_schedules
   cli --> plan_walls
-  cli --> review_report
-  cli --> review_viewer
+  cli --> review_corrections
+  cli --> review_feedback_capture
+  cli --> review_review_report
+  cli --> review_review_viewer
+  cli --> review_viewer_corrections
   cli --> run_bem_export
   cli --> run_elevation_windows
   cli --> run_facade_takeoff
@@ -203,15 +205,10 @@ graph LR
   cli --> run_validation
   cli --> sheet_index
   cli --> takeoff_diff
-  cli --> viewer_corrections
   construction_library --> building_model
   construction_library --> construction_library_data
   construction_library --> construction_library_prm_data
   construction_library --> constructions
-  convention_report --> area_definitions
-  corrections --> atomic_io
-  corrections --> opening_attach
-  corrections --> review_report
   datasets_adapter --> safe_xml
   daylight_skylights --> building_model
   detection_provider --> datasets_adapter
@@ -222,13 +219,12 @@ graph LR
   elevation_windows --> building_model
   elevation_windows --> registration
   export_package --> building_model
-  export_package --> corrections
-  export_package --> feedback_capture
   export_package --> html_page
-  export_package --> review_viewer
+  export_package --> review_corrections
+  export_package --> review_feedback_capture
+  export_package --> review_review_viewer
   facade_takeoff --> building_model
   facade_takeoff --> limits
-  feedback_capture --> telemetry_spec
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
@@ -241,7 +237,7 @@ graph LR
   ifc_ifc_export --> bem_bem_shading
   ifc_ifc_export --> building_model
   ifc_ifc_export --> constructions
-  ifc_ifc_export --> convention_report
+  ifc_ifc_export --> review_convention_report
   ifc_ifc_export --> space_use_defaults
   ifc_ifc_import --> atria
   ifc_ifc_import --> building_model
@@ -299,7 +295,7 @@ graph LR
   real_set --> pdf_ingest
   real_set --> pdf_schedules
   real_set --> plan_walls
-  real_set --> revisions
+  real_set --> review_revisions
   real_set --> semi_exterior
   real_set --> sheet_index
   real_set --> vestibules
@@ -307,14 +303,22 @@ graph LR
   real_set --> zone_capacity
   registration --> building_model
   registration --> room_labels
-  review_report --> building_model
-  review_report --> construction_library
-  review_report --> corrections
-  review_report --> html_page
-  review_report --> opening_attach
-  review_report --> space_merge
-  review_report --> takeoff_diff
-  review_viewer --> corrections
+  review_convention_report --> area_definitions
+  review_corrections --> atomic_io
+  review_corrections --> opening_attach
+  review_corrections --> review_review_report
+  review_feedback_capture --> telemetry_spec
+  review_review_report --> building_model
+  review_review_report --> construction_library
+  review_review_report --> html_page
+  review_review_report --> opening_attach
+  review_review_report --> review_corrections
+  review_review_report --> space_merge
+  review_review_report --> takeoff_diff
+  review_review_viewer --> review_corrections
+  review_viewer_corrections --> building_model
+  review_viewer_corrections --> review_corrections
+  review_viewer_corrections --> review_review_report
   roof_geometry --> building_model
   roof_simplify --> building_model
   roof_simplify --> roof_geometry
@@ -343,27 +347,27 @@ graph LR
   run_pipeline --> building_model
   run_pipeline --> construction_library
   run_pipeline --> constructions
-  run_pipeline --> convention_report
   run_pipeline --> datasets_adapter
   run_pipeline --> detection_provider
   run_pipeline --> export_package
-  run_pipeline --> feedback_capture
   run_pipeline --> geometry_simplify
   run_pipeline --> ifc_ifc_export
   run_pipeline --> ifc_ifc_import
   run_pipeline --> legend_learning
   run_pipeline --> pipeline_exceptions
   run_pipeline --> real_set
-  run_pipeline --> review_report
+  run_pipeline --> review_convention_report
+  run_pipeline --> review_feedback_capture
+  run_pipeline --> review_review_report
   run_pipeline --> room_labels
   run_pipeline --> space_use_defaults
   run_pipeline --> synth_multidiscipline
   run_pipeline --> telemetry_emitter
   run_pipeline --> zone_airflow
   run_review --> building_model
-  run_review --> corrections
-  run_review --> feedback_capture
-  run_review --> review_report
+  run_review --> review_corrections
+  run_review --> review_feedback_capture
+  run_review --> review_review_report
   run_review --> telemetry_emitter
   run_room_labels --> room_labels
   run_symbols --> jesse
@@ -372,7 +376,7 @@ graph LR
   run_validation --> synth_multidiscipline
   schedule_parse --> building_model
   semi_exterior --> bem_bem_space_split
-  sheet_index --> revisions
+  sheet_index --> review_revisions
   solar_aperture --> roof_geometry
   space_merge --> building_model
   space_use_defaults --> building_model
@@ -396,9 +400,6 @@ graph LR
   telemetry_emitter --> telemetry_spec
   thermal_zoning --> bem_bem_helpers
   thermal_zoning --> bem_bem_multistorey
-  viewer_corrections --> building_model
-  viewer_corrections --> corrections
-  viewer_corrections --> review_report
   wall_types --> construction_library
   wall_types --> plan_walls
   zone_airflow --> building_model

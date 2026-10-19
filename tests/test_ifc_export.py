@@ -233,7 +233,7 @@ def test_skylights_export_as_ifcwindow_skylight_on_a_roof_slab(tmp_path):
 def test_export_ifc_writes_convention_report(tmp_path):
     import json
 
-    from convention_report import SCHEMA
+    from review.convention_report import SCHEMA
 
     model = make_clean_model()
     model_path = tmp_path / "model.json"

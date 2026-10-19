@@ -182,7 +182,7 @@ def _pinned_review_model():
 
 def golden_review_decisions() -> bytes:
     """The decisions file write_review emits for the pinned review model."""
-    import review_report
+    import review.review_report as review_report
 
     with tempfile.TemporaryDirectory() as td:
         d = review_report.write_review(Path(td), _pinned_review_model())

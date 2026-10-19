@@ -27,7 +27,7 @@ import html
 import json
 from typing import List, Optional
 
-import corrections
+import review.corrections as corrections
 
 SCHEMA = "matchline.review_viewer/1"
 

@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import revisions
+import review.revisions as revisions
 
 SCHEMA = "matchline.sheet_index/1"
 

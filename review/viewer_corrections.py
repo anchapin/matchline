@@ -101,8 +101,8 @@ def apply_ops(
     Corrections write beside the model into the correction history (#997).
     A malformed op raises before anything changes.
     """
-    import corrections as corrections_mod
-    from review_report import apply_decisions
+    import review.corrections as corrections_mod
+    from review.review_report import apply_decisions
 
     check(doc)
     # every revert key must resolve against the standing correction history
@@ -218,7 +218,7 @@ def _require_space(model, sid: str) -> None:
 
 
 def _require_opening(model, oid: str) -> None:
-    from review_report import _find_opening
+    from review.review_report import _find_opening
 
     if _find_opening(model, oid)[1] is None:
         raise ValueError(f"opening {oid!r} is not in the model")

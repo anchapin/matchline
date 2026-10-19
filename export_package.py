@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 
-from feedback_capture import summarize
 from html_page import page_head
+from review.feedback_capture import summarize
 
 SCHEMA = "matchline.trust_report/1"
 DISCLAIMER = (
@@ -114,7 +114,7 @@ def _corrections(out_dir) -> dict:
     p = Path(out_dir) / "corrections.json"
     if not p.exists():
         return {"recorded": False, "reason": "no accepted corrections beside the model yet"}
-    import corrections as corrections_mod
+    import review.corrections as corrections_mod
 
     try:
         doc = corrections_mod.read(p)
@@ -608,7 +608,7 @@ def _viewer_fragment(scene: dict, banner: str = "") -> str:
     """The 3D review viewer (#1001) as an embeddable fragment: one render
     core shared with the ``matchline viewer`` page, embedded here in the
     share-back preview (#999)."""
-    import review_viewer
+    import review.review_viewer as review_viewer
 
     return review_viewer.fragment(scene, banner=banner)
 
@@ -616,7 +616,7 @@ def _viewer_fragment(scene: dict, banner: str = "") -> str:
 def review_viewer_scene(model, corrections_doc: Optional[dict] = None) -> dict:
     """The viewer scene built from the model the package is built around
     (#1001); read verbatim, nothing re-derived."""
-    import review_viewer
+    import review.review_viewer as review_viewer
 
     return review_viewer.build_scene(model, corrections_doc=corrections_doc)
 

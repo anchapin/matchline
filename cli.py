@@ -435,7 +435,7 @@ def _baseline_diff(out_dir: Path, baseline_dir: Path) -> dict:
     import takeoff_diff
     from atomic_io import write_text_atomic
     from building_model import BuildingModel
-    from review_report import attach_takeoff_diff_items
+    from review.review_report import attach_takeoff_diff_items
 
     old_path = baseline_dir / "stage_02_model.json"
     new_path = out_dir / "stage_02_model.json"
@@ -492,7 +492,7 @@ def cmd_feedback(args: argparse.Namespace) -> None:
     """Open-ended feedback and feedback-log summaries (#1005, #1038)."""
     import json as json_mod
 
-    from feedback_capture import FeedbackCaptureError, FeedbackLog, summarize
+    from review.feedback_capture import FeedbackCaptureError, FeedbackLog, summarize
 
     log = FeedbackLog(args.log)
     if args.text is not None:
@@ -534,8 +534,8 @@ def cmd_review(args: argparse.Namespace) -> None:
 
 def cmd_viewer(args: argparse.Namespace) -> None:
     """Write the read-only 3D review viewer page for a model (#1001)."""
-    import corrections as corrections_mod
-    import review_viewer
+    import review.corrections as corrections_mod
+    import review.review_viewer as review_viewer
     from building_model import BuildingModel
 
     model = BuildingModel.from_json(Path(args.model).read_text())
@@ -551,7 +551,7 @@ def cmd_viewer_apply(args: argparse.Namespace) -> None:
     """Apply a viewer corrections ops file through the decisions workflow (#1002)."""
     import json
 
-    import viewer_corrections
+    import review.viewer_corrections as viewer_corrections
     from building_model import BuildingModel
 
     model_path = Path(args.model)

@@ -37,7 +37,7 @@ def pkg(tmp_path_factory):
 
 
 def test_package_reports_the_feedback_summary(tmp_path):
-    from feedback_capture import FeedbackLog
+    from review.feedback_capture import FeedbackLog
 
     log = FeedbackLog(tmp_path / "out" / "feedback.jsonl")
     log.log_failed_parse("stage_2", "malformed_input")

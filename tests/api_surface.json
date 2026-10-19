@@ -90,21 +90,6 @@
         "prm_rows": "surface: str, construction_type: str, climate_zone: str, category: str"
       }
     },
-    "corrections": {
-      "classes": {},
-      "functions": {
-        "empty_doc": "",
-        "field_key": "target: Optional[dict], field: str",
-        "load": "model_path",
-        "path_for": "model_path",
-        "read": "path",
-        "record": "model, item, action: str, source: str, model_path, field: str='', before=None, after=None, state_before: Optional[dict]=None, doc: Optional[dict]=None",
-        "revert_to_automatic": "model, model_path, key: str, doc: Optional[dict]=None",
-        "save": "model_path, doc: dict",
-        "summary": "doc: dict",
-        "undo": "model, model_path, n: int=1, doc: Optional[dict]=None"
-      }
-    },
     "datasets_adapter": {
       "classes": {
         "ArchCADFormatError": "",
@@ -430,7 +415,22 @@
         "register_elevation_grid": "sheet_id: str, facade: Facade, plan_grid_m: dict, elev_bubbles: list, v_ground_px: float, elev_px_per_m: float, revision: int"
       }
     },
-    "review_report": {
+    "review.corrections": {
+      "classes": {},
+      "functions": {
+        "empty_doc": "",
+        "field_key": "target: Optional[dict], field: str",
+        "load": "model_path",
+        "path_for": "model_path",
+        "read": "path",
+        "record": "model, item, action: str, source: str, model_path, field: str='', before=None, after=None, state_before: Optional[dict]=None, doc: Optional[dict]=None",
+        "revert_to_automatic": "model, model_path, key: str, doc: Optional[dict]=None",
+        "save": "model_path, doc: dict",
+        "summary": "doc: dict",
+        "undo": "model, model_path, n: int=1, doc: Optional[dict]=None"
+      }
+    },
+    "review.review_report": {
       "classes": {},
       "functions": {
         "apply_decisions": "model, doc: dict, model_sha: Optional[str]=None, source: str='human', corrections_path=None",
@@ -452,7 +452,7 @@
         "write_review": "out_dir: Path, model"
       }
     },
-    "review_viewer": {
+    "review.review_viewer": {
       "classes": {},
       "functions": {
         "build_scene": "model, corrections_doc: Optional[dict]=None",

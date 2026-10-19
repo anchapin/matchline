@@ -88,19 +88,6 @@ module's guide under `docs/`.
 - class `LibraryRow`
 - class `LibrarySummary`
 
-## `corrections`
-
-- `empty_doc()`
-- `field_key(target: Optional[dict], field: str)`
-- `load(model_path)`
-- `path_for(model_path)`
-- `read(path)`
-- `record(model, item, action: str, source: str, model_path, field: str='', before=None, after=None, state_before: Optional[dict]=None, doc: Optional[dict]=None)`
-- `revert_to_automatic(model, model_path, key: str, doc: Optional[dict]=None)`
-- `save(model_path, doc: dict)`
-- `summary(doc: dict)`
-- `undo(model, model_path, n: int=1, doc: Optional[dict]=None)`
-
 ## `datasets_adapter`
 
 - `box_to_polygon(xtl, ytl, xbr, ybr)`
@@ -367,7 +354,20 @@ module's guide under `docs/`.
 - class `FacadeRegistration`
 - class `PlanRegistration`
 
-## `review_report`
+## `review.corrections`
+
+- `empty_doc()`
+- `field_key(target: Optional[dict], field: str)`
+- `load(model_path)`
+- `path_for(model_path)`
+- `read(path)`
+- `record(model, item, action: str, source: str, model_path, field: str='', before=None, after=None, state_before: Optional[dict]=None, doc: Optional[dict]=None)`
+- `revert_to_automatic(model, model_path, key: str, doc: Optional[dict]=None)`
+- `save(model_path, doc: dict)`
+- `summary(doc: dict)`
+- `undo(model, model_path, n: int=1, doc: Optional[dict]=None)`
+
+## `review.review_report`
 
 - `apply_decisions(model, doc: dict, model_sha: Optional[str]=None, source: str='human', corrections_path=None)`
 - `attach_takeoff_diff_items(model, diff: dict)`
@@ -387,7 +387,7 @@ module's guide under `docs/`.
 - `worst_first(items)`
 - `write_review(out_dir: Path, model)`
 
-## `review_viewer`
+## `review.review_viewer`
 
 - `build_scene(model, corrections_doc: Optional[dict]=None)`
 - `fragment(scene: dict, banner: str='')`
