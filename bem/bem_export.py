@@ -81,7 +81,7 @@ __all__ = [
 ]
 
 SCHEMA_PATH = (
-    Path(__file__).resolve().parent / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
+    Path(__file__).resolve().parents[1] / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
 )
 
 
