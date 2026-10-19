@@ -172,7 +172,14 @@ jobs:
         run: pip install --no-cache-dir -e . pip-audit && pip-audit --version
 
       - name: Run pip-audit (fail on known runtime vulnerabilities)
-        run: pip-audit --strict
+        # The project itself is installed editable only to pull in its
+        # runtime dependencies; drop it before the scan so the audit
+        # covers the runtime dependency set alone. In the window between
+        # a version bump and its release the version is not on PyPI
+        # yet, and an environment scan trips --strict on it
+        # (--skip-editable still reports editable distributions as an
+        # error, so uninstalling is the reliable exclusion).
+        run: pip uninstall -y matchline && pip-audit --strict
 
   review-page-browser:
     # #802: drive review.html in headless Chromium (keys, edit prompt, layer

@@ -8,7 +8,49 @@ All notable changes to this project are documented here, in
 
 ### Added
 
-- Nothing yet; see [0.2.0] below.
+- Nothing yet; see [0.2.1] below.
+
+## [0.2.1] - 2026-10-19
+
+### Added
+
+- Detector: wall-class auxiliary head (#1113) with scratch-provider checkpoint
+  loading (#1152). Classification-only (partition vs structural), raster +1
+  shift, old datasets train unchanged.
+- Detector: resumable train state for crash recovery (#1116), with a
+  `--train-env-extra` dispatch input for fault localization, eval-only mode
+  skipping train-metrics upload (#1119), and a torch-free resume test path.
+- Detector: AP50 metric for scratch checkpoints alongside F1 (#1119).
+- Schedule evaluation: grouped-vs-flat schedule-row scorer (#1112) and
+  noise-conditioned schedule evaluation (KR/EM/VF1) (#1114).
+- Research docs: ranked shortlist for training/research features with a
+  first-experiment spec (#1095); 2026-10 arXiv sweep mapped to pipeline
+  slices (#1094).
+
+### Changed
+
+- CI: the dependency security audit drops the project itself before scanning, so pre-release version bumps no longer trip `--strict` on an unpublished version (pip-audit `--skip-editable` still reports editable distributions as errors).
+
+- Test coverage: property pins for the three deliberate point-in-polygon
+  contracts (#1129), direct unit tests for opening identity, opening attach,
+  and the PRM table (#1128), golden coverage beyond the validate reports
+  (#1127), telemetry + feedback round trip through run_review (#1126),
+  degenerate-input battery (#1124), and per-subcommand CLI contract tests
+  (#1123).
+- CI: pip-audit of the runtime dependency set on every PR (#1139), coverage
+  measurement of the shipped surface (#1137), mypy baseline on a scoped
+  module set (#1138), ruff pinned to 0.17.1 (#1141), ci.yml python held at
+  3.12 while openstudio segfaults under 3.14+ (#1157), GitHub Actions bumps
+  via renovate (#1155), weekly cleanup-sweep workflow (#1121), and repo
+  hygiene (tracked junk dropped, session artifacts moved under
+  docs/history/, runtime feedback log untracked) (#1108-#1110).
+
+### Fixed
+
+- Detector: merge tile-boundary straddle duplicates in SAHI NMS (#1125).
+- Release: skip publish when the version is already on PyPI and tag releases
+  on main (#1102), parse the version from the wheel filename correctly
+  (#1105), and empty-commit check scanning (#1104).
 
 ## [0.2.0] - 2026-10-16
 

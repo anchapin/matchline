@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "matchline"
-version = "0.2.0"
+version = "0.2.1"
 description = "Deterministic, auditable extraction of building energy modeling (BEM) inputs from architectural drawings and BIM"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
