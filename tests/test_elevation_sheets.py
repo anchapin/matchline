@@ -16,7 +16,7 @@ from test_grid_detect import bubble, dashed  # noqa: E402
 from test_plan_walls import T_EXT, K  # noqa: E402
 from test_real_set import SCALE_NOTE, _arch_win, _set, _tb, _window_schedule  # noqa: E402
 
-import elevation_sheets as ES  # noqa: E402
+import ingest.elevation_sheets as ES  # noqa: E402
 import real_set  # noqa: E402
 
 L = 10.0 + T_EXT  # exterior length of the 10 m x 6 m test shell

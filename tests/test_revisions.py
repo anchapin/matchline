@@ -224,8 +224,7 @@ def test_index_revisions_groups_sheets_and_addenda():
 
 
 def test_read_title_block_sets_addenda(tmp_path):
-    import sheet_index
-
+    import ingest.sheet_index as sheet_index
     sh = _sheet(
         [
             ("A-101 FLOOR PLAN", (100, 100, 500, 120)),

@@ -32,8 +32,7 @@ from typing import Dict, List, Optional
 from shapely.geometry import LineString, Point, Polygon
 
 import review.revisions as revisions
-import sheet_index
-
+import ingest.sheet_index as sheet_index
 SCHEMA = "matchline.set_report/1"
 DEFAULT_STOREY_HEIGHT_M = 3.0
 
@@ -160,12 +159,12 @@ def build_set_model(
     import matchlines
     from bem.bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
-    from drawing_scale import scale_sheets
+    from ingest.drawing_scale import scale_sheets
     from geometry.geometry_simplify import footprint_from_regions
-    from pdf_ingest import ingest_pdf
-    from pdf_schedules import schedules_for_sheets
+    from ingest.pdf_ingest import ingest_pdf
+    from ingest.pdf_schedules import schedules_for_sheets
     from plan_walls import walls_for_sheets
-    from sheet_index import index_sheets
+    from ingest.sheet_index import index_sheets
 
     out = Path(out_dir)
     sheets_dir = out / "sheets"
@@ -783,7 +782,7 @@ def _storey_from_elevations(files, entries, status, scales, sheets_dir):
     steps; ``per_sheet`` keeps each elevation's steps bottom to top, for matching by
     order when no plan level matches by name (#813, #814, #822).
     """
-    from elevation_sheets import level_marks, storey_steps
+    from ingest.elevation_sheets import level_marks, storey_steps
 
     by_storey: Dict[object, list] = {}
     found = []
@@ -831,7 +830,7 @@ def _level_heights(order, by_storey, per_sheet, storey_height_m):
     the k-th level (``match`` "order"); ``miss`` says why when none does. Anything
     else keeps the default, ``conflict`` naming the disagreeing elevations (#814, #822).
     """
-    from elevation_sheets import STOREY_AGREE_M
+    from ingest.elevation_sheets import STOREY_AGREE_M
 
     per_level = storey_height_m if isinstance(storey_height_m, dict) else {}
     if storey_height_m and not per_level:
@@ -877,7 +876,7 @@ def _read_elevations(files, entries, status, scales, sheets_dir, plan_of_level, 
     as ``(ElevationRead, Provenance)`` pairs, with the footprint box they share.
     """
     from building_model import Provenance, ReviewItem
-    from elevation_sheets import facade_from_title, read_elevation
+    from ingest.elevation_sheets import facade_from_title, read_elevation
     from grid_detect import detect_grids, plan_grid_m
 
     elev_files = [f for f in files if entries.get(f, {}).get("type") == "elevation"

@@ -101,10 +101,10 @@ sill/head heights) and facade area takeoffs (wall / glazing / door fractions).
 | `elevation_windows.py` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.py` | Facade wall/glazing/door area fractions (CMP Facade) |
 | `bem/bem_export.py` | gbXML 8.01 + IFC4 export |
-| `pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
-| `drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
-| `sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
-| `pdf_schedules.py` | Schedule tables from vector PDF sheets: ruled cells, merged headers, door/window sizes, fixture watts, VAV/AHU airflow, unreadable tables flagged |
+| `ingest/pdf_ingest.py` | PDF drawing set → per-page raster + vector primitives + text, scans flagged |
+| `ingest/drawing_scale.py` | Sheet scale from scale notes, scale bars and dimension strings; NTS refused |
+| `ingest/sheet_index.py` | Sheet index from title blocks and the drawing index: discipline, type, level, takeoff role |
+| `ingest/pdf_schedules.py` | Schedule tables from vector PDF sheets: ruled cells, merged headers, door/window sizes, fixture watts, VAV/AHU airflow, unreadable tables flagged |
 | `construction_library.py` | Cited envelope U-values: wall-type and roof notes resolved to ASHRAE 90.1-2019 Table 5.5 by climate zone (`--climate-zone`), stated values never overwritten ([docs](docs/construction_library.md)) |
 | `plan_walls.py` | Walls and rooms from vector floor plans: wall line pairs and solid poché, openings, closed faces, review queue |
 | `ifc/ifc_import.py` | IFC4 → canonical model (Tier 0, no space boundaries needed) |

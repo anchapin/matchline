@@ -15,8 +15,8 @@ sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
-import pdf_ingest as P  # noqa: E402
-import sheet_index as X  # noqa: E402
+import ingest.pdf_ingest as P  # noqa: E402
+import ingest.sheet_index as X  # noqa: E402
 
 W, H = 1728, 1152
 

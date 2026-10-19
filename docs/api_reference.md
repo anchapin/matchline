@@ -139,20 +139,6 @@ module's guide under `docs/`.
 - class `VectorGlazingProvider(self)`
 - class `YoloSahiProvider(self, weights: Union[str, Path], artifact: str='', tile: int=1024, overlap: float=0.2, conf: float=0.25, device: str='cpu', **kw)`
 
-## `drawing_scale`
-
-- `find_dimensions(sheet)`
-- `find_notes(sheet)`
-- `find_scale_bars(sheet)`
-- `normalize(s: str)`
-- `parse_length_m(s: str)`
-- `parse_scale_note(s: str)`
-- `scale_at(scale: SheetScale, x: float, y: float)`
-- `scale_sheets(sheet_dir)`
-- `sheet_scale(sheet)`
-- class `Evidence`
-- class `SheetScale`
-
 ## `elevation_windows`
 
 - `adjudicate_tag(candidates: list[WindowTagCandidate], prefer: str='grid')`
@@ -259,6 +245,53 @@ module's guide under `docs/`.
 
 - `import_ifc(path, sheet_id=None, revision=1)`
 
+## `ingest.drawing_scale`
+
+- `find_dimensions(sheet)`
+- `find_notes(sheet)`
+- `find_scale_bars(sheet)`
+- `normalize(s: str)`
+- `parse_length_m(s: str)`
+- `parse_scale_note(s: str)`
+- `scale_at(scale: SheetScale, x: float, y: float)`
+- `scale_sheets(sheet_dir)`
+- `sheet_scale(sheet)`
+- class `Evidence`
+- class `SheetScale`
+
+## `ingest.pdf_ingest`
+
+- `ingest_pdf(path, out_dir=None, dpi: float=DEFAULT_DPI, rasterize: bool=True)`
+- `load_sheet(path)`
+- `page_to_sheet_matrix(x0: float, y0: float, w: float, h: float, rotation: int)`
+- class `ImageRef`
+- class `IngestError`
+- class `IngestResult`
+- class `Primitive`
+- class `Sheet`
+- class `TextSpan`
+
+## `ingest.pdf_schedules`
+
+- `extract_schedules(sheet: dict, sheet_id: Optional[str]=None)`
+- `schedules_for_sheets(sheets_dir, sheet_ids: Optional[Dict[str, str]]=None)`
+- class `PdfSchedule`
+
+## `ingest.sheet_index`
+
+- `build_index(sheets: Sequence, files: Optional[Sequence[str]]=None)`
+- `classify_title(title: str)`
+- `find_drawing_index(spans: List[Span], exclude: Optional[Span]=None)`
+- `find_sheet_number(spans: List[Span], w: float, h: float)`
+- `find_title(spans: List[Span], number: Optional[Span], w: float, h: float)`
+- `index_sheets(sheet_dir)`
+- `parse_level(title: str)`
+- `parse_sheet_number(s: str)`
+- `read_title_block(sheet, file: Optional[str]=None)`
+- class `SheetEntry`
+- class `SheetIndex`
+- class `Span`
+
 ## `jesse`
 
 - `com_normalize(img: np.ndarray, size: int=28)`
@@ -303,24 +336,6 @@ module's guide under `docs/`.
 - class `MechScheduleResult`
 - class `MechScheduleRow`
 - class `MechSystem`
-
-## `pdf_ingest`
-
-- `ingest_pdf(path, out_dir=None, dpi: float=DEFAULT_DPI, rasterize: bool=True)`
-- `load_sheet(path)`
-- `page_to_sheet_matrix(x0: float, y0: float, w: float, h: float, rotation: int)`
-- class `ImageRef`
-- class `IngestError`
-- class `IngestResult`
-- class `Primitive`
-- class `Sheet`
-- class `TextSpan`
-
-## `pdf_schedules`
-
-- `extract_schedules(sheet: dict, sheet_id: Optional[str]=None)`
-- `schedules_for_sheets(sheets_dir, sheet_ids: Optional[Dict[str, str]]=None)`
-- class `PdfSchedule`
 
 ## `plan_walls`
 
@@ -433,21 +448,6 @@ module's guide under `docs/`.
 - `safe_xml_fromstring(text: bytes, max_nodes: Optional[int]=None)`
 - `safe_xml_parse(path: str | Path, max_nodes: Optional[int]=None)`
 - `safe_xml_parser()`
-
-## `sheet_index`
-
-- `build_index(sheets: Sequence, files: Optional[Sequence[str]]=None)`
-- `classify_title(title: str)`
-- `find_drawing_index(spans: List[Span], exclude: Optional[Span]=None)`
-- `find_sheet_number(spans: List[Span], w: float, h: float)`
-- `find_title(spans: List[Span], number: Optional[Span], w: float, h: float)`
-- `index_sheets(sheet_dir)`
-- `parse_level(title: str)`
-- `parse_sheet_number(s: str)`
-- `read_title_block(sheet, file: Optional[str]=None)`
-- class `SheetEntry`
-- class `SheetIndex`
-- class `Span`
 
 ## `sim_smoke`
 

@@ -1,4 +1,4 @@
-# PDF drawing-set ingestion (`pdf_ingest.py`)
+# PDF drawing-set ingestion (`ingest/pdf_ingest.py`)
 
 Turns a PDF drawing set into one sheet record per page (#737). This is the
 first stage of reading real drawings; sheet indexing (#738), drawing scale

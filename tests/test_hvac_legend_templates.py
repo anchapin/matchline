@@ -30,7 +30,7 @@ from hvac_trace import (  # noqa: E402
     merge_legend_detections,
     ncc_locate,
 )
-from pdf_ingest import ingest_pdf  # noqa: E402
+from ingest.pdf_ingest import ingest_pdf  # noqa: E402
 from synth.mech import render_template  # noqa: E402
 
 PAGE_W, PAGE_H = 1224.0, 792.0

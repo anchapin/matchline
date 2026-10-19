@@ -1,4 +1,4 @@
-# Sheet index (`sheet_index.py`)
+# Sheet index (`ingest/sheet_index.py`)
 
 Indexes an ingested drawing set (#738) so the pipeline knows which page is the
 first-floor plan, which is the mechanical plan for that floor, and which are

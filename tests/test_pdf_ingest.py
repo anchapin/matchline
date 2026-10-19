@@ -16,7 +16,7 @@ sys.path.append(str(Path(__file__).parent))
 from pdf_fixtures import PageSpec, curve, line, oc, rect, text, write_pdf  # noqa: E402
 
 import limits  # noqa: E402
-import pdf_ingest as P  # noqa: E402
+import ingest.pdf_ingest as P  # noqa: E402
 
 
 def _ingest(tmp_path, pages, **kw):

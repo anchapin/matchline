@@ -14,7 +14,7 @@ sys.path.append(str(Path(__file__).parent))
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
 import grid_detect as G  # noqa: E402
-from pdf_ingest import ingest_pdf  # noqa: E402
+from ingest.pdf_ingest import ingest_pdf  # noqa: E402
 from registration import Facade, register_elevation_grid  # noqa: E402
 
 K = 0.5523

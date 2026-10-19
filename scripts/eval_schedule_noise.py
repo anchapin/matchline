@@ -38,8 +38,8 @@ sys.path.append(str(ROOT / "tests"))
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
 from mech_schedule import classify, parse_capacity, parse_tag  # noqa: E402
-from pdf_ingest import ingest_pdf  # noqa: E402
-from pdf_schedules import extract_schedules  # noqa: E402
+from ingest.pdf_ingest import ingest_pdf  # noqa: E402
+from ingest.pdf_schedules import extract_schedules  # noqa: E402
 from scripts.schedule_noise import degrade_texts  # noqa: E402
 from scripts.schedule_score import score_schedule_rows  # noqa: E402
 

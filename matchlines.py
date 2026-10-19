@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from sheet_index import _spans, parse_sheet_number
+from ingest.sheet_index import _spans, parse_sheet_number
 
 SCHEMA = "matchline.matchlines/1"
 

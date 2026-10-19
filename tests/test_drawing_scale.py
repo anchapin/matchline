@@ -13,8 +13,8 @@ sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
-import drawing_scale as S  # noqa: E402
-import pdf_ingest as P  # noqa: E402
+import ingest.drawing_scale as S  # noqa: E402
+import ingest.pdf_ingest as P  # noqa: E402
 
 FT = 0.3048
 PT = 0.0254 / 72
