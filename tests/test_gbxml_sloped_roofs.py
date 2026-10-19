@@ -163,8 +163,8 @@ def test_volume_check_uses_the_shell_under_a_sloped_roof():
 
 def test_bem_from_model_flips_roofs_north_up_and_sets_shell_volumes():
     from building_model import BuildingModel, Level, Space
+    from geometry.roof_geometry import roof_plane
     from ifc.ifc_export import _bem_from_model
-    from roof_geometry import roof_plane
 
     m = BuildingModel(name="t")
     m.levels.append(Level(id="L1", name="Level 1", elevation_z_m=0.0, wall_height_m=H))

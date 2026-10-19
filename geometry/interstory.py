@@ -200,7 +200,7 @@ def match_interstory(model, flag: bool = True) -> InterstoryResult:
 
     # atria (#640): a space with a stated height past the next storey stays
     # open through it; its ceiling or roof is found at the level it tops out in
-    from atria import find_atria
+    from geometry.atria import find_atria
 
     atria = find_atria(model, flag=False)
     for text in atria.findings:

@@ -7,8 +7,8 @@ import math
 
 import pytest
 
-from roof_geometry import roof_plane
-from roof_simplify import apply_roof_simplification
+from geometry.roof_geometry import roof_plane
+from geometry.roof_simplify import apply_roof_simplification
 from tests.model_factory import make_clean_model
 from validate import N_CHECKS, run_checks
 from validate.conservation import _check_roof_plan_coverage, _check_roof_solar_aperture

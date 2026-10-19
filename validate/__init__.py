@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from building_model import BuildingModel
 
 try:
-    from geometry_simplify import footprint_from_regions
+    from geometry.geometry_simplify import footprint_from_regions
 
     _HAS_SIMPLIFY = True
 except Exception:

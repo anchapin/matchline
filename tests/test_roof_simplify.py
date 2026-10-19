@@ -8,8 +8,8 @@ import random
 import pytest
 
 from building_model import Provenance
-from roof_geometry import roof_plane
-from roof_simplify import roof_simplify_report, simplify_roof
+from geometry.roof_geometry import roof_plane
+from geometry.roof_simplify import roof_simplify_report, simplify_roof
 from solar_aperture import solar_aperture
 
 LAT = 40.0

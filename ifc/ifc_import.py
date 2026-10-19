@@ -3687,7 +3687,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     # flush in-line continuations, then split at X/T junctions so facade
     # classification can name one space behind each piece (#576)
     # rooms stacked over slab openings are one atrium (#640)
-    from atria import merge_atrium_stacks
+    from geometry.atria import merge_atrium_stacks
     from ifc.ifc_wall_split import join_inline_ends, split_at_junctions
 
     n_atria = merge_atrium_stacks(model, floor_voids, sheet, revision)

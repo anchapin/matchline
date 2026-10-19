@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from shapely.geometry import LineString, Polygon
 
-import geometry_simplify as gs
-from geometry_simplify import (
+import geometry.geometry_simplify as gs
+from geometry.geometry_simplify import (
     _tri_area,
     envelope_area,
     footprint_from_regions,

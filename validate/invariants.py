@@ -16,12 +16,12 @@ if TYPE_CHECKING:
     from validate import _Ctx
 
 try:
-    from geometry_simplify import simplify_ring
+    from geometry.geometry_simplify import simplify_ring
 except Exception:
     simplify_ring = None
 
 try:
-    from geometry_simplify import footprint_from_regions, footprint_parts_from_regions
+    from geometry.geometry_simplify import footprint_from_regions, footprint_parts_from_regions
 except Exception:
     footprint_from_regions = None
 

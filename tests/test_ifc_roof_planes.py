@@ -5,9 +5,9 @@ import math
 import pytest
 
 from building_model import BimElement, BimOpening, BuildingModel, Level
+from geometry.roof_geometry import roof_plane
 from ifc.ifc_import import import_ifc
 from ifc.ifc_roof_planes import orient_skylights
-from roof_geometry import roof_plane
 from tests.ifc_builder import IfcBuilder, box_plan
 
 T30 = math.tan(math.radians(30))

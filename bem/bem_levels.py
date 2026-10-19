@@ -171,10 +171,10 @@ def _atrium_air_walls(bem, lv_id: str, atrium) -> List[AirWall]:
 
 
 def add_levels(model, bem, sloped: bool = False) -> None:
-    from below_grade import boundary_types
     from bem.bem_geometry import _ensure_ccw
+    from geometry.below_grade import boundary_types
+    from geometry.interstory import match_interstory
     from ifc.ifc_export import _build_ring
-    from interstory import match_interstory
 
     levels = sorted(model.levels, key=lambda lv: (lv.elevation_z_m, lv.id))
     known = {lv.id for lv in levels}

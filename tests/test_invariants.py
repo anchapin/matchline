@@ -9,7 +9,7 @@ not failures -- so a warning regression is visible but not fatal.
 
 import pytest
 
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry.geometry_simplify import footprint_from_regions, simplify_ring
 from link import build_model
 from synth.multidiscipline import generate_building
 from tests import model_factory
@@ -206,7 +206,7 @@ def test_simplify_budget_ring_offset_drift_fires():
 
 def _multi_sres_for(model):
     """#970: wrap the model's own ring into a per-part FootprintSimplifyResult."""
-    from geometry_simplify import FootprintSimplifyResult
+    from geometry.geometry_simplify import FootprintSimplifyResult
 
     spaces = list(model.spaces.values())
     h = model.levels[0].wall_height_m

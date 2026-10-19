@@ -5,7 +5,7 @@ Usage:  python3 run_validation.py
 
 from __future__ import annotations
 
-from geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
+from geometry.geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
 from link import build_model  # noqa: E402
 from synth.multidiscipline import generate_building  # noqa: E402
 from validate import export_gate, run_checks  # noqa: E402

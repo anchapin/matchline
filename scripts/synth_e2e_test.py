@@ -33,7 +33,7 @@ from datasets_adapter import (
     parse_schedule_csv,
     rollup_takeoff,
 )
-from geometry_simplify import footprint_from_regions, simplify_ring
+from geometry.geometry_simplify import footprint_from_regions, simplify_ring
 from jesse import WisardClassifier, make_tuple_indices
 from room_labels import LabeledSpace, TextBox, label_spaces_from_sheet
 from synth.sheets import PX_PER_M, generate_sheet

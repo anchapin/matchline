@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import real_set  # noqa: E402
 from building_model import BuildingModel, Level, Provenance, ReviewItem, Space  # noqa: E402
-from semi_exterior import (  # noqa: E402
+from geometry.semi_exterior import (  # noqa: E402
     boundary_kind,
     semi_exterior_boundaries,
     semi_exterior_floor_boundaries,

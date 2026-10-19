@@ -6,7 +6,7 @@ from pathlib import Path
 
 from bem.bem_export import write_gbxml
 from building_model import BuildingModel, Level, Provenance, Space
-from geometry_simplify import footprint_parts_from_regions, simplify_footprint
+from geometry.geometry_simplify import footprint_parts_from_regions, simplify_footprint
 from run_pipeline import model_from_linked_model
 
 H = 3.0

@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from building_model import Provenance
-from grade import GRADE_TOL_M, Terrain
+from geometry.grade import GRADE_TOL_M, Terrain
 
 REVIEW_CONF = 0.5
 ELEV_TOL_M = 1e-3
@@ -91,7 +91,7 @@ def boundary_types(model, interstory=None, flag: bool = True) -> BoundaryResult:
     computed with ``match_interstory(model, flag=False)``.
     """
     if interstory is None:
-        from interstory import match_interstory
+        from geometry.interstory import match_interstory
 
         interstory = match_interstory(model, flag=False)
     res = BoundaryResult()

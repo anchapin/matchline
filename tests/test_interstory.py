@@ -7,7 +7,7 @@ import json
 import pytest
 
 from building_model import BuildingModel, Level, Space
-from interstory import (
+from geometry.interstory import (
     SHAFT_IOU,
     InterstoryError,
     match_interstory,

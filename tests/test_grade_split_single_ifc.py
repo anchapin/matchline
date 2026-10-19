@@ -8,7 +8,7 @@ from shapely.geometry import Polygon
 from bem.bem_ifc4 import validate_ifc4, write_ifc4
 from bem.bem_multistorey import _grade_pieces
 from building_model import SpaceOpening
-from grade import Terrain
+from geometry.grade import Terrain
 from ifc.ifc_export import _bem_from_model
 from tests.test_multistorey_export import NS, _model, _surfaces, _write
 from tests.test_walkout_basement import TERRAIN, _walkout, _wall_area

@@ -13,7 +13,7 @@ from datasets_adapter import (
     polygon_area_px2,
     rollup_takeoff,
 )
-from geometry_simplify import simplify_ring
+from geometry.geometry_simplify import simplify_ring
 from registration import (
     Affine2D,
     Facade,

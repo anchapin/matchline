@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from shapely.geometry import Polygon
 
-from below_grade import boundary_types, wall_by_grade
 from building_model import SpaceOpening
-from grade import Terrain
+from geometry.below_grade import boundary_types, wall_by_grade
+from geometry.grade import Terrain
 from tests.test_multistorey_export import NS, _model, _surfaces, _write, _zs
 
 # plane z = -0.3 * y (canonical y-down): grade 0 at the north edge (y=0),

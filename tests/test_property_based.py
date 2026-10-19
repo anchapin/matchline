@@ -18,8 +18,8 @@ from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from shapely.geometry import Polygon
 
-from geometry_simplify import SimplifyResult, simplify_ring
-from polygon_classify import (
+from geometry.geometry_simplify import SimplifyResult, simplify_ring
+from geometry.polygon_classify import (
     PolyClassEvidence,
     _classify_from_evidence,
     classify_polygons,

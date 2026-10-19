@@ -1,6 +1,6 @@
 # Geometry simplification for BEM handoff
 
-`geometry_simplify.py` reduces the number of wall surfaces exported to
+`geometry/geometry_simplify.py` reduces the number of wall surfaces exported to
 energy-modeling software while holding total envelope area inside a
 configurable tolerance (default 2%, supports 1–5%).
 

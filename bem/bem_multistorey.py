@@ -49,7 +49,7 @@ from bem.bem_helpers import (
 from bem.bem_levels import hole_free
 from bem.bem_loads import write_schedules, write_space_loads
 from bem.bem_space_split import keep_openings_whole, split_edge
-from grade import GRADE_TOL_M, Terrain
+from geometry.grade import GRADE_TOL_M, Terrain
 
 MIN_PIECE_M2 = 1e-4
 

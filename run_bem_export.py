@@ -23,7 +23,7 @@ from bem.bem_export import (
     write_ifc4,
 )
 from datasets_adapter import Detection, DrawingScale, parse_schedule_csv, rollup_takeoff
-from geometry_simplify import footprint_from_regions, simplify_report, simplify_ring
+from geometry.geometry_simplify import footprint_from_regions, simplify_report, simplify_ring
 from room_labels import LabeledSpace, TextBox, label_spaces_from_sheet
 
 WALL_H_M = 3.0

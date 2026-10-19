@@ -252,7 +252,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         wall_groups = [(storey, storey_pl, h, edges, opening_assign, None, "", 0.0)]
     # site terrain (#649): walls stay whole; the part above and below grade
     # is carried as 2nd-level space boundaries (EXTERNAL vs EXTERNAL_EARTH)
-    from grade import Terrain
+    from geometry.grade import Terrain
 
     terrain = Terrain(getattr(model, "terrain", None) or [])
     grade_bounds = []  # (space id, wall, [(surface type, (s, z) polygon)], bl, br, L)

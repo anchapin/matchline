@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from below_grade import boundary_types
 from building_model import BuildingModel, EnvelopeWall, Level, Space
-from interstory import match_interstory
+from geometry.below_grade import boundary_types
+from geometry.interstory import match_interstory
 
 
 def _rect(x0, y0, x1, y1):

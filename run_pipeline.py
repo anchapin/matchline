@@ -49,7 +49,7 @@ from datasets_adapter import (
     parse_schedule_csv,
     rollup_takeoff,
 )
-from geometry_simplify import (  # noqa: F401  (footprint_from_regions reused below)
+from geometry.geometry_simplify import (  # noqa: F401  (footprint_from_regions reused below)
     footprint_from_regions,
     footprint_parts_from_regions,
     simplify_footprint,

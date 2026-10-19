@@ -161,7 +161,7 @@ def build_set_model(
     from bem.bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
     from drawing_scale import scale_sheets
-    from geometry_simplify import footprint_from_regions
+    from geometry.geometry_simplify import footprint_from_regions
     from pdf_ingest import ingest_pdf
     from pdf_schedules import schedules_for_sheets
     from plan_walls import walls_for_sheets
@@ -1878,7 +1878,7 @@ def _vestibules(model, review, report, Provenance, ReviewItem) -> None:
 
     Detection never reclassifies a space. Every call goes to review so Alex
     sees it, and the default area threshold is flagged there too."""
-    from vestibules import VESTIBULE_MAX_AREA_M2, detect_vestibules
+    from geometry.vestibules import VESTIBULE_MAX_AREA_M2, detect_vestibules
 
     recs = detect_vestibules(model)
     if not recs:
@@ -1922,7 +1922,7 @@ def _semi_exterior(model, review, report, Provenance, ReviewItem) -> None:
     (#747 slice 5) onto ``model.semi_exterior``. A boundary an unsettled side
     decides gets a review item; nothing is defaulted. Exports don't read it
     yet."""
-    from semi_exterior import (
+    from geometry.semi_exterior import (
         semi_exterior_boundaries,
         semi_exterior_floor_boundaries,
         vestibule_interior_boundaries,

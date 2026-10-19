@@ -41,7 +41,7 @@ PENETRATION_TYPES = ("shaft", "elevator_core")
 _ORDER_TOL_M2 = 1e-6
 
 try:
-    from geometry_simplify import footprint_from_regions, ring_perimeter
+    from geometry.geometry_simplify import footprint_from_regions, ring_perimeter
 
     _HAS_SIMPLIFY = True
 except Exception:  # pragma: no cover - geometry_simplify is a hard dep

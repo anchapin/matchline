@@ -207,7 +207,7 @@ module's guide under `docs/`.
 - `xml_agreement(mask: np.ndarray, boxes: list[tuple[int, float, float, float, float]], slop_frac: float=0.02)`
 - class `FacadeTakeoff`
 
-## `geometry_simplify`
+## `geometry.geometry_simplify`
 
 - `envelope_area(ring, wall_height: float | None=None)`
 - `footprint_from_regions(polygons: list[list])`
@@ -220,6 +220,12 @@ module's guide under `docs/`.
 - class `FootprintPart`
 - class `FootprintSimplifyResult`
 - class `SimplifyResult`
+
+## `geometry.polygon_classify`
+
+- `classify_polygons(rooms: list, south_windows: list, grids_h: dict)`
+- class `PolyClassEvidence`
+- class `PolyClassification`
 
 ## `grid_detect`
 
@@ -328,12 +334,6 @@ module's guide under `docs/`.
 - class `Room`
 - class `Seg`
 - class `Wall`
-
-## `polygon_classify`
-
-- `classify_polygons(rooms: list, south_windows: list, grids_h: dict)`
-- class `PolyClassEvidence`
-- class `PolyClassification`
 
 ## `real_set`
 

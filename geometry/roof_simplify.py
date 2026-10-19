@@ -51,7 +51,7 @@ class RoofSimplifyResult:
 
 
 def _unit_normal(vertices):
-    from roof_geometry import newell_normal
+    from geometry.roof_geometry import newell_normal
 
     n = newell_normal(vertices)
     ln = math.sqrt(sum(x * x for x in n))
@@ -108,7 +108,7 @@ def _merge(a, b, pid):
     """One RoofPlane over the plan union of a and b, or (None, reason)."""
     from shapely.ops import unary_union
 
-    from roof_geometry import RoofGeometryError, roof_plane
+    from geometry.roof_geometry import RoofGeometryError, roof_plane
 
     pa, pb = _plan(a), _plan(b)
     u = unary_union([pa, pb]).buffer(0)

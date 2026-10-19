@@ -33,7 +33,7 @@ def _rel_err(actual: float, expected: float) -> float:
 
 
 try:
-    from geometry_simplify import footprint_from_regions, ring_perimeter
+    from geometry.geometry_simplify import footprint_from_regions, ring_perimeter
 except Exception:
     pass
 

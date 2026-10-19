@@ -226,7 +226,7 @@
         "xml_agreement": "mask: np.ndarray, boxes: list[tuple[int, float, float, float, float]], slop_frac: float=0.02"
       }
     },
-    "geometry_simplify": {
+    "geometry.geometry_simplify": {
       "classes": {
         "FootprintPart": "",
         "FootprintSimplifyResult": "",
@@ -241,6 +241,15 @@
         "simplify_footprint": "parts: list[FootprintPart], tol: float=0.02, wall_height: float | None=None, **kwargs",
         "simplify_report": "res: SimplifyResult",
         "simplify_ring": "ring, tol: float=0.02, min_feature: float | None=None, wall_height: float | None=None, dp_eps: float | None=None, max_single_step: float=0.0025"
+      }
+    },
+    "geometry.polygon_classify": {
+      "classes": {
+        "PolyClassEvidence": "",
+        "PolyClassification": ""
+      },
+      "functions": {
+        "classify_polygons": "rooms: list, south_windows: list, grids_h: dict"
       }
     },
     "grid_detect": {
@@ -379,15 +388,6 @@
         "extract_walls": "sheet, m_per_pt: Optional[float], scale_review: Optional[dict]=None",
         "wall_length_error": "pred_m: float, truth_m: float",
         "walls_for_sheets": "sheet_dir"
-      }
-    },
-    "polygon_classify": {
-      "classes": {
-        "PolyClassEvidence": "",
-        "PolyClassification": ""
-      },
-      "functions": {
-        "classify_polygons": "rooms: list, south_windows: list, grids_h: dict"
       }
     },
     "real_set": {
