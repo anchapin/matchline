@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from feedback_capture import (
+from review.feedback_capture import (
     KIND_ABANDONED_REVIEW,
     KIND_FAILED_PARSE,
     KIND_OPEN_RESPONSE,

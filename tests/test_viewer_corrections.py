@@ -2,7 +2,7 @@
 
 import pytest
 
-import corrections
+import review.corrections as corrections
 from building_model import (
     BuildingModel,
     EnvelopeWall,
@@ -11,8 +11,8 @@ from building_model import (
     Space,
     SpaceOpening,
 )
-from review_viewer import build_scene, page_html
-from viewer_corrections import SCHEMA, apply_ops, check
+from review.review_viewer import build_scene, page_html
+from review.viewer_corrections import SCHEMA, apply_ops, check
 
 
 def _model():

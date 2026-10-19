@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import corrections
+import review.corrections as corrections
 import legend_learning
 import run_pipeline
 from atomic_io import write_text_atomic

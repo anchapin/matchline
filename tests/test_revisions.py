@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import revisions  # noqa: E402
+import review.revisions as revisions  # noqa: E402
 
 
 def _sheet(texts, prims=None):

@@ -1,4 +1,4 @@
-# `corrections.py` — Correction history (#997)
+# `review/corrections.py` — Correction history (#997)
 
 Every accepted review decision is recorded once, beside the model, so a
 correction is never a silent overwrite.

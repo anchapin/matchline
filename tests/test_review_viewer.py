@@ -15,7 +15,7 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
-from review_viewer import SCHEMA, build_scene, fragment, page_html
+from review.review_viewer import SCHEMA, build_scene, fragment, page_html
 
 
 def _model():
@@ -252,8 +252,7 @@ def test_share_back_embeds_the_viewer():
     # one render core, two homes: the export package's share_back page embeds
     # the same fragment the CLI page renders
     import export_package
-    import review_report
-
+    import review.review_report as review_report
     assert hasattr(review_viewer_export := export_package, "_viewer_fragment")
     fr = review_viewer_export._viewer_fragment(build_scene(_model()), banner="")
     assert "<canvas" in fr

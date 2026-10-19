@@ -42,7 +42,7 @@ from bem.bem_export import (
 )
 from bem.bem_helpers import _edge_facades
 from construction_library import apply_construction_library
-from convention_report import build_convention_report
+from review.convention_report import build_convention_report
 from datasets_adapter import (
     detections_from_yolo_json,
     extract_with_tags,
@@ -916,7 +916,7 @@ def _make_emitter(args, config: dict | None) -> TelemetryEmitter:
 
 def _capture_stage_failure(out_dir: Path, err: StageError) -> None:
     """Capture a failed stage as local friction feedback (#1038); never fails the run."""
-    from feedback_capture import FeedbackCaptureError, FeedbackLog
+    from review.feedback_capture import FeedbackCaptureError, FeedbackLog
 
     cause = type(err.__cause__).__name__ if err.__cause__ else "stage_error"
     # stage identity is the stage number: stage names like "Stage 1:
@@ -1052,7 +1052,7 @@ def main(args, config: dict | None = None) -> None:
             _stage_4b_auto_triage(model, out_dir)
 
         # --- HTML review report, written before the fail-fast gate (#749) ---
-        from review_report import write_review
+        from review.review_report import write_review
 
         with _stage_telemetry(emitter, "review.report"):
             review_dir = write_review(out_dir, model)

@@ -42,7 +42,7 @@ deliberately adds no editing and links into the review flow from there.
 
 ## One render core, two homes
 
-``review_viewer.py`` holds the whole render core: ``build_scene`` reads
+``review/review_viewer.py`` holds the whole render core: ``build_scene`` reads
 the canonical model into a JSON scene, and ``page_html`` (CLI) and
 ``fragment`` (the export package) render it. The export package embeds
 the fragment in ``share_back.html`` (#999), so what a reviewer opens in

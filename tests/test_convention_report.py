@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from convention_report import SCHEMA, build_convention_report
+from review.convention_report import SCHEMA, build_convention_report
 from tests.model_factory import _ensure_bim_wall, make_clean_model
 from validate import run_checks
 

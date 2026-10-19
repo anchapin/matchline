@@ -41,6 +41,7 @@ CLUSTERS: list[tuple[str, tuple[str, ...]]] = [
         "REVIEW",
         (
             "review_",
+            "review.",
             "feedback_",
             "corrections",
             "diff",
@@ -89,7 +90,7 @@ def cluster_of(module: str) -> str:
 
 def internal_modules(root: Path) -> set[str]:
     names = {p.stem for p in root.glob("*.py")}
-    for pkg in ("synth", "bem", "ifc"):
+    for pkg in ("synth", "bem", "ifc", "review"):
         pkg_dir = root / pkg
         if pkg_dir.is_dir():
             names.add(pkg)
@@ -133,7 +134,7 @@ def build(root: Path) -> tuple[list[str], list[tuple[str, str]], dict[str, str]]
         src = path.stem
         for imp in imports_of(path, None):
             add_edge(src, imp)
-    for pkg in ("synth", "bem", "ifc"):
+    for pkg in ("synth", "bem", "ifc", "review"):
         pkg_dir = root / pkg
         if pkg_dir.is_dir():
             for path in sorted(pkg_dir.glob("*.py")):

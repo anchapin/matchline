@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import review_report as R
+import review.review_report as R
 import run_review
 from building_model import BuildingModel, Provenance, ReviewItem
 

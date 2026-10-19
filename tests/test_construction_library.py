@@ -14,7 +14,7 @@ from construction_library import (
     lookup,
 )
 from construction_library_data import CONSTRUCTION_LIBRARY
-from convention_report import build_convention_report
+from review.convention_report import build_convention_report
 
 
 def _model(**cons) -> BuildingModel:

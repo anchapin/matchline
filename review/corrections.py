@@ -107,7 +107,7 @@ def record(
 
 def _target_resolves(model, t: dict, f: str) -> bool:
     """True when the writer can still reach the entity an entry points at."""
-    from review_report import _find_fixture, _find_opening, _find_ref
+    from review.review_report import _find_fixture, _find_opening, _find_ref
 
     kind = (t or {}).get("kind", "")
     eid = (t or {}).get("id")
@@ -158,7 +158,7 @@ def undo(model, model_path, n: int = 1, doc: Optional[dict] = None) -> List[dict
     in the history (nothing is deleted). Fewer than ``n`` corrections
     simply undoes what is there.
     """
-    from review_report import _write
+    from review.review_report import _write
 
     if doc is None:
         doc = load(model_path)
@@ -203,7 +203,7 @@ def revert_to_automatic(model, model_path, key: str, doc: Optional[dict] = None)
     correction on the field is marked undone with the reason, so the
     history keeps the audit trail.
     """
-    from review_report import _read, _write
+    from review.review_report import _read, _write
 
     if doc is None:
         doc = load(model_path)

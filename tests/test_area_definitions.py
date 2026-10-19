@@ -7,7 +7,7 @@ import math
 
 from area_definitions import REGISTRY, SCHEMA, compute
 from building_model import BuildingModel, Level, Space
-from convention_report import build_convention_report
+from review.convention_report import build_convention_report
 from tests.model_factory import P, _ensure_bim_wall, make_clean_model
 from validate import run_checks
 

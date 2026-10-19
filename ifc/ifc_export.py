@@ -438,7 +438,7 @@ def export_ifc(model_path: str, out_path: str) -> None:
     ifc_path = _export_ifc(model, _validate_out_path(out_path))
     # Local import: convention_report pulls the validation battery, which is
     # heavier than this module's own import surface needs at load time.
-    from convention_report import build_convention_report
+    from review.convention_report import build_convention_report
 
     report = build_convention_report(model)
     (Path(ifc_path).parent / "convention_report.json").write_text(
