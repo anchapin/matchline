@@ -28,6 +28,7 @@ import json
 from typing import List, Optional
 
 import review.corrections as corrections
+
 SCHEMA = "matchline.review_viewer/1"
 
 FACADES = ("south", "north", "east", "west")
