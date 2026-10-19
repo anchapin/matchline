@@ -158,15 +158,23 @@ follows a fine-tuned YOLO + tiling/legend-learning pattern.
 
 ## Local development
 
-Clone the repo and install in editable mode with the test extras:
+Clone the repo, create an isolated environment, and install in editable mode
+with the test extras:
 
 ```bash
 git clone https://github.com/anchapin/matchline.git
 cd matchline
 git checkout develop         # develop is the working branch; main is reserved for releases
+python -m venv .venv         # keep deps out of your global/pyenv env; see note below
+source .venv/bin/activate    # on Windows: .venv\Scripts\activate
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
 python -m pytest tests/ -q   # ~3,500 tests (exact count: EXPECTED_TEST_COUNT in ci.yml), hermetic
 ```
+
+`pytest` auto-loads every installed `pytest11` entry-point plugin, so a plugin
+left in a shared environment can break pytest itself (schemathesis 4.x, for
+example, needs pytest >= 8.4 and fails to import against older pytest before
+any test runs). Use a dedicated venv for matchline.
 
 External datasets (AEC Bench, CMP Facade, CubiCasa5K,
 FloorPlanCAD) live outside the repo under `~/workspace/datasets/`
