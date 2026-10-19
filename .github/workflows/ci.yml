@@ -5,6 +5,7 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -420,6 +421,104 @@ jobs:
               sys.exit(1)
           print(f"all {len(names)} subcommands answer --help")
           PY
+
+      - name: Run matchline demo
+        run: |
+          start=$SECONDS
+          matchline demo --no-open
+          took=$(( SECONDS - start ))
+          echo "demo took ${took}s"
+          test -f matchline-demo/package/trust_report.html
+          test -f matchline-demo/review/review.html
+          test "$took" -lt 300
+
+
+  python-matrix:
+    # #1163: one job per supported Python. Installs the built wheel, imports
+    # the shipped entry modules, and runs the demo end to end. The support
+    # policy lives in docs/platform_support.md; adding a version means
+    # bumping this list, the docs table, and the classifiers together.
+    name: "wheel install: linux / py${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build the wheel
+        run: python -m pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
+
+      - name: Install the wheel
+        run: python -m pip install --no-cache-dir "$RUNNER_TEMP"/dist/matchline-*.whl
+
+      - name: Import the installed wheel
+        # from outside the checkout so site-packages, not the source tree,
+        # is what answers; the demo below exercises the rest end to end
+        working-directory: ${{ runner.temp }}
+        run: python -c "import cli, sim, synth, validate, query, link"
+
+      - name: Run matchline demo
+        run: |
+          start=$SECONDS
+          matchline demo --no-open
+          took=$(( SECONDS - start ))
+          echo "demo took ${took}s"
+          test -f matchline-demo/package/trust_report.html
+          test -f matchline-demo/review/review.html
+          test "$took" -lt 300
+
+  platform-matrix:
+    # #1163: macOS/Windows demo coverage. These runners bill at a premium,
+    # so they run on every push to develop/main (including release commits),
+    # on workflow_dispatch, and on PRs labeled `platform`, rather than on
+    # every PR. Known platform gaps live in docs/platform_support.md.
+    name: "wheel install: ${{ matrix.os-label }} / py${{ matrix.python-version }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    needs: [no-empty-commits]
+    if: >-
+      needs.no-empty-commits.outputs.is_empty != 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'platform')))
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   os-label: macos,   python-version: "3.12" }
+          - { os: windows-latest, os-label: windows, python-version: "3.12" }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build the wheel
+        run: python -m pip wheel --no-cache-dir --no-deps -w "$RUNNER_TEMP/dist" .
+
+      - name: Install the wheel
+        run: python -m pip install --no-cache-dir "$RUNNER_TEMP"/dist/matchline-*.whl
+
+      - name: Import the installed wheel
+        working-directory: ${{ runner.temp }}
+        run: python -c "import cli, sim, synth, validate, query, link"
 
       - name: Run matchline demo
         run: |
