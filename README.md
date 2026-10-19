@@ -126,6 +126,9 @@ The run leaves everything in `matchline-demo/`: the one-page trust report
 the trust report in your browser; pass `--no-open` to skip that. See
 `docs/cli.md` for the full command set.
 
+The public API surface, what counts as a breaking change, and the
+deprecation policy are documented in `docs/api.md`.
+
 ## Validation
 
 `validate/` enforces conservation laws over the model and its exports:
