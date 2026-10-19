@@ -29,6 +29,8 @@ All notable changes to this project are documented here, in
 
 ### Changed
 
+- CI: the dependency security audit drops the project itself before scanning, so pre-release version bumps no longer trip `--strict` on an unpublished version (pip-audit `--skip-editable` still reports editable distributions as errors).
+
 - Test coverage: property pins for the three deliberate point-in-polygon
   contracts (#1129), direct unit tests for opening identity, opening attach,
   and the PRM table (#1128), golden coverage beyond the validate reports
