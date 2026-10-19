@@ -257,7 +257,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
     """Read a PDF drawing set into per-page sheet records (#737)."""
     from pathlib import Path
 
-    from pdf_ingest import ingest_pdf
+    from ingest.pdf_ingest import ingest_pdf
 
     res = ingest_pdf(Path(args.path), out_dir=args.out, dpi=args.dpi, rasterize=not args.no_raster)
     kinds: dict = {}
@@ -289,7 +289,7 @@ def cmd_export_package(args: argparse.Namespace) -> None:
 
 def cmd_scale(args: argparse.Namespace) -> None:
     """Read each ingested sheet's drawing scale (#739); writes scale.json."""
-    from drawing_scale import scale_sheets
+    from ingest.drawing_scale import scale_sheets
 
     res = scale_sheets(args.sheets)
     for name, sc in res.items():
@@ -306,7 +306,7 @@ def cmd_scale(args: argparse.Namespace) -> None:
 
 def cmd_index(args: argparse.Namespace) -> None:
     """Index an ingested drawing set by discipline, type and level (#738)."""
-    from sheet_index import index_sheets
+    from ingest.sheet_index import index_sheets
 
     idx = index_sheets(args.sheets)
     for e in idx.sheets:
@@ -326,7 +326,7 @@ def cmd_index(args: argparse.Namespace) -> None:
 
 def cmd_schedules(args: argparse.Namespace) -> None:
     """Schedule tables (door, window, lighting, mechanical) from ingested sheets."""
-    from pdf_schedules import schedules_for_sheets
+    from ingest.pdf_schedules import schedules_for_sheets
 
     if not Path(args.sheets).is_dir():
         print(f"Error: sheets folder not found: {args.sheets}", file=sys.stderr)

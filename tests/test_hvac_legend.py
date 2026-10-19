@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).resolve().parent))
 from pdf_fixtures import PageSpec, line, rect, text, write_pdf  # noqa: E402
 
 from hvac_legend import classify, read_legend  # noqa: E402
-from pdf_ingest import ingest_pdf  # noqa: E402
+from ingest.pdf_ingest import ingest_pdf  # noqa: E402
 
 PAGE_W, PAGE_H = 1224.0, 792.0
 PITCH = 25

@@ -1,6 +1,6 @@
 # Schedule tables from PDF sheets (#746)
 
-`pdf_schedules.py` reads door, window, lighting fixture and mechanical schedules
+`ingest/pdf_schedules.py` reads door, window, lighting fixture and mechanical schedules
 drawn as ruled tables on vector PDF sheets (the `matchline.sheet/1` output of
 `matchline ingest`).
 

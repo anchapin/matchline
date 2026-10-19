@@ -156,7 +156,7 @@ def _glazing_sheet(tmp_path, dpi=36):
     import test_plan_walls as T
     from pdf_fixtures import PageSpec, line, write_pdf
 
-    import pdf_ingest as P
+    import ingest.pdf_ingest as P
 
     gx0, gx1 = T._pt(6, 0)[0], T._pt(8, 0)[0]
     gy = T._pt(0, 0)[1]

@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).parent))
 
 from pdf_fixtures import PageSpec, curve, line, oc, text, write_pdf  # noqa: E402
 
-import pdf_ingest as P  # noqa: E402
+import ingest.pdf_ingest as P  # noqa: E402
 import plan_walls as W  # noqa: E402
 
 M_PER_PT = 96 * 0.0254 / 72  # 1/8" = 1'-0"

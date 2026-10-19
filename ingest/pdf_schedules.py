@@ -36,7 +36,7 @@ from typing import Dict, List, Optional, Tuple
 
 from building_model import Provenance
 from datasets_adapter import ScheduleEntry, normalize_tag
-from drawing_scale import parse_length_m
+from ingest.drawing_scale import parse_length_m
 from schedule_parse import ScheduleCell, ScheduleRow, ScheduleTable, _cell_provenance
 
 SCHEMA = "matchline.pdf_schedules/1"

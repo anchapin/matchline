@@ -19,10 +19,10 @@ sys.path.append(str(Path(__file__).resolve().parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
-import drawing_scale as S  # noqa: E402
 import grid_detect as G  # noqa: E402
-import pdf_ingest as P  # noqa: E402
-import pdf_schedules as PS  # noqa: E402
+import ingest.drawing_scale as S  # noqa: E402
+import ingest.pdf_ingest as P  # noqa: E402
+import ingest.pdf_schedules as PS  # noqa: E402
 import tests.test_pdf_schedules as TPS  # noqa: E402
 from tests.model_factory import make_clean_model  # noqa: E402
 from validate import run_checks  # noqa: E402

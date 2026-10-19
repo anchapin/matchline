@@ -75,23 +75,23 @@ graph LR
   subgraph DETECTION
     detection_provider
     door_detect
-    drawing_scale
-    elevation_sheets
     elevation_windows
     facade_takeoff
     grid_detect
     symbols
   end
   subgraph PLAN
+    ingest_drawing_scale
+    ingest_elevation_sheets
+    ingest_pdf_ingest
+    ingest_pdf_schedules
+    ingest_sheet_index
     matchlines
     opening_attach
     opening_identity
-    pdf_ingest
-    pdf_schedules
     plan_walls
     registration
     room_labels
-    sheet_index
   end
   subgraph CORE
     air_loops
@@ -103,6 +103,7 @@ graph LR
     datasets_adapter
     geometry
     ifc
+    ingest
     jesse
     lighting
     limits
@@ -184,13 +185,14 @@ graph LR
   cli --> atomic_io
   cli --> building_model
   cli --> diff
-  cli --> drawing_scale
   cli --> export_package
   cli --> ifc_ifc_export
   cli --> ifc_ifc_import
+  cli --> ingest_drawing_scale
+  cli --> ingest_pdf_ingest
+  cli --> ingest_pdf_schedules
+  cli --> ingest_sheet_index
   cli --> legend_learning
-  cli --> pdf_ingest
-  cli --> pdf_schedules
   cli --> plan_walls
   cli --> review_corrections
   cli --> review_feedback_capture
@@ -207,7 +209,6 @@ graph LR
   cli --> run_room_labels
   cli --> run_symbols
   cli --> run_validation
-  cli --> sheet_index
   cli --> takeoff_diff
   construction_library --> building_model
   construction_library --> construction_library_data
@@ -218,8 +219,6 @@ graph LR
   detection_provider --> datasets_adapter
   detection_provider --> door_detect
   diff --> building_model
-  elevation_sheets --> grid_detect
-  elevation_sheets --> registration
   elevation_windows --> building_model
   elevation_windows --> registration
   export_package --> building_model
@@ -275,44 +274,47 @@ graph LR
   ifc_ifc_space_borders --> building_model
   ifc_ifc_wall_loops --> building_model
   ifc_ifc_wall_split --> ifc_ifc_wall_joins
+  ingest_elevation_sheets --> grid_detect
+  ingest_elevation_sheets --> registration
+  ingest_pdf_ingest --> limits
+  ingest_pdf_schedules --> building_model
+  ingest_pdf_schedules --> datasets_adapter
+  ingest_pdf_schedules --> ingest_drawing_scale
+  ingest_pdf_schedules --> schedule_parse
+  ingest_sheet_index --> review_revisions
   jesse --> building_model
   jesse --> datasets_adapter
   legend_learning --> atomic_io
   lighting --> building_model
   lighting --> datasets_adapter
   lighting --> room_labels
+  matchlines --> ingest_sheet_index
   matchlines --> plan_walls
-  matchlines --> sheet_index
   mech_schedule --> building_model
   mech_tags --> datasets_adapter
   opening_attach --> building_model
   opening_attach --> daylight_skylights
   opening_attach --> ifc_ifc_import
-  pdf_ingest --> limits
-  pdf_schedules --> building_model
-  pdf_schedules --> datasets_adapter
-  pdf_schedules --> drawing_scale
-  pdf_schedules --> schedule_parse
   plan_walls --> room_labels
   real_set --> air_loops
   real_set --> bem_bem_helpers
   real_set --> building_model
   real_set --> construction_library
-  real_set --> drawing_scale
-  real_set --> elevation_sheets
   real_set --> geometry_geometry_simplify
   real_set --> geometry_semi_exterior
   real_set --> geometry_vestibules
   real_set --> grid_detect
   real_set --> hvac_legend
   real_set --> hvac_trace
+  real_set --> ingest_drawing_scale
+  real_set --> ingest_elevation_sheets
+  real_set --> ingest_pdf_ingest
+  real_set --> ingest_pdf_schedules
+  real_set --> ingest_sheet_index
   real_set --> matchlines
   real_set --> mech_tags
-  real_set --> pdf_ingest
-  real_set --> pdf_schedules
   real_set --> plan_walls
   real_set --> review_revisions
-  real_set --> sheet_index
   real_set --> wall_types
   real_set --> zone_capacity
   registration --> building_model
@@ -385,7 +387,6 @@ graph LR
   run_validation --> geometry_geometry_simplify
   run_validation --> synth_multidiscipline
   schedule_parse --> building_model
-  sheet_index --> review_revisions
   solar_aperture --> geometry_roof_geometry
   space_merge --> building_model
   space_use_defaults --> building_model

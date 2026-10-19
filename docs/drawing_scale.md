@@ -1,4 +1,4 @@
-# Drawing scale (`drawing_scale.py`)
+# Drawing scale (`ingest/drawing_scale.py`)
 
 Reads each ingested sheet's scale from the sheet itself (#739), so lengths and
 areas on real drawings mean something. Input is a sheet from `pdf_ingest`

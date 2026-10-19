@@ -147,23 +147,6 @@
         "window_detections": "walls: dict, height_pt: float, px_per_pt: float, source: str"
       }
     },
-    "drawing_scale": {
-      "classes": {
-        "Evidence": "",
-        "SheetScale": ""
-      },
-      "functions": {
-        "find_dimensions": "sheet",
-        "find_notes": "sheet",
-        "find_scale_bars": "sheet",
-        "normalize": "s: str",
-        "parse_length_m": "s: str",
-        "parse_scale_note": "s: str",
-        "scale_at": "scale: SheetScale, x: float, y: float",
-        "scale_sheets": "sheet_dir",
-        "sheet_scale": "sheet"
-      }
-    },
     "elevation_windows": {
       "classes": {
         "ContourWindowDetector": "self, min_area_m2: float=0.4, max_area_m2: float=12.0, aspect_range: tuple=(0.3, 4.0), min_fill_ratio: float=0.85, confidence: float=0.9",
@@ -293,6 +276,65 @@
         "import_ifc": "path, sheet_id=None, revision=1"
       }
     },
+    "ingest.drawing_scale": {
+      "classes": {
+        "Evidence": "",
+        "SheetScale": ""
+      },
+      "functions": {
+        "find_dimensions": "sheet",
+        "find_notes": "sheet",
+        "find_scale_bars": "sheet",
+        "normalize": "s: str",
+        "parse_length_m": "s: str",
+        "parse_scale_note": "s: str",
+        "scale_at": "scale: SheetScale, x: float, y: float",
+        "scale_sheets": "sheet_dir",
+        "sheet_scale": "sheet"
+      }
+    },
+    "ingest.pdf_ingest": {
+      "classes": {
+        "ImageRef": "",
+        "IngestError": "",
+        "IngestResult": "",
+        "Primitive": "",
+        "Sheet": "",
+        "TextSpan": ""
+      },
+      "functions": {
+        "ingest_pdf": "path, out_dir=None, dpi: float=DEFAULT_DPI, rasterize: bool=True",
+        "load_sheet": "path",
+        "page_to_sheet_matrix": "x0: float, y0: float, w: float, h: float, rotation: int"
+      }
+    },
+    "ingest.pdf_schedules": {
+      "classes": {
+        "PdfSchedule": ""
+      },
+      "functions": {
+        "extract_schedules": "sheet: dict, sheet_id: Optional[str]=None",
+        "schedules_for_sheets": "sheets_dir, sheet_ids: Optional[Dict[str, str]]=None"
+      }
+    },
+    "ingest.sheet_index": {
+      "classes": {
+        "SheetEntry": "",
+        "SheetIndex": "",
+        "Span": ""
+      },
+      "functions": {
+        "build_index": "sheets: Sequence, files: Optional[Sequence[str]]=None",
+        "classify_title": "title: str",
+        "find_drawing_index": "spans: List[Span], exclude: Optional[Span]=None",
+        "find_sheet_number": "spans: List[Span], w: float, h: float",
+        "find_title": "spans: List[Span], number: Optional[Span], w: float, h: float",
+        "index_sheets": "sheet_dir",
+        "parse_level": "title: str",
+        "parse_sheet_number": "s: str",
+        "read_title_block": "sheet, file: Optional[str]=None"
+      }
+    },
     "jesse": {
       "classes": {
         "WisardClassifier": "self, n_classes: int, tuple_idx: np.ndarray | None=None, h: int=28, w: int=28, seed: int=42"
@@ -348,30 +390,6 @@
         "parse_capacity": "text: str",
         "parse_cobie_workbook": "path: 'str | Path'",
         "parse_tag": "name: str"
-      }
-    },
-    "pdf_ingest": {
-      "classes": {
-        "ImageRef": "",
-        "IngestError": "",
-        "IngestResult": "",
-        "Primitive": "",
-        "Sheet": "",
-        "TextSpan": ""
-      },
-      "functions": {
-        "ingest_pdf": "path, out_dir=None, dpi: float=DEFAULT_DPI, rasterize: bool=True",
-        "load_sheet": "path",
-        "page_to_sheet_matrix": "x0: float, y0: float, w: float, h: float, rotation: int"
-      }
-    },
-    "pdf_schedules": {
-      "classes": {
-        "PdfSchedule": ""
-      },
-      "functions": {
-        "extract_schedules": "sheet: dict, sheet_id: Optional[str]=None",
-        "schedules_for_sheets": "sheets_dir, sheet_ids: Optional[Dict[str, str]]=None"
       }
     },
     "plan_walls": {
@@ -509,24 +527,6 @@
         "safe_xml_fromstring": "text: bytes, max_nodes: Optional[int]=None",
         "safe_xml_parse": "path: str | Path, max_nodes: Optional[int]=None",
         "safe_xml_parser": ""
-      }
-    },
-    "sheet_index": {
-      "classes": {
-        "SheetEntry": "",
-        "SheetIndex": "",
-        "Span": ""
-      },
-      "functions": {
-        "build_index": "sheets: Sequence, files: Optional[Sequence[str]]=None",
-        "classify_title": "title: str",
-        "find_drawing_index": "spans: List[Span], exclude: Optional[Span]=None",
-        "find_sheet_number": "spans: List[Span], w: float, h: float",
-        "find_title": "spans: List[Span], number: Optional[Span], w: float, h: float",
-        "index_sheets": "sheet_dir",
-        "parse_level": "title: str",
-        "parse_sheet_number": "s: str",
-        "read_title_block": "sheet, file: Optional[str]=None"
       }
     },
     "sim_smoke": {

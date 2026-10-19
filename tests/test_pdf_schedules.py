@@ -14,8 +14,8 @@ sys.path.append(str(Path(__file__).resolve().parent))
 
 from pdf_fixtures import PageSpec, line, text, write_pdf  # noqa: E402
 
-from pdf_ingest import ingest_pdf  # noqa: E402
-from pdf_schedules import extract_schedules, schedules_for_sheets  # noqa: E402
+from ingest.pdf_ingest import ingest_pdf  # noqa: E402
+from ingest.pdf_schedules import extract_schedules, schedules_for_sheets  # noqa: E402
 
 PAGE_W, PAGE_H = 1224.0, 792.0
 INCH_M = 0.0254
@@ -437,7 +437,7 @@ def test_schedule_word_in_plan_notes_is_not_a_table(tmp_path):
 
 # --- capacity columns on mechanical rows (#747) ---------------------------
 
-from pdf_schedules import _capacities  # noqa: E402
+from ingest.pdf_schedules import _capacities  # noqa: E402
 
 
 def ahu_schedule(x=700, ytop=740):

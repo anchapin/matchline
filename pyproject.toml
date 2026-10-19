@@ -86,8 +86,6 @@ py-modules = [
     "detection_provider",
     "diff",
     "door_detect",
-    "drawing_scale",
-    "elevation_sheets",
     "elevation_windows",
     "export_package",
     "facade_takeoff",
@@ -102,8 +100,6 @@ py-modules = [
     "mech_tags",
     "opening_attach",
     "opening_identity",
-    "pdf_ingest",
-    "pdf_schedules",
     "pipeline_exceptions",
     "plan_walls",
     "real_set",
@@ -122,7 +118,6 @@ py-modules = [
     "sim_smoke",
     "safe_xml",
     "schedule_parse",
-    "sheet_index",
     "solar_aperture",
     "space_conditioning",
     "space_merge",
@@ -139,6 +134,7 @@ py-modules = [
 ]
 packages = [
     "assets",
+    "ingest",
     "geometry",
     "review",
     "ifc",

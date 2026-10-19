@@ -447,7 +447,7 @@ def test_heated_slab_evidence_reads_schedule_title_and_cells():
 
 
 def test_radiant_schedule_titles_are_mechanical():
-    from pdf_schedules import _kind
+    from ingest.pdf_schedules import _kind
 
     assert _kind("RADIANT FLOOR SCHEDULE") == "mechanical"
     assert _kind("IN-SLAB HEATING MANIFOLD SCHEDULE") == "mechanical"
