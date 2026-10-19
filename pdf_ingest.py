@@ -487,8 +487,10 @@ def ingest_pdf(
     result = IngestResult(str(path), sha, n_pages, sheets, warnings)
     if out is not None:
         for s in sheets:
-            (out / f"sheet_{s.page_number:03d}.json").write_text(json.dumps(s.to_dict()))
-        (out / "ingest.json").write_text(json.dumps(result.summary(), indent=2))
+            (out / f"sheet_{s.page_number:03d}.json").write_text(
+                json.dumps(s.to_dict()), encoding="utf-8"
+            )
+        (out / "ingest.json").write_text(json.dumps(result.summary(), indent=2), encoding="utf-8")
     return result
 
 

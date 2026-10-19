@@ -21,9 +21,40 @@ import math
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from datasets_adapter import normalize_crop
+
+# Synthetic rendering must work on every Tier 1 OS (#1163): the Linux DejaVu
+# path used to be the only candidate and the demo died at Stage 1 on macOS
+# and Windows ("cannot open resource").
+_FONT_CANDIDATES = (
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
+    "C:/Windows/Fonts/arialbd.ttf",  # Windows
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # macOS
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
+    "C:/Windows/Fonts/arial.ttf",  # Windows
+    "/System/Library/Fonts/Helvetica.ttc",  # macOS
+)
+
+
+def _render_font(size: int):
+    """Font for synthetic sheet text, portable across Tier 1 OSes (#1163).
+
+    Tries the platform TrueType candidates in bold-first order and falls
+    back to Pillow's built-in bitmap font when none is available.
+    """
+    for path in _FONT_CANDIDATES:
+        if Path(path).exists():
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:  # Pillow < 10.1 has no size kwarg
+        return ImageFont.load_default()
+
 
 CANVAS = 128
 

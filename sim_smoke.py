@@ -187,7 +187,7 @@ def judge(err: dict, res: dict, ref: dict, data: dict) -> dict:
 
 
 def _run(cmd, log: Path, timeout: int) -> int:
-    with open(log, "w") as f:
+    with open(log, "w", encoding="utf-8") as f:
         return subprocess.run(
             cmd, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=False
         ).returncode
@@ -196,7 +196,9 @@ def _run(cmd, log: Path, timeout: int) -> int:
 def annual(openstudio: str, osm: Path, epw: Path, out: Path, timeout: int) -> Path:
     """Run a full year on ``osm``; returns the EnergyPlus run directory."""
     osw = out / "annual.osw"
-    osw.write_text(json.dumps({"seed_file": str(osm), "weather_file": str(epw), "steps": []}))
+    osw.write_text(
+        json.dumps({"seed_file": str(osm), "weather_file": str(epw), "steps": []}), encoding="utf-8"
+    )
     _run([openstudio, "run", "-w", str(osw)], out / "annual.log", timeout)
     return out / "run"
 
@@ -266,7 +268,7 @@ def main(argv=None) -> int:
         report.update(judge(err, res, ref, data))
         if not osm.exists():
             report["reasons"].insert(0, "OpenStudio could not build the model (see typical.log)")
-    (out / "sim_smoke_report.json").write_text(json.dumps(report, indent=2))
+    (out / "sim_smoke_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({k: report.get(k) for k in ("status", "reasons", "notes", "eui_ratio")}))
     fail = report["status"] in ("fail", "wall_clock_exceeded")
     if fail or (a.strict and report["status"] == "eui_out_of_band"):

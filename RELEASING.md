@@ -5,7 +5,7 @@ only ever receive release PRs.
 
 ## Checklist
 
-1. `develop` is green: CI passes, `python -m pytest tests/ -q` is clean.
+1. `develop` is green: CI passes, `python -m pytest tests/ -q` is clean. The `platform-matrix` jobs (macOS/Windows wheel install + demo, docs/platform_support.md) run on the release commit's push to `main`; confirm they are green before tagging.
 2. The simulation smoke gate is green: check the latest `Simulation smoke`
    run (.github/workflows/sim-smoke.yml, nightly and per-PR when its files
    change). A red gate blocks tagging. If the last nightly is stale or red,

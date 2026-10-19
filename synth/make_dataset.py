@@ -71,7 +71,8 @@ def main():
         f"sheets/: {args.sheets} floor plans (PNG + .gt.json ground truth)\n"
         f"crops/: {len(y)} symbol crops, manifest crops_manifest.csv\n"
         f"seed={args.seed} classes={','.join(args.classes)} "
-        f"px_per_m={','.join(str(s) for s in scales)}\n"
+        f"px_per_m={','.join(str(s) for s in scales)}\n",
+        encoding="utf-8",
     )
     print("done", flush=True)
 

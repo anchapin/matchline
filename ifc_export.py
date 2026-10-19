@@ -442,5 +442,5 @@ def export_ifc(model_path: str, out_path: str) -> None:
 
     report = build_convention_report(model)
     (Path(ifc_path).parent / "convention_report.json").write_text(
-        json.dumps(report, indent=2, default=str)
+        json.dumps(report, indent=2, default=str), encoding="utf-8"
     )

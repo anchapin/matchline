@@ -17,11 +17,9 @@ import csv
 import io
 
 import numpy as np
-from PIL import ImageDraw, ImageFont
+from PIL import ImageDraw
 
-from synth.symbols import CANVAS, render_symbol
-
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+from synth.symbols import CANVAS, _render_font, render_symbol
 
 LIGHTING_CLASSES = [
     "Troffer 2x4",
@@ -99,10 +97,7 @@ def glyph_exit_sign(d: ImageDraw.ImageDraw, cx, cy, w, lw, rng=None):
     troffer's louver grid."""
     txt = "EXIT"
     size = int(w * 0.34)
-    try:
-        fnt = ImageFont.truetype(FONT_PATH, size)
-    except OSError:
-        fnt = ImageFont.load_default()
+    fnt = _render_font(size)
     bb = d.textbbox((0, 0), txt, font=fnt)
     tw, th = bb[2] - bb[0], bb[3] - bb[1]
     hw, hh = tw / 2 + 7, th / 2 + 6

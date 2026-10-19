@@ -1533,10 +1533,12 @@ def write_review(out_dir: Path, model) -> Path:
     d = Path(out_dir) / "review"
     d.mkdir(parents=True, exist_ok=True)
     text = model.to_json()
-    (d / "model.json").write_text(text)
+    (d / "model.json").write_text(text, encoding="utf-8")
     doc = template(model, sha256_text(text))
-    (d / "decisions.json").write_text(json.dumps(doc, indent=2))
-    (d / "review.html").write_text(render_html(model, doc, sheet_overlays(out_dir, model)))
+    (d / "decisions.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    (d / "review.html").write_text(
+        render_html(model, doc, sheet_overlays(out_dir, model)), encoding="utf-8"
+    )
     return d
 
 

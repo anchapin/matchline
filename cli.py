@@ -249,7 +249,7 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
                     "Rejecting to prevent path traversal."
                 )
         outp.parent.mkdir(parents=True, exist_ok=True)
-        outp.write_text(model.to_json())
+        outp.write_text(model.to_json(), encoding="utf-8")
         print(f"wrote {args.out}")
 
 
@@ -415,7 +415,7 @@ def cmd_diff(args: argparse.Namespace) -> None:
     summary = diff_models(old_model, new_model)
 
     if args.out:
-        with open(args.out, "w") as f:
+        with open(args.out, "w", encoding="utf-8") as f:
             json.dump(summary.to_dict(), f, indent=2)
     else:
         print(json.dumps(summary.to_dict(), indent=2))
@@ -481,10 +481,10 @@ def cmd_takeoff_diff(args: argparse.Namespace) -> None:
     rep = takeoff_diff.diff_takeoffs(old, new, old_report=old_report, new_report=new_report)
     text = json.dumps(rep, indent=2)
     if args.out:
-        Path(args.out).write_text(text + "\n")
+        Path(args.out).write_text(text + "\n", encoding="utf-8")
     if args.review_items:
         items = json.dumps(takeoff_diff.review_items(rep), indent=2)
-        Path(args.review_items).write_text(items + "\n")
+        Path(args.review_items).write_text(items + "\n", encoding="utf-8")
     print(text)
 
 
@@ -543,7 +543,7 @@ def cmd_viewer(args: argparse.Namespace) -> None:
     cdoc = corrections_mod.read(cpath) if cpath.exists() else None
     scene = review_viewer.build_scene(model, corrections_doc=cdoc)
     page = review_viewer.page_html(scene, title=f"matchline review viewer: {model.name}")
-    Path(args.out).write_text(page)
+    Path(args.out).write_text(page, encoding="utf-8")
     print(f"wrote {args.out}")
 
 
@@ -563,7 +563,7 @@ def cmd_viewer_apply(args: argparse.Namespace) -> None:
         sys.exit(1)
     summary = viewer_corrections.apply_ops(model, doc, model_path)
     dest = Path(args.out) if args.out else model_path
-    dest.write_text(model.to_json())
+    dest.write_text(model.to_json(), encoding="utf-8")
     print(json.dumps(summary, indent=2, default=str))
 
 

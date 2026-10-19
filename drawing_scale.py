@@ -538,5 +538,5 @@ def scale_sheets(sheet_dir) -> Dict[str, dict]:
     out = {}
     for p in sorted(d.glob("sheet_[0-9][0-9][0-9].json")):
         out[p.name] = sheet_scale(json.loads(p.read_text())).to_dict()
-    (d / "scale.json").write_text(json.dumps(out, indent=2))
+    (d / "scale.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     return out
