@@ -7,6 +7,13 @@ name: Simulation smoke
 # sim/reference_eui.json is a warning and is reported, not auto-fixed.
 # Nightly rather than per PR: OpenStudio is a ~400 MB download (cached) and
 # the run takes a few minutes.
+# #1160: the gate is the full chain IFC -> canonical model -> gbXML export ->
+# EnergyPlus. After the synthetic leg we feed the exported reference IFC
+# (stage_06_bem/bldg_101.ifc) back through run_pipeline --ifc, export its
+# gbXML and simulate that too. Each sim leg carries a wall-clock budget
+# (--max-wall 1200 s; typical 1-3 min per leg, whole job ~6 min cold); an
+# over-budget run fails the gate, so the nightly doubles as a smoke
+# performance check.
 
 on:
   schedule:
@@ -84,32 +91,58 @@ jobs:
             --epw ~/sim-cache/"$WX_NAME.epw" \
             --out-dir "$RUNNER_TEMP/sim" \
             --openstudio "$(command -v openstudio)" \
-            --building-type SmallOffice --template 90.1-2019 --climate-zone 5A
+            --building-type SmallOffice --template 90.1-2019 --climate-zone 5A \
+            --max-wall 1200
+      - name: IFC roundtrip (reference IFC -> canonical model -> export)
+        run: |
+          python run_pipeline.py \
+            --ifc "$RUNNER_TEMP/pipe/stage_06_bem/bldg_101.ifc" \
+            --out-dir "$RUNNER_TEMP/ifc"
+      - name: Simulate the roundtrip
+        run: |
+          python sim_smoke.py \
+            --gbxml "$(ls "$RUNNER_TEMP/ifc/stage_06_bem/"*.xml | head -1)" \
+            --epw ~/sim-cache/"$WX_NAME.epw" \
+            --out-dir "$RUNNER_TEMP/sim-ifc" \
+            --openstudio "$(command -v openstudio)" \
+            --building-type SmallOffice --template 90.1-2019 --climate-zone 5A \
+            --max-wall 1200
       - name: Summary
         if: always()
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
-          p = Path(os.environ["RUNNER_TEMP"]) / "sim" / "sim_smoke_report.json"
-          lines = ["## Simulation smoke (#752)", ""]
-          if not p.exists():
-              lines.append("No report written.")
-          else:
+          legs = [
+              ("Synthetic (#752)",
+               Path(os.environ["RUNNER_TEMP"]) / "sim" / "sim_smoke_report.json"),
+              ("IFC roundtrip (#1160)",
+               Path(os.environ["RUNNER_TEMP"]) / "sim-ifc" / "sim_smoke_report.json"),
+          ]
+          lines = ["## Simulation smoke (#752, #1160)", ""]
+          for label, p in legs:
+              lines.append("### " + label)
+              if not p.exists():
+                  lines += ["No report written.", ""]
+                  continue
               r = json.loads(p.read_text())
               res, ref = r.get("result") or {}, r.get("reference") or {}
               lines += [
                   f"- status: **{r.get('status')}**",
+                  f"- wall clock: {r.get('wall_seconds')} s (budget 1200 s)",
                   f"- site EUI: {res.get('site_eui_mj_m2')} MJ/m2 "
-                  f"(prototype {ref.get('site_eui_mj_m2')}, band {r.get('band_mj_m2')}, ratio {r.get('eui_ratio')})",
+                  f"(prototype {ref.get('site_eui_mj_m2')}, band {r.get('band_mj_m2')}, "
+                  f"ratio {r.get('eui_ratio')})",
                   f"- conditioned area: {res.get('conditioned_area_m2')} m2",
-                  f"- unmet occupied hours: heating {res.get('unmet_heating_h')}, cooling {res.get('unmet_cooling_h')}",
+                  f"- unmet occupied hours: heating {res.get('unmet_heating_h')}, "
+                  f"cooling {res.get('unmet_cooling_h')}",
                   f"- EnergyPlus: {r.get('err')}",
               ]
               lines += [f"- reason: {x}" for x in r.get("reasons", [])]
               lines += [f"- note: {x}" for x in r.get("notes", [])]
               if r.get("status") == "eui_out_of_band":
                   print("::warning::" + "; ".join(r.get("notes", [])))
+              lines.append("")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write("\n".join(lines) + "\n")
           PY
@@ -122,4 +155,7 @@ jobs:
             ${{ runner.temp }}/sim/sim_smoke_report.json
             ${{ runner.temp }}/sim/*.log
             ${{ runner.temp }}/sim/run/eplusout.err
+            ${{ runner.temp }}/sim-ifc/sim_smoke_report.json
+            ${{ runner.temp }}/sim-ifc/*.log
+            ${{ runner.temp }}/sim-ifc/run/eplusout.err
           if-no-files-found: ignore
