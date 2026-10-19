@@ -39,8 +39,8 @@ pytest.importorskip("ifcopenshell")
 import ifcopenshell  # noqa: E402
 import ifcopenshell.guid  # noqa: E402
 
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import RSE_WALL_M2K_W, RSI_WALL_M2K_W, import_ifc  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import RSE_WALL_M2K_W, RSI_WALL_M2K_W, import_ifc  # noqa: E402
 from tests.model_factory import make_clean_model  # noqa: E402
 
 BRICK = ("Brick", 0.10, None, False)

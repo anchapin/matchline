@@ -23,10 +23,10 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
-from ifc_export import _export_ifc
+from ifc.ifc_export import _export_ifc
 from validate import run_checks  # noqa: F401 - used in test
 
-_ensure_ifc = __import__("ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
+_ensure_ifc = __import__("ifc.ifc_import", fromlist=["_ensure_ifc"])._ensure_ifc
 _ensure_ifc()
 import ifcopenshell  # noqa: E402
 
@@ -77,7 +77,7 @@ def test_zone_roundtrip(tmp_path):
     ifc_path = tmp_path / "roundtrip.ifc"
 
     _export_ifc(model, str(ifc_path))
-    imported = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
+    imported = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
 
     # ZONE-A should contain L1-101 and L1-102
     assert "ZONE-A" in imported.zones
@@ -108,7 +108,7 @@ def test_lighting_roundtrip(tmp_path):
     orig_total = sum(sp.lighting.total_w for sp in model.spaces.values())
 
     _export_ifc(model, str(ifc_path))
-    imported = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
+    imported = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
 
     imported_total = sum(sp.lighting.total_w for sp in imported.spaces.values())
     tolerance = orig_total * 0.01  # 1%
@@ -194,7 +194,7 @@ def test_cross_sheet_dedup_via_roundtrip(tmp_path):
 
     ifc_path = tmp_path / "dedup.ifc"
     _export_ifc(model, str(ifc_path))
-    imported = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
+    imported = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
 
     # After cross-sheet dedup, L1-101 should have exactly 1 opening (not 2)
     openings = imported.spaces["L1-101"].openings
@@ -210,7 +210,7 @@ def test_wall_direction_refuses_rather_than_guesses():
     window must not be able to resurrect a match on its own.
     """
     from building_model import BimElement, EnvelopeWall
-    from ifc_import import _WALL_DIR_NO_EDGE, _wall_direction_from_envelope
+    from ifc.ifc_import import _WALL_DIR_NO_EDGE, _wall_direction_from_envelope
 
     model = BuildingModel(name="m", levels=[])
     # One 10 m edge, far away from the wall below.
@@ -238,7 +238,7 @@ def test_unresolvable_wall_leaves_openings_unattached_and_flagged():
     unattached and the wall raised for review.
     """
     from building_model import BimElement, BimOpening, EnvelopeWall
-    from ifc_import import _attach_openings_to_spaces
+    from ifc.ifc_import import _attach_openings_to_spaces
 
     prov = Provenance(sheet_id="synth", revision=1, method="test", confidence=0.5)
     model = BuildingModel(name="m", levels=[Level(id="L1", wall_height_m=3.0)])
@@ -348,11 +348,11 @@ def test_envelope_wall_matching_uses_position_not_length(tmp_path):
     the wall's own centerline, and must not change when the envelope is
     reordered or reversed.
     """
-    from ifc_import import _wall_direction_from_envelope
+    from ifc.ifc_import import _wall_direction_from_envelope
 
     ifc_path = tmp_path / "matcher.ifc"
     _export_ifc(_dedup_model(), str(ifc_path))
-    model = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
+    model = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc(str(ifc_path))
 
     walls = [el for el in model.bim_elements if el.ifc_class == "IfcWall"]
     assert walls, "fixture must import at least one IfcWall"
@@ -530,7 +530,7 @@ def test_ifc_import_export_round_trip(tmp_path):
     after the first import.
     """
     # ── Build realistic 2-room model ─────────────────────────────────────────
-    import_ifc = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc
+    import_ifc = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc
     model = _build_realistic_2room_model()
 
     # Known area values to verify round-trip preserves them
@@ -623,7 +623,7 @@ def test_ifc_import_validate_export_battery(tmp_path):
     because IFC import does not currently preserve all space properties. This test
     runs the full BATTERY validation to document these limitations.
     """
-    import_ifc = __import__("ifc_import", fromlist=["import_ifc"]).import_ifc
+    import_ifc = __import__("ifc.ifc_import", fromlist=["import_ifc"]).import_ifc
     model = _build_realistic_2room_model()
 
     # ── Round-trip: model → IFC → m1 ───────────────────────────────────────

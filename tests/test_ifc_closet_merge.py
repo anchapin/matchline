@@ -14,7 +14,7 @@ import ifcopenshell.api.spatial as _Sp  # noqa: E402
 import ifcopenshell.guid as _guid  # noqa: E402
 
 from bem.bem_export import BEMModel, BEMSpace, write_ifc4  # noqa: E402
-from ifc_import import _ifc_space_class, import_ifc  # noqa: E402
+from ifc.ifc_import import _ifc_space_class, import_ifc  # noqa: E402
 from tests.test_ifc_import import H, _add_solid, _rect_profile  # noqa: E402
 
 

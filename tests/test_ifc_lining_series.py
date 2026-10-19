@@ -11,8 +11,8 @@ import ifcopenshell.api.pset as _Ps  # noqa: E402
 import ifcopenshell.api.spatial as _Sp  # noqa: E402
 import ifcopenshell.guid as guid  # noqa: E402
 
-from ifc_import import RSE_WALL_M2K_W, RSI_WALL_M2K_W, import_ifc  # noqa: E402
-from ifc_wall_linings import cladding_hosts, host_cover  # noqa: E402
+from ifc.ifc_import import RSE_WALL_M2K_W, RSI_WALL_M2K_W, import_ifc  # noqa: E402
+from ifc.ifc_wall_linings import cladding_hosts, host_cover  # noqa: E402
 from tests.test_ifc_closet_merge import _place  # noqa: E402
 from tests.test_ifc_import import _add_solid, _rect_profile, make_ifc_fixture  # noqa: E402
 from tests.test_ifc_import_layered_wall_u import _layer_set  # noqa: E402

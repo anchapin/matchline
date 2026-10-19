@@ -1,4 +1,4 @@
-# IFC Export — `ifc_export.py`
+# IFC Export — `ifc/ifc_export.py`
 
 Exports a canonical `BuildingModel` to **IFC4** format via the existing `write_ifc4` pathway. This is the second half of the IFC round-trip (`ifc_import.py` → `BuildingModel` → `ifc_export.py` → IFC4 file).
 

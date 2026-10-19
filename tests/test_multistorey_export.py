@@ -13,7 +13,7 @@ from shapely.geometry import Polygon
 from bem.bem_export import validate_gbxml, write_gbxml
 from bem.bem_levels import hole_free
 from building_model import BuildingModel, EnvelopeWall, Level, Space, SpaceOpening
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 
 NS = {"g": "http://www.gbxml.org/schema"}
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

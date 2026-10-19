@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from ifc_import import _ensure_ifc
+from ifc.ifc_import import _ensure_ifc
 
 _ensure_ifc()
 

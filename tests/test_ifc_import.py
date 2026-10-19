@@ -19,7 +19,7 @@ from building_model import (
     EnvelopeWall,
     OpeningAttachmentSummary,
 )
-from ifc_import import (
+from ifc.ifc_import import (
     _WALL_DIR_AMBIGUOUS_TIE,
     _WALL_DIR_NO_EDGE,
     _attach_openings_to_spaces,
@@ -652,8 +652,7 @@ def test_tier1_fixture_openings_attached_once(model):
 
 def test_tier1_interior_door_stored_once_with_adjacent_space(monkeypatch):
     """An interior door lands once, on the lower-id space, naming the other side."""
-    import ifc_import
-
+    import ifc.ifc_import as ifc_import
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
     m = _two_room_model()
     _attach_openings_to_spaces(m)
@@ -707,8 +706,7 @@ def _two_room_model(level_id="L1", wall_level="L1", thickness=0.2):
 
 def test_tier1_ref_direction_fallback_attaches_at_085(monkeypatch):
     """No envelope edge: the wall's RefDirection places the door, at confidence 0.85."""
-    import ifc_import
-
+    import ifc.ifc_import as ifc_import
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
     m = _two_room_model()
     _attach_openings_to_spaces(m)
@@ -723,8 +721,7 @@ def test_tier1_ref_direction_fallback_attaches_at_085(monkeypatch):
 
 def test_tier1_host_interval_set_along_wall(monkeypatch):
     """Attached IFC openings carry [s0, s1] along the host wall around s_center_m (#681)."""
-    import ifc_import
-
+    import ifc.ifc_import as ifc_import
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
     m = _two_room_model()
     _attach_openings_to_spaces(m)
@@ -737,8 +734,7 @@ def test_tier1_host_interval_set_along_wall(monkeypatch):
 
 def test_tier1_host_interval_clamped_to_wall(monkeypatch):
     """An opening near the wall end never gets an interval past the wall."""
-    import ifc_import
-
+    import ifc.ifc_import as ifc_import
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
     m = _two_room_model()
     m.bim_elements[0].openings[0].s_center_m = 0.3
@@ -749,7 +745,7 @@ def test_tier1_host_interval_clamped_to_wall(monkeypatch):
 
 def test_tier1_opening_spanning_partition_is_ambiguous(monkeypatch):
     """A door whose edge reaches a second room on the same side goes to review (#681)."""
-    import ifc_import
+    import ifc.ifc_import as ifc_import
     from building_model import Space
 
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
@@ -773,7 +769,7 @@ def test_tier1_opening_spanning_partition_is_ambiguous(monkeypatch):
 
 def test_tier1_ambiguous_opening_blocks_export_until_acknowledged(monkeypatch):
     """adjacency_ambiguous rides the existing review gate, no new check needed."""
-    import ifc_import
+    import ifc.ifc_import as ifc_import
     from building_model import Space
     from validate import run_checks
 
@@ -791,8 +787,7 @@ def test_tier1_ambiguous_opening_blocks_export_until_acknowledged(monkeypatch):
 
 def test_tier1_other_level_spaces_never_candidates(monkeypatch):
     """A wall on L2 never attaches to L1 rooms at the same plan position."""
-    import ifc_import
-
+    import ifc.ifc_import as ifc_import
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))
     m = _two_room_model(level_id="L1", wall_level="L2")
     _attach_openings_to_spaces(m)
@@ -803,7 +798,7 @@ def test_tier1_other_level_spaces_never_candidates(monkeypatch):
 
 def test_tier1_outside_spaces_flags_and_warns(monkeypatch):
     """Direction known but no room on either side: counted, queued, check warns."""
-    import ifc_import
+    import ifc.ifc_import as ifc_import
     from validate import run_checks
 
     monkeypatch.setattr(ifc_import, "_wall_direction_from_entity", lambda el: (0.0, 1.0))

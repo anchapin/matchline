@@ -17,7 +17,7 @@ import ifcopenshell.api.geometry as _Gm  # noqa: E402
 import ifcopenshell.api.spatial as sp  # noqa: E402
 import ifcopenshell.guid as guid  # noqa: E402
 
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.test_ifc_closet_merge import _place  # noqa: E402
 from tests.test_ifc_import import _add_solid, make_ifc_fixture  # noqa: E402
 

@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("ifcopenshell")
 
 from building_model import BimOpening  # noqa: E402
-from ifc_import import _drop_duplicate_openings, import_ifc  # noqa: E402
+from ifc.ifc_import import _drop_duplicate_openings, import_ifc  # noqa: E402
 from tests.ifc_defects import double_a_window, fixture, fragment_south_wall  # noqa: E402
 
 

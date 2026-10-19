@@ -60,7 +60,7 @@ Every derived fact carries a `Provenance` record: `sheet_id`, `revision`, `metho
 | `datasets_adapter.py` | Detector → schedule join → count×width×height takeoffs |
 | `validate/` | 49-check invariant battery; errors **block export** |
 | `bem/bem_export.py` | gbXML 8.01 + IFC4 export from canonical model |
-| `ifc_import.py` | IFC4 → canonical model (Tier 0; Tier 1 = space attachment, open) |
+| `ifc/ifc_import.py` | IFC4 → canonical model (Tier 0; Tier 1 = space attachment, open) |
 | `geometry_simplify.py` | Area-budgeted surface reduction (≤2% area drift default) |
 | `hvac_trace.py` | Duct tracing → terminal units → zone graphs |
 | `elevation_windows.py` | Exact window placement from elevations + sidelit daylight zones |

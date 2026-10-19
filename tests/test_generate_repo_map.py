@@ -63,20 +63,21 @@ def test_self_import_excluded(tmp_path):
     assert "a --> a" not in text
 
 
-def test_bem_package_nodes_and_edges(tmp_path):
-    _write_tree(
-        tmp_path,
-        {
-            "a.py": "import bem.bem_a as bem_a\n",
-            "bem/__init__.py": "",
-            "bem/bem_a.py": "import bem.bem_b as bem_b\n",
-            "bem/bem_b.py": "pass\n",
-        },
-    )
-    text = _run(tmp_path, tmp_path / "map.mmd")
-    assert "    bem_bem_a" in text and "    bem_bem_b" in text
-    assert "  bem_bem_a --> bem_bem_b" in text
-    assert "  a --> bem_bem_a" in text
+def test_moved_package_nodes_and_edges(tmp_path):
+    for pkg in ("bem", "ifc"):
+        _write_tree(
+            tmp_path,
+            {
+                "a.py": f"import {pkg}.a_mod as a_mod\n",
+                f"{pkg}/__init__.py": "",
+                f"{pkg}/a_mod.py": f"import {pkg}.b_mod as b_mod\n",
+                f"{pkg}/b_mod.py": "pass\n",
+            },
+        )
+        text = _run(tmp_path, tmp_path / f"map_{pkg}.mmd")
+        assert f"    {pkg}_a_mod" in text and f"    {pkg}_b_mod" in text
+        assert f"  {pkg}_a_mod --> {pkg}_b_mod" in text
+        assert f"  a --> {pkg}_a_mod" in text
 
 
 def test_cluster_prefix_assignment(tmp_path):

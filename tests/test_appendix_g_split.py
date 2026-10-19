@@ -208,7 +208,7 @@ def test_ifc_writes_air_walls_as_virtual_space_boundaries(tmp_path):
 def test_ifc_reimport_rejoins_split_pieces_under_the_parent_id(tmp_path):
     pytest.importorskip("ifcopenshell")
     from bem.bem_ifc4 import write_ifc4
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     ident = {"id": "L1-101", "method": "ifc", "confidence": 1.0}
     other = _space("R2", [(10, 0), (14, 0), (14, 3), (10, 3)], ident={"id": "L1-102"})

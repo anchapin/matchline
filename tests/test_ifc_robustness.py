@@ -23,8 +23,8 @@ from pathlib import Path
 
 import pytest
 
-from ifc_errors import IFC_ERROR_CODES, IfcImportError
-from ifc_import import _ensure_ifc, import_ifc
+from ifc.ifc_errors import IFC_ERROR_CODES, IfcImportError
+from ifc.ifc_import import _ensure_ifc, import_ifc
 from run_pipeline import StageError
 
 _ensure_ifc()

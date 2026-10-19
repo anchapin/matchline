@@ -37,7 +37,7 @@ from __future__ import annotations
 import dataclasses
 import math
 
-from ifc_wall_joins import ENVELOPE_METHOD, MIN_JOIN_SINE, _cross, _gid, _level
+from ifc.ifc_wall_joins import ENVELOPE_METHOD, MIN_JOIN_SINE, _cross, _gid, _level
 
 INLINE_PARALLEL_SINE = 0.03  # near-parallel: within ~1.7 degrees
 INLINE_LATERAL_EXTRA_M = 0.01  # beyond the thicker wall's half thickness

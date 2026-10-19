@@ -5,7 +5,7 @@ import pytest
 ifcopenshell = pytest.importorskip("ifcopenshell")
 api = pytest.importorskip("ifcopenshell.api")
 
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from tests.test_ifc_closet_merge import _build  # noqa: E402
 
 

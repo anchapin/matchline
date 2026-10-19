@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from building_model import BuildingModel, EnvelopeWall
 from construction_library import apply_construction_library
-from ifc_import import _layer_class, _wall_type_construction
+from ifc.ifc_import import _layer_class, _wall_type_construction
 
 
 def _rel(kind, **kw):

@@ -16,7 +16,7 @@ import ifcopenshell.api.aggregate as agg  # noqa: E402
 import ifcopenshell.api.spatial as sp  # noqa: E402
 import ifcopenshell.guid as guid  # noqa: E402
 
-from ifc_import import _storey_by_elevation, import_ifc  # noqa: E402
+from ifc.ifc_import import _storey_by_elevation, import_ifc  # noqa: E402
 from tests.test_ifc_closet_merge import _place  # noqa: E402
 from tests.test_ifc_import import _add_solid, _rect_profile, make_ifc_fixture  # noqa: E402
 

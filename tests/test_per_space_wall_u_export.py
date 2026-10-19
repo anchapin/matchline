@@ -9,7 +9,7 @@ import pytest
 from bem.bem_export import validate_gbxml, write_gbxml
 from constructions import apply_wall_u_rollup
 from geometry_simplify import footprint_from_regions
-from ifc_export import _bem_from_model
+from ifc.ifc_export import _bem_from_model
 from run_pipeline import model_from_linked_model
 from tests.model_factory import add_wall_constructions, make_clean_model
 

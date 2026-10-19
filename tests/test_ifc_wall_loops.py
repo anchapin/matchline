@@ -2,7 +2,7 @@
 
 import pytest
 
-from ifc_wall_loops import unclaimed_loops
+from ifc.ifc_wall_loops import unclaimed_loops
 
 RING = [((0, 0), (6, 0)), ((6, 0), (6, 3)), ((6, 3), (0, 3)), ((0, 3), (0, 0))]
 PART = [((4, 0), (4, 3))]
@@ -147,7 +147,7 @@ def _loop_items(model):
 
 
 def test_ifc_unmodelled_shaft_flagged_not_created(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     model = import_ifc(_ifc_with_shaft(tmp_path))
     items = _loop_items(model)
@@ -159,7 +159,7 @@ def test_ifc_unmodelled_shaft_flagged_not_created(tmp_path):
 
 
 def test_ifc_slab_void_marks_shaft_candidate(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     model = import_ifc(_ifc_with_shaft(tmp_path, with_void=True))
     items = _loop_items(model)
@@ -169,7 +169,7 @@ def test_ifc_slab_void_marks_shaft_candidate(tmp_path):
 
 
 def test_area_closure_reports_unclaimed_area(tmp_path):
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from validate.conservation import area_closure
 
     model = import_ifc(_ifc_with_shaft(tmp_path))
@@ -179,7 +179,7 @@ def test_area_closure_reports_unclaimed_area(tmp_path):
 
 def test_exporter_round_trip_has_no_loops(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.test_ifc_import import make_ifc_fixture
 
     make_ifc_fixture(tmp_path / "t.ifc")

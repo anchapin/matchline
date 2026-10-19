@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from building_model import BuildingModel, Space
-from ifc_space_borders import find_virtual_borders
+from ifc.ifc_space_borders import find_virtual_borders
 
 pytest.importorskip("shapely")
 

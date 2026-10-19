@@ -12,8 +12,8 @@ import ifcopenshell  # noqa: E402
 
 from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
 from bem.bem_geometry import BEMRoof  # noqa: E402
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 from roof_geometry import roof_plane  # noqa: E402
 from tests.ifc_builder import IfcBuilder, box_plan  # noqa: E402
 
@@ -92,7 +92,7 @@ def test_one_ifcroof_aggregates_one_roof_slab_per_plane_with_the_roof_u(tmp_path
     m0.roof_construction_id = None
     out = tmp_path / "r1.ifc"
     bem_u = 0.18
-    from ifc_export import _bem_from_model
+    from ifc.ifc_export import _bem_from_model
 
     b = _bem_from_model(m0)
     b.roof_u_value_w_m2k = bem_u

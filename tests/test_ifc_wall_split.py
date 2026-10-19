@@ -5,7 +5,7 @@ import math
 import pytest
 
 from building_model import EnvelopeWall, Provenance
-from ifc_wall_split import join_inline_ends, split_at_junctions
+from ifc.ifc_wall_split import join_inline_ends, split_at_junctions
 
 H = 3.0
 
@@ -163,7 +163,7 @@ def _ifc_with(tmp_path, extra):
 def test_ifc_partition_t_splits_exterior_wall_per_room(tmp_path):
     """The fixture's 20 m south wall runs behind L1-101 (x 0..10) and L1-102
     (x 10..20); a partition T-ing into it at x=10 gives each room its own piece."""
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     # IFC y grows north; south wall centreline sits at IFC y=0.1 after #579
     model = import_ifc(_ifc_with(tmp_path, [("Part", (10, 0.1, 0), (0, 1, 0), 7.9, 0.1)]))
@@ -178,7 +178,7 @@ def test_ifc_partition_t_splits_exterior_wall_per_room(tmp_path):
 
 def test_exporter_round_trip_has_no_splits(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.test_ifc_import import make_ifc_fixture
 
     make_ifc_fixture(tmp_path / "t.ifc")

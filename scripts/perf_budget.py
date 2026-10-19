@@ -179,8 +179,8 @@ def run_benchmark(workdir: Path) -> dict:
     """
     from bem.bem_export import write_gbxml
     from bem.bem_ifc4 import write_ifc4
-    from ifc_export import _bem_from_model
-    from ifc_import import import_ifc
+    from ifc.ifc_export import _bem_from_model
+    from ifc.ifc_import import import_ifc
     from validate import export_gate, run_checks
     from validate.conservation import validate_bem_conservation
 
@@ -234,7 +234,7 @@ def prepare_reference_dir(levels: int, grid: tuple[int, int], workdir: Path) -> 
     Returns the reference metadata for the report.
     """
     from bem.bem_ifc4 import write_ifc4
-    from ifc_export import _bem_from_model
+    from ifc.ifc_export import _bem_from_model
 
     model = build_reference_model(levels=levels, grid=grid)
     meta = {

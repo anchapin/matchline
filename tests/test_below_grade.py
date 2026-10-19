@@ -161,7 +161,7 @@ ifcopenshell = pytest.importorskip("ifcopenshell")
 def _fixture_with_above_ground(tmp_path, value):
     import ifcopenshell.guid as guid
 
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.test_ifc_import import make_ifc_fixture
 
     path = make_ifc_fixture(tmp_path / "base.ifc")

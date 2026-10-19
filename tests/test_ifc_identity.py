@@ -16,8 +16,8 @@ pytest.importorskip("ifcopenshell")
 import ifcopenshell  # noqa: E402
 import ifcopenshell.util.element as El  # noqa: E402
 
-from ifc_export import _export_ifc  # noqa: E402
-from ifc_import import IDENTITY_PSET, _drop_duplicate_openings, import_ifc  # noqa: E402
+from ifc.ifc_export import _export_ifc  # noqa: E402
+from ifc.ifc_import import IDENTITY_PSET, _drop_duplicate_openings, import_ifc  # noqa: E402
 from tests.ifc_builder import IfcBuilder, box_plan  # noqa: E402
 
 

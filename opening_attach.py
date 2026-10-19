@@ -59,7 +59,7 @@ def attach_opening(model: BuildingModel, opening_id: str, space_id: str) -> None
     (adjacent_space_id None) and needs_review is cleared: a reviewer
     resolved the attachment. A skylight re-runs the space's daylight area.
     """
-    from ifc_import import _opening_construction_id
+    from ifc.ifc_import import _opening_construction_id
 
     el, bo = find_bim_opening(model, opening_id)
     sp = model.spaces.get(space_id)

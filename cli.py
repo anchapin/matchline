@@ -207,7 +207,7 @@ def cmd_ifc_import(args: argparse.Namespace) -> None:
     canonical building model; print a summary, optionally write JSON."""
     from pathlib import Path
 
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
 
     inp = Path(args.path)
     if not inp.is_absolute():
@@ -361,7 +361,7 @@ def cmd_walls(args: argparse.Namespace) -> None:
 
 def cmd_ifc_export(args: argparse.Namespace) -> None:
     """Export a BuildingModel JSON file to an IFC4 file."""
-    from ifc_export import export_ifc
+    from ifc.ifc_export import export_ifc
 
     export_ifc(args.model, args.out)
     print(f"wrote {args.out}")

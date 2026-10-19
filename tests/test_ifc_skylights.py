@@ -16,7 +16,7 @@ ifcopenshell = pytest.importorskip("ifcopenshell")
 
 from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4  # noqa: E402
 from bem.bem_ifc4 import validate_ifc4  # noqa: E402
-from ifc_import import import_ifc  # noqa: E402
+from ifc.ifc_import import import_ifc  # noqa: E402
 
 RING = [(0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (0.0, 10.0)]
 WEST = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)]

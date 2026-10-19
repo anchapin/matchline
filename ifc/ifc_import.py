@@ -48,7 +48,7 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
-from ifc_errors import IfcImportError
+from ifc.ifc_errors import IfcImportError
 from pipeline_exceptions import PipelineDependencyError
 
 
@@ -2156,7 +2156,7 @@ def _plan_geom(el, scale):
 
 def _find_virtual_borders(model, f, scale, level_by_storey, sheet, revision):
     """Wall-less space borders (#582); see ifc_space_borders."""
-    from ifc_space_borders import find_virtual_borders
+    from ifc.ifc_space_borders import find_virtual_borders
 
     level_of = {}
     for rel in f.by_type("IfcRelContainedInSpatialStructure"):
@@ -2668,7 +2668,7 @@ def _linings_in_series(model, f, scale, pairs, thickness_by_gid, sheet, revision
     resistance to every host it lies on.
     Returns {"combined": hosts changed, "review": review items}.
     """
-    from ifc_wall_linings import _gid, cladding_hosts, host_cover
+    from ifc.ifc_wall_linings import _gid, cladding_hosts, host_cover
 
     out = {"combined": 0, "review": 0}
     if not pairs:
@@ -3673,8 +3673,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     merge_note = _merge_ifc_closets_and_shafts(model, authored_spaces)
     # after opening attachment (it matches envelope segments to wall
     # placements by start point), before facade classification (#575)
-    from ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends
-    from ifc_wall_linings import exclude_linings
+    from ifc.ifc_wall_joins import connected_pairs_from_ifc, join_wall_ends
+    from ifc.ifc_wall_linings import exclude_linings
 
     # openings are attached; segments may now leave the wall placement (#579)
     centreline_moved = _apply_wall_centrelines(model, wall_axis_fix)
@@ -3688,13 +3688,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     # classification can name one space behind each piece (#576)
     # rooms stacked over slab openings are one atrium (#640)
     from atria import merge_atrium_stacks
-    from ifc_wall_split import join_inline_ends, split_at_junctions
+    from ifc.ifc_wall_split import join_inline_ends, split_at_junctions
 
     n_atria = merge_atrium_stacks(model, floor_voids, sheet, revision)
     inline_counts = join_inline_ends(model.envelope, wall_t)
     n_junction_splits = split_at_junctions(model.envelope, wall_t)
     # needs interior walls too, so before classification drops them (#581)
-    from ifc_wall_loops import flag_unclaimed_wall_loops
+    from ifc.ifc_wall_loops import flag_unclaimed_wall_loops
 
     loops_n, loops_area = flag_unclaimed_wall_loops(
         model,
@@ -3715,7 +3715,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
         apply_wall_u_rollup(model)
     roof_note = _read_roof_construction(model, f, prov, scale)
-    from ifc_roof_planes import orient_skylights, read_roof_planes
+    from ifc.ifc_roof_planes import orient_skylights, read_roof_planes
 
     n_roof_planes, n_roof_els, n_roof_flagged = read_roof_planes(model, f, level_by_storey, prov)
     n_sky_oriented = orient_skylights(model)

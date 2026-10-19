@@ -5,7 +5,7 @@ import math
 import pytest
 
 from building_model import EnvelopeWall, Provenance
-from ifc_wall_joins import join_wall_ends
+from ifc.ifc_wall_joins import join_wall_ends
 
 T = 0.2  # wall thickness in these fixtures
 
@@ -147,7 +147,7 @@ def test_ifc_face_stopped_walls_join_on_import(tmp_path):
     import ifcopenshell.api.spatial as sp
     import ifcopenshell.guid as guid
 
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.test_ifc_closet_merge import _place
     from tests.test_ifc_import import _add_solid, _rect_profile, make_ifc_fixture
 
@@ -190,7 +190,7 @@ def test_exporter_corners_close_on_centrelines(tmp_path):
     """Exporter walls sit on the exterior face; after the centreline move (#579)
     their corners no longer meet, and the joins close every one (#575)."""
     pytest.importorskip("ifcopenshell")
-    from ifc_import import import_ifc
+    from ifc.ifc_import import import_ifc
     from tests.test_ifc_import import make_ifc_fixture
 
     make_ifc_fixture(tmp_path / "t.ifc")

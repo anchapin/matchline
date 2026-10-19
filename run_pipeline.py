@@ -121,7 +121,7 @@ def model_from_linked_model(
     by write_gbxml and write_ifc4.
     """
     # --- spaces -----------------------------------------------------------
-    from ifc_export import _use_fields
+    from ifc.ifc_export import _use_fields
     from space_use_defaults import lighting_watts
 
     bem_spaces = []
@@ -592,7 +592,7 @@ def _stage_1_generate(args, out_dir: Path, config: dict | None = None):
         return model, None, None
     if getattr(args, "ifc_path", None):  # IFC input path (#988)
         # Lazy import: ifc_import imports this module's StageError.
-        from ifc_import import import_ifc
+        from ifc.ifc_import import import_ifc
 
         model = import_ifc(str(args.ifc_path))
         write_json(

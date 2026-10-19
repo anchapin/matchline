@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("ifcopenshell")
 
-from ifc_import import _space_name_number, import_ifc  # noqa: E402
+from ifc.ifc_import import _space_name_number, import_ifc  # noqa: E402
 from tests.test_ifc_closet_merge import _build  # noqa: E402
 
 
