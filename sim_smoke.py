@@ -14,7 +14,11 @@ TMY weather file, then reads:
   Appendix G limit, not enforced)
 
 A model that does not complete, has severe errors or has no conditioned area
-fails (exit 1). An EUI outside the band is reported, not auto-fixed (exit 0,
+fails (exit 1), as does a run that blows the wall-clock budget (#1160):
+``--max-wall`` seconds for the whole translate+standards+EnergyPlus run,
+reported as ``wall_seconds`` and enforced (exit 1, ``status:
+wall_clock_exceeded``) so the gate doubles as a smoke performance check.
+An EUI outside the band is reported, not auto-fixed (exit 0,
 ``status: eui_out_of_band``) unless ``--strict``.
 
 Needs the OpenStudio CLI (3.11.0 bundles openstudio-standards 0.8.5 and
@@ -31,6 +35,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -52,6 +57,23 @@ def read_err(path: str | Path) -> dict:
         "severe": int(m.group(2)) if m else text.count("** Severe  **"),
         "fatal": "** Fatal  **" in text or "Terminated--Fatal Error" in text,
     }
+
+
+def wall_check(wall_seconds: float | None, budget: int | None) -> dict:
+    """Report fragment for the wall-clock budget (#1160).
+
+    An over-budget run fails the gate so the nightly doubles as a smoke
+    performance check; a budget of None (or no wall time recorded) is a pass.
+    """
+    if budget is None or wall_seconds is None:
+        return {"wall_seconds": wall_seconds}
+    if wall_seconds > budget:
+        return {
+            "wall_seconds": wall_seconds,
+            "status": "wall_clock_exceeded",
+            "reasons": [f"wall clock {wall_seconds:.0f}s exceeded the {budget}s budget"],
+        }
+    return {"wall_seconds": wall_seconds, "wall_budget_ok": True}
 
 
 def _num(v) -> float | None:
@@ -190,6 +212,12 @@ def main(argv=None) -> int:
     ap.add_argument("--climate-zone", default="5A")
     ap.add_argument("--reference", default=str(REFERENCE))
     ap.add_argument("--timeout", type=int, default=1800, help="seconds per OpenStudio step")
+    ap.add_argument(
+        "--max-wall",
+        type=int,
+        default=1800,
+        help="wall-clock budget for the whole run, seconds (#1160)",
+    )
     ap.add_argument("--strict", action="store_true", help="exit 1 on an EUI miss too")
     ap.add_argument(
         "--reference-only",
@@ -200,6 +228,7 @@ def main(argv=None) -> int:
     out = Path(a.out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     epw = Path(a.epw).resolve()
+    started = time.monotonic()  # the whole run counts against --max-wall
 
     if a.reference_only:
         _run(
@@ -228,6 +257,7 @@ def main(argv=None) -> int:
         err = {"completed": False, "warnings": None, "severe": 0, "fatal": True}
         res = {}
     report.update(err=err, result=res)
+    report.update(wall_check(time.monotonic() - started, a.max_wall))
     if a.reference_only:
         report["status"] = "reference"
     else:
@@ -238,7 +268,8 @@ def main(argv=None) -> int:
             report["reasons"].insert(0, "OpenStudio could not build the model (see typical.log)")
     (out / "sim_smoke_report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps({k: report.get(k) for k in ("status", "reasons", "notes", "eui_ratio")}))
-    if report["status"] == "fail" or (a.strict and report["status"] == "eui_out_of_band"):
+    fail = report["status"] in ("fail", "wall_clock_exceeded")
+    if fail or (a.strict and report["status"] == "eui_out_of_band"):
         return 1
     return 0
 

@@ -233,3 +233,23 @@ def test_typical_rb_uses_prototype_infiltration_per_wall_area():
     hook = rb.index("def model_set_nist_infiltration")
     assert hook < rb.index("create_typical_building_from_model(")
     assert 'abort("infiltration rate not applied' in rb
+
+
+def test_wall_check_within_budget():
+    """#1160: a run inside the wall-clock budget passes and records the time."""
+    frag = s.wall_check(120.5, 1800)
+    assert frag["wall_seconds"] == 120.5
+    assert frag["wall_budget_ok"] is True
+    assert "status" not in frag
+
+
+def test_wall_check_over_budget_fails():
+    """#1160: an over-budget run fails the gate as wall_clock_exceeded."""
+    frag = s.wall_check(2000.0, 1800)
+    assert frag["status"] == "wall_clock_exceeded"
+    assert frag["reasons"] and "1800s budget" in frag["reasons"][0]
+
+
+def test_wall_check_no_budget_records_only():
+    """#1160: no budget set means no verdict, just the recorded time."""
+    assert s.wall_check(None, None) == {"wall_seconds": None}

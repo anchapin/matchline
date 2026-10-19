@@ -298,3 +298,77 @@ def test_pipeline_calls_validate_after_export(tmp_path):
                         "validate_gbxml must be called once after export"
                     )
                     assert mock_vi.call_count == 1, "validate_ifc4 must be called once after export"
+
+
+class TestAcknowledgeReviewQueue:
+    """--acknowledge-review (#1160): headless runs clear the export gate."""
+
+    def test_acknowledge_review_queue_marks_open_items(self):
+        from building_model import ReviewItem
+        from tests.model_factory import P, make_clean_model
+
+        model = make_clean_model()
+        model.review_queue.append(
+            ReviewItem(
+                id="RX-ACK-1",
+                kind="space_merge",
+                description="unacknowledged open item",
+                status="open",
+                confidence=0.5,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+        model.review_queue.append(
+            ReviewItem(
+                id="RX-ACK-2",
+                kind="space_merge",
+                description="already confirmed",
+                status="confirmed",
+                confidence=0.5,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=False,
+            )
+        )
+        model.review_queue.append(
+            ReviewItem(
+                id="RX-ACK-3",
+                kind="space_merge",
+                description="already acknowledged",
+                status="open",
+                confidence=0.5,
+                provenance=P(),
+                needs_review=True,
+                acknowledged=True,
+            )
+        )
+        model.review_queue.append(
+            ReviewItem(
+                id="RX-ACK-4",
+                kind="space_merge",
+                description="informational, no review needed",
+                status="open",
+                confidence=0.5,
+                provenance=P(),
+                needs_review=False,
+                acknowledged=False,
+            )
+        )
+
+        n = run_pipeline._acknowledge_review_queue(model)
+
+        assert n == 1, "only the open unacknowledged needs_review item is acknowledged"
+        by_id = {i.id: i for i in model.review_queue}
+        assert by_id["RX-ACK-1"].acknowledged is True
+        assert by_id["RX-ACK-2"].acknowledged is False, "confirmed items stay untouched"
+        assert by_id["RX-ACK-3"].acknowledged is True, "already acknowledged stays"
+        assert by_id["RX-ACK-4"].acknowledged is False, "non-review items stay untouched"
+
+    def test_acknowledge_review_flag_is_parsed(self, monkeypatch):
+        argv = ["run_pipeline.py", "--ifc", "x.ifc", "--out-dir", "out", "--acknowledge-review"]
+        monkeypatch.setattr(sys, "argv", argv)
+        assert run_pipeline.parse_args().acknowledge_review is True
+        monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--ifc", "x.ifc", "--out-dir", "out"])
+        assert run_pipeline.parse_args().acknowledge_review is False

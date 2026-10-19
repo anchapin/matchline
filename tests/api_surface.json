@@ -539,7 +539,8 @@
         "load_reference": "path, building_type, template, climate_zone",
         "main": "argv=None",
         "read_err": "path: str | Path",
-        "read_sql": "path: str | Path"
+        "read_sql": "path: str | Path",
+        "wall_check": "wall_seconds: float | None, budget: int | None"
       }
     },
     "space_merge": {

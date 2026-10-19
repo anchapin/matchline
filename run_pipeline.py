@@ -335,6 +335,12 @@ def parse_args():
         help="IFC model (#988): import, then the same simplify/validate/export stages",
     )
     ap.add_argument(
+        "--acknowledge-review",
+        action="store_true",
+        help="mark open needs_review items acknowledged before validation "
+        "(headless runs: the review queue is still written for humans)",
+    )
+    ap.add_argument(
         "--detections", type=Path, help="sahi_infer.py JSON predictions (required with --image)"
     )
     ap.add_argument(
@@ -751,6 +757,25 @@ def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out
     return sres, wall_height
 
 
+def _acknowledge_review_queue(model) -> int:
+    """Mark every open needs_review item acknowledged (headless runs).
+
+    Mirrors the export gate's own criteria (validate/export.py
+    review_queue_acknowledged) so a headless run can clear the same set a
+    human reviewer would acknowledge in the review UI.
+    """
+    n = 0
+    for item in model.review_queue:
+        if (
+            item.needs_review
+            and not item.acknowledged
+            and item.status not in ("confirmed", "rejected")
+        ):
+            item.acknowledged = True
+            n += 1
+    return n
+
+
 def _stage_4_validation(model, sres, min_review_confidence, out_dir: Path):
     """Stage 4: Run validation checks on the model.
 
@@ -1003,6 +1028,10 @@ def main(args, config: dict | None = None) -> None:
                 category = config.get("building_category", category)
             constructions = apply_construction_library(model, climate_zone or "", category)
             write_json(out_dir / "stage_03b_constructions.json", constructions.to_dict())
+
+        if getattr(args, "acknowledge_review", False):
+            n_ack = _acknowledge_review_queue(model)
+            print(f"  acknowledged {n_ack} review queue item(s) (--acknowledge-review)")
 
         # --- Stage 4: validation checks --------------------------------------
         try:
