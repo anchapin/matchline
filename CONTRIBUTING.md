@@ -19,6 +19,12 @@ cd matchline
 # Switch to develop (the working branch)
 git checkout develop
 
+# Create an isolated environment: pytest auto-loads installed pytest11
+# entry-point plugins (schemathesis, for example), and a mismatched plugin
+# can break pytest itself in a shared/global environment
+python -m venv .venv
+source .venv/bin/activate    # on Windows: .venv\Scripts\activate
+
 # Install in editable mode with test dependencies
 pip install -e ".[test]"
 
