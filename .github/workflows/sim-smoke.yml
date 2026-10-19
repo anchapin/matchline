@@ -24,10 +24,10 @@ on:
     paths:
       - sim_smoke.py
       - sim/**
-      - bem_export.py
-      - bem_layers.py
-      - bem_space_split.py
-      - bem_multistorey.py
+      - bem/bem_export.py
+      - bem/bem_layers.py
+      - bem/bem_space_split.py
+      - bem/bem_multistorey.py
       - .github/workflows/sim-smoke.yml
 
 permissions:

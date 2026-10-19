@@ -5,9 +5,9 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
-from bem_geometry import BEMRoof
-from bem_roof import open_edges, plane_z, shell_volume, space_shell
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_geometry import BEMRoof
+from bem.bem_roof import open_edges, plane_z, shell_volume, space_shell
 from validate.conservation import _check_bem_volume_conservation
 
 NS = {"g": "http://www.gbxml.org/schema"}

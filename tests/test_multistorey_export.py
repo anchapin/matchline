@@ -10,8 +10,8 @@ import xml.etree.ElementTree as ET
 import pytest
 from shapely.geometry import Polygon
 
-from bem_export import validate_gbxml, write_gbxml
-from bem_levels import hole_free
+from bem.bem_export import validate_gbxml, write_gbxml
+from bem.bem_levels import hole_free
 from building_model import BuildingModel, EnvelopeWall, Level, Space, SpaceOpening
 from ifc_export import _bem_from_model
 

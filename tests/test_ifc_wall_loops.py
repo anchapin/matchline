@@ -69,7 +69,7 @@ def _ifc_with_shaft(tmp_path, with_void=False):
     import ifcopenshell.api.spatial as sp
     import ifcopenshell.guid as guid
 
-    from bem_export import BEMModel, BEMSpace, write_ifc4
+    from bem.bem_export import BEMModel, BEMSpace, write_ifc4
     from tests.test_ifc_closet_merge import _place
     from tests.test_ifc_import import H, _add_solid, _rect_profile, face_reference_walls
 

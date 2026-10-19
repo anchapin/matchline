@@ -1,6 +1,6 @@
 """Unit tests for write_gbxml: create BEMModel, write gbXML, validate."""
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
 
 
 def _minimal_bem_model() -> BEMModel:

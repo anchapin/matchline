@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4
+from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, write_ifc4
 from building_model import (
     BimElement,
     BimOpening,

@@ -4,8 +4,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import GBXML_NS, validate_gbxml, write_gbxml
-from bem_shading import shades_from_model
+from bem.bem_export import GBXML_NS, validate_gbxml, write_gbxml
+from bem.bem_shading import shades_from_model
 from ifc_export import _bem_from_model
 from run_pipeline import model_from_linked_model
 from tests.model_factory import add_shading, make_clean_model

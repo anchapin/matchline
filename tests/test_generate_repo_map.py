@@ -63,6 +63,22 @@ def test_self_import_excluded(tmp_path):
     assert "a --> a" not in text
 
 
+def test_bem_package_nodes_and_edges(tmp_path):
+    _write_tree(
+        tmp_path,
+        {
+            "a.py": "import bem.bem_a as bem_a\n",
+            "bem/__init__.py": "",
+            "bem/bem_a.py": "import bem.bem_b as bem_b\n",
+            "bem/bem_b.py": "pass\n",
+        },
+    )
+    text = _run(tmp_path, tmp_path / "map.mmd")
+    assert "    bem_bem_a" in text and "    bem_bem_b" in text
+    assert "  bem_bem_a --> bem_bem_b" in text
+    assert "  a --> bem_bem_a" in text
+
+
 def test_cluster_prefix_assignment(tmp_path):
     import importlib.util
 
@@ -70,6 +86,7 @@ def test_cluster_prefix_assignment(tmp_path):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.cluster_of("bem_export") == "BEM"
+    assert mod.cluster_of("bem.bem_export") == "BEM"
     assert mod.cluster_of("ifc_wall_loops") == "IFC"
     assert mod.cluster_of("cli") == "CORE"
 

@@ -405,7 +405,7 @@ def _write_gbxml(
     simplify_tol: float = 0.02,
 ) -> Path | None:
     try:
-        from bem_export import write_gbxml
+        from bem.bem_export import write_gbxml
         from run_pipeline import model_from_linked_model
 
         # #972: the export exercises the real stage-3 simplification (the

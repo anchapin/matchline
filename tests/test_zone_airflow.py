@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import write_gbxml
-from bem_geometry import BEMModel, BEMSpace
+from bem.bem_export import write_gbxml
+from bem.bem_geometry import BEMModel, BEMSpace
 from building_model import BuildingModel, Zone
 from zone_airflow import UNIT, apply_zone_airflow, flow_per_area, gbxml_zones
 
@@ -213,7 +213,7 @@ def test_gbxml_default_zone_and_nothing_when_unset(tmp_path):
 
 
 def test_gbxml_with_flow_per_area_validates(tmp_path):
-    from bem_export import validate_gbxml
+    from bem.bem_export import validate_gbxml
 
     bem = _bem(thermal_zones=TZ)
     apply_zone_airflow(_model([_z("V12", ["sp-1", "sp-2"], 0.5), _z("V3", ["sp-3"], 0.2)]), bem)

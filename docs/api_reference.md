@@ -8,7 +8,7 @@ page in sync with the pins. What counts as public, breaking, or
 deprecated is in [api.md](api.md); per-module usage is in each
 module's guide under `docs/`.
 
-## `bem_export`
+## `bem.bem_export`
 
 - `centroid(sp: BEMSpace)`
 - `validate_gbxml(path: str | Path, xsd_path: str | Path=SCHEMA_PATH)`

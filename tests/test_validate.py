@@ -479,7 +479,7 @@ class TestExportGateIntegration:
         """write_gbxml and write_ifc4 are never called when export_gate blocks."""
         import argparse
 
-        import bem_export
+        import bem.bem_export as bem_export
         import run_pipeline
         from validate import CheckResult, ValidationReport
 

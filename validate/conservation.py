@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from bem_export import _shoelace
+from bem.bem_export import _shoelace
 
 try:
     from datasets_adapter import polygon_area_px2
@@ -22,8 +22,8 @@ from validate.types import _HAS_SIMPLIFY, CheckResult
 if TYPE_CHECKING:
     from validate import _Ctx
 
-from bem_export import BEMModel
-from bem_roof import is_sloped, shell_volume, space_shell
+from bem.bem_export import BEMModel
+from bem.bem_roof import is_sloped, shell_volume, space_shell
 
 
 def _rel_err(actual: float, expected: float) -> float:

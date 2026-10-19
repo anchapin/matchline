@@ -29,7 +29,7 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import split, unary_union
 
-from bem_geometry import BEMHorizontal, BEMLevel
+from bem.bem_geometry import BEMHorizontal, BEMLevel
 from thermal_zoning import AirWall
 
 CLOSE_GAP_M = 0.35  # close interior wall gaps between rooms (Pascal MAX_SEPARATOR_GAP)
@@ -172,7 +172,7 @@ def _atrium_air_walls(bem, lv_id: str, atrium) -> List[AirWall]:
 
 def add_levels(model, bem, sloped: bool = False) -> None:
     from below_grade import boundary_types
-    from bem_geometry import _ensure_ccw
+    from bem.bem_geometry import _ensure_ccw
     from ifc_export import _build_ring
     from interstory import match_interstory
 

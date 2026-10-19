@@ -74,17 +74,6 @@ py-modules = [
     "air_loops",
     "atria",
     "below_grade",
-    "bem_export",
-    "bem_geometry",
-    "bem_helpers",
-    "bem_ifc4",
-    "bem_layers",
-    "bem_levels",
-    "bem_loads",
-    "bem_multistorey",
-    "bem_roof",
-    "bem_shading",
-    "bem_space_split",
     "building_model",
     "cli",
     "construction_library",
@@ -176,6 +165,7 @@ py-modules = [
 ]
 packages = [
     "assets",
+    "bem",
     "link",
     "query",
     "sim",
@@ -186,8 +176,8 @@ packages = [
 ]
 
 [tool.coverage.run]
-# #1137: measure the shipped surface (all 103 root py-modules plus the 8
-# packages the wheel ships). detector/ has its own lint-only gate and is
+# #1137: measure the shipped surface (all 93 root py-modules plus the 9
+# packages the wheel ships; #1179 chunk 1 moved the bem_* modules into bem/). detector/ has its own lint-only gate and is
 # not shipped from this wheel; tests, scripts and docs are not package code.
 source = ["."]
 omit = [

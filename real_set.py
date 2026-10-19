@@ -158,7 +158,7 @@ def build_set_model(
     then the default (#821).
     """
     import matchlines
-    from bem_helpers import _edge_facades
+    from bem.bem_helpers import _edge_facades
     from building_model import BuildingModel, EnvelopeWall, Level, Provenance, ReviewItem, Space
     from drawing_scale import scale_sheets
     from geometry_simplify import footprint_from_regions

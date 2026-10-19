@@ -20,6 +20,7 @@ CLUSTERS: list[tuple[str, tuple[str, ...]]] = [
     (
         "BEM",
         (
+            "bem.",
             "bem_",
             "materials",
             "constructions",
@@ -88,12 +89,13 @@ def cluster_of(module: str) -> str:
 
 def internal_modules(root: Path) -> set[str]:
     names = {p.stem for p in root.glob("*.py")}
-    synth = root / "synth"
-    if synth.is_dir():
-        names.add("synth")
-        for p in synth.glob("*.py"):
-            if p.stem != "__init__":
-                names.add(f"synth.{p.stem}")
+    for pkg in ("synth", "bem"):
+        pkg_dir = root / pkg
+        if pkg_dir.is_dir():
+            names.add(pkg)
+            for p in pkg_dir.glob("*.py"):
+                if p.stem != "__init__":
+                    names.add(f"{pkg}.{p.stem}")
     return names
 
 
@@ -131,14 +133,15 @@ def build(root: Path) -> tuple[list[str], list[tuple[str, str]], dict[str, str]]
         src = path.stem
         for imp in imports_of(path, None):
             add_edge(src, imp)
-    synth_dir = root / "synth"
-    if synth_dir.is_dir():
-        for path in sorted(synth_dir.glob("*.py")):
-            if path.stem == "__init__":
-                continue
-            src = f"synth.{path.stem}"
-            for imp in imports_of(path, "synth"):
-                add_edge(src, imp)
+    for pkg in ("synth", "bem"):
+        pkg_dir = root / pkg
+        if pkg_dir.is_dir():
+            for path in sorted(pkg_dir.glob("*.py")):
+                if path.stem == "__init__":
+                    continue
+                src = f"{pkg}.{path.stem}"
+                for imp in imports_of(path, pkg):
+                    add_edge(src, imp)
 
     def node_id(name: str) -> str:
         return name.replace(".", "_")

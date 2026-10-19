@@ -1,6 +1,6 @@
 {
   "modules": {
-    "bem_export": {
+    "bem.bem_export": {
       "classes": {},
       "functions": {
         "centroid": "sp: BEMSpace",

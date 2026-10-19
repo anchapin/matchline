@@ -24,7 +24,7 @@ from shapely.geometry import Point, Polygon
 import ifc_import
 import room_labels
 import space_merge
-from bem_helpers import _place_skylights_on_roof
+from bem.bem_helpers import _place_skylights_on_roof
 from grade import Terrain
 from mech_tags import room_of
 from registration import assign_points_to_spaces

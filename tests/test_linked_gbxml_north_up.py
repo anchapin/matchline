@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from bem_export import write_gbxml
+from bem.bem_export import write_gbxml
 from geometry_simplify import footprint_from_regions
 from run_pipeline import _north_up, model_from_linked_model
 from tests.model_factory import make_clean_model

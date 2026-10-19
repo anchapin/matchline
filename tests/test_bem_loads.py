@@ -5,9 +5,9 @@ import xml.etree.ElementTree as ET
 import pytest
 
 import space_use_defaults_data as data
-from bem_export import validate_gbxml, write_gbxml
-from bem_helpers import GBXML_NS
-from bem_loads import ifc_load_psets, schedule_id
+from bem.bem_export import validate_gbxml, write_gbxml
+from bem.bem_helpers import GBXML_NS
+from bem.bem_loads import ifc_load_psets, schedule_id
 from building_model import Provenance, SpaceLighting, SpaceUse
 from ifc_export import _bem_from_model, _export_ifc
 from space_use_defaults import apply_space_use_defaults

@@ -13,9 +13,9 @@ import pytest
 
 openstudio = pytest.importorskip("openstudio")
 
-from bem_export import BEMOpeningUnit, write_gbxml  # noqa: E402
-from bem_geometry import BEMShade  # noqa: E402
-from bem_roof import shell_volume, space_shell  # noqa: E402
+from bem.bem_export import BEMOpeningUnit, write_gbxml  # noqa: E402
+from bem.bem_geometry import BEMShade  # noqa: E402
+from bem.bem_roof import shell_volume, space_shell  # noqa: E402
 from tests.test_gbxml_sloped_roofs import BOX, VOL, H, bem, gable, hip, shed  # noqa: E402
 
 # OpenStudio 3.x targets gbXML 7.03 and notes that a file of another version

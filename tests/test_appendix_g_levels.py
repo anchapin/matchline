@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import pytest
 from shapely.geometry import Polygon
 
-from bem_export import validate_gbxml, write_gbxml
+from bem.bem_export import validate_gbxml, write_gbxml
 from building_model import SpaceOpening
 from ifc_export import _bem_from_model
 from tests.test_atria import _atrium_model

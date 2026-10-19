@@ -23,7 +23,7 @@ No value is invented here:
 
 from __future__ import annotations
 
-from bem_helpers import _el, _fmt
+from bem.bem_helpers import _el, _fmt
 
 FILM_SOURCE = (
     "openstudio-standards 0.8.5 Constructions.film_coefficients_r_value "

@@ -33,7 +33,7 @@ def test_json_round_trip_keeps_roof_construction():
 
 
 def _gbxml_roof(tmp_path, model):
-    from bem_export import write_gbxml
+    from bem.bem_export import write_gbxml
     from ifc_export import _bem_from_model
 
     path = write_gbxml(_bem_from_model(model), tmp_path / "m.xml")

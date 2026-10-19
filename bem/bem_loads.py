@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 
-from bem_helpers import _el, _fmt
+from bem.bem_helpers import _el, _fmt
 
 # BEM day key -> gbXML dayType values it is written under
 DAY_TYPES = (

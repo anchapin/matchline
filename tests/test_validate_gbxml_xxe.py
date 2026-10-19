@@ -7,7 +7,7 @@ is correctly rejected by the safe lxml parser (resolve_entities=False).
 import tempfile
 from pathlib import Path
 
-from bem_export import validate_gbxml
+from bem.bem_export import validate_gbxml
 
 XXML_WITH_DOCTYPE = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>

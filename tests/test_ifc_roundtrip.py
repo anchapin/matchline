@@ -13,7 +13,7 @@ from collections import defaultdict
 
 import pytest
 
-from bem_export import validate_ifc4
+from bem.bem_export import validate_ifc4
 from building_model import (
     BuildingModel,
     Level,

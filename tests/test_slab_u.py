@@ -33,7 +33,7 @@ def test_json_round_trip_keeps_slab_construction():
 
 
 def _gbxml_slab(tmp_path, model):
-    from bem_export import write_gbxml
+    from bem.bem_export import write_gbxml
     from ifc_export import _bem_from_model
 
     path = write_gbxml(_bem_from_model(model), tmp_path / "m.xml")
@@ -60,7 +60,7 @@ import ifcopenshell.api.pset as ifc_pset  # noqa: E402
 import ifcopenshell.api.root as ifc_root  # noqa: E402
 import ifcopenshell.util.element as ifc_el  # noqa: E402
 
-from bem_ifc4 import validate_ifc4  # noqa: E402
+from bem.bem_ifc4 import validate_ifc4  # noqa: E402
 from ifc_export import _export_ifc  # noqa: E402
 from ifc_import import import_ifc  # noqa: E402
 

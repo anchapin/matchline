@@ -7,8 +7,8 @@ import xml.etree.ElementTree as ET
 import pytest
 from shapely.geometry import Polygon
 
-from bem_export import validate_gbxml, write_gbxml
-from bem_geometry import BEMModel, BEMOpeningUnit, BEMSpace
+from bem.bem_export import validate_gbxml, write_gbxml
+from bem.bem_geometry import BEMModel, BEMOpeningUnit, BEMSpace
 from thermal_zoning import PERIMETER_DEPTH_M, appendix_g_split, perimeter_core, split_spaces
 
 D = PERIMETER_DEPTH_M
@@ -181,7 +181,7 @@ def test_gbxml_without_split_is_unchanged(tmp_path):
 
 def test_ifc_writes_air_walls_as_virtual_space_boundaries(tmp_path):
     ifcopenshell = pytest.importorskip("ifcopenshell")
-    from bem_ifc4 import validate_ifc4, write_ifc4
+    from bem.bem_ifc4 import validate_ifc4, write_ifc4
 
     ident = {"id": "L1-101", "method": "ifc", "confidence": 1.0}
     new, res = appendix_g_split(_model([_space("R1", PLATE, ident=ident)]))
@@ -207,7 +207,7 @@ def test_ifc_writes_air_walls_as_virtual_space_boundaries(tmp_path):
 
 def test_ifc_reimport_rejoins_split_pieces_under_the_parent_id(tmp_path):
     pytest.importorskip("ifcopenshell")
-    from bem_ifc4 import write_ifc4
+    from bem.bem_ifc4 import write_ifc4
     from ifc_import import import_ifc
 
     ident = {"id": "L1-101", "method": "ifc", "confidence": 1.0}
