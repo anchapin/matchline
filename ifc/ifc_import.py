@@ -3877,6 +3877,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     opening_ids = set()  # opening ids already taken (#588)
     level_by_storey = {}  # IfcBuildingStorey GlobalId -> level id
     openings_by_gid = {o.GlobalId: o for o in f.by_type("IfcOpeningElement")}
+    # windows/doors no IfcRelFillsElement relationship names (#1206): pair
+    # each onto an unfilled wall void by body placement so the void/fill
+    # path reads them; leftovers attach to walls directly in the walk below.
+    fills_referenced = {fill.GlobalId for fill in fills.values()}
+    direct_fills, direct_paired, direct_verts = _pair_unattached_fills(
+        f, voids, fills, openings_by_gid, scale, fills_referenced
+    )
+    fills.update(direct_fills)
+    direct_used = set()  # fill GlobalIds attached directly to a wall
     # which opening/space keeps a duplicated Matchline_Identity id is decided
     # up front by lowest GlobalId, not by walk order (#636). Only openings the
     # walk imports compete: wall voids, and window-filled slab/roof voids.
@@ -3916,6 +3925,25 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         else:
             by_elevation.setdefault(idx, []).append(el)
             elevation_gids.add(el.GlobalId)
+    # fills left over after pairing (#1206): bucket them by the storey their
+    # body sits on, so a window attaches to its own storey's walls and never
+    # to a lower storey sharing the same floor plan
+    direct_unfilled_by_level = {}  # storey index -> fill GlobalIds
+    for cls in ("IfcWindow", "IfcDoor"):
+        for el in f.by_type(cls):
+            gid = el.GlobalId
+            if gid in fills_referenced or gid in direct_paired:
+                continue
+            c = _body_world_center(el, scale, direct_verts.get(gid))
+            z = (c[2] + c[3]) / 2 if c is not None else None
+            if z is None:
+                t = _placement_transform(el, scale)
+                z = t[3] if (t[1] or t[2] or t[3]) else None
+            if z is None:
+                continue
+            idx, _why = _storey_by_elevation(z, storey_elevs)
+            if idx is not None:
+                direct_unfilled_by_level.setdefault(idx, []).append(gid)
     for li, storey in enumerate(storeys):
         level_id = f"L{li + 1}"
         elev = _storey_elevation(storey) * scale
@@ -4155,8 +4183,55 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                             revision,
                             scale,
                             host_gid=gid,
+                            paired=ogid in direct_fills,
                         )
                     )
+
+                # windows/doors no fills relationship names (#1206): the
+                # pairing pass consumed the ones sitting on a void; the rest
+                # attach by their own placement, once, on the wall whose
+                # local frame contains them.
+                if direct_unfilled_by_level:
+                    wall_world = (ang, tx, ty, tz)
+                    height_lim = max(height_m or 0.0, level.wall_height_m or 0.0) + 0.5
+                    for fill_gid in direct_unfilled_by_level.get(li, []):
+                        if fill_gid in direct_used:
+                            continue
+                        sxs, sys, szs = _fill_wall_frame(
+                            f.by_guid(fill_gid), wall_world, scale, direct_verts.get(fill_gid)
+                        )
+                        if (
+                            min(sxs) < -0.5
+                            or max(sxs) > length_m + 0.5
+                            or min(abs(v) for v in sys) > _DIRECT_FILL_WALL_TOL_M
+                            or min(szs) < -0.5
+                            or max(szs) > height_lim
+                        ):
+                            continue
+                        lo, hi = min(sxs), max(sxs)
+                        # never double an unfilled void this wall already read
+                        if any(
+                            o.category == "unknown"
+                            and o.s_center_m is not None
+                            and o.width_m is not None
+                            and max(lo, o.s_center_m - o.width_m / 2)
+                            <= min(hi, o.s_center_m + o.width_m / 2)
+                            for o in be.openings
+                        ):
+                            continue
+                        be.openings.append(
+                            _read_direct_fill_opening(
+                                f.by_guid(fill_gid),
+                                wall_world,
+                                length_m,
+                                sheet,
+                                revision,
+                                scale,
+                                host_gid=gid,
+                                verts=direct_verts.get(fill_gid),
+                            )
+                        )
+                        direct_used.add(fill_gid)
 
                 authored = {
                     o.id
@@ -4641,7 +4716,221 @@ def _plan_rect_z(product, scale):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], min(zs), max(zs)
 
 
-def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid=""):
+_DIRECT_FILL_PAIR_TOL_M = 0.5  # fill/opening body-centre distance for placement pairing (#1206)
+_DIRECT_FILL_WALL_TOL_M = 0.6  # perpendicular distance to the host wall plane (#1206)
+
+
+def _body_world_center(el, scale, verts=None):
+    """(x, y, z_min, z_max) of an element's body in world metres, or None.
+
+    Kernel vertices are product-local; the placement chain maps them out.
+    Returns None when the element has neither a body nor a placement, so a
+    degenerate element can never act as a pairing magnet at the origin.
+    """
+    if verts is None:
+        verts = _geom_verts(el)
+    if not verts:
+        verts = _body_vertices(el)
+    if not verts:
+        if getattr(el, "ObjectPlacement", None) is None:
+            return None
+        t = _placement_transform(el, scale)
+        if t[1] == 0.0 and t[2] == 0.0 and t[3] == 0.0:
+            return None
+        x, y, z = _apply(t, 0.0, 0.0, 0.0)
+        return (x, y, z, z)
+    t = _placement_transform(el, scale)
+    pts = [
+        _apply(t, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+        for i in range(0, len(verts), 3)
+    ]
+    return (
+        sum(p[0] for p in pts) / len(pts),
+        sum(p[1] for p in pts) / len(pts),
+        min(p[2] for p in pts),
+        max(p[2] for p in pts),
+    )
+
+
+def _fill_wall_frame(fill, wall_world, scale, verts=None):
+    """(sx, sy, sz) lists for a fill's body in the host wall's local frame.
+
+    The single-point fallback (no body) is the placement origin mapped into
+    the wall frame, so callers can still locate a placement-only fill.
+    """
+    if verts is None:
+        verts = _geom_verts(fill)
+    if not verts:
+        verts = _body_vertices(fill)
+    rel = _compose(_placement_transform(fill, scale), _invert(wall_world))
+    if verts:
+        pts = [
+            _apply(rel, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale)
+            for i in range(0, len(verts), 3)
+        ]
+        return [p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts]
+    s, y, z = _apply(rel, 0.0, 0.0, 0.0)
+    return [s], [y], [z]
+
+
+def _pair_unattached_fills(f, voids, fills, openings_by_gid, scale, referenced):
+    """Name window/door fills no IfcRelFillsElement relationship carries (#1206).
+
+    Files exported without the fills relationship leave their IfcWindow and
+    IfcDoor entities floating: every wall void stays unfilled and the window
+    count reads zero. Each unattached fill whose body centre sits within
+    ``_DIRECT_FILL_PAIR_TOL_M`` of an unfilled wall void's body centre, on
+    the same z band, is paired onto that opening, so the normal void/fill
+    path reads it. Greedy nearest-first, so the result does not depend on
+    file order.
+
+    Returns (extra fills keyed by opening GlobalId, the set of paired fill
+    GlobalIds, each unattached fill's body verts for reuse).
+    """
+    unattached_by_gid = {
+        el.GlobalId: el
+        for cls in ("IfcWindow", "IfcDoor")
+        for el in f.by_type(cls)
+        if el.GlobalId not in referenced
+    }
+    if not unattached_by_gid:
+        return {}, set(), {}
+    unfilled = [
+        ogid
+        for ogid, host in voids.items()
+        if ogid in openings_by_gid
+        and host.is_a() in ("IfcWall", "IfcWallStandardCase")
+        and ogid not in fills
+    ]
+    if not unfilled:
+        return {}, set(), {}
+    verts_by_gid = {}
+    win_centers = {}
+    for gid, el in unattached_by_gid.items():
+        verts = _geom_verts(el)
+        if not verts:
+            verts = _body_vertices(el)
+        c = _body_world_center(el, scale, verts)
+        if c is not None:
+            win_centers[gid] = c
+            verts_by_gid[gid] = verts
+    open_centers = {ogid: _body_world_center(openings_by_gid[ogid], scale) for ogid in unfilled}
+    candidates = []
+    for wgid, wc in win_centers.items():
+        for ogid, oc in open_centers.items():
+            if oc is None:
+                continue
+            d = math.hypot(wc[0] - oc[0], wc[1] - oc[1])
+            if d <= _DIRECT_FILL_PAIR_TOL_M and wc[2] <= oc[3] + 0.05 and oc[2] <= wc[3] + 0.05:
+                candidates.append((d, wgid, ogid))
+    candidates.sort()
+    extra, paired = {}, set()
+    for _d, wgid, ogid in candidates:
+        if wgid in paired or ogid in extra:
+            continue
+        extra[ogid] = unattached_by_gid[wgid]
+        paired.add(wgid)
+    return extra, paired, verts_by_gid
+
+
+def _read_direct_fill_opening(
+    fill, wall_world, wall_len, sheet, revision, scale, host_gid="", verts=None
+):
+    """One BimOpening from a window/door no IfcRelFillsElement names (#1206).
+
+    Dims come from the fill's own body mapped into the host wall's local
+    frame; with no body, from OverallWidth/OverallHeight with the sill and
+    s-centre from the placement origin, at lower confidence. Provenance
+    marks the placement-driven path so downstream can tell it apart from
+    relationship-driven openings.
+    """
+    fgid = fill.GlobalId
+    category = "window" if fill.is_a("IfcWindow") else "door"
+    tag = _parse_fill_tag(fill.Name)
+    sxs, _sys, szs = _fill_wall_frame(fill, wall_world, scale, verts)
+    width_m = height_m = sill_m = s_center_m = None
+    plan_center = None
+    if len(sxs) > 1:
+        conf, method = 0.85, "ifc_import:tier0:opening:direct_fill"
+        note = "dims from fill solid, wall-local frame"
+        width_m = max(sxs) - min(sxs)
+        height_m = max(szs) - min(szs)
+        sill_m = min(szs)
+        s_center_m = 0.5 * (min(sxs) + max(sxs))
+        if wall_len and not (-0.01 <= min(sxs) <= max(sxs) <= wall_len + 0.01):
+            note += " (outside wall extent -- flagged)"
+        if category == "door":
+            to_world = _placement_transform(fill, scale)
+            if verts:
+                wxs, wys = [], []
+                for i in range(0, len(verts), 3):
+                    wx, wy, _ = _apply(
+                        to_world, verts[i] * scale, verts[i + 1] * scale, verts[i + 2] * scale
+                    )
+                    wxs.append(wx)
+                    wys.append(wy)
+                cx, cy = _to_canonical(0.5 * (min(wxs) + max(wxs)), 0.5 * (min(wys) + max(wys)))
+                plan_center = [round(cx, 4), round(cy, 4)]
+                note += "; plan centre from fill solid, world frame"
+    else:
+        conf, method = 0.7, "ifc_import:tier0:opening:direct_fill:placement"
+        note = (
+            "no fill solid; size from OverallWidth/OverallHeight, sill and s-centre from placement"
+        )
+        ow, oh = getattr(fill, "OverallWidth", None), getattr(fill, "OverallHeight", None)
+        width_m = ow * scale if ow else None
+        height_m = oh * scale if oh else None
+        sill_m = szs[0]
+        s_center_m = sxs[0]
+    p = Provenance(
+        sheet_id=sheet,
+        revision=revision,
+        method=method,
+        confidence=conf,
+        note=(
+            f"fill={fgid} {note}; no IfcRelFillsElement in file, "
+            "attached to wall by placement (#1206)"
+        ).strip(),
+    )
+    if tag:
+        p.note += f"; tag '{tag}' parsed from fill Name (0.80)"
+    tu, tshgc, tvt, tref, tnote = _opening_thermal(fill)
+    if tnote:
+        p.note += f"; {tnote}"
+    op_type = leaves = hinge = glaze = glazed = None
+    if category == "door":
+        op_type, leaves, hinge, glaze, dnote = _door_semantics(fill)
+        if dnote:
+            p.note += f"; {dnote}"
+        if glaze is not None and width_m and height_m:
+            glazed = glaze * width_m * height_m
+    return BimOpening(
+        id=fgid,
+        category=category,
+        tag=tag,
+        width_m=_r4(width_m),
+        height_m=_r4(height_m),
+        sill_m=_r4(sill_m),
+        s_center_m=_r4(s_center_m),
+        host_global_id=host_gid,
+        fill_global_id=fgid,
+        provenance=p,
+        plan_center_m=plan_center,
+        operation_type=op_type,
+        leaf_count=leaves,
+        hinge_side=hinge,
+        glazing_area_fraction=_r4(glaze),
+        glazed_area_m2=_r4(glazed),
+        u_value_w_m2k=tu,
+        shgc=tshgc,
+        vt=tvt,
+        thermal_reference=tref,
+    )
+
+
+def _read_opening(
+    f, opening, fill, wall_world, wall_len, sheet, revision, scale, host_gid="", paired=False
+):
     """One BimOpening from void/fill relationships + opening geometry.
 
     Dimensions come from the opening's product-local vertices (geometry
@@ -4719,6 +5008,9 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
         cx, cy = _to_canonical(0.5 * (min(wxs) + max(wxs)), 0.5 * (min(wys) + max(wys)))
         plan_center = [round(cx, 4), round(cy, 4)]
         note += "; plan centre from opening solid, world frame"
+    if paired:
+        conf = min(conf, 0.9)
+        note += "; no IfcRelFillsElement in file, fill paired to void by placement (#1206)"
     p = Provenance(
         sheet_id=sheet,
         revision=revision,
