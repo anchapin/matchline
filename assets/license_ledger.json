@@ -113,6 +113,45 @@
    "license": "CC BY 4.0",
    "class": "permissive",
    "source": "github.com/buildingsmart-community/Community-Sample-Test-Files (IFC 2.3.0.1 (IFC 2x3)/Medical-Dental Clinic)"
+  },
+  {
+   "id": "ifcbench_ac20",
+   "name": "IFC-Bench ac20: KIT AC20 office (IFC4, 5 storeys, 82 IfcSpaces)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/ac20 (KIT IAI, ifcwiki.org KIT IFC Examples); held out, never committed",
+   "attribution": "Institute for Automation and Applied Informatics (IAI), Karlsruhe Institute of Technology (KIT)"
+  },
+  {
+   "id": "ifcbench_digital_hub",
+   "name": "IFC-Bench digital_hub: RWTH E3D DigitalHub office, architecture + ventilation IFCs (IFC4)",
+   "license": "MIT",
+   "class": "permissive",
+   "source": "https://github.com/RWTH-E3D/DigitalHub via https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/digital_hub; held out, never committed",
+   "attribution": "Copyright (c) 2020 RWTH Aachen University - E3D Institute of Energy Efficiency and Sustainable Building"
+  },
+  {
+   "id": "ifcbench_fzk_house",
+   "name": "IFC-Bench fzk_house: KIT FZK-Haus (IFC4, 7 IfcSpaces)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/fzk_house (KIT IAI); held out, never committed",
+   "attribution": "Institute for Automation and Applied Informatics (IAI), Karlsruhe Institute of Technology (KIT)"
+  },
+  {
+   "id": "ifcbench_smiley_west",
+   "name": "IFC-Bench smiley_west: KIT Smiley West terraced houses (IFC4, 140 IfcSpaces)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/smiley_west; corrected version also on zenodo.org/records/10680698 (CC BY 4.0); held out, never committed",
+   "attribution": "Institute for Automation and Applied Informatics (IAI), Karlsruhe Institute of Technology (KIT)"
+  },
+  {
+   "id": "ifcbench_wbdg_office",
+   "name": "IFC-Bench wbdg_office: WBDG Common BIM Files two-storey office, architectural IFC (IFC2X3, 99 IfcSpaces)",
+   "license": "CC BY 4.0 per IFC-Bench; the original buildingSMART alliance / WBDG release was listed as CC BY-ND 3.0 (ifcwebserver.org/doc/sources.html), and IFC-Bench's license.txt credits the Medical-Dental files, so the attribution needs confirming",
+   "class": "permissive",
+   "source": "https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/wbdg_office (origin https://www.wbdg.org/bim/cobie/common-bim-files); read-only benchmark use, held out, never committed; never commit renders (ND)"
   }
  ],
  "artifacts": [

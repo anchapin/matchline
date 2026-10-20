@@ -14,7 +14,11 @@ All notable changes to this project are documented here, in
 
 ### Added
 
-- Nothing yet; see [0.2.1] below.
+- Five IFC-Bench buildings in the real-building benchmark config (#1165):
+  ac20 and fzk-house (KIT, CC BY 4.0), digital-hub with its ventilation
+  model (RWTH E3D, MIT), smiley-west (KIT, CC BY 4.0), and wbdg-office
+  (license under review). Each is in `license_ledger.json`; data stays
+  outside the repo.
 
 ## [0.2.1] - 2026-10-19
 
