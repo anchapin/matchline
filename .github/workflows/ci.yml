@@ -273,16 +273,26 @@ jobs:
         # pytest-xdist spreads the suite across the runner's cores; pytest was
         # ~88% of this merge-gating job when it ran on one core.
         # #1137: coverage measures the shipped surface (pyproject
-        # [tool.coverage]); informational, no fail_under yet.
+        # [tool.coverage]); #1191 turns it into a gate via fail_under.
         run: uv run --no-sync python -m pytest tests/ -q -n auto --cov --cov-report=term --cov-report=xml:coverage.xml
 
-      - name: Coverage summary (informational, no gate yet)
+      - name: Coverage summary
         if: always()
         run: |
           {
-            echo "### Coverage (informational, no gate yet, #1137)"
+            echo "### Coverage (ratchet at 85.0, baseline 85.6, #1191)"
             uv run --no-sync python -m coverage report --skip-covered
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage.xml
+        # #1191: the report is built for every run but was never kept;
+        # upload it so per-run coverage is inspectable from the run page.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
 
       - name: Check test count
         run: |
