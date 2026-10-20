@@ -19,8 +19,10 @@ IFC reader (``ifc.ifc_import``); ``tests/test_bench_truth.py`` pins that.
   ``ifcopenshell.geom``. ``area_source`` records which one was used.
 - exterior wall length: walls with ``Pset_WallCommon.IsExternal`` True; length
   from ``Qto_WallBaseQuantities.Length``, else the 2D length of the wall's
-  ``Axis`` representation. A file with no wall flagged external has no
-  exterior wall truth (``null`` plus a reason), never 0.
+  ``Axis`` representation, else the longest plan extent of the wall's
+  tessellated body from ``ifcopenshell.geom`` (the same geometry policy the
+  room areas use). A file with no wall flagged external has no exterior wall
+  truth (``null`` plus a reason), never 0.
 - windows / doors: raw ``by_type`` counts; window area is
   ``OverallWidth * OverallHeight`` where both are stated.
 
@@ -126,6 +128,40 @@ def _axis_length(el, scale: float) -> float | None:
     return None
 
 
+def _geom_plan_length(el, scale: float) -> float | None:
+    """Longest plan extent (m) of the element's tessellated body, or None.
+
+    Fallback for walls with neither a Qto length nor an Axis: the body's
+    vertices via ``ifcopenshell.geom`` (world coords), projected on the
+    principal plan direction found by PCA. A straight wall's long axis is
+    its length; a curved or L-shaped wall approximates it. Like
+    ``_geom_floor_area``, the tessellation comes back in metres, so
+    ``scale`` is accepted for symmetry but not applied.
+    """
+    try:
+        import ifcopenshell.geom
+        import numpy as np
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("use-world-coords", True)
+        shape = ifcopenshell.geom.create_shape(settings, el)
+        verts = np.asarray(shape.geometry.verts, dtype=float).reshape(-1, 3)
+    except Exception:
+        return None
+    xy = np.unique(np.round(verts[:, :2], 9), axis=0)
+    if len(xy) < 2:
+        return None
+    centered = xy - xy.mean(axis=0)
+    cov = centered.T @ centered / len(centered)
+    evals, evecs = np.linalg.eigh(cov)
+    best = 0.0
+    for i in range(2):
+        d = evecs[:, i]
+        proj = centered @ d
+        best = max(best, float(proj.max() - proj.min()))
+    return best if best > 0 else None
+
+
 def _is_external(psets: dict) -> bool | None:
     v = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
     return v if isinstance(v, bool) else None
@@ -158,6 +194,7 @@ def build_truth(path: Path) -> dict:
     flagged = [w for w in walls if _is_external(_psets(w)) is not None]
     ext_len = 0.0
     ext_n = 0
+    ext_geom = 0
     ext_unmeasured = 0
     for w in sorted(walls, key=lambda e: e.GlobalId):
         ps = _psets(w)
@@ -166,18 +203,27 @@ def build_truth(path: Path) -> dict:
         length = _qto_value(ps, "Qto_WallBaseQuantities", ("Length",))
         if length is None:
             length = _axis_length(w, scale)
+        source = "measured"
+        if length is None:
+            # body-geometry fallback, same policy as room areas: an
+            # unmeasured wall must not shrink the total (#1205)
+            length = _geom_plan_length(w, scale)
+            source = "geometry"
         if length is None:
             ext_unmeasured += 1
             continue
         ext_len += length
-        ext_n += 1
-    if ext_n:
+        if source == "measured":
+            ext_n += 1
+        else:
+            ext_geom += 1
+    if ext_n or ext_geom:
         wall_len: float | None = ext_len
         wall_reason = ""
     elif not flagged:
         wall_len, wall_reason = None, "no wall states Pset_WallCommon.IsExternal"
     elif ext_unmeasured:
-        wall_len, wall_reason = None, "exterior walls have no Qto length or Axis"
+        wall_len, wall_reason = None, "exterior walls have no Qto length, Axis, or measurable body"
     else:
         wall_len, wall_reason = None, "no wall has Pset_WallCommon.IsExternal = True"
 
@@ -199,6 +245,7 @@ def build_truth(path: Path) -> dict:
         "exterior_wall_length_m": wall_len,
         "exterior_wall_reason": wall_reason,
         "exterior_walls_measured": ext_n,
+        "exterior_walls_from_geometry": ext_geom,
         "exterior_walls_unmeasured": ext_unmeasured,
         "windows": len(windows),
         "windows_sized": win_sized,
