@@ -303,6 +303,9 @@ def _body_axis_local(el, solids, from_extents, scale):
     if from_extents:
         verts = _geom_verts(el)
         if not verts:
+            # mapped-item bodies the kernel fails on (#1203)
+            verts = _body_vertices(el)
+        if not verts:
             return None
         xs = [verts[i] * scale for i in range(0, len(verts), 3)]
         ys = [verts[i + 1] * scale for i in range(0, len(verts), 3)]
@@ -465,6 +468,471 @@ def _face_set_extents(el, scale):
         xs.append(float(c[0]) * scale)
         ys.append(float(c[1]) * scale)
         zs.append(float(c[2]) * scale)
+    return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+
+
+# ---------------------------------------------------------------------------
+# Mapped-item / CSG body unwrap (#1203)
+#
+# Some exporters (Archicad's mapped IFC2X3 output among them) put every Body
+# solid behind an IfcMappedItem wrapper, or as an IfcFacetedBrep / CSG result
+# the geometry kernel fails on. _body_extrusions sees none of that, so walls
+# come out with no length and openings with no volume. The functions below
+# unwrap the wrappers and read vertices straight from the solids.
+# ---------------------------------------------------------------------------
+
+_XF_ID = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+_XF_ZERO = (0.0, 0.0, 0.0)
+_BODY_MAX_DEPTH = 32  # guard against self-referencing representation maps
+
+
+def _norm3(v, default):
+    """Unit 3-vector from DirectionRatios (2- or 3-tuple padded), or default."""
+    if v is None:
+        return default
+    vals = [float(c) for c in v[:3]]
+    while len(vals) < 3:
+        vals.append(0.0)
+    n = math.sqrt(vals[0] ** 2 + vals[1] ** 2 + vals[2] ** 2)
+    if n < 1e-12:
+        return default
+    return (vals[0] / n, vals[1] / n, vals[2] / n)
+
+
+def _orth3(v, *others):
+    """v orthogonalized against the given unit vectors, or None if degenerate."""
+    if v is None:
+        return None
+    vals = [float(c) for c in v[:3]]
+    while len(vals) < 3:
+        vals.append(0.0)
+    x, y, z = vals
+    for o in others:
+        d = x * o[0] + y * o[1] + z * o[2]
+        x, y, z = x - d * o[0], y - d * o[1], z - d * o[2]
+    n = math.sqrt(x * x + y * y + z * z)
+    if n < 1e-12:
+        return None
+    return (x / n, y / n, z / n)
+
+
+def _cross3(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _axis2_mat3(pl):
+    """(R, t) local->parent matrix for an IfcAxis2Placement3D/2D, or None.
+
+    Columns of R are the unit axes expressed in the parent frame, so a
+    placement applies to a point as R @ p + t.
+    """
+    if pl is None:
+        return None
+    loc = getattr(getattr(pl, "Location", None), "Coordinates", None)
+    if not loc:
+        return None
+    if pl.is_a("IfcAxis2Placement2D"):
+        t = (float(loc[0]), float(loc[1]), 0.0)
+        z = (0.0, 0.0, 1.0)
+        rd = getattr(pl, "RefDirection", None)
+        x = _orth3(rd.DirectionRatios if rd is not None else None, z)
+    else:
+        t = tuple(float(c) for c in loc[:3])
+        ax = getattr(pl, "Axis", None)
+        z = _norm3(ax.DirectionRatios if ax is not None else None, (0.0, 0.0, 1.0))
+        rd = getattr(pl, "RefDirection", None)
+        x = _orth3(rd.DirectionRatios if rd is not None else None, z)
+    if x is None:
+        x = _orth3((1.0, 0.0, 0.0), z) or _orth3((0.0, 1.0, 0.0), z)
+    if x is None:
+        return None
+    y = _cross3(z, x)
+    R = ((x[0], y[0], z[0]), (x[1], y[1], z[1]), (x[2], y[2], z[2]))
+    return (R, t)
+
+
+def _xf_operator_mat3(op):
+    """(R, t) matrix for an IfcCartesianTransformationOperator (2D/3D).
+
+    Missing axes follow the spec defaults ((1,0,0) / (0,1,0) / (0,0,1),
+    orthogonalized); per-axis scales apply where the non-uniform subtypes
+    carry them, the uniform Scale otherwise.
+    """
+    if op is None:
+        return (_XF_ID, _XF_ZERO)
+    s1 = float(op.Scale or 1.0) or 1.0
+    loc = getattr(getattr(op, "LocalOrigin", None), "Coordinates", None)
+    if op.is_a("IfcCartesianTransformationOperator2D"):
+        z = (0.0, 0.0, 1.0)
+        a1 = getattr(op, "Axis1", None)
+        rd = getattr(op, "RefDirection", None)
+        x = _orth3(a1.DirectionRatios if a1 is not None else None, z)
+        if x is None:
+            x = _orth3(rd.DirectionRatios if rd is not None else None, z)
+        if x is None:
+            x = (1.0, 0.0, 0.0)
+        y = _cross3(z, x)
+        sy = float(getattr(op, "ScaleY", None) or s1)
+        t = (float(loc[0]), float(loc[1]), 0.0) if loc else _XF_ZERO
+        sz = s1
+    else:
+        a3 = getattr(op, "Axis3", None)
+        z = _norm3(a3.DirectionRatios if a3 is not None else None, (0.0, 0.0, 1.0))
+        a1 = getattr(op, "Axis1", None)
+        a2 = getattr(op, "Axis2", None)
+        x = _orth3(a1.DirectionRatios if a1 is not None else None, z)
+        y = _orth3(a2.DirectionRatios if a2 is not None else None, z, x)
+        if x is None and y is None:
+            x = _orth3((1.0, 0.0, 0.0), z) or _orth3((0.0, 1.0, 0.0), z)
+            if x is None:
+                return (_XF_ID, _XF_ZERO)
+            y = _cross3(z, x)
+        elif x is None:
+            x = _cross3(y, z)
+        elif y is None:
+            y = _cross3(z, x)
+        sy = float(getattr(op, "ScaleY", None) or s1)
+        sz = float(getattr(op, "ScaleZ", None) or s1)
+        t = tuple(float(c) for c in loc[:3]) if loc else _XF_ZERO
+    if x is None or y is None:
+        return (_XF_ID, _XF_ZERO)
+    R = (
+        (x[0] * s1, y[0] * sy, z[0] * sz),
+        (x[1] * s1, y[1] * sy, z[1] * sz),
+        (x[2] * s1, y[2] * sy, z[2] * sz),
+    )
+    return (R, t)
+
+
+def _xf_compose(first, then):
+    """(R, t) for applying ``first`` then ``then``."""
+    R1, t1 = first
+    R2, t2 = then
+    R = tuple(tuple(sum(R2[i][k] * R1[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+    t = tuple(sum(R2[i][k] * t1[k] for k in range(3)) + t2[i] for i in range(3))
+    return (R, t)
+
+
+def _xf_apply(xf, x, y, z):
+    R, t = xf
+    return (
+        t[0] + R[0][0] * x + R[0][1] * y + R[0][2] * z,
+        t[1] + R[1][0] * x + R[1][1] * y + R[1][2] * z,
+        t[2] + R[2][0] * x + R[2][1] * y + R[2][2] * z,
+    )
+
+
+def _pt3(c):
+    """(x, y, z) floats from a 2- or 3-tuple coordinate list."""
+    vals = [float(x) for x in c[:3]]
+    while len(vals) < 3:
+        vals.append(0.0)
+    return tuple(vals)
+
+
+def _face_loop_pts(face):
+    """Vertices (file units) from one IfcFace's loop bounds, or []."""
+    pts = []
+    for b in getattr(face, "Bounds", None) or []:
+        loop = getattr(b, "Bound", None)
+        if loop is None:
+            continue
+        if loop.is_a("IfcPolyLoop"):
+            pts.extend(_pt3(pt.Coordinates) for pt in loop.Polygon or [])
+        elif loop.is_a("IfcVertexLoop"):
+            vp = getattr(loop, "LoopVertex", None)
+            if vp is not None and vp.is_a("IfcVertexPoint"):
+                g = getattr(vp, "VertexGeometry", None)
+                if g is not None and g.is_a("IfcCartesianPoint"):
+                    pts.append(_pt3(g.Coordinates))
+        elif loop.is_a("IfcEdgeLoop"):
+            for oe in getattr(loop, "EdgeList", None) or []:
+                ev = getattr(oe, "EdgeElement", None)
+                if ev is not None and ev.is_a("IfcEdgeCurve"):
+                    for v in (getattr(ev, "EdgeStart", None), getattr(ev, "EdgeEnd", None)):
+                        if v is not None and v.is_a("IfcVertexPoint"):
+                            g = getattr(v, "VertexGeometry", None)
+                            if g is not None and g.is_a("IfcCartesianPoint"):
+                                pts.append(_pt3(g.Coordinates))
+    return pts
+
+
+def _profile_pts_raw(p):
+    """Profile outline points (x, y) in the profile's plane (file units).
+
+    Line-only outer curves only: arc segments would misshape the outline, so
+    the caller degrades (same policy as _polyline_footprint).
+    """
+    if p is None:
+        return None
+    if p.is_a("IfcRectangleProfileDef"):
+        xdim, ydim = float(p.XDim), float(p.YDim)
+        corners = [
+            (-xdim / 2, -ydim / 2),
+            (xdim / 2, -ydim / 2),
+            (xdim / 2, ydim / 2),
+            (-xdim / 2, ydim / 2),
+        ]
+        pos = getattr(p, "Position", None)
+        cx = cy = ang = 0.0
+        if pos is not None:
+            c = pos.Location.Coordinates
+            cx, cy = float(c[0]), float(c[1])
+            rd = getattr(pos, "RefDirection", None)
+            if rd is not None:
+                r = rd.DirectionRatios
+                ang = math.atan2(float(r[1]), float(r[0]))
+        ca, sa = math.cos(ang), math.sin(ang)
+        return [(cx + ca * px - sa * py, cy + sa * px + ca * py) for px, py in corners]
+    if p.is_a("IfcArbitraryClosedProfileDef"):
+        oc = p.OuterCurve
+        raw = None
+        if oc.is_a("IfcIndexedPolyCurve"):
+            segs = getattr(oc, "Segments", None)
+            if segs and any(not sg.is_a("IfcLineIndex") for sg in segs):
+                return None
+            coord_list = getattr(oc.Points, "CoordList", None)
+            raw = list(coord_list) if coord_list is not None else None
+        elif oc.is_a("IfcPolyline"):
+            raw = [c.Coordinates for c in oc.Points]
+        if raw is None:
+            return None
+        pts = [(float(c[0]), float(c[1])) for c in raw]
+        if len(pts) > 1 and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        return pts
+    if p.is_a("IfcCircleProfileDef"):
+        r = float(p.Radius)
+        c = p.Position.Location.Coordinates
+        cx, cy = float(c[0]), float(c[1])
+        return [(cx - r, cy - r), (cx + r, cy - r), (cx + r, cy + r), (cx - r, cy + r)]
+    return None
+
+
+def _rotate_about_axis(pts, loc, d, start, end):
+    """Rodrigues rotation of solid points about the line (loc, d) over the
+    revolution angle range, sampled; for IfcRevolvedAreaSolid extents."""
+    out = []
+    if abs(end - start) < 1e-9:
+        steps = [start]
+    else:
+        steps = [start + (end - start) * i / 16.0 for i in range(17)]
+    for x, y, z in pts:
+        rel = (x - loc[0], y - loc[1], z - loc[2])
+        for a in steps:
+            ca, sa = math.cos(a), math.sin(a)
+            dot = rel[0] * d[0] + rel[1] * d[1] + rel[2] * d[2]
+            cross = _cross3(d, rel)
+            out.append(
+                (
+                    loc[0] + rel[0] * ca + cross[0] * sa + d[0] * dot * (1 - ca),
+                    loc[1] + rel[1] * ca + cross[1] * sa + d[1] * dot * (1 - ca),
+                    loc[2] + rel[2] * ca + cross[2] * sa + d[2] * dot * (1 - ca),
+                )
+            )
+    return out
+
+
+def _solid_vertices(it):
+    """Item-local vertex list (file units) for one Body solid item, or None.
+
+    Applies the solid's own Position where the schema carries one; wrapper
+    transforms (mapped items, CSG parents) are NOT applied here -- callers
+    get them from _body_items and apply afterwards.
+    """
+    try:
+        if it.is_a("IfcExtrudedAreaSolid"):
+            base = _profile_pts_raw(it.SweptArea)
+            if base is None:
+                return None
+            pos = _axis2_mat3(getattr(it, "Position", None)) or (_XF_ID, _XF_ZERO)
+            dv = _norm3(it.ExtrudedDirection.DirectionRatios, (0.0, 0.0, 1.0))
+            depth = float(it.Depth)
+            out = []
+            for x, y in base:
+                p0 = _xf_apply(pos, x, y, 0.0)
+                out.append(p0)
+                out.append((p0[0] + dv[0] * depth, p0[1] + dv[1] * depth, p0[2] + dv[2] * depth))
+            return out
+        if it.is_a("IfcRevolvedAreaSolid"):
+            base = _profile_pts_raw(it.SweptArea)
+            if base is None:
+                return None
+            pos = _axis2_mat3(getattr(it, "Position", None)) or (_XF_ID, _XF_ZERO)
+            pts = [_xf_apply(pos, x, y, 0.0) for x, y in base]
+            ax = getattr(it, "Axis", None)
+            if ax is None:
+                return pts
+            loc = _pt3(ax.Location.Coordinates)
+            d = _norm3(ax.Axis.DirectionRatios if ax.Axis is not None else None, (0.0, 1.0, 0.0))
+            return _rotate_about_axis(
+                pts, loc, d, float(it.StartAngle or 0.0), float(it.EndAngle or 0.0)
+            )
+        if it.is_a("IfcFacetedBrep"):
+            out = []
+            for face in it.Outer.CfsFaces or []:
+                out.extend(_face_loop_pts(face))
+            return out or None
+        if it.is_a("IfcFaceBasedSurfaceModel"):
+            out = []
+            for shell in it.FbsmFaces or []:
+                for face in shell.CfsFaces or []:
+                    out.extend(_face_loop_pts(face))
+            return out or None
+        if it.is_a("IfcShellBasedSurfaceModel"):
+            out = []
+            for shell in it.SbsmBoundary or []:
+                # IfcClosedShell/IfcOpenShell carry their faces as CfsFaces
+                for face in getattr(shell, "CfsFaces", None) or []:
+                    out.extend(_face_loop_pts(face))
+            return out or None
+        if it.is_a("IfcTessellatedFaceSet"):
+            coords = getattr(getattr(it, "Coordinates", None), "CoordList", None)
+            if not coords:
+                return None
+            return [_pt3(row) for row in coords]
+        if (
+            it.is_a("IfcBlock")
+            or it.is_a("IfcRectangularPyramid")
+            or it.is_a("IfcRectangularTriangularPrism")
+        ):
+            pos = _axis2_mat3(getattr(it, "Position", None)) or (_XF_ID, _XF_ZERO)
+            xl, yl = float(it.XLength), float(it.YLength)
+            zl = float(getattr(it, "ZLength", getattr(it, "Height", 0.0)))
+            corners = [(x * xl, y * yl, z * zl) for x in (0, 1) for y in (0, 1) for z in (0, 1)]
+            if it.is_a("IfcRectangularPyramid"):
+                corners = [c for c in corners if c[2] == 0.0] + [(xl / 2, yl / 2, zl)]
+            if it.is_a("IfcRectangularTriangularPrism"):
+                corners = [c for c in corners if c[0] < xl or c[1] == 0.0]
+            return [_xf_apply(pos, *c) for c in corners]
+        if it.is_a("IfcRightCircularCylinder") or it.is_a("IfcRightCircularCone"):
+            pos = _axis2_mat3(getattr(it, "Position", None)) or (_XF_ID, _XF_ZERO)
+            r, h = float(it.Radius), float(it.Height)
+            out = [_xf_apply(pos, sx * r, sy * r, 0.0) for sx in (-1, 1) for sy in (-1, 1)]
+            top = h if it.is_a("IfcRightCircularCylinder") else 0.0
+            out.extend(
+                [
+                    _xf_apply(pos, r, 0.0, h),
+                    _xf_apply(pos, -r, 0.0, h),
+                    _xf_apply(pos, 0.0, r, h),
+                    _xf_apply(pos, 0.0, -r, h),
+                    _xf_apply(pos, 0.0, 0.0, top),
+                ]
+            )
+            return out
+        if it.is_a("IfcSphere"):
+            pos = _axis2_mat3(getattr(it, "Position", None)) or (_XF_ID, _XF_ZERO)
+            c = _xf_apply(pos, 0.0, 0.0, 0.0)
+            r = float(it.Radius)
+            return [
+                (c[0] + sx * r, c[1] + sy * r, c[2] + sz * r)
+                for sx in (-1, 1)
+                for sy in (-1, 1)
+                for sz in (-1, 1)
+            ]
+        if it.is_a("IfcSweptDiskSolid"):
+            drx = getattr(it, "Directrix", None)
+            if drx is None or not drx.is_a("IfcPolyline"):
+                return None
+            r = float(it.Radius)
+            out = []
+            for c in drx.Points or []:
+                x, y, z = _pt3(c.Coordinates)
+                out.extend([(x - r, y, z), (x + r, y, z), (x, y - r, z), (x, y + r, z), (x, y, z)])
+            return out
+        return None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _body_items(el):
+    """(solid, xf) pairs from Body representations, wrapper transforms applied.
+
+    Unwraps the IfcMappedItem wrappers and CSG operands the geometry kernel
+    fails on (#1203): ``xf`` composes every wrapper transform so solid-local
+    vertices (which _solid_vertices already placed in the solid's own frame)
+    land in the element's local frame. Depth-capped against self-referencing
+    maps; DIFFERENCE results read the first operand only (a subtraction can
+    only shrink the body, so the kept part bounds it).
+    """
+    rep = getattr(el, "Representation", None)
+    if rep is None:
+        return []
+    out = []
+    for r in rep.Representations or []:
+        if r.RepresentationIdentifier not in ("Body",):
+            continue
+        for it in r.Items or []:
+            _walk_body_item(it, _XF_ID, _XF_ZERO, out, 0)
+    return out
+
+
+def _walk_body_item(it, R, t, out, depth):
+    if depth > _BODY_MAX_DEPTH:
+        return
+    if it.is_a("IfcMappedItem"):
+        src = getattr(it, "MappingSource", None)
+        if src is None:
+            return
+        om = _axis2_mat3(getattr(src, "MappingOrigin", None))
+        if om is None:
+            return
+        # the mapping origin positions the mapped representation inside the
+        # map's space (kernel interpretation, verified against
+        # ifcopenshell.geom on a synthetic mapped file), then the target
+        # operator maps that into the element's frame
+        chain = _xf_compose(om, _xf_operator_mat3(getattr(it, "MappingTarget", None)))
+        acc = _xf_compose(chain, (R, t))
+        mapped = getattr(src, "MappedRepresentation", None)
+        for sub in getattr(mapped, "Items", None) or []:
+            _walk_body_item(sub, acc[0], acc[1], out, depth + 1)
+    elif it.is_a("IfcCsgSolid"):
+        root = getattr(it, "TreeRootExpression", None)
+        if root is not None:
+            _walk_body_item(root, R, t, out, depth + 1)
+    elif it.is_a("IfcBooleanResult"):
+        first = getattr(it, "FirstOperand", None)
+        if first is not None:
+            _walk_body_item(first, R, t, out, depth + 1)
+        if str(getattr(it, "Operator", "") or "").upper() != "DIFFERENCE":
+            second = getattr(it, "SecondOperand", None)
+            if second is not None and not second.is_a("IfcHalfSpaceSolid"):
+                _walk_body_item(second, R, t, out, depth + 1)
+    else:
+        out.append((it, (R, t)))
+
+
+def _body_vertices(el):
+    """Product-LOCAL vertex list (file units) from Body solids, unwrapping
+    IfcMappedItem wrappers and CSG operands the geometry kernel fails on.
+
+    Mirrors _geom_verts' contract (vertices in the element's own frame, no
+    product placement applied): returns None when nothing readable was found.
+    """
+    flat = []
+    for item, xf in _body_items(el):
+        sv = _solid_vertices(item)
+        if not sv:
+            continue
+        flat.extend(c for p in sv for c in _xf_apply(xf, *p))
+    return flat or None
+
+
+def _mapped_body_extents(el, scale):
+    """(dx, dy, dz) extents in the element's own local frame (meters) from the
+    unwrapped body vertices, or None. An axis-aligned bounding box, the same
+    assumption the kernel-extents and face-set fallbacks make (#1203).
+    """
+    verts = _body_vertices(el)
+    if not verts:
+        return None
+    xs = [verts[i] * scale for i in range(0, len(verts), 3)]
+    ys = [verts[i + 1] * scale for i in range(0, len(verts), 3)]
+    zs = [verts[i + 2] * scale for i in range(0, len(verts), 3)]
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
 
 
@@ -3470,6 +3938,13 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 if ext is not None:
                     dims = ext
                     dims_note = "IfcPolygonalFaceSet vertex bbox (axis-aligned solid assumed)"
+            if dims is None:
+                ext = _mapped_body_extents(el, scale)
+                if ext is not None:
+                    dims = ext
+                    dims_note = (
+                        "body vertex bbox via mapped-item/CSG unwrap (axis-aligned solid assumed)"
+                    )
             if dims is not None:
                 xd, yd, dep = dims
                 if cls in ("IfcWall", "IfcWallStandardCase"):
@@ -3519,7 +3994,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 and not _wall_marked_interior(el)
             ):
                 wall_axis_fix[gid] = _wall_centreline_fix(
-                    el, solids, dims_note.startswith("local extents"), scale
+                    el, solids, dims_note.startswith(("local extents", "body vertex bbox")), scale
                 )
                 dx, dy = math.cos(ang), -math.sin(ang)  # canonical frame
                 p0 = (cx, cy)
@@ -4088,6 +4563,12 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
     conf, method = 0.5, "ifc_import:tier0:opening:novolume"
     note = "void/fill relationships only; no opening solid"
     verts = _geom_verts(opening)
+    vert_note = ""
+    if verts is None:
+        # mapped-item / CSG opening bodies the kernel fails on (#1203)
+        verts = _body_vertices(opening)
+        if verts:
+            vert_note = " (mapped body unwrap)"
     if verts:
         # opening -> world, then world -> wall (#587: was composed backwards,
         # so any opening not placed relative to an unrotated wall at the
@@ -4104,7 +4585,7 @@ def _read_opening(f, opening, fill, wall_world, wall_len, sheet, revision, scale
             sill_m = min(zs)  # wall frame z=0 is the wall base
             s_center_m = 0.5 * (min(xs) + max(xs))
             conf, method = 0.95, "ifc_import:tier0:opening:solid"
-            note = "dims from opening solid, wall-local frame"
+            note = "dims from opening solid, wall-local frame" + vert_note
             if wall_len and not (-0.01 <= min(xs) <= max(xs) <= wall_len + 0.01):
                 note += " (outside wall extent -- flagged)"
     plan_center = None
