@@ -61,6 +61,6 @@ Renovate runs as a GitHub App, so it must be installed on the repository (https:
 
 ## Release pipeline
 
-Publishing to PyPI is tag-driven (`release.yml`): pushing a `vX.Y.Z` tag whose name matches `pyproject.toml`'s version builds the sdist and wheel, runs `twine check`, smoke-tests the wheel with a fresh non-editable install (`matchline --help`, `pip check`), and publishes via PyPI trusted publishing (OIDC; no token secret lives in the repo). The `pypi` GitHub environment gates the publish job.
+Publishing to PyPI is tag-driven (`release.yml`): pushing a `vX.Y.Z` tag whose name matches `pyproject.toml`'s version builds the sdist and wheel with `uv build`, runs `twine check` from the locked `release` dependency-group, smoke-tests the wheel with a fresh non-editable install (`matchline --help`, `pip check`), and publishes with `uv publish --trusted-publishing automatic` via PyPI trusted publishing (OIDC; no token secret lives in the repo). The `pypi` GitHub environment gates the publish job; `workflow_dispatch` dry-runs build+smoke without publishing.
 
 One-time maintainer setup on pypi.org: add a pending/trusted publisher for `anchapin/matchline`, workflow `release.yml`, environment `pypi` (the environment is created in the GitHub repo automatically on first run). After that, cutting a release is: merge the version bump and release notes, then push the tag.

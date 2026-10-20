@@ -10,6 +10,10 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # workflow_dispatch dry-runs the build+smoke path on a branch: the tag
+  # check is skipped (GITHUB_REF_NAME is a branch, not a tag) and the
+  # publish step skips because the current version is already on PyPI.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,12 +27,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
         with:
+          uv-version: "0.13.2"
           python-version: "3.12"
 
       - name: Tag matches pyproject version
+        if: github.event_name == 'push'
         run: |
           python - <<'PY'
           import os, sys, tomllib
@@ -40,9 +46,8 @@ jobs:
 
       - name: Build
         run: |
-          pip install --no-cache-dir build twine
-          python -m build
-          twine check dist/*
+          uv build --sdist --wheel
+          uv run --no-default-groups --group release twine check dist/*
 
       - name: Upload distributions
         uses: actions/upload-artifact@v7
@@ -79,6 +84,11 @@ jobs:
     permissions:
       id-token: write
     steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          uv-version: "0.13.2"
+
       - name: Download distributions
         uses: actions/download-artifact@v8
         with:
@@ -114,5 +124,9 @@ jobs:
           PY
 
       - name: Publish
-        if: steps.skipcheck.outputs.skip != 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        # trusted publishing (OIDC) via uv; --check-url lets uv skip files
+        # that already exist on PyPI instead of failing the run on them.
+        # Tag pushes only: a workflow_dispatch dry-run must never publish.
+        if: github.event_name == 'push' && steps.skipcheck.outputs.skip != 'true'
+        run: |
+          uv publish --trusted-publishing automatic --check-url https://pypi.org/p/
