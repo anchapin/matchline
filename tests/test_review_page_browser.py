@@ -161,6 +161,16 @@ def test_a_two_sheet_item_highlights_both_ends(tmp_path, page):
         spec.loader.exec_module(TE)
     finally:
         sys.path[:] = saved
+        # TE's function bodies import sibling test modules by bare name
+        # (test_real_set._window_schedule does `from test_pdf_schedules
+        # import door_schedule`); that resolved while tests/ was first on
+        # sys.path during exec, and the restore above wipes it -- visible
+        # only when this test runs first under pytest-randomly (#1192).
+        # Append tests/ instead of re-inserting it, so repo-root modules
+        # (cli.py, run_review) keep winning any name collision.
+        tests_dir = str(Path(__file__).resolve().parent)
+        if tests_dir not in sys.path:
+            sys.path.append(tests_dir)
     model, _rep, _s = TE._run(
         tmp_path, TE._elev("SOUTH ELEVATION", wins=((TE.WIN_X + TE.T_EXT / 2, 0.9, 1.2, 2.1),))
     )

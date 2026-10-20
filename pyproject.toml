@@ -122,7 +122,7 @@ DEP001 = [
 ]
 DEP002 = [
     # pytest plugins: imported by pytest itself, never by project code.
-    "pytest-cov", "pytest-xdist", "hypothesis",
+    "pytest-cov", "pytest-xdist", "hypothesis", "pytest-randomly",
     # the openstudio extra exists to ship the OpenStudio CLI the sim jobs
     # invoke; its Python module is never imported.
     "openstudio",
