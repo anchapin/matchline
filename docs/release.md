@@ -110,9 +110,13 @@ tag-driven PyPI release workflow (#1099).
 
 ### Release cadence (updated for 0.2.0)
 
-- Releases are tag-driven now: `release.yml` builds, smoke-tests and
-  publishes to PyPI when a `vX.Y.Z` tag matching pyproject's version is
-  pushed; the tag push is the approval (CONTRIBUTING Never List).
+- Releases are tag-driven now: `release.yml` builds with `uv build`,
+  runs `twine check` from the locked `release` dependency-group, and
+  publishes with `uv publish --trusted-publishing automatic` when a
+  `vX.Y.Z` tag matching pyproject's version is pushed; the tag push is
+  the approval (CONTRIBUTING Never List). `workflow_dispatch` is a
+  dry-run path: it skips the tag check and the publish step, so it can
+  validate the build+smoke jobs on a branch without touching PyPI.
 - Tags are cut on `main`: merge `develop` into `main`, then tag the
   merge commit on `main` (the v0.2.0 tag was cut from `develop`; its
   tree is identical to the post-merge `main`). The publish job skips

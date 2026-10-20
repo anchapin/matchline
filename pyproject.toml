@@ -75,6 +75,11 @@ dev = [
 audit = [
     "pip-audit",
 ]
+# release.yml metadata check (#1189 phase 2): twine check stays as the
+# sdist/wheel metadata gate, now locked instead of pip-installed per run.
+release = [
+    "twine",
+]
 
 [project.scripts]
 matchline = "cli:main"
