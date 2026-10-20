@@ -898,6 +898,9 @@ def _walk_body_item(it, R, t, out, depth):
         first = getattr(it, "FirstOperand", None)
         if first is not None:
             _walk_body_item(first, R, t, out, depth + 1)
+        # UNION keeps both operands (exact); INTERSECTION would over-bound
+        # (result fits inside each operand) -- accepted for a last-resort
+        # bbox fallback whose siblings make the same axis-aligned assumption
         if str(getattr(it, "Operator", "") or "").upper() != "DIFFERENCE":
             second = getattr(it, "SecondOperand", None)
             if second is not None and not second.is_a("IfcHalfSpaceSolid"):
