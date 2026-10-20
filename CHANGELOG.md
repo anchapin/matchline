@@ -14,7 +14,13 @@ All notable changes to this project are documented here, in
 
 ### Added
 
-- Nothing yet; see [0.2.1] below.
+- Benchmark ground truth is now independent of matchline's IFC reader
+  (#1165): `scripts/bench_truth.py` reads room areas, exterior wall length
+  and windows/doors straight from each benchmark IFC with ifcopenshell and
+  freezes them as `truth.json` (sha256-pinned to the IFC). The scoreboard's
+  area error is scored against that truth by IfcSpace GlobalId, and the
+  hard-coded `wall_len_err = 0.0` is replaced by a measured exterior wall
+  length error (blank when the IFC states no `IsExternal` wall).
 
 ## [0.2.1] - 2026-10-19
 

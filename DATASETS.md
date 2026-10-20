@@ -332,3 +332,16 @@ except gni-49 windows (truth 71 / model 0, #1009). Two defects found by the
 first run are fixed: gni-74's gbXML export no longer divides by zero on
 sub-0.1 m walls (#1011), and the duplex MEP terminals score 73/103 after the
 loader collapses the file's duplicated spaces (#1008).
+
+**Independent truth (#1165):** the 2026-10-15 area errors (0.0% everywhere)
+compared `import_ifc` with itself, and wall length error was hard-coded to
+0.0. The harness now scores against `truth.json`, read straight from each IFC
+with ifcopenshell by `scripts/bench_truth.py` (room `NetFloorArea`, or body
+geometry when the file has no quantities; exterior wall length from
+`Pset_WallCommon.IsExternal` walls; raw window/door counts) and pinned to the
+IFC's sha256. Freeze it once per building with
+`python scripts/bench_truth.py --config scripts/benchmarks.json` (the
+benchmark also writes it on first run); a changed IFC under an old
+`truth.json` is an `error` row until it is rebuilt with `--force`. A building
+whose IFC flags no wall as external (gni-18) leaves the wall length column
+blank rather than 0. LPD median error is still a self-consistency check.
