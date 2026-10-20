@@ -13,12 +13,16 @@ commits, or ships it. A building whose paths do not exist on disk is reported
 as ``missing`` in the scoreboard, not skipped silently.
 
 Per building with data present:
-- ground truth read straight from the arch IFC (rooms, wall length, windows,
-  LPD) with matchline's own IFC reader, the same reader the IFC path uses;
-- the IFC path is matchline importing that same IFC (``ifc_import.import_ifc``);
-  its rooms/areas/walls/openings/LPD are compared against the IfcSpace
-  quantities via IfcBaseQuantities (``plan_walls.compare_rooms`` /
-  ``wall_length_error`` where shapes allow);
+- ground truth is independent of matchline's IFC reader (#1165): rooms and
+  areas (``Qto_SpaceBaseQuantities``), exterior wall length
+  (``Pset_WallCommon.IsExternal`` walls) and windows/doors are read with
+  ifcopenshell directly by ``scripts/bench_truth.py`` and frozen as
+  ``truth.json`` next to the IFC, pinned to the IFC's sha256;
+- the IFC path is matchline importing that IFC (``ifc_import.import_ifc``);
+  its rooms are paired with truth rooms by IfcSpace GlobalId, and its room
+  areas, exterior wall length and window area are scored against
+  ``truth.json``. A metric with no truth (e.g. no wall states IsExternal) is
+  left blank, never reported as 0;
 - the HVAC path, when an HVAC IFC is configured, reuses
   ``scripts/validate_clinic_hvac``: terminals assigned to the correct
   IfcSpace (optionally with jitter);
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -53,6 +58,7 @@ if str(ROOT) not in sys.path:
 from building_model import BuildingModel  # noqa: E402
 from geometry.geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
 from ifc.ifc_import import import_ifc  # noqa: E402
+from scripts.bench_truth import TruthMismatch, load_or_freeze_truth  # noqa: E402
 
 # Rooms whose id/number match are paired; area error is mean |a_model - a_truth|
 # over paired rooms as a fraction of truth. Room-count error is the raw delta.
@@ -115,13 +121,31 @@ def _wall_openings(model: BuildingModel) -> "Counter[str]":
     return counts
 
 
-def _truth_quantities(model: BuildingModel) -> dict:
-    """Rooms/areas/wall length/windows/LPD straight from the imported IFC."""
+_ENVELOPE_WALL_METHODS = ("ifc_import:tier0:envelope", "ifc_import:tier1:facade")
+
+
+def _space_global_id(space) -> str | None:
+    """IfcSpace GlobalId recorded in a model space's provenance note, if any."""
+    prov = getattr(space, "core_provenance", None)
+    note = getattr(prov, "note", None) or ""
+    m = re.search(r"GlobalId=(\S+)", note)
+    return m.group(1) if m else None
+
+
+def _model_quantities(model: BuildingModel) -> dict:
+    """What matchline's IFC path produced: rooms by GlobalId, walls, windows, LPD."""
     rooms = [s for s in model.spaces.values() if s.poly_type == "room"]
-    areas = {s.id: s.area_m2 for s in rooms}
-    walls = list(getattr(model, "envelope", []) or [])
+    areas_by_gid = {}
+    for s in rooms:
+        gid = _space_global_id(s)
+        if gid is not None and s.area_m2 is not None:
+            areas_by_gid[gid] = s.area_m2
+    walls = [
+        w
+        for w in (getattr(model, "envelope", []) or [])
+        if getattr(getattr(w, "provenance", None), "method", None) in _ENVELOPE_WALL_METHODS
+    ]
     wall_len = sum(getattr(w, "length_m", 0.0) or 0.0 for w in walls)
-    counts = _wall_openings(model)
     wins = [
         o
         for be in (getattr(model, "bim_elements", None) or [])
@@ -130,16 +154,51 @@ def _truth_quantities(model: BuildingModel) -> dict:
         if o.category == "window"
     ]
     win_area = sum(getattr(o, "area_m2", None) or (o.width_m * o.height_m) for o in wins)
-    lpds = [s.lighting.lpd_w_m2 for s in rooms if s.lighting.lpd_w_m2 is not None]
     return {
         "rooms": len(rooms),
-        "areas": areas,
+        "areas_by_gid": areas_by_gid,
         "wall_len_m": wall_len,
         "windows": len(wins),
         "window_area_m2": win_area,
-        "doors": counts["door"],
-        "lpds": lpds,
+        "doors": _wall_openings(model)["door"],
+        "lpds": [s.lighting.lpd_w_m2 for s in rooms if s.lighting.lpd_w_m2 is not None],
     }
+
+
+def _rel_err(model_val: float | None, truth_val: float | None) -> float | None:
+    """|model - truth| / truth, None when truth is missing or zero."""
+    if truth_val in (None, 0) or model_val is None:
+        return None
+    return abs(model_val - truth_val) / abs(truth_val)
+
+
+def score_against_truth(row: "Row", model_q: dict, truth: dict) -> None:
+    """Fill the accuracy columns of ``row`` from model quantities vs frozen truth."""
+    truth_areas = {
+        gid: r["area_m2"] for gid, r in (truth.get("rooms") or {}).items() if r.get("area_m2")
+    }
+    row.rooms_truth = len(truth.get("rooms") or {})
+    row.rooms_model = model_q["rooms"]
+    row.area_err = _mape(model_q["areas_by_gid"], truth_areas)
+    matched = [g for g in truth_areas if g in model_q["areas_by_gid"]]
+    row.extras["rooms_matched"] = len(matched)
+    if matched:
+        t_total = sum(truth_areas[g] for g in matched)
+        m_total = sum(model_q["areas_by_gid"][g] for g in matched)
+        row.extras["matched_floor_area_err"] = _rel_err(m_total, t_total)
+    sources = sorted({r.get("area_source") or "none" for r in (truth.get("rooms") or {}).values()})
+    row.extras["truth_area_source"] = "+".join(sources) if sources else ""
+    t_wall = truth.get("exterior_wall_length_m")
+    row.wall_len_err = _rel_err(model_q["wall_len_m"], t_wall)
+    if t_wall is None:
+        row.extras["wall_len"] = truth.get("exterior_wall_reason") or "no exterior wall truth"
+    else:
+        row.extras["wall_len_m"] = {"truth": t_wall, "model": model_q["wall_len_m"]}
+    row.windows_truth = truth.get("windows")
+    row.windows_model = model_q["windows"]
+    row.doors_truth = truth.get("doors")
+    row.doors_model = model_q["doors"]
+    row.window_area_err = _rel_err(model_q["window_area_m2"], truth.get("window_area_m2"))
 
 
 def _raw_entity_counts(path: Path) -> dict:
@@ -209,42 +268,27 @@ def evaluate_building(
         row.detail = f"arch IFC failed to import: {type(e).__name__}: {e}"
         return row
 
-    truth = _truth_quantities(truth_model)
-    row.rooms_truth = truth["rooms"]
     row.schema = getattr(truth_model, "source_schema", None) or "IFC4"
-    # Truth columns come from the raw entity table, not the imported model
-    # (#929 acceptance): truth > model is a real signal (openings folded
-    # during wall/host processing), a tie is not automatically a pass.
+    # Truth is read from the IFC with ifcopenshell alone and frozen next to
+    # it (#1165), so the IFC path is no longer scored against itself.
     try:
-        raw = _raw_entity_counts(b.arch_ifc)
-    except Exception:  # file already imported once; a re-read failing is a finding
-        raw = {"windows": truth["windows"], "doors": truth["doors"]}
-
-    # The IFC path through matchline is the same import; quantities are
-    # re-derived from the canonical model so the harness measures what the
-    # canonical model carries, not the raw reader.
+        truth, how = load_or_freeze_truth(b.arch_ifc)
+    except TruthMismatch as e:
+        row.status = "error"
+        row.detail = str(e)
+        return row
+    except Exception as e:  # truth that cannot be read is a finding
+        row.status = "error"
+        row.detail = f"ground truth failed: {type(e).__name__}: {e}"
+        return row
+    row.extras["truth"] = how
+    model_q = _model_quantities(truth_model)
+    score_against_truth(row, model_q, truth)
     model_rooms = [s for s in truth_model.spaces.values() if s.poly_type == "room"]
-    row.rooms_model = len(model_rooms)
-    row.area_err = _mape({s.id: s.area_m2 for s in model_rooms}, truth["areas"])
-    row.wall_len_err = 0.0 if truth["wall_len_m"] > 0 else None
-    row.windows_truth = raw["windows"]
-    row.windows_model = truth["windows"]
-    row.doors_truth = raw["doors"]
-    row.doors_model = _wall_openings(truth_model)["door"]
-    model_win_area = sum(
-        getattr(o, "area_m2", None) or (o.width_m * o.height_m)
-        for be in (getattr(truth_model, "bim_elements", None) or [])
-        if str(getattr(be, "ifc_class", "")).startswith("IfcWall")
-        for o in (getattr(be, "openings", None) or [])
-        if o.category == "window"
-    )
-    row.window_area_err = (
-        abs(model_win_area - truth["window_area_m2"]) / truth["window_area_m2"]
-        if truth["window_area_m2"]
-        else None
-    )
+    # LPD has no independent truth yet: both sides come from the import, so
+    # this column stays a self-consistency check (labelled in DATASETS.md).
     model_lpd = [s.lighting.lpd_w_m2 for s in model_rooms if s.lighting.lpd_w_m2 is not None]
-    tm, mm = _median(truth["lpds"]), _median(model_lpd)
+    tm, mm = _median(model_q["lpds"]), _median(model_lpd)
     row.lpd_median_err = (
         abs(mm - tm) / abs(tm) if (tm not in (None, 0) and mm is not None) else None
     )

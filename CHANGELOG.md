@@ -14,6 +14,13 @@ All notable changes to this project are documented here, in
 
 ### Added
 
+- Benchmark ground truth is now independent of matchline's IFC reader
+  (#1165): `scripts/bench_truth.py` reads room areas, exterior wall length
+  and windows/doors straight from each benchmark IFC with ifcopenshell and
+  freezes them as `truth.json` (sha256-pinned to the IFC). The scoreboard's
+  area error is scored against that truth by IfcSpace GlobalId, and the
+  hard-coded `wall_len_err = 0.0` is replaced by a measured exterior wall
+  length error (blank when the IFC states no `IsExternal` wall).
 - Five IFC-Bench buildings in the real-building benchmark config (#1165):
   ac20 and fzk-house (KIT, CC BY 4.0), digital-hub with its ventilation
   model (RWTH E3D, MIT), smiley-west (KIT, CC BY 4.0), and wbdg-office
