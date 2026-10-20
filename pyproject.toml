@@ -69,6 +69,9 @@ ui = ["gradio>=4.0"]
 dev = [
     "ruff==0.17.1",
     "mypy==2.4.0",
+    "deptry==0.23.1",
+    "matplotlib",
+    "pdfplumber",
 ]
 # pip-audit stays runtime-only in scope (#1139): the pip-audit job syncs
 # just this group and the project itself, then audits the resolved set.
@@ -79,6 +82,37 @@ audit = [
 # sdist/wheel metadata gate, now locked instead of pip-installed per run.
 release = [
     "twine",
+]
+
+[tool.deptry]
+# Single-file helper modules outside the shipped package (detector/ and
+# scripts/ tooling) import each other directly; they are first-party by
+# definition and must not require a PyPI declaration (#1190).
+known_first_party = [
+    "matchline",
+    "ap50", "classes", "degrade", "eca", "pdf_fixtures",
+    "report_ab_stats", "sahi_infer", "train_scratch",
+]
+
+[tool.deptry.per_rule_ignores]
+DEP001 = [
+    # datasets_adapter._rasterize_pdf lazily imports pymupdf only on the
+    # AEC-bench rasterization path; the package is heavy and undeclared by
+    # design. Declaring it (runtime dep or extra) is a maintainer call and
+    # the follow-up recorded on #1190.
+    "pymupdf",
+]
+DEP002 = [
+    # pytest plugins: imported by pytest itself, never by project code.
+    "pytest-cov", "pytest-xdist", "hypothesis",
+    # the openstudio extra exists to ship the OpenStudio CLI the sim jobs
+    # invoke; its Python module is never imported.
+    "openstudio",
+]
+DEP004 = [
+    # detector/, scripts/ and review_classifier/ tooling runs inside the dev
+    # environment by design, so dev-group imports there are intentional.
+    "matplotlib", "pdfplumber",
 ]
 
 [project.scripts]

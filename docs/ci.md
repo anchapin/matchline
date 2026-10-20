@@ -59,6 +59,10 @@ Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every M
 
 Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.
 
+## Dependency hygiene gate
+
+The `dependency hygiene` job (#1190) runs deptry over the repository and fails when an imported package is not declared in `pyproject.toml` (the #1070 bug class: `matchline review` died on an undeclared import while demo-smoke stayed green). Config lives in `[tool.deptry]` in `pyproject.toml`: `known_first_party` covers the single-file helper modules outside the shipped package (detector/ and scripts/ tooling import each other directly), `DEP001` ignores `pymupdf` (function-level lazy import on the AEC-bench rasterization path, declaring it is a maintainer call), and `DEP002`/`DEP004` ignores cover pytest plugin tooling, the OpenStudio CLI extra, and dev-environment imports inside the tooling scripts. New imports in shipped code fail the PR until they are declared.
+
 ## Release pipeline
 
 Publishing to PyPI is tag-driven (`release.yml`): pushing a `vX.Y.Z` tag whose name matches `pyproject.toml`'s version builds the sdist and wheel with `uv build`, runs `twine check` from the locked `release` dependency-group, smoke-tests the wheel with a fresh non-editable install (`matchline --help`, `pip check`), and publishes with `uv publish --trusted-publishing automatic` via PyPI trusted publishing (OIDC; no token secret lives in the repo). The `pypi` GitHub environment gates the publish job; `workflow_dispatch` dry-runs build+smoke without publishing.
