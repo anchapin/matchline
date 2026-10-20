@@ -21,6 +21,8 @@ import review.review_report as R
 import run_review
 from building_model import BuildingModel
 
+pytestmark = pytest.mark.browser  # #1192: runs as its own CI step, outside the default suite
+
 REQUIRED = os.environ.get("MATCHLINE_BROWSER_TESTS") == "1"
 
 

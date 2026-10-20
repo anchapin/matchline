@@ -2,6 +2,12 @@
 
 This document describes the automated gates that run on every PR and push.
 
+## Test Markers and Randomized Order
+
+Registered markers (pyproject `[tool.pytest.ini_options]`, #1192): `browser` drives a real browser and runs as its own CI step, outside the default suite; `openstudio` marks modules that require the OpenStudio extra (CI installs it, the module importor-skips without it; deselect locally with `-m "not openstudio"`); `slow` is reserved for long-running suites the caller excludes explicitly. Applying a marker to a module is a deliberate edit, not an accident.
+
+pytest-randomly (test extra) is active in CI, so test order and the `random` seeds vary per run: a test that only passes in the order it happens to be written fails on some runs. The seed is printed in the pytest header; reproduce a failure with `--randomly-seed=<N>`, or opt a local run out with `-p no:randomly`.
+
 ## Test Count Regression Gate
 
 **Purpose:** Prevent unintended test deletions or additions that could indicate broken tests or accidental removal of test coverage.

@@ -52,7 +52,18 @@ ocr-tesseract = ["pytesseract"]
 # COBie workbook reader for mechanical schedules (#974); lazy import
 mech = ["openpyxl"]
 # opencv-python-headless: same cv2 API, no libGL system dependency (#535)
-test = ["pytest", "pytest-cov", "pytest-xdist", "hypothesis", "opencv-python-headless", "scikit-learn", "pyyaml", "pyarrow", "openpyxl"]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "hypothesis",
+    "opencv-python-headless",
+    "scikit-learn",
+    "pyyaml",
+    "pyarrow",
+    "openpyxl",
+    "pytest-randomly>=5.0.0",
+]
 # FloorPlanCAD parquet loader (#683)
 datasets = ["pyarrow"]
 # Detector track: heavy. detector/ keeps its own venv on dev machines
@@ -248,6 +259,15 @@ files = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# #1192: the suites have always split by convention (the browser test runs
+# as its own CI step, the smoke workflows run their own files, the
+# OpenStudio extra importor-skips). Registering the markers makes the split
+# declarative and lets a local run deselect, e.g. -m "not openstudio".
+markers = [
+  "browser: drives a real browser (Playwright); runs as its own CI step, outside the default suite",
+  "openstudio: requires the OpenStudio extra; CI installs it, the module importor-skips without it",
+  "slow: long-running; excluded by the caller explicitly, never silently",
+]
 
 [tool.ruff]
 line-length = 100  # enforced (E501); geometry/XML literals opt out inline with `# noqa: E501`
