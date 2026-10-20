@@ -14,7 +14,6 @@ All notable changes to this project are documented here, in
 
 ### Added
 
-<<<<<<< HEAD
 - Benchmark ground truth is now independent of matchline's IFC reader
   (#1165): `scripts/bench_truth.py` reads room areas, exterior wall length
   and windows/doors straight from each benchmark IFC with ifcopenshell and
