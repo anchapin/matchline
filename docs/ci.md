@@ -33,23 +33,29 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
    - Ensure no tests were accidentally deleted during rebase/merge
    - Verify all test files are properly included
 
+## Toolchain
+
+Dev and CI environments are locked with `uv` (#1189): `uv.lock` at the repo root pins the resolved set for Python 3.10-3.13, `.python-version` pins local development to 3.12, and `[dependency-groups]` in `pyproject.toml` carries the CI tool pins (`dev`: ruff, mypy; `audit`: pip-audit). The merge-gating jobs (`quality`, `pip-audit`, `review-page-browser`, `detector-lint`) install with `astral-sh/setup-uv` and run everything through `uv sync --frozen` + `uv run --no-sync`, so a green run and its pip-audit result are reproducible day to day. The wheel, demo, python-matrix and platform-matrix jobs deliberately keep pip: they test the fresh-pip-user path, not the dev toolchain. Runtime dependencies in `pyproject.toml` stay ranged for consumers.
+
+Locally: `uv sync --frozen --extra test --extra openstudio`, then `uv run --no-sync python -m pytest tests/ -q` (3752 collected; expected per `ci.yml`).
+
 ## Other CI Gates
 
-- **Lint:** `ruff check .`
-- **Format:** `ruff format --check .`
-- **Pytest:** `python -m pytest tests/ -q`
+- **Lint:** `uv run --no-sync ruff check .`
+- **Format:** `uv run --no-sync ruff format --check .`
+- **Pytest:** `uv run --no-sync python -m pytest tests/ -q`
 - **Type checking:** `mypy` on a deliberately small module baseline (pyproject `[tool.mypy]`); imported repo modules are resolved but not checked, and the list grows module by module only intentionally (#1138). CI pins `mypy==2.4.0`; match it locally when widening the list.
 - **Coverage (informational):** the pytest run measures the shipped surface (`--cov`, config in pyproject `[tool.coverage]`) and posts the percentage plus per-module lines to the job summary. No gate yet (#1137): once the baseline is known, set `fail_under` slightly below it and raise only intentionally.
-- **Dependency security:** `pip-audit --strict` against the resolved runtime dependency set (job `pip-audit`). Fails on known CVEs in runtime deps; test-only tooling is out of its scope by design (#1139). A finding that cannot be fixed yet gets an `--ignore <id>` pin with the reason and the upgrade that clears it.
+- **Dependency security:** `pip-audit --strict` against the locked resolved runtime dependency set (job `pip-audit`, via the `audit` dependency-group). Fails on known CVEs in runtime deps; test-only tooling is out of its scope by design (#1139). A finding that cannot be fixed yet gets an `--ignore <id>` pin with the reason and the upgrade that clears it.
 - **Python pin:** all workflows (ci.yml jobs, release.yml, archcad-smoke.yml) run the same interpreter (3.12). A Python version change moves every workflow together; the archcad-smoke pin is not an independent knob (#1140).
 
 All gates must be green before merging to `develop`.
 
 ## Ruff version updates
 
-`ruff` is pinned to one exact version in two places that must agree: the `rev` in `.pre-commit-config.yaml` and the `ruff==X.Y.Z` install in `.github/workflows/ci.yml` (both jobs). Pre-commit requires `rev` to be an immutable tag, so a minor-version pin (`v0.16`) or a range is not possible there; a range in CI alone would let CI and local hooks drift apart.
+`ruff` is pinned to one exact version in three places that must agree: the `rev` in `.pre-commit-config.yaml`, the `ruff==X.Y.Z` entry in `[dependency-groups]` (`pyproject.toml`, resolved through `uv.lock`), and the `uvx ruff@X.Y.Z` spec in the `detector-lint` job. Pre-commit requires `rev` to be an immutable tag, so a minor-version pin (`v0.16`) or a range is not possible there; a range in CI alone would let CI and local hooks drift apart.
 
-Instead, Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three pins together. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
+Renovate (`renovate.json`) opens one grouped `ruff` PR against `develop` every Monday morning that bumps all three together: the pre-commit `rev` and the pyproject pin natively, the workflow `uvx ruff@` spec via the custom regex manager. Patch releases arrive within a week, and CI on that PR proves the new version still passes before it merges. Renovate is scoped to ruff only; every other dependency is disabled in its config.
 
 Renovate runs as a GitHub App, so it must be installed on the repository (https://github.com/apps/renovate) for the config to take effect.
 

@@ -63,6 +63,19 @@ openstudio = ["openstudio"]
 # One-page web app (#982): matchline-ui launches on 127.0.0.1:7860
 ui = ["gradio>=4.0"]
 
+[dependency-groups]
+# CI tool pins live here so the lockfile pins them and workflow files stop
+# carrying inline version pins; Renovate bumps these with the pre-commit pin.
+dev = [
+    "ruff==0.17.1",
+    "mypy==2.4.0",
+]
+# pip-audit stays runtime-only in scope (#1139): the pip-audit job syncs
+# just this group and the project itself, then audits the resolved set.
+audit = [
+    "pip-audit",
+]
+
 [project.scripts]
 matchline = "cli:main"
 matchline-ui = "ui.app:main"
