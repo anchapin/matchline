@@ -148,3 +148,46 @@ def test_missing_wall_truth_leaves_the_column_blank() -> None:
     assert row.wall_len_err is None
     assert row.area_err is None
     assert row.extras["wall_len"] == "why"
+
+
+def _body_wall_ifc(path: Path, with_body: bool) -> Path:
+    """One external wall with no Qto and no Axis; a swept body only if asked."""
+    import ifcopenshell.api.context
+    import ifcopenshell.api.geometry
+    import ifcopenshell.api.pset
+    import ifcopenshell.api.root
+
+    f = ifcopenshell.file(schema="IFC4")
+    ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="p")
+    w = ifcopenshell.api.root.create_entity(f, ifc_class="IfcWall", name="wall-bare")
+    w.GlobalId = "wall-bare"
+    ps = ifcopenshell.api.pset.add_pset(f, product=w, name="Pset_WallCommon")
+    ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"IsExternal": True})
+    if with_body:
+        body = ifcopenshell.api.context.add_context(
+            f, context_type="Model", context_identifier="Body"
+        )
+        rep = ifcopenshell.api.geometry.add_wall_representation(
+            f, context=body, length=10.0, height=3.0, thickness=0.2
+        )
+        ifcopenshell.api.geometry.assign_representation(f, product=w, representation=rep)
+    f.write(str(path))
+    return path
+
+
+def test_unmeasured_exterior_wall_falls_back_to_body_geometry(tmp_path: Path) -> None:
+    """A flagged wall with neither Qto length nor Axis must not shrink the
+    total: the body's longest plan extent stands in for it (#1205)."""
+    t = build_truth(_body_wall_ifc(tmp_path / "arch.ifc", with_body=True))
+    assert t["exterior_wall_length_m"] == pytest.approx(10.0)
+    assert t["exterior_walls_measured"] == 0
+    assert t["exterior_walls_from_geometry"] == 1
+    assert t["exterior_walls_unmeasured"] == 0
+
+
+def test_exterior_wall_with_no_measurable_tier_is_null_not_zero(tmp_path: Path) -> None:
+    t = build_truth(_body_wall_ifc(tmp_path / "arch.ifc", with_body=False))
+    assert t["exterior_wall_length_m"] is None
+    assert "measurable body" in t["exterior_wall_reason"]
+    assert t["exterior_walls_unmeasured"] == 1
+    assert t["exterior_walls_from_geometry"] == 0

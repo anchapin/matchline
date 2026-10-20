@@ -20,7 +20,7 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (3772; +3 rect-profile / face-set space footprint tests, #1204; +2 closet area-cap tests, #1209; +6 mapped-item/CSG body unwrap tests, #1203; +7 independent benchmark truth tests, #1165; +1 API reference doc sync test, #1167), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3774; +2 wall-length body-geometry fallback tests, #1205; +3 rect-profile / face-set space footprint tests, #1204; +2 closet area-cap tests, #1209; +6 mapped-item/CSG body unwrap tests, #1203; +7 independent benchmark truth tests, #1165; +1 API reference doc sync test, #1167), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**
