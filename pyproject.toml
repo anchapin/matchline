@@ -44,6 +44,13 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 
+# PyPI metadata links (#1193).
+[project.urls]
+Homepage = "https://github.com/anchapin/matchline"
+Repository = "https://github.com/anchapin/matchline"
+Issues = "https://github.com/anchapin/matchline/issues"
+Changelog = "https://github.com/anchapin/matchline/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 # OCR for room labels (lazy import; helpful error if missing)
 ocr = ["rapidocr_onnxruntime"]
