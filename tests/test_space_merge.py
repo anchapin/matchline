@@ -185,3 +185,28 @@ def test_toplit_area_recomputed_after_merge():
     merge_closets_and_shafts(m)
     # union of [5,7]x[0,2] and [6,8]x[0,2] = 6 m2, not 4+2 double counted at overlap
     assert abs(m.spaces["L1-101"].daylight.toplit_m2 - 6.0) < 1e-6
+
+
+def test_closet_over_cap_is_kept_and_flagged():
+    # #1209: a named closet over the area cap is a room the rule would swallow;
+    # keep it and flag for review instead of merging it away.
+    clo = _space("L1-103", (6, 0, 12, 2), "closet", 0.85)  # 12 m2, over the 10 m2 cap
+    clo.openings.append(_door("D7", (6.0, 1.0)))  # a valid door to 101, ignored by the cap
+    m = _model(_space("L1-101", (0, 0, 6, 4)), clo)
+    res = merge_closets_and_shafts(m)
+    assert res.merged == [] and "L1-103" in m.spaces
+    assert "closet cap" in res.kept[0].reason and "12.0 m2" in res.kept[0].reason
+    assert [i.kind for i in m.review_queue] == ["space_merge"]
+    # second run is a no-op: the flag already names the space
+    res2 = merge_closets_and_shafts(m)
+    assert res2.merged == [] and res2.kept == []
+    assert len(m.review_queue) == 1
+
+
+def test_closet_at_cap_still_merges():
+    clo = _space("L1-103", (6, 0, 11, 2), "closet", 0.85)  # exactly 10 m2, at the cap
+    clo.openings.append(_door("D7", (6.0, 1.0)))
+    m = _model(_space("L1-101", (0, 0, 6, 4)), clo)
+    res = merge_closets_and_shafts(m)
+    assert [r.target_id for r in res.merged] == ["L1-101"]
+    assert "L1-103" not in m.spaces and m.review_queue == []

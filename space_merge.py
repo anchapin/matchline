@@ -44,6 +44,14 @@ METHOD_REVIEW = "space_merge:review_edit"
 # thickness); also how far a door's plan centre may sit from a face.
 ADJ_TOL_M = 0.35
 DOOR_TOL_M = 0.35
+
+# #1209 (Alex, 2026-10-20): the closet rule is name-based with no size limit,
+# so a large STORAGE room could be swallowed and its walls become interior,
+# silently changing the host zone's floor area and conditioning math. Closets
+# at or under this cap merge as before; anything larger is kept as its own
+# space and flagged for review instead of merged. Shafts are not capped: they
+# are service volumes, not rooms.
+CLOSET_MAX_AREA_M2 = 10.0
 # Two neighbours whose shared-wall shares differ by less than this are a tie.
 TIE_FRAC = 0.005
 TARGET_TYPES = frozenset({"room"})
@@ -455,6 +463,15 @@ def merge_closets_and_shafts(
         (s for s in model.spaces.values() if s.poly_type == "closet"), key=lambda s: s.id
     ):
         if sp.id in flagged or sp.id in skip:
+            continue
+        over = _poly(sp)
+        if over is not None and over.area > CLOSET_MAX_AREA_M2:
+            _flag(
+                model,
+                sp,
+                f"its area {over.area:.1f} m2 exceeds the {CLOSET_MAX_AREA_M2:g} m2 closet cap",
+                result,
+            )
             continue
         _merge_closet(model, sp, door_list, result)
     for sp in sorted(
