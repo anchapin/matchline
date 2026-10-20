@@ -95,6 +95,46 @@
       "arch_ifc": "~/workspace/datasets/matchline-bench/molio/arch.ifc",
       "hvac_ifc": null,
       "drawing_set": null
+    },
+    {
+      "name": "ac20",
+      "source_url": "https://huggingface.co/datasets/sylvainHellin/ifc-bench/tree/main/projects/ac20",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/ac20/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "digital-hub",
+      "source_url": "https://huggingface.co/datasets/sylvainHellin/ifc-bench/tree/main/projects/digital_hub",
+      "license": "MIT",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/digital-hub/arch.ifc",
+      "hvac_ifc": "~/workspace/datasets/matchline-bench/digital-hub/hvac.ifc",
+      "drawing_set": null
+    },
+    {
+      "name": "fzk-house",
+      "source_url": "https://huggingface.co/datasets/sylvainHellin/ifc-bench/tree/main/projects/fzk_house",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/fzk-house/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "smiley-west",
+      "source_url": "https://huggingface.co/datasets/sylvainHellin/ifc-bench/tree/main/projects/smiley_west",
+      "license": "CC BY 4.0",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/smiley-west/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
+    },
+    {
+      "name": "wbdg-office",
+      "source_url": "https://huggingface.co/datasets/sylvainHellin/ifc-bench/tree/main/projects/wbdg_office",
+      "license": "CC BY 4.0 per IFC-Bench (original WBDG release CC BY-ND 3.0; read-only use)",
+      "arch_ifc": "~/workspace/datasets/matchline-bench/wbdg-office/arch.ifc",
+      "hvac_ifc": null,
+      "drawing_set": null
     }
   ]
 }

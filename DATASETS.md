@@ -276,6 +276,52 @@ is not on disk shows as `missing`.
   this building by design; the model reports no windows it cannot locate, and
   never guesses positions. Doors are genuinely absent (0 `IfcDoor`).
 
+- IFC-Bench projects, <https://huggingface.co/datasets/sylvainHellin/ifc-bench>
+  (TUM, Hellin et al. 2026; each project ships its own `license.txt`). Five
+  joined `scripts/benchmarks.json` on 2026-10-20; checked by reading each IFC
+  with ifcopenshell:
+  - `ac20`: KIT AC20 office (KIT IAI), CC BY 4.0. 10.9 MB IFC4, 5 storeys,
+    82 IfcSpaces all with quantity sets, 121 walls, 206 windows, 77 doors. No
+    wall carries `Pset_WallCommon.IsExternal = True`, so exterior wall-length
+    truth is unavailable for it.
+  - `digital-hub`: RWTH E3D DigitalHub office (<https://github.com/RWTH-E3D/DigitalHub>),
+    MIT. 9.0 MB IFC4 architecture model, 3 storeys, 64 IfcSpaces with
+    quantity sets, 178 walls (100 external), 47 windows, 64 doors. The
+    ventilation IFC (12.7 MB, 296 terminals) is wired as `hvac_ifc`
+    (stage `ventilation.ifc` as `digital-hub/hvac.ifc`).
+  - `fzk-house`: KIT FZK-Haus, CC BY 4.0. 2.6 MB IFC4, 2 storeys, 7 IfcSpaces,
+    13 walls (none flagged external), 11 windows, 5 doors. Small sanity row.
+  - `smiley-west`: KIT Smiley West terraced houses, CC BY 4.0 (a corrected
+    version is also on <https://zenodo.org/records/10680698>, CC BY 4.0).
+    6.1 MB IFC4, 5 storeys, 140 IfcSpaces, 281 walls (152 external), 80
+    windows, 170 doors.
+  - `wbdg-office`: WBDG Common BIM Files two-storey office, architectural IFC.
+    4.1 MB IFC2X3, 3 storeys, 99 IfcSpaces, 487 walls (18 external), 69
+    windows, 102 doors. **License caveat:** IFC-Bench lists CC BY 4.0, but its
+    `license.txt` credits the Medical-Dental files, and the original
+    buildingSMART alliance release was listed as CC BY-ND 3.0 (same
+    discrepancy as Duplex). Benchmark use only reads the file, which either
+    license allows; never commit renders of it. Drop this row from 1.0 claims
+    until the license is confirmed.
+
+  Not adopted from IFC-Bench: `sixty5` (architecture IFC is 342.7 MB, over the
+  100 MB import cap), `west_riverside_hospital` (CC BY 3.0, 80.9 MB IFC4
+  architecture model; not yet inspected, candidate for a later row), the four
+  GPL-3 BIMserver models (`4351`, `hitos`, `ettenheim_gis`,
+  `samuel_macalister_sample_house`), `schependomlaan` (already rejected: no
+  IfcSpaces), and the `fantasy_*` TUM student models (MIT; overlap the GNI
+  rows). Staging, for each adopted project (`<p>` is the IFC-Bench project
+  name, `<b>` the benchmark row name):
+
+  ```bash
+  mkdir -p ~/workspace/datasets/matchline-bench/<b>
+  curl -L -o ~/workspace/datasets/matchline-bench/<b>/arch.ifc \
+    "https://huggingface.co/datasets/sylvainHellin/ifc-bench/resolve/main/projects/<p>/arc.ifc"
+  # digital-hub only:
+  curl -L -o ~/workspace/datasets/matchline-bench/digital-hub/hvac.ifc \
+    "https://huggingface.co/datasets/sylvainHellin/ifc-bench/resolve/main/projects/digital_hub/ventilation.ifc"
+  ```
+
 **Rejected candidates (2026-10-15 licensed-data search):** Schependomlaan
 as-planned IFCs (same community repo, CC BY 4.0) carry no IfcSpaces (no
 ground truth); the Krijnen & Hesselink balcony models
@@ -324,7 +370,7 @@ config file):
 }
 ```
 
-Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists twelve buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`, and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`.
+Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists seventeen buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149, and from IFC-Bench ac20, digital-hub, fzk-house, smiley-west, wbdg-office); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`, and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`.
 
 **2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
 score; rooms, area, window and door counts match ground truth everywhere
