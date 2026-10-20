@@ -4202,7 +4202,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         )
                         if (
                             min(sxs) < -0.5
-                            or max(sxs) > length_m + 0.5
+                            or (length_m is not None and max(sxs) > length_m + 0.5)
                             or min(abs(v) for v in sys) > _DIRECT_FILL_WALL_TOL_M
                             or min(szs) < -0.5
                             or max(szs) > height_lim

@@ -112,3 +112,25 @@ def test_fills_relationships_still_win(tmp_path):
     o = wins[0]
     assert o.provenance.method == "ifc_import:tier0:opening:solid"
     assert "no IfcRelFillsElement" not in (o.provenance.note or "")
+
+
+def test_bodyless_wall_receives_direct_fill(tmp_path):
+    """A wall with no extractable body still gets its floating fill.
+
+    bsi-clinic regressed: a wall whose dims extraction fails leaves
+    ``length_m`` None, and the placement attach compared against it
+    unguarded, raising TypeError on import.
+    """
+    b = IfcBuilder()
+    box_plan(b, east_window=False)
+    wall = b.wall("bodyless", (12.0, 0.0), (16.0, 0.0))
+    b.f.remove(wall.Representation)
+    floating_window(b, wall, 2.0, width=1.4, height=1.6, sill=0.8)
+    path = b.write(tmp_path / "bodyless.ifc")
+    m = import_ifc(path)
+    wins = _windows(m)
+    assert len(wins) == 1
+    o = wins[0]
+    assert o.width_m == pytest.approx(1.4, abs=0.01)
+    assert o.height_m == pytest.approx(1.6, abs=0.01)
+    assert o.provenance.confidence == pytest.approx(0.85)
