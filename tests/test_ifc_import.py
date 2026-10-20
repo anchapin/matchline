@@ -1063,7 +1063,10 @@ def _write_ifc2x3_fixture(path):
     _Ag.assign_object(f, products=[storey], relating_object=building)
 
     wall = f.create_entity("IfcWall", GlobalId=_guid.new(), OwnerHistory=owner, Name="W1")
-    wall.ObjectPlacement = _placement(f, (0.0, 0.0, 0.0), storey.ObjectPlacement)
+    # +0.1 nudges the wall onto the space footprint's edge (#1204 gave the
+    # space a real rect-profile footprint; centered on the placement, the
+    # wall would read as an interior partition and leave the envelope)
+    wall.ObjectPlacement = _placement(f, (0.0, 0.1, 0.0), storey.ObjectPlacement)
     _add_solid(f, wall, _rect_profile(f, 10.0, 0.2, -5.0, -0.1), 3.0, body)
     _Sp.assign_container(f, products=[wall], relating_structure=storey)
 

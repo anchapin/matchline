@@ -252,6 +252,43 @@ def _rect_profile_dims(solid, scale):
     return None
 
 
+def _rect_profile_footprint(solid, scale):
+    """([(x, y)] solid-local, depth_m) for an IfcRectangleProfileDef swept area (#1204).
+
+    The profile rectangle sits centered on the profile's Position, then the
+    solid's Position maps it into the element frame; both rotations ride
+    along (the common authoring case has both ~Z-up, so the XY rotation from
+    RefDirection carries, as in _axis2placement_2d). A tilted solid Axis, or
+    a profile Position with a non-X RefDirection, returns None and the
+    caller degrades, the same rule _body_axis_local applies.
+    """
+    p = solid.SweptArea
+    if not p.is_a("IfcRectangleProfileDef"):
+        return None
+    pos = getattr(solid, "Position", None)
+    if pos is not None:
+        if not _unit_ok(getattr(pos, "Axis", None), (0.0, 0.0, 1.0)):
+            return None
+    ppos = getattr(p, "Position", None)
+    pt = (0.0, 0.0, 0.0, 0.0)
+    if ppos is not None:
+        if not _unit_ok(getattr(ppos, "RefDirection", None), (1.0, 0.0), tol=1e-3):
+            return None
+        c = ppos.Location.Coordinates
+        pt = (0.0, float(c[0]) * scale, float(c[1]) * scale, 0.0)
+    st = (0.0, 0.0, 0.0, 0.0)
+    if pos is not None:
+        ang, x, y, _z = _axis2placement_2d(pos)
+        st = (ang, x * scale, y * scale, 0.0)
+    w, h = float(p.XDim) * scale, float(p.YDim) * scale
+    corners = ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2))
+    pts = []
+    for cx, cy in corners:
+        lx, ly = _world_xy(pt[0], pt[1], pt[2], cx, cy)
+        pts.append(_world_xy(st[0], st[1], st[2], lx, ly))
+    return pts, float(solid.Depth) * scale
+
+
 # ---------------------------------------------------------------------------
 # Wall body centreline vs reference line (#579)
 # ---------------------------------------------------------------------------
@@ -469,6 +506,68 @@ def _face_set_extents(el, scale):
         ys.append(float(c[1]) * scale)
         zs.append(float(c[2]) * scale)
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+
+
+def _hull_2d(points):
+    """Convex hull of 2D points (monotone chain), counter-clockwise, or None."""
+    pts = sorted(set((round(x, 9), round(y, 9)) for x, y in points))
+    if len(pts) < 3:
+        return None
+
+    def _half(seq):
+        out = []
+        for q in seq:
+            while (
+                len(out) >= 2
+                and (out[-1][0] - out[-2][0]) * (q[1] - out[-2][1])
+                - (out[-1][1] - out[-2][1]) * (q[0] - out[-2][0])
+                <= 0
+            ):
+                out.pop()
+            out.append(q)
+        return out
+
+    lower, upper = _half(pts), _half(reversed(pts))
+    hull = lower[:-1] + upper[:-1]
+    return hull if len(hull) >= 3 else None
+
+
+def _face_set_footprint(sp, scale):
+    """([(x, y)] space-local) footprint from IfcFaceBasedSurfaceModel items (#1204).
+
+    Every IfcPolyLoop vertex of the model's faces is collected in the space's
+    own frame; the plan footprint is the convex hull of the scaled XY points,
+    the bbox rectangle standing in when the hull degenerates. None when there
+    is nothing usable.
+    """
+    rep = getattr(sp, "Representation", None)
+    if rep is None:
+        return None
+    xs, ys = [], []
+    for r in rep.Representations or []:
+        if r.RepresentationIdentifier not in ("Body",):
+            continue
+        for it in r.Items or []:
+            if not it.is_a("IfcFaceBasedSurfaceModel"):
+                continue
+            for fbsm in it.FbsmFaces or []:
+                for face in fbsm.CfsFaces or []:
+                    for bound in face.Bounds or []:
+                        loop = getattr(bound, "Bound", None)
+                        if loop is not None and loop.is_a("IfcPolyLoop"):
+                            for pt in loop.Polygon or []:
+                                c = pt.Coordinates
+                                xs.append(float(c[0]) * scale)
+                                ys.append(float(c[1]) * scale)
+    if len(xs) < 3:
+        return None
+    hull = _hull_2d(zip(xs, ys))
+    if hull is None:
+        # degenerate hull (collinear): the bbox rectangle stands in
+        return ([(min(xs), min(ys)), (max(xs), min(ys)), (max(xs), max(ys)), (min(xs), max(ys))],)[
+            0
+        ]
+    return hull
 
 
 # ---------------------------------------------------------------------------
@@ -1305,6 +1404,10 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
     )
     solids = _body_extrusions(sp)
     fp = _polyline_footprint(solids[0], scale) if solids else None
+    if fp is None and solids:
+        # #1204: rectangular swept areas (Revit rooms among them) carry no
+        # curve to walk; the profile's dims + Position build the rectangle.
+        fp = _rect_profile_footprint(solids[0], scale)
     if fp is not None:
         pts_local, depth = fp
         ang, tx, ty, _tz = _placement_transform(sp, scale)
@@ -1322,19 +1425,28 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
             conf, method = 0.9, "ifc_import:tier0:space:curve_set"
             note = f"footprint from IfcGeometricCurveSet ({len(polygon)} pts)"
         else:
-            q = _quantities(sp, "Qto_SpaceBaseQuantities", scale)
-            if "GrossFloorArea" in q:
-                area = q["GrossFloorArea"]
-                volume = q.get("GrossVolume")
-                conf, method = 0.6, "ifc_import:tier0:space:quantity"
-                note = "no solid geometry; area from GrossFloorArea"
-            model.flag_for_review(
-                "space_no_geometry",
-                f"space {sid} ({sp_name}) has no solid geometry",
-                conf,
-                prov_fn("ifc_import:tier0:space", conf, note),
-                target={"kind": "space", "id": sid},
-            )
+            fp_fb = _face_set_footprint(sp, scale)  # #1204: face-based body items
+            if fp_fb is not None:
+                ang, tx, ty, _tz = _placement_transform(sp, scale)
+                polygon = [_to_canonical(*_world_xy(ang, tx, ty, lx, ly)) for lx, ly in fp_fb]
+                area = abs(_shoelace(polygon))
+                volume = None
+                conf, method = 0.85, "ifc_import:tier0:space:face_set"
+                note = f"footprint from IfcFaceBasedSurfaceModel hull ({len(polygon)} pts)"
+            else:
+                q = _quantities(sp, "Qto_SpaceBaseQuantities", scale)
+                if "GrossFloorArea" in q:
+                    area = q["GrossFloorArea"]
+                    volume = q.get("GrossVolume")
+                    conf, method = 0.6, "ifc_import:tier0:space:quantity"
+                    note = "no solid geometry; area from GrossFloorArea"
+                model.flag_for_review(
+                    "space_no_geometry",
+                    f"space {sid} ({sp_name}) has no solid geometry",
+                    conf,
+                    prov_fn("ifc_import:tier0:space", conf, note),
+                    target={"kind": "space", "id": sid},
+                )
     if height is None:
         qh = _quantities(sp, "Qto_SpaceBaseQuantities", scale).get("Height")
         if qh:
