@@ -36,7 +36,8 @@ Per building with data present:
   the OpenStudio CLI on PATH it also checks the export imports cleanly
   (``openstudio gbxml --translate``); without it that column reads ``skipped``.
 
-Writes a markdown scoreboard plus the raw JSON. ``DATASETS.md`` records the
+Writes a markdown scoreboard plus the raw JSON, and a convention report
+per building (``<building>-convention.json``, #1165). ``DATASETS.md`` records the
 candidates, licenses and source URLs; the benchmark itself never commits data.
 """
 
@@ -311,8 +312,29 @@ def evaluate_building(
     gbxml = _write_gbxml(b, out_dir, truth_model, simp["sres"], simp["wall_height"], simplify_tol)
     if gbxml is not None:
         row.surfaces_out = _gbxml_surface_counts(gbxml)
+    row.extras["convention_report"] = _convention_report(
+        truth_model, out_dir / f"{b.name}-convention.json"
+    )
     row.openstudio = _openstudio_check(b, out_dir, gbxml) if openstudio else "skipped"
     return row
+
+
+def _convention_report(model: BuildingModel, path: Path) -> str:
+    """Attach the export convention report (#1165) to the run's artifacts.
+
+    Writes ``<building>-convention.json`` next to the scoreboard: volume
+    bias, non-room area, area budget and area definitions from
+    ``review.convention_report``. A report that cannot be built is a
+    finding recorded on the row, not a crash.
+    """
+    try:
+        from review.convention_report import build_convention_report
+
+        report = build_convention_report(model)
+        path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+        return "written"
+    except Exception as e:
+        return f"error: {type(e).__name__}: {e}"
 
 
 def _cross_frontend(b: Building, out_dir: Path) -> str:

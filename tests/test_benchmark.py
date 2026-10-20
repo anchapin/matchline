@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.benchmark import (  # noqa: E402
     Building,
     Row,
+    _convention_report,
     _gbxml_surface_counts,
     _hvac_columns,
     _mape,
@@ -180,3 +181,28 @@ def test_gbxml_surface_counts(tmp_path: Path) -> None:
     )
     assert _gbxml_surface_counts(p) == 2
     assert _gbxml_surface_counts(tmp_path / "nope.gbxml") is None
+
+
+def test_convention_report_written_with_the_run(tmp_path: Path) -> None:
+    # #1165: each benchmark run attaches a convention report next to the
+    # scoreboard, so published accuracy numbers carry their conventions.
+    from tests.model_factory import make_clean_model
+
+    out = tmp_path / "bsi-clinic-convention.json"
+    verdict = _convention_report(make_clean_model(), out)
+    assert verdict == "written" and out.exists()
+    payload = json.loads(out.read_text())
+    assert payload["schema"] == "matchline.convention_report/1"
+    assert "volume_bias" in payload and "non_room_area" in payload
+
+
+def test_convention_report_failure_is_recorded_not_raised(tmp_path: Path) -> None:
+    class Broken:
+        name = "broken"
+
+        @property
+        def spaces(self):
+            raise RuntimeError("no spaces")
+
+    verdict = _convention_report(Broken(), tmp_path / "b.json")
+    assert verdict.startswith("error: ") and not (tmp_path / "b.json").exists()
