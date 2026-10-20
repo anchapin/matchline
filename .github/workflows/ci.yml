@@ -197,10 +197,12 @@ jobs:
           python-version: "3.12"
 
       - name: Sync the locked dev environment and install Playwright Chromium
-        # playwright is a CI-only dep, added ephemerally with --with
+        # playwright is a CI-only dep: installed into the synced venv (not
+        # locked), matching the pip behavior this job had before
         run: |
           uv sync --frozen --extra test --extra openstudio
-          uv run --with "playwright>=1.48,<2" python -m playwright install --with-deps chromium
+          uv pip install "playwright>=1.48,<2"
+          uv run --no-sync python -m playwright install --with-deps chromium
 
       - name: Run browser test
         env:
