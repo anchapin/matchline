@@ -1,0 +1,30 @@
+# Shared whitespace and indent rules for the files ruff does not govern (#1193):
+# YAML (workflows, configs), Markdown (docs), TOML, JSON. Python stays under
+# ruff; the [*.py] block records the same shape for non-ruff tooling.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.toml]
+indent_style = space
+indent_size = 2
+
+[*.{json,jsonc}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Hard line breaks in the docs rely on trailing spaces.
+trim_trailing_whitespace = false
