@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.openstudio  # #1192: registered marker; module needs the OpenStudio extra
 openstudio = pytest.importorskip("openstudio")
 
 from bem.bem_export import BEMOpeningUnit, write_gbxml  # noqa: E402
