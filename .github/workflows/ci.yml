@@ -179,6 +179,30 @@ jobs:
         # error, so uninstalling is the reliable exclusion).
         run: uv pip uninstall matchline && uv run --no-sync pip-audit --strict
 
+  deptry:
+    # #1190: the #1070 bug class - a shipped module imports a package that is
+    # only a transitive/extras dependency, and the demo-smoke job stays green
+    # because it never touches that import path. deptry fails the PR when an
+    # imported package is not declared.
+    name: dependency hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Sync the locked dev environment
+        run: uv sync --frozen --group dev
+
+      - name: Declared dependencies must cover imported packages
+        # config lives in [tool.deptry] in pyproject.toml
+        run: uv run --no-sync deptry .
+
   review-page-browser:
     # #802: drive review.html in headless Chromium (keys, edit prompt, layer
     # toggle, sheet highlight, export -> matchline review --apply).
