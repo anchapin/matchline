@@ -94,6 +94,13 @@ known_first_party = [
     "report_ab_stats", "sahi_infer", "train_scratch",
 ]
 
+# cv2 and yaml resolve to their distribution names statically; without this
+# map deptry falls back to the local environment, so a dev-only sync (the CI
+# job) reports them as missing while a full venv hides the problem.
+[tool.deptry.package_module_name_map]
+"opencv-python-headless" = "cv2"
+pyyaml = "yaml"
+
 [tool.deptry.per_rule_ignores]
 DEP001 = [
     # datasets_adapter._rasterize_pdf lazily imports pymupdf only on the
