@@ -222,9 +222,12 @@ omit = [
 ]
 
 [tool.coverage.report]
-# Informational for now (#1137): CI prints the percentage in the job
-# summary. Once the baseline number is known, set fail_under slightly
-# below it and raise it only intentionally.
+# #1191: the ratchet is on. Baseline 85.6% measured by CI on develop
+# b3e204d (2026-10-19); fail_under sits slightly below it (per the
+# #1137 note) so a run-to-run wobble does not red CI, and raising it
+# from here is a deliberate, reviewed edit - never let a new commit
+# lower the floor.
+fail_under = 85.0
 precision = 1
 show_missing = false
 
