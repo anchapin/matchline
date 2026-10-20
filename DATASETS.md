@@ -391,3 +391,28 @@ benchmark also writes it on first run); a changed IFC under an old
 `truth.json` is an `error` row until it is rebuilt with `--force`. A building
 whose IFC flags no wall as external (gni-18) leaves the wall length column
 blank rather than 0. LPD median error is still a self-consistency check.
+
+**2026-10-20 scoreboard (independent truth, no `--openstudio`):** all seventeen
+buildings import and score (molio with `MATCHLINE_MAX_IFC_ELEMENTS=1500000`).
+Each building's run artifacts now include `<building>-convention.json` (volume
+bias, non-room area, area budget, area definitions from
+`review/convention_report.py`), so the convention report is attached to every
+benchmark run (#1165). Measured per-slice accuracy against frozen IFC truth:
+
+- Rooms: 1,323 truth spaces vs 1,304 model spaces (98.6% recovered). Paired
+  room area error: median 0.0%, range 0.0%-109.7%. The duplex outlier (21/21
+  rooms matched, areas ~110% high) is a real finding, not a scoring bug.
+- Exterior wall length: median error 26.9%, range 3.5%-797.8% over the 14
+  buildings whose IFC flags walls as external (ac20, fzk-house and gni-18 flag
+  none, so their column is blank). gni-49's ~800% and esplanades'/molio's
+  ~100% are open defects to file, not hidden by the median.
+- Windows: 1,423 truth vs 1,343 model (94.4%). Window-area error: median
+  0.19%, range 0.0%-100% (gni-49 recovers 0 windows, #1009; esplanades and
+  molio area off by 100%; digital-hub 36.2%).
+- Doors: 1,155 truth vs 1,143 model (99.0%).
+- LPD: still no independent truth; the column is a self-consistency check and
+  stayed blank this run. OpenStudio and cross-frontend columns were not
+  exercised this run.
+
+Error bounds are the min/median/max spread across buildings, as published;
+[`docs/1.0_claims.md`](docs/1.0_claims.md) cites only these measured numbers.
