@@ -1497,10 +1497,18 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
 
 
 def _try_curve_set_footprint(sp, scale):
-    """Try to read a 2-D IfcGeometricCurveSet footprint from sp."""
+    """Try to read a 2-D IfcGeometricCurveSet footprint from sp.
+
+    The FootPrint representation's points are space-local (IFC composes
+    ObjectPlacement on top), so they go through the space's placement chain
+    like the solid and face-set paths (#1229): leaving them raw parks every
+    polygon at the space-local origin, off the walls' world frame, and Tier 1
+    finds no spaces to probe (esplanades: 0 of 212 walls classified).
+    """
     rep = getattr(sp, "Representation", None)
     if not rep:
         return []
+    ang, tx, ty, _tz = _placement_transform(sp, scale)
     for shape_rep in getattr(rep, "Representations", None) or []:
         for item in getattr(shape_rep, "Items", None) or []:
             if not item.is_a("IfcGeometricCurveSet"):
@@ -1513,7 +1521,7 @@ def _try_curve_set_footprint(sp, scale):
                     for p in getattr(curve, "Points", None) or []
                 ]
                 if len(pts) >= 3:
-                    return [_to_canonical(x, y) for x, y in pts]
+                    return [_to_canonical(*_world_xy(ang, tx, ty, x, y)) for x, y in pts]
     return []
 
 
