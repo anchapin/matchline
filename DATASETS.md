@@ -398,7 +398,7 @@ compared `import_ifc` with itself, and wall length error was hard-coded to
 0.0. The harness now scores against `truth.json`, read straight from each IFC
 with ifcopenshell by `scripts/bench_truth.py` (room `NetFloorArea`, or body
 geometry when the file has no quantities; exterior wall length from
-`Pset_WallCommon.IsExternal` walls; raw window/door counts) and pinned to the
+`Pset_WallCommon.IsExternal` walls; window area from the window's tessellated body (two largest extents), falling back to stated `OverallWidth`/`OverallHeight` when the body is not tessellable, since gni-49's stated attributes are corrupt #1220; raw door counts) and pinned to the
 IFC's sha256. Freeze it once per building with
 `python scripts/bench_truth.py --config scripts/benchmarks.json` (the
 benchmark also writes it on first run); a changed IFC under an old

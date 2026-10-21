@@ -23,8 +23,13 @@ IFC reader (``ifc.ifc_import``); ``tests/test_bench_truth.py`` pins that.
   tessellated body from ``ifcopenshell.geom`` (the same geometry policy the
   room areas use). A file with no wall flagged external has no exterior wall
   truth (``null`` plus a reason), never 0.
-- windows / doors: raw ``by_type`` counts; window area is
-  ``OverallWidth * OverallHeight`` where both are stated.
+- windows / doors: raw ``by_type`` counts; window area is the product of
+  the two largest extents of the window's tessellated body from
+  ``ifcopenshell.geom`` (the same geometry policy the room areas use),
+  falling back to ``OverallWidth * OverallHeight`` where the body is not
+  tessellable and both are stated: stated attributes can lie (gni-49
+  carries the frame thickness, 0.1795 m, in the width field and swaps the
+  two inconsistently, #1220).
 
 ``truth.json`` carries the IFC's sha256. The benchmark refuses a truth file
 whose sha256 no longer matches the IFC, so truth cannot drift silently.
@@ -39,7 +44,7 @@ import math
 import sys
 from pathlib import Path
 
-TRUTH_SCHEMA = "matchline.bench_truth/1"
+TRUTH_SCHEMA = "matchline.bench_truth/2"
 TRUTH_FILENAME = "truth.json"
 
 
@@ -233,6 +238,36 @@ def _geom_plan_length(el, scale: float) -> float | None:
     return best if best > 0 else None
 
 
+def _geom_window_area_m2(el) -> float | None:
+    """Window area (m2) from the element's tessellated body, or None.
+
+    A window body is a thin box: the frame's thickness is the smallest
+    bounding-box extent, so the area is the product of the two largest
+    extents of the tessellated body from ``ifcopenshell.geom``, in metres
+    (a non-rectangular window approximates its opening). Like
+    ``_geom_floor_area``, the same geometry policy the room areas use;
+    ``gni-49`` proves the stated attributes cannot be trusted when a body
+    exists (#1220). Returns None when the body cannot be tessellated or has
+    fewer than two positive extents.
+    """
+    try:
+        import ifcopenshell.geom
+        import numpy as np
+
+        settings = ifcopenshell.geom.settings()
+        settings.set("use-world-coords", True)
+        shape = ifcopenshell.geom.create_shape(settings, el)
+        verts = np.asarray(shape.geometry.verts, dtype=float).reshape(-1, 3)
+    except Exception:
+        return None
+    if len(verts) < 3:
+        return None
+    dims = np.sort(verts.max(axis=0) - verts.min(axis=0))
+    if dims[1] <= 0:
+        return None
+    return float(dims[1] * dims[2])
+
+
 def _is_external(psets: dict) -> bool | None:
     v = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
     return v if isinstance(v, bool) else None
@@ -306,11 +341,22 @@ def build_truth(path: Path) -> dict:
     windows = f.by_type("IfcWindow")
     win_area = 0.0
     win_sized = 0
+    win_geom = 0
     for w in windows:
-        ww, hh = getattr(w, "OverallWidth", None), getattr(w, "OverallHeight", None)
-        if ww and hh:
-            win_area += float(ww) * float(hh) * scale * scale
+        area = _geom_window_area_m2(w)
+        source = "geometry"
+        if area is None:
+            # stated attributes are the last resort: gni-49 shows they can
+            # carry the frame thickness in the width field (#1220)
+            ww, hh = getattr(w, "OverallWidth", None), getattr(w, "OverallHeight", None)
+            if ww and hh:
+                area = float(ww) * float(hh) * scale * scale
+                source = "measured"
+        if area is not None:
+            win_area += area
             win_sized += 1
+            if source == "geometry":
+                win_geom += 1
 
     return {
         "schema": TRUTH_SCHEMA,
@@ -325,6 +371,7 @@ def build_truth(path: Path) -> dict:
         "exterior_walls_unmeasured": ext_unmeasured,
         "windows": len(windows),
         "windows_sized": win_sized,
+        "windows_from_geometry": win_geom,
         "window_area_m2": win_area if win_sized else None,
         "doors": len(f.by_type("IfcDoor")),
     }
