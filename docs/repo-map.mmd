@@ -44,6 +44,7 @@ graph LR
     ifc_ifc_wall_linings
     ifc_ifc_wall_loops
     ifc_ifc_wall_split
+    ifc_wall_pset
   end
   subgraph HVAC
     hvac_legend
@@ -258,12 +259,14 @@ graph LR
   ifc_ifc_import --> ifc_ifc_wall_linings
   ifc_ifc_import --> ifc_ifc_wall_loops
   ifc_ifc_import --> ifc_ifc_wall_split
+  ifc_ifc_import --> ifc_wall_pset
   ifc_ifc_import --> materials
   ifc_ifc_import --> pipeline_exceptions
   ifc_ifc_import --> solar_aperture
   ifc_ifc_import --> space_merge
   ifc_ifc_roof_planes --> geometry_roof_geometry
   ifc_ifc_space_borders --> building_model
+  ifc_ifc_wall_linings --> ifc_wall_pset
   ifc_ifc_wall_loops --> building_model
   ifc_ifc_wall_split --> ifc_ifc_wall_joins
   ingest_elevation_sheets --> grid_detect

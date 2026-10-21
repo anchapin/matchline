@@ -55,6 +55,8 @@ CLADDING_LINED_FRAC = 0.5  # share of a cladding wall's length its hosts must co
 
 ENVELOPE_METHOD = "ifc_import:tier0:envelope"
 
+from ifc.wall_pset import PSET_EXTERNAL_MARK  # noqa: E402
+
 
 def _cross(ax, ay, bx, by):
     return ax * by - ay * bx
@@ -169,6 +171,16 @@ def exclude_linings(model, thickness_by_gid, pairs_out=None):
             w.provenance.note += (
                 f"; looks like a lining of {host} ({kind}) but hosts "
                 f"{len(el.openings)} opening(s), so kept in the envelope"
+            )
+            continue
+        if PSET_EXTERNAL_MARK in (w.provenance.note or ""):
+            # authored data outranks the geometric lining probe (#1226): a
+            # pset-exterior wall stays in the envelope even when it reads
+            # as a lining of a thicker neighbour
+            counts["pset_external"] = counts.get("pset_external", 0) + 1
+            w.provenance.note += (
+                f"; looks like a lining of {host} ({kind}) but the wall's pset "
+                "says IsExternal, so kept in the envelope (#1226)"
             )
             continue
         counts["lining"] += 1

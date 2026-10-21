@@ -195,3 +195,33 @@ def test_role_round_trips_through_json():
     m.bim_elements = [BimElement("T", "IfcWall", role="lining")]
     back = BuildingModel.from_json(m.to_json())
     assert back.bim_elements[0].role == "lining"
+
+
+def test_lining_lookalike_with_pset_external_is_kept():
+    from building_model import BimElement, BuildingModel, EnvelopeWall, Provenance
+    from ifc.ifc_wall_linings import exclude_linings
+    from ifc.wall_pset import PSET_EXTERNAL_MARK
+
+    def prov(g, extra=""):
+        return Provenance(
+            sheet_id="s",
+            revision="r",
+            method="ifc_import:tier0:envelope",
+            confidence=0.95,
+            note=f"GlobalId={g} x{extra}",
+        )
+
+    m = BuildingModel()
+    m.envelope = [
+        EnvelopeWall("L1-EW1", "", [0, 0], [6, 0], 6, 3, 18, prov("H")),
+        EnvelopeWall("L1-EW2", "", [1, 0.106], [3, 0.106], 2, 3, 6, prov("T", PSET_EXTERNAL_MARK)),
+    ]
+    m.bim_elements = [
+        BimElement("H", "IfcWall", thickness_m=0.2),
+        BimElement("T", "IfcWall", thickness_m=0.012),
+    ]
+    counts = exclude_linings(m, {"H": 0.2, "T": 0.012})
+    assert counts == {"lining": 0, "kept": 0, "pset_external": 1}
+    assert len(m.envelope) == 2
+    assert "pset says IsExternal" in m.envelope[1].provenance.note
+    assert m.bim_elements[1].role == ""
