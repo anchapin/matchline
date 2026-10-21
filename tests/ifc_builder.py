@@ -138,6 +138,105 @@ class IfcBuilder:
         _Ag.assign_object(self.f, products=[sp], relating_object=self.storey)
         return sp
 
+    def space_face_set(self, name, floor_ring, height=3.0, long_name=None, top_hole=None):
+        """IfcSpace whose Body is an IfcFaceBasedSurfaceModel (#1218 fixtures).
+
+        ``floor_ring`` is the plan footprint in metres; the floor face sits
+        at z=0 and the top face at z=height, both wound with the same vertex
+        order like the duplex's open surface model, with vertical quads
+        between. ``top_hole`` optionally punches a rectangular hole in the
+        top face ((x, y, w, h)), the way a stair opening does. No solid
+        geometry, so footprint and truth both take the surface-model path.
+        """
+        sp = _Root.create_entity(self.f, ifc_class="IfcSpace", name=name)
+        if long_name is not None:
+            sp.LongName = long_name
+        sp.ObjectPlacement = self._placement((0, 0, 0), self.storey.ObjectPlacement)
+        ring = [(self.mx * x, y) for x, y in floor_ring]
+        if self.mx < 0:
+            ring = ring[::-1]
+        # wind the loops clockwise, the way the duplex's face-set hallway is
+        # authored: floor AND ceiling both tessellate facing down, which is
+        # the artifact the truth side has to survive (#1218)
+        ring = ring[::-1]
+        pts = {
+            (round(x, 6), round(y, 6), round(z, 6)): self.f.create_entity(
+                "IfcCartesianPoint", Coordinates=(x * self.u, y * self.u, z * self.u)
+            )
+            for z in (0.0, float(height))
+            for x, y in ring
+        }
+        loops = []
+        for z in (0.0, float(height)):
+            loops.append(
+                self.f.create_entity(
+                    "IfcPolyLoop",
+                    Polygon=tuple(pts[(round(x, 6), round(y, 6), round(z, 6))] for x, y in ring),
+                )
+            )
+        bot, top = loops
+        for (x1, y1), (x2, y2) in list(zip(ring, ring[1:] + ring[:1])):
+            quad = [
+                self.f.create_entity(
+                    "IfcCartesianPoint", Coordinates=(x1 * self.u, y1 * self.u, 0.0)
+                ),
+                self.f.create_entity(
+                    "IfcCartesianPoint", Coordinates=(x2 * self.u, y2 * self.u, 0.0)
+                ),
+                self.f.create_entity(
+                    "IfcCartesianPoint",
+                    Coordinates=(x2 * self.u, y2 * self.u, float(height) * self.u),
+                ),
+                self.f.create_entity(
+                    "IfcCartesianPoint",
+                    Coordinates=(x1 * self.u, y1 * self.u, float(height) * self.u),
+                ),
+            ]
+            loops.append(self.f.create_entity("IfcPolyLoop", Polygon=tuple(quad)))
+        top_bounds = [self.f.create_entity("IfcFaceOuterBound", Bound=top, Orientation=True)]
+        if top_hole is not None:
+            hx, hy, hw, hh = top_hole
+            hole = self.f.create_entity(
+                "IfcPolyLoop",
+                Polygon=tuple(
+                    self.f.create_entity(
+                        "IfcCartesianPoint",
+                        Coordinates=(px * self.u, py * self.u, float(height) * self.u),
+                    )
+                    for px, py in [
+                        (hx, hy),
+                        (hx + hw, hy),
+                        (hx + hw, hy + hh),
+                        (hx, hy + hh),
+                    ]
+                ),
+            )
+            top_bounds.append(
+                self.f.create_entity("IfcFaceOuterBound", Bound=hole, Orientation=True)
+            )
+        faces = [self.f.create_entity("IfcFace", Bounds=(b,)) for b in top_bounds]
+        faces.append(
+            self.f.create_entity(
+                "IfcFace",
+                Bounds=(self.f.create_entity("IfcFaceOuterBound", Bound=bot, Orientation=True),),
+            )
+        )
+        for loop in loops[2:]:
+            outer = self.f.create_entity("IfcFaceOuterBound", Bound=loop, Orientation=True)
+            faces.append(self.f.create_entity("IfcFace", Bounds=(outer,)))
+        cfs = self.f.create_entity("IfcConnectedFaceSet", CfsFaces=tuple(faces))
+        fbsm = self.f.create_entity("IfcFaceBasedSurfaceModel", FbsmFaces=(cfs,))
+        rep = self.f.create_entity(
+            "IfcShapeRepresentation",
+            ContextOfItems=self.body,
+            RepresentationIdentifier="Body",
+            RepresentationType="Brep",
+            Items=(fbsm,),
+        )
+        _Gm.assign_representation(self.f, product=sp, representation=rep)
+        _Ag.assign_object(self.f, products=[sp], relating_object=self.storey)
+        return sp
+
     def wall(self, name, start, end, thickness=0.2, height=3.0, layers=None):
         """Wall body centred on the start->end axis. ``layers``: [(material, t)]."""
         (x0, y0), (x1, y1) = start, end

@@ -79,7 +79,18 @@ def _length_scale(f) -> float:
 
 
 def _geom_floor_area(el) -> float | None:
-    """Downward-facing area (m2) of the element's tessellated body, or None."""
+    """Unsigned area (m2) of the horizontal faces at the body's lowest level.
+
+    A space's floor is its lowest horizontal surface, whatever wound it:
+    closed solids put their bottom face there pointing down, and the face-set
+    shells whose ceiling is wound downward too (#1218: the duplex hallway's
+    ceiling tessellates facing down just like its floor) are covered by
+    taking only the lowest level. Summing every downward-facing face instead
+    read that hallway twice and credited the molio ledge soffits to the
+    floor, which the model's own plan-footprint paths never see. A triangle
+    tessellated with both windings is one face of floor, not two, so
+    coincident triangles count once.
+    """
     try:
         import ifcopenshell.geom
         import numpy as np
@@ -99,10 +110,70 @@ def _geom_floor_area(el) -> float | None:
     keep = norm > 0
     if not keep.any():
         return None
-    nz = cross[keep, 2] / norm[keep]
-    down = nz < -0.99
-    area = float(norm[keep][down].sum() / 2.0)
+    kept = faces[keep]
+    nz = np.where(norm[keep] > 0, cross[keep, 2] / np.where(norm[keep] == 0, 1, norm[keep]), 0.0)
+    horiz = np.abs(nz) > 0.99
+    if not horiz.any():
+        return None
+    z = verts[kept[:, 0], 2]
+    zmin = z[horiz].min()
+    floor = horiz & (np.abs(z - zmin) < 1e-4)
+    if not floor.any():
+        return None
+    tri = kept[floor]
+    cen = (verts[tri[:, 0], :2] + verts[tri[:, 1], :2] + verts[tri[:, 2], :2]) / 3.0
+    area2 = norm[keep][floor]
+    keys = np.round(np.column_stack([cen, area2[:, None]]), 6)
+    unique = np.unique(keys, axis=0)
+    area = float(unique[:, 2].sum() / 2.0)
     return area if area > 0 else None
+
+
+def _profile_floor_area(sp, scale: float) -> float | None:
+    """Declared footprint (m2) of a space body that is one vertical extrusion.
+
+    The kernel under-tessellates some stepped profiles (#1218: the duplex
+    stair space's bottom came back as a 3.8 m2 landing of a 20.5 m2
+    footprint). When the body is exactly one IfcExtrudedAreaSolid extruded
+    parallel to Z from a closed planar profile, the floor area is the
+    profile area whatever the tessellation did, so only gross kernel
+    failures (< half the declared footprint) switch to it.
+    """
+    rep = getattr(sp, "Representation", None)
+    if rep is None:
+        return None
+    solids = []
+    for r in rep.Representations or []:
+        if r.RepresentationIdentifier != "Body":
+            continue
+        for it in r.Items or []:
+            if not it.is_a("IfcExtrudedAreaSolid"):
+                return None  # not a single-solid body
+            solids.append(it)
+    if len(solids) != 1:
+        return None
+    sol = solids[0]
+    d = getattr(sol.ExtrudedDirection, "DirectionRatios", None) or (0, 0, 1)
+    if abs(float(d[0])) > 1e-9 or abs(float(d[1])) > 1e-9:
+        return None
+    prof = sol.SweptArea
+    if prof.is_a("IfcRectangleProfileDef"):
+        xdim, ydim = float(prof.XDim), float(prof.YDim)
+        return xdim * ydim * scale * scale
+    if prof.is_a("IfcArbitraryClosedProfileDef"):
+        curve = prof.OuterCurve
+        if not curve.is_a("IfcPolyline"):
+            return None
+        pts = [p.Coordinates for p in curve.Points or []]
+        if len(pts) < 3:
+            return None
+        s2 = 0.0
+        for i in range(len(pts)):
+            x1, y1 = float(pts[i][0]), float(pts[i][1])
+            x2, y2 = float(pts[(i + 1) % len(pts)][0]), float(pts[(i + 1) % len(pts)][1])
+            s2 += x1 * y2 - x2 * y1
+        return abs(s2) / 2.0 * scale * scale
+    return None
 
 
 def _axis_length(el, scale: float) -> float | None:
@@ -181,8 +252,13 @@ def build_truth(path: Path) -> dict:
         area = _qto_value(ps, "Qto_SpaceBaseQuantities", ("NetFloorArea", "GrossFloorArea"))
         source = "qto" if area is not None else None
         if area is None:
-            area = _geom_floor_area(sp)
-            source = "geometry" if area is not None else None
+            geom = _geom_floor_area(sp)
+            prof = _profile_floor_area(sp, scale)
+            if prof is not None and (geom is None or geom < 0.5 * prof):
+                # the kernel lost the bottom of this extrusion (#1218)
+                area, source = prof, "profile"
+            elif geom is not None:
+                area, source = geom, "geometry"
         rooms[sp.GlobalId] = {
             "name": (sp.Name or ""),
             "long_name": (getattr(sp, "LongName", None) or ""),
