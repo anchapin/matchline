@@ -177,25 +177,28 @@ jobs:
         # yet, and an environment scan trips --strict on it
         # (--skip-editable still reports editable distributions as an
         # error, so uninstalling is the reliable exclusion).
-        # #1214/#1165, 2026-10-20 (+3 CVEs 2026-10-21, #1226): pillow 12.3.0
-        # reports 11 CVEs, all fixed in 13.0.0, but gradio pins pillow>=8.0,
-        # <13.0 so 13.0.0 is unreachable in every fork of the lock. Ignored
-        # with reason until gradio lifts its cap (check on the next gradio
-        # bump); certifi was bumped in uv.lock to 2026.10.19
+        # #1214/#1165, 2026-10-20; advisory set rotated 2026-10-21 (#1229):
+        # the 11 CVEs ignored yesterday are gone from the advisory DB and
+        # pillow 12.3.0 now reports 13 CVEs, all fixed in 13.0.0, but gradio
+        # pins pillow>=8.0,<13.0 so 13.0.0 is unreachable in every fork of the
+        # lock. Ignored with reason until gradio lifts its cap (check on the
+        # next gradio bump); certifi was bumped in uv.lock to 2026.10.19
         # (GHSA-6q48-6c7w-9gw2), not ignored.
         run: >-
           uv pip uninstall matchline && uv run --no-sync pip-audit --strict
-          --ignore-vuln CVE-2026-112895
-          --ignore-vuln CVE-2026-112400
-          --ignore-vuln CVE-2026-112397
-          --ignore-vuln CVE-2026-112896
-          --ignore-vuln CVE-2026-112897
-          --ignore-vuln CVE-2026-112395
-          --ignore-vuln CVE-2026-112404
-          --ignore-vuln CVE-2026-112899
-          --ignore-vuln CVE-2026-112402
-          --ignore-vuln CVE-2026-112900
-          --ignore-vuln CVE-2026-112893
+          --ignore-vuln CVE-2026-112390
+          --ignore-vuln CVE-2026-112391
+          --ignore-vuln CVE-2026-112392
+          --ignore-vuln CVE-2026-112393
+          --ignore-vuln CVE-2026-112396
+          --ignore-vuln CVE-2026-112399
+          --ignore-vuln CVE-2026-112401
+          --ignore-vuln CVE-2026-112405
+          --ignore-vuln CVE-2026-112406
+          --ignore-vuln CVE-2026-112891
+          --ignore-vuln CVE-2026-112892
+          --ignore-vuln CVE-2026-112894
+          --ignore-vuln CVE-2026-112901
 
   deptry:
     # #1190: the #1070 bug class - a shipped module imports a package that is
