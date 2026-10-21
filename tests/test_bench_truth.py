@@ -239,3 +239,63 @@ def test_under_tessellated_extrusion_falls_back_to_the_declared_profile(
     by_source = {r["area_source"]: r["area_m2"] for r in rooms.values()}
     assert abs(by_source["profile"] - 12.0) < 1e-6
     assert abs(by_source["geometry"] - 2.0) < 1e-6
+
+
+def _broken_attr_window_ifc(path: Path, with_body: bool) -> Path:
+    """One window whose stated attributes are corrupt (gni-49 style: frame
+    thickness in the width field) and whose body exists only if asked."""
+    import ifcopenshell
+    import ifcopenshell.api.context
+    import ifcopenshell.api.geometry
+    import ifcopenshell.api.root
+
+    f = ifcopenshell.file(schema="IFC4")
+    ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="p")
+    win = ifcopenshell.api.root.create_entity(f, ifc_class="IfcWindow", name="w")
+    win.GlobalId = "win-broken"
+    win.OverallWidth, win.OverallHeight = 0.1795, 1.8
+    if with_body:
+        body = ifcopenshell.api.context.add_context(
+            f, context_type="Model", context_identifier="Body"
+        )
+        profile = f.create_entity(
+            "IfcRectangleProfileDef",
+            ProfileType="AREA",
+            XDim=1.8,
+            YDim=2.1,
+            Position=f.create_entity("IfcAxis2Placement2D"),
+        )
+        solid = f.create_entity(
+            "IfcExtrudedAreaSolid",
+            SweptArea=profile,
+            Position=f.create_entity("IfcAxis2Placement3D"),
+            ExtrudedDirection=f.create_entity("IfcDirection", (0.0, 0.0, 1.0)),
+            Depth=0.18,
+        )
+        rep = f.create_entity(
+            "IfcShapeRepresentation",
+            ContextOfItems=body,
+            RepresentationIdentifier="Body",
+            RepresentationType="SweptSolid",
+            Items=(solid,),
+        )
+        ifcopenshell.api.geometry.assign_representation(f, product=win, representation=rep)
+    f.write(str(path))
+    return path
+
+
+def test_window_area_reads_geometry_when_attributes_lie(tmp_path: Path) -> None:
+    """gni-49's stated window attributes are corrupt; the tessellated body
+    measures the real opening, so geometry outranks the attributes (#1220)."""
+    t = build_truth(_broken_attr_window_ifc(tmp_path / "arch.ifc", with_body=True))
+    assert t["window_area_m2"] == pytest.approx(1.8 * 2.1, abs=0.05)
+    assert t["windows"] == 1
+    assert t["windows_sized"] == 1
+    assert t["windows_from_geometry"] == 1
+
+
+def test_window_area_falls_back_to_stated_attributes_without_a_body(tmp_path: Path) -> None:
+    """A window with no tessellable body keeps the stated-attribute fallback."""
+    t = build_truth(_broken_attr_window_ifc(tmp_path / "arch.ifc", with_body=False))
+    assert t["window_area_m2"] == pytest.approx(0.1795 * 1.8)
+    assert t["windows_from_geometry"] == 0
