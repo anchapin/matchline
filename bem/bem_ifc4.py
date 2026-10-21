@@ -693,10 +693,15 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             pass  # quantities are enrichment, not core validity
         # footprint geometry: IfcGeometricCurveSet so the space polygon survives
         # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
+        # The polyline's points are SPACE-LOCAL per IFC (ObjectPlacement composes
+        # on top), so they are written relative to the space's own placement
+        # origin (cx, cy), matching what a conformant reader does on re-import
+        # (#1229): writing world-frame points made the round trip only work by
+        # accident, while the reader's placement composition was reading them raw.
         if len(sp.polygon_m) >= 3:
             try:
                 pts = [
-                    f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y)))
+                    f.create_entity("IfcCartesianPoint", Coordinates=(float(x - cx), float(y - cy)))
                     for x, y in sp.polygon_m
                 ]
                 polyline = f.create_entity("IfcPolyline", Points=pts)
