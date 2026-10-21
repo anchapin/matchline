@@ -221,7 +221,7 @@ mv ~/workspace/datasets/matchline-bench/gni-18/model_18.ifc ~/workspace/datasets
 
 **Environment variable:** None (path passed via `--config`)
 
-**What it is:** A scoreboard over 3 to 5 licensed commercial buildings, each
+**What it is:** A scoreboard over 17 licensed real-building models, each
 with a ground-truth architectural IFC (IfcSpaces) and, where available, an
 HVAC IFC and a drawing-set PDF. `scripts/benchmark.py` runs the IFC path, the
 HVAC-terminal check and the cross-frontend comparison per building and writes
@@ -272,9 +272,12 @@ is not on disk shows as `missing`.
   `IfcRelFillsElement` links exist, so there is nothing to adopt geometrically.
   The window rows are defective in the file itself: `OverallWidth` reads
   0.1795 against a name stating 1800/2100 (mm), so even the attributes are
-  untrustworthy. The scoreboard's window column therefore reads 71 / 0 for
-  this building by design; the model reports no windows it cannot locate, and
-  never guesses positions. Doors are genuinely absent (0 `IfcDoor`).
+  untrustworthy. Since the #1206 direct enumeration (2026-10-20) the model
+  recovers 62 of the 71 window elements from the properly placed wall voids
+  (56 via the tier-0 void path, 6 via direct fill) and leaves the remaining 9
+  unattached rather than guessing positions; the defective `OverallWidth`
+  values keep this building's paired window-area error an open defect
+  (930.5%, the scoreboard's worst). Doors are genuinely absent (0 `IfcDoor`).
 
 - IFC-Bench projects, <https://huggingface.co/datasets/sylvainHellin/ifc-bench>
   (TUM, Hellin et al. 2026; each project ships its own `license.txt`). Five
@@ -297,12 +300,23 @@ is not on disk shows as `missing`.
     windows, 170 doors.
   - `wbdg-office`: WBDG Common BIM Files two-storey office, architectural IFC.
     4.1 MB IFC2X3, 3 storeys, 99 IfcSpaces, 487 walls (18 external), 69
-    windows, 102 doors. **License caveat:** IFC-Bench lists CC BY 4.0, but its
-    `license.txt` credits the Medical-Dental files, and the original
-    buildingSMART alliance release was listed as CC BY-ND 3.0 (same
-    discrepancy as Duplex). Benchmark use only reads the file, which either
-    license allows; never commit renders of it. Drop this row from 1.0 claims
-    until the license is confirmed.
+    windows, 102 doors. **License confirmed (2026-10-20):** the model is the
+    2011-09-14 "Office" release of the bSa Common BIM Files, developed by
+    ERDC-CERL (US Army Corps of Engineers, project chair Bill East) and first
+    published by the buildingSMART alliance at NIBS. IFC-Bench's `license.txt`
+    credited the Medical-Dental files by mistake and listed CC BY 4.0; neither
+    is correct, and IFC-Bench corrected the file on 2026-10-20 (commit
+    `0e22f2e`). The original project page carried a reuse clause: anyone may
+    copy, distribute, display, use and make derivative works, with proper
+    academic citation of the source whenever the models are presented, and no
+    cost or use restriction in any for-profit or not-for-profit setting. The
+    clause is preserved in the [bSa Common BIM Files Wayback snapshot of 10
+    March 2013](https://web.archive.org/web/20130310082112/http://www.buildingsmartalliance.org/index.php/projects/commonbimfiles).
+    NIBS was asked directly in parallel on 2026-10-20; if NIBS answers
+    differently, its answer governs and this row is revisited. Publishing
+    numbers derived from the model is allowed under the clause with the source
+    cited: cite ERDC-CERL / buildingSMART alliance Common BIM Files, Office
+    (2011), via IFC-Bench `projects/wbdg_office`.
 
   Not adopted from IFC-Bench: `sixty5` (architecture IFC is 342.7 MB, over the
   100 MB import cap), `west_riverside_hospital` (CC BY 3.0, 80.9 MB IFC4
