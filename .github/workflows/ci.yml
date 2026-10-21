@@ -177,11 +177,12 @@ jobs:
         # yet, and an environment scan trips --strict on it
         # (--skip-editable still reports editable distributions as an
         # error, so uninstalling is the reliable exclusion).
-        # #1214/#1165, 2026-10-20: pillow 12.3.0 reports 8 CVEs, all fixed in
-        # 13.0.0, but gradio pins pillow>=8.0,<13.0 so 13.0.0 is unreachable
-        # in every fork of the lock. Ignored with reason until gradio lifts
-        # its cap (check on the next gradio bump); certifi was bumped in
-        # uv.lock to 2026.10.19 (GHSA-6q48-6c7w-9gw2), not ignored.
+        # #1214/#1165, 2026-10-20 (+3 CVEs 2026-10-21, #1226): pillow 12.3.0
+        # reports 11 CVEs, all fixed in 13.0.0, but gradio pins pillow>=8.0,
+        # <13.0 so 13.0.0 is unreachable in every fork of the lock. Ignored
+        # with reason until gradio lifts its cap (check on the next gradio
+        # bump); certifi was bumped in uv.lock to 2026.10.19
+        # (GHSA-6q48-6c7w-9gw2), not ignored.
         run: >-
           uv pip uninstall matchline && uv run --no-sync pip-audit --strict
           --ignore-vuln CVE-2026-112895
@@ -192,6 +193,9 @@ jobs:
           --ignore-vuln CVE-2026-112395
           --ignore-vuln CVE-2026-112404
           --ignore-vuln CVE-2026-112899
+          --ignore-vuln CVE-2026-112402
+          --ignore-vuln CVE-2026-112900
+          --ignore-vuln CVE-2026-112893
 
   deptry:
     # #1190: the #1070 bug class - a shipped module imports a package that is
