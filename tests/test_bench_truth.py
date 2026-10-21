@@ -191,3 +191,51 @@ def test_exterior_wall_with_no_measurable_tier_is_null_not_zero(tmp_path: Path) 
     assert "measurable body" in t["exterior_wall_reason"]
     assert t["exterior_walls_unmeasured"] == 1
     assert t["exterior_walls_from_geometry"] == 0
+
+
+def _footprint_ifc(path: Path) -> Path:
+    """One extruded-solid room and one face-set hallway, both L-shaped, no Qto."""
+    from tests.ifc_builder import IfcBuilder
+
+    b = IfcBuilder()
+    l_shape = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4)]
+    b.space("ROOM 101", l_shape, height=3.0, long_name="Room")
+    b.space_face_set("HALL 201", l_shape, height=2.9, long_name="Hallway")
+    return b.write(path)
+
+
+def test_face_set_space_truth_single_counts_the_downward_wound_top(tmp_path: Path) -> None:
+    """#1218: an open surface model's top face is wound downward too; the
+    old downward-facing sum doubled the hallway's 12 m2 floor to 24."""
+    t = build_truth(_footprint_ifc(tmp_path / "arch.ifc"))
+    rooms = t["rooms"]
+    by_area = sorted(round(r["area_m2"], 6) for r in rooms.values())
+    assert by_area == [12.0, 12.0]
+    assert {r["area_source"] for r in rooms.values()} == {"geometry"}
+
+
+def test_profile_floor_area_declared_footprint_of_one_vertical_extrusion(
+    tmp_path: Path,
+) -> None:
+    t = build_truth(_footprint_ifc(tmp_path / "arch.ifc"))
+    # both spaces are single vertical extrusions, so the healthy kernel
+    # tessellation and the declared profile agree and geometry stays primary
+    assert {r["area_source"] for r in t["rooms"].values()} == {"geometry"}
+
+
+def test_under_tessellated_extrusion_falls_back_to_the_declared_profile(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#1218: the duplex stair space's bottom came back as a 3.8 m2 landing
+    of a 20.5 m2 profile; below half the declared footprint, trust the
+    profile and say so."""
+    import scripts.bench_truth as bt
+
+    monkeypatch.setattr(bt, "_geom_floor_area", lambda el: 2.0)
+    t = bt.build_truth(_footprint_ifc(tmp_path / "arch.ifc"))
+    rooms = t["rooms"]
+    # the extruded room trusts its declared profile; the face-set hallway
+    # has no profile to fall back to and keeps the (stubbed) tessellation
+    by_source = {r["area_source"]: r["area_m2"] for r in rooms.values()}
+    assert abs(by_source["profile"] - 12.0) < 1e-6
+    assert abs(by_source["geometry"] - 2.0) < 1e-6

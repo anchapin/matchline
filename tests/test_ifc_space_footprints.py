@@ -138,7 +138,20 @@ def test_tilted_solid_degrades_to_quantity_fallback():
     assert any(it.kind == "space_no_geometry" for it in model.review_queue)
 
 
-def test_face_set_footprint_is_a_hull_not_a_bbox():
+def _area(ring):
+    return (
+        abs(
+            sum(
+                ring[i][0] * ring[(i + 1) % len(ring)][1]
+                - ring[(i + 1) % len(ring)][0] * ring[i][1]
+                for i in range(len(ring))
+            )
+        )
+        / 2
+    )
+
+
+def test_face_set_footprint_is_the_floor_ring_not_a_hull():
     f, body, storey, owner = _file()
     sp = _space(f, body, storey, owner, "ROOM 102")
     # L-shaped prism, 4 m tall: L spans (0,0)-(4,4) minus the (2,2)-(4,4) notch
@@ -179,19 +192,101 @@ def test_face_set_footprint_is_a_hull_not_a_bbox():
     _Gm.assign_representation(f, product=sp, representation=rep)
     fp = _face_set_footprint(sp, 1.0)
     assert fp is not None
-    assert len(fp) == 5  # the vertex pool's hull, not the 4-corner bbox
-    area = (
-        abs(
-            sum(
-                fp[i][0] * fp[(i + 1) % len(fp)][1] - fp[(i + 1) % len(fp)][0] * fp[i][1]
-                for i in range(len(fp))
-            )
-        )
-        / 2
-    )
-    assert abs(area - 14.0) < 1e-6  # hull hugs the notch: 14, not the bbox's 16
+    # the floor's own ring, notch kept: 12, not the hull's 14 or the bbox's 16
+    assert abs(_area(fp) - 12.0) < 1e-6
     path = "/tmp/_face_space.ifc"
     f.write(path)
     model = import_ifc(path)
     room = next(iter(model.spaces.values()))
-    assert abs(room.area_m2 - 14.0) < 1e-6
+    assert abs(room.area_m2 - 12.0) < 1e-6
+
+
+def test_face_set_hole_in_the_top_face_does_not_disturb_the_floor():
+    """Duplex hallway shape (#1218): stair hole in the ceiling, plain floor."""
+    f, body, storey, owner = _file()
+    sp = _space(f, body, storey, owner, "ROOM 102")
+    outer = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4), (0, 0)]
+
+    def point(x, y, z):
+        return f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y), z))
+
+    def loop(coords):
+        return f.create_entity("IfcPolyLoop", Polygon=tuple(coords))
+
+    top_outer = loop([point(x, y, 4.0) for x, y in outer])
+    top_hole = loop(
+        [point(2.5, 2.5, 4.0), point(3.5, 2.5, 4.0), point(3.5, 3.5, 4.0), point(2.5, 3.5, 4.0)]
+    )
+    bot = loop([point(x, y, 0.0) for x, y in outer])
+    faces = []
+    for bounds in ((top_outer, top_hole), (bot,)):
+        bound_entities = tuple(
+            f.create_entity("IfcFaceOuterBound", Bound=b, Orientation=True) for b in bounds
+        )
+        faces.append(f.create_entity("IfcFace", Bounds=bound_entities))
+    for (x1, y1), (x2, y2) in list(zip(outer, outer[1:] + outer[:1])):
+        quad = loop(
+            [point(x1, y1, 0.0), point(x2, y2, 0.0), point(x2, y2, 4.0), point(x1, y1, 4.0)]
+        )
+        bound = f.create_entity("IfcFaceOuterBound", Bound=quad, Orientation=True)
+        faces.append(f.create_entity("IfcFace", Bounds=(bound,)))
+    cfs = f.create_entity("IfcConnectedFaceSet", CfsFaces=tuple(faces))
+    fbsm = f.create_entity("IfcFaceBasedSurfaceModel", FbsmFaces=(cfs,))
+    rep = f.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=body,
+        RepresentationIdentifier="Body",
+        RepresentationType="Brep",
+        Items=(fbsm,),
+    )
+    from ifcopenshell.api import geometry as _Gm
+
+    _Gm.assign_representation(f, product=sp, representation=rep)
+    fp = _face_set_footprint(sp, 1.0)
+    assert fp is not None
+    assert abs(_area(fp) - 12.0) < 1e-6  # the plain floor ring, ceiling hole ignored
+
+
+def test_face_set_hole_in_the_floor_falls_back_to_the_hull():
+    f, body, storey, owner = _file()
+    sp = _space(f, body, storey, owner, "ROOM 102")
+    outer = [(0, 0), (4, 0), (4, 2), (2, 2), (2, 4), (0, 4), (0, 0)]
+
+    def point(x, y, z):
+        return f.create_entity("IfcCartesianPoint", Coordinates=(float(x), float(y), z))
+
+    def loop(coords):
+        return f.create_entity("IfcPolyLoop", Polygon=tuple(coords))
+
+    top = loop([point(x, y, 4.0) for x, y in outer])
+    floor_outer = loop([point(x, y, 0.0) for x, y in outer])
+    floor_hole = loop(
+        [point(0.5, 0.5, 0.0), point(1.5, 0.5, 0.0), point(1.5, 1.5, 0.0), point(0.5, 1.5, 0.0)]
+    )
+    faces = []
+    for bounds in ((top,), (floor_outer, floor_hole)):
+        bound_entities = tuple(
+            f.create_entity("IfcFaceOuterBound", Bound=b, Orientation=True) for b in bounds
+        )
+        faces.append(f.create_entity("IfcFace", Bounds=bound_entities))
+    for (x1, y1), (x2, y2) in list(zip(outer, outer[1:] + outer[:1])):
+        quad = loop(
+            [point(x1, y1, 0.0), point(x2, y2, 0.0), point(x2, y2, 4.0), point(x1, y1, 4.0)]
+        )
+        bound = f.create_entity("IfcFaceOuterBound", Bound=quad, Orientation=True)
+        faces.append(f.create_entity("IfcFace", Bounds=(bound,)))
+    cfs = f.create_entity("IfcConnectedFaceSet", CfsFaces=tuple(faces))
+    fbsm = f.create_entity("IfcFaceBasedSurfaceModel", FbsmFaces=(cfs,))
+    rep = f.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=body,
+        RepresentationIdentifier="Body",
+        RepresentationType="Brep",
+        Items=(fbsm,),
+    )
+    from ifcopenshell.api import geometry as _Gm
+
+    _Gm.assign_representation(f, product=sp, representation=rep)
+    fp = _face_set_footprint(sp, 1.0)
+    assert fp is not None
+    assert abs(_area(fp) - 14.0) < 1e-6  # the hull stands in when the floor has a hole

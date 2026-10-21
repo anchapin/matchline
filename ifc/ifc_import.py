@@ -533,17 +533,21 @@ def _hull_2d(points):
 
 
 def _face_set_footprint(sp, scale):
-    """([(x, y)] space-local) footprint from IfcFaceBasedSurfaceModel items (#1204).
+    """([(x, y)] space-local) footprint from IfcFaceBasedSurfaceModel items (#1204, #1218).
 
-    Every IfcPolyLoop vertex of the model's faces is collected in the space's
-    own frame; the plan footprint is the convex hull of the scaled XY points,
-    the bbox rectangle standing in when the hull degenerates. None when there
-    is nothing usable.
+    A face-based space's floor is its lowest horizontal loop, and that
+    loop IS the plan footprint, concavities included. The convex hull of
+    every vertex instead bridges the notches (#1218: the duplex hallway's
+    L-shaped 6.89 m2 floor hull'd to 8.65 m2) and ignores which face sits
+    on the floor at all. Loops above the lowest level are ceilings and
+    soffits. A floor with holes, or more than one loop at the lowest
+    level, falls back to the hull; so does no horizontal loop at all.
     """
     rep = getattr(sp, "Representation", None)
     if rep is None:
         return None
-    xs, ys = [], []
+    xs, ys = [], []  # every vertex, for the hull fallback
+    floors: list[tuple[float, list[tuple[float, float]]]] = []
     for r in rep.Representations or []:
         if r.RepresentationIdentifier not in ("Body",):
             continue
@@ -554,11 +558,24 @@ def _face_set_footprint(sp, scale):
                 for face in fbsm.CfsFaces or []:
                     for bound in face.Bounds or []:
                         loop = getattr(bound, "Bound", None)
-                        if loop is not None and loop.is_a("IfcPolyLoop"):
-                            for pt in loop.Polygon or []:
-                                c = pt.Coordinates
-                                xs.append(float(c[0]) * scale)
-                                ys.append(float(c[1]) * scale)
+                        if loop is None or not loop.is_a("IfcPolyLoop"):
+                            continue
+                        ring = [
+                            (float(pt.Coordinates[0]) * scale, float(pt.Coordinates[1]) * scale)
+                            for pt in loop.Polygon or []
+                        ]
+                        zs = {float(pt.Coordinates[2]) * scale for pt in loop.Polygon or []}
+                        for pt in loop.Polygon or []:
+                            c = pt.Coordinates
+                            xs.append(float(c[0]) * scale)
+                            ys.append(float(c[1]) * scale)
+                        if len(ring) >= 3 and len(zs) == 1:
+                            floors.append((zs.pop(), ring))
+    if floors:
+        z_floor = min(z for z, _ in floors)
+        at_floor = [ring for z, ring in floors if abs(z - z_floor) < 1e-9]
+        if len(at_floor) == 1:
+            return at_floor[0]
     if len(xs) < 3:
         return None
     hull = _hull_2d(zip(xs, ys))
