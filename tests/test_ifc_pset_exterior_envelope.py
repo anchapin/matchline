@@ -34,9 +34,7 @@ def _two_rooms(path, mark_external=False):
     mid = b.wall("MID", (6, 0), (6, 4))
     if mark_external:
         pset = ifcopenshell.api.run("pset.add_pset", b.f, product=mid, name="Pset_WallCommon")
-        ifcopenshell.api.run(
-            "pset.edit_pset", b.f, pset=pset, properties={"IsExternal": True}
-        )
+        ifcopenshell.api.run("pset.edit_pset", b.f, pset=pset, properties={"IsExternal": True})
     return b.write(path)
 
 

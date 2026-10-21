@@ -3585,8 +3585,7 @@ def _classify_envelope(model):
                 counts["unclassified"] += 1
                 prov.confidence = min(prov.confidence, 0.5)
                 prov.note += (
-                    "; pset IsExternal but spaces on both sides"
-                    " -- facade unclassified, review"
+                    "; pset IsExternal but spaces on both sides -- facade unclassified, review"
                 )
                 model.flag_for_review(
                     kind="facade_unclear",

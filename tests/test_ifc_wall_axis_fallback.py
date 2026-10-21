@@ -29,9 +29,7 @@ def _strip_body(b, wall):
 
 
 def _add_axis(b, wall, length):
-    poly = b.f.create_entity(
-        "IfcPolyline", Points=(b._pt((0, 0, 0)), b._pt((length, 0, 0)))
-    )
+    poly = b.f.create_entity("IfcPolyline", Points=(b._pt((0, 0, 0)), b._pt((length, 0, 0))))
     rep = b.f.create_entity(
         "IfcShapeRepresentation",
         ContextOfItems=b.body,
