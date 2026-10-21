@@ -4170,6 +4170,10 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
 
             length_m = width_m = height_m = thick_m = None
             axis_pts = None
+            qto_len = None
+            if cls in ("IfcWall", "IfcWallStandardCase"):
+                axis_pts = _wall_axis_polyline(el)
+                qto_len = _wall_qto_length(el, scale)
             area_m2 = volume_m3 = None
             conf, method, note = (
                 0.5,
@@ -4222,15 +4226,15 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 storey_method = "elevation"
                 conf = min(conf, 0.6)
                 note += "; storey from placement height (no storey containment)"
-            if length_m is None and cls in ("IfcWall", "IfcWallStandardCase"):
-                # geometry gave nothing (a bbox-only or absent body). Read
-                # the wall's own declared data instead, the same ladder
-                # bench_truth uses (#1219): Qto_WallBaseQuantities.Length,
-                # then the Axis polyline.
-                axis_pts = _wall_axis_polyline(el)
-                qto = _wall_qto_length(el, scale)
-                if qto is not None:
-                    length_m, conf = qto, max(conf, 0.9)
+            if cls in ("IfcWall", "IfcWallStandardCase"):
+                # Declared data outranks the axis-aligned body bbox, the
+                # same ladder bench_truth uses (#1205/#1219/#1227): Qto
+                # length, then the Axis polyline, then the body. The bbox
+                # under-measures walls whose profile is not x-aligned:
+                # gni-136 read 0.36 m and 6.2 m for walls whose Axis runs
+                # 3.64 m and 12.36 m.
+                if qto_len is not None:
+                    length_m, conf = qto_len, max(conf, 0.9)
                     note += "; length from Qto_WallBaseQuantities"
                 elif axis_pts and len(axis_pts) >= 2:
                     length_m = _r4(
@@ -4238,6 +4242,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                     )
                     conf = max(conf, 0.85)
                     note += "; length from Axis polyline"
+                elif length_m is None:
+                    note += "; wall unmeasured: no Qto, no Axis, no usable solid"
             cx, cy = _to_canonical(tx, ty)
             be = BimElement(
                 global_id=gid,

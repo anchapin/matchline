@@ -97,3 +97,70 @@ def test_axis_fallback_mm_units(tmp_path):
     m = import_ifc(p)
     assert len(m.envelope) == 1
     assert m.envelope[0].length_m == pytest.approx(20.0, abs=0.01)
+
+
+def _rotated_profile_body(b, wall, length, thick, height):
+    """Replace the Body with a length x thickness rect profile rotated 90 deg.
+
+    The closed-profile bbox of that solid reads (thick, length) in local
+    coords, so the bbox path labels the thickness as the wall length --
+    exactly what gni-136's exported walls do (gni-136 read 0.36 m and
+    6.2 m for walls whose Axis runs 3.64 m and 12.36 m, #1227).
+    """
+    _strip_body(b, wall)
+    pts = [(0, 0), (0, length), (-thick, length), (-thick, 0), (0, 0)]
+    curve = b.f.create_entity("IfcPolyline", Points=[b._pt(p) for p in pts])
+    prof = b.f.create_entity("IfcArbitraryClosedProfileDef", ProfileType="AREA", OuterCurve=curve)
+    solid = b.f.create_entity(
+        "IfcExtrudedAreaSolid",
+        SweptArea=prof,
+        Position=b.f.create_entity("IfcAxis2Placement3D", Location=b._pt((0, 0, 0))),
+        ExtrudedDirection=b.f.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+        Depth=float(height) * b.u,
+    )
+    rep = b.f.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=b.body,
+        RepresentationIdentifier="Body",
+        RepresentationType="SweptSolid",
+        Items=(solid,),
+    )
+    _Gm.assign_representation(b.f, product=wall, representation=rep)
+
+
+def _add_axis_y(b, wall, length):
+    poly = b.f.create_entity("IfcPolyline", Points=(b._pt((0, 0, 0)), b._pt((0, length, 0))))
+    rep = b.f.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=b.body,
+        RepresentationIdentifier="Axis",
+        RepresentationType="Curve2D",
+        Items=(poly,),
+    )
+    _Gm.assign_representation(b.f, product=wall, representation=rep)
+
+
+def test_axis_length_outranks_body_bbox(tmp_path):
+    b = IfcBuilder()
+    w = b.wall("W1", (0, 0), (12.36, 0))
+    _rotated_profile_body(b, w, 12.36, 0.36, 3.2)
+    _add_axis_y(b, w, 12.36)
+    p = tmp_path / "rot.ifc"
+    b.f.write(str(p))
+    m = import_ifc(p)
+    assert len(m.envelope) == 1
+    assert m.envelope[0].length_m == pytest.approx(12.36, abs=0.01)
+    be = next(e for e in m.bim_elements if e.global_id == w.GlobalId)
+    assert be.length_m == pytest.approx(12.36, abs=0.01)
+
+
+def test_qto_length_outranks_body_bbox(tmp_path):
+    b = IfcBuilder()
+    w = b.wall("W1", (0, 0), (20.0, 0))
+    _add_axis(b, w, 20.0)
+    _add_qto(b, w, 25.0)
+    p = tmp_path / "qto_body.ifc"
+    b.f.write(str(p))
+    m = import_ifc(p)
+    assert len(m.envelope) == 1
+    assert m.envelope[0].length_m == pytest.approx(25.0, abs=0.01)
