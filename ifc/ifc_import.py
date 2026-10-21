@@ -2373,6 +2373,72 @@ def _wall_marked_interior(wall):
     return str(ext).strip().lower() in ("false", ".f.", "0")
 
 
+PSET_EXTERNAL_MARK = "; pset IsExternal"
+
+
+def _wall_pset_external(wall):
+    """Pset_WallCommon.IsExternal explicitly True (#1219).
+
+    Authored exterior data outranks the Tier 1 space probe: space polygons
+    can bleed past a perimeter wall's outer face and an atrium can be
+    modelled as a space, so a wall the pset calls exterior stays in the
+    envelope even when the probe finds spaces on both sides.
+    """
+    try:
+        import ifcopenshell.util.element as _El
+
+        psets = _El.get_psets(wall) or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return False
+    ext = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
+    if ext is None or ext is False:
+        return False
+    if ext is True:
+        return True
+    return str(ext).strip().lower() in ("true", ".t.", "1")
+
+
+def _wall_axis_polyline(el):
+    """[(x, y)] points of the wall's Axis representation, element-local.
+
+    Mirrors bench_truth's _axis_length parsing (IfcPolyline, a trimmed
+    IfcLine, an IfcIndexedPolyCurve). None when the wall has no usable
+    Axis curve.
+    """
+    rep = getattr(el, "Representation", None)
+    for r in getattr(rep, "Representations", None) or []:
+        if r.RepresentationIdentifier != "Axis":
+            continue
+        for item in r.Items or []:
+            pts = None
+            if item.is_a("IfcPolyline"):
+                pts = [tuple(p.Coordinates[:2]) for p in item.Points]
+            elif item.is_a("IfcTrimmedCurve") and item.BasisCurve.is_a("IfcLine"):
+                t1 = [t for t in item.Trim1 if t.is_a("IfcCartesianPoint")]
+                t2 = [t for t in item.Trim2 if t.is_a("IfcCartesianPoint")]
+                if t1 and t2:
+                    pts = [tuple(t1[0].Coordinates[:2]), tuple(t2[0].Coordinates[:2])]
+            elif item.is_a("IfcIndexedPolyCurve"):
+                pts = [tuple(p[:2]) for p in item.Points.CoordList]
+            if pts and len(pts) >= 2:
+                return pts
+    return None
+
+
+def _wall_qto_length(el, scale):
+    """Qto_WallBaseQuantities.Length in meters (file units * scale), or None."""
+    try:
+        import ifcopenshell.util.element as _El
+
+        q = (_El.get_psets(el) or {}).get("Qto_WallBaseQuantities") or {}
+    except (ImportError, AttributeError, RuntimeError):
+        return None
+    v = q.get("Length")
+    if isinstance(v, (int, float)) and v > 0:
+        return float(v) * scale
+    return None
+
+
 # ISO 6946 surface resistances for horizontal heat flow (walls), m2K/W.
 RSI_WALL_M2K_W = 0.13
 RSE_WALL_M2K_W = 0.04
@@ -3511,6 +3577,28 @@ def _classify_envelope(model):
         if left and right:
             # interior partition: not envelope. Its BimElement stays, so the
             # wall is still in the takeoff inventory.
+            if prov is not None and PSET_EXTERNAL_MARK in prov.note:
+                # authored IsExternal outranks the space probe (#1219): the
+                # same space can bleed past a perimeter wall's outer face or
+                # an atrium can be modelled as a space. Keep the wall; the
+                # facade stays for review rather than guess a side.
+                counts["unclassified"] += 1
+                prov.confidence = min(prov.confidence, 0.5)
+                prov.note += (
+                    "; pset IsExternal but spaces on both sides -- facade unclassified, review"
+                )
+                model.flag_for_review(
+                    kind="facade_unclear",
+                    description=(
+                        f"Envelope wall {w.id} is pset-flagged IsExternal but the space "
+                        "probe finds spaces on both sides; kept in the envelope, "
+                        "facade unclassified, confirm the facade."
+                    ),
+                    confidence=0.5,
+                    provenance=prov,
+                )
+                keep.append(w)
+                continue
             counts["interior"] += 1
             continue
         if left or right:
@@ -4094,6 +4182,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             layers, layers_total = _material_layers(el, scale)
 
             length_m = width_m = height_m = thick_m = None
+            axis_pts = None
             area_m2 = volume_m3 = None
             conf, method, note = (
                 0.5,
@@ -4146,6 +4235,22 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 storey_method = "elevation"
                 conf = min(conf, 0.6)
                 note += "; storey from placement height (no storey containment)"
+            if length_m is None and cls in ("IfcWall", "IfcWallStandardCase"):
+                # geometry gave nothing (a bbox-only or absent body). Read
+                # the wall's own declared data instead, the same ladder
+                # bench_truth uses (#1219): Qto_WallBaseQuantities.Length,
+                # then the Axis polyline.
+                axis_pts = _wall_axis_polyline(el)
+                qto = _wall_qto_length(el, scale)
+                if qto is not None:
+                    length_m, conf = qto, max(conf, 0.9)
+                    note += "; length from Qto_WallBaseQuantities"
+                elif axis_pts and len(axis_pts) >= 2:
+                    length_m = _r4(
+                        sum(math.dist(p, q) for p, q in zip(axis_pts, axis_pts[1:])) * scale
+                    )
+                    conf = max(conf, 0.85)
+                    note += "; length from Axis polyline"
             cx, cy = _to_canonical(tx, ty)
             be = BimElement(
                 global_id=gid,
@@ -4176,10 +4281,26 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                 wall_axis_fix[gid] = _wall_centreline_fix(
                     el, solids, dims_note.startswith(("local extents", "body vertex bbox")), scale
                 )
-                dx, dy = math.cos(ang), -math.sin(ang)  # canonical frame
-                p0 = (cx, cy)
-                p1 = (cx + dx * length_m, cy + dy * length_m)
+                if axis_pts and len(axis_pts) >= 2:
+                    # the axis is what the file draws: its endpoints give
+                    # the segment both direction and placement (#1219).
+                    # Axis coordinates are file units; _world_xy wants meters.
+                    p0 = _to_canonical(
+                        *_world_xy(ang, tx, ty, axis_pts[0][0] * scale, axis_pts[0][1] * scale)
+                    )
+                    p1 = _to_canonical(
+                        *_world_xy(ang, tx, ty, axis_pts[-1][0] * scale, axis_pts[-1][1] * scale)
+                    )
+                else:
+                    dx, dy = math.cos(ang), -math.sin(ang)  # canonical frame
+                    p0 = (cx, cy)
+                    p1 = (cx + dx * length_m, cy + dy * length_m)
                 wall_heights.append(height_m or 0.0)
+                env_note = "wall centerline segment; facade from Tier 1 classification"
+                if _wall_pset_external(el):
+                    # carried so Tier 1 never drops this wall as an
+                    # interior partition when its space probe is fooled (#1219)
+                    env_note += PSET_EXTERNAL_MARK
                 model.envelope.append(
                     EnvelopeWall(
                         # level-prefixed like drawing-path ids, so the
@@ -4195,7 +4316,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
                         provenance=prov(
                             "ifc_import:tier0:envelope",
                             0.95,
-                            "wall centerline segment; facade from Tier 1 classification",
+                            env_note,
                             gid,
                         ),
                     )
