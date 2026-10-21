@@ -1038,6 +1038,26 @@ def _mapped_body_extents(el, scale):
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
 
 
+def _kernel_settings():
+    """Geometry-kernel settings honouring this module's file-units contract.
+
+    IfcOpenShell 0.9 returns SI metres by default, so a millimetre file
+    came back 1000x too small once callers multiplied by the file scale
+    (#1217: esplanades windows 2.3 m read as 2.3 mm). convert-back-units
+    keeps kernel output in the file's own length units, matching the
+    contract every caller relies on. Older versions without the setting
+    already returned file units, so a failed set is harmless.
+    """
+    import ifcopenshell.geom as _g
+
+    st = _g.settings()
+    try:
+        st.set("convert-back-units", True)
+    except (AttributeError, KeyError, TypeError):
+        pass
+    return st
+
+
 def _geom_verts(el):
     """Product-LOCAL vertex list via the geometry kernel (file units).
 
@@ -1049,7 +1069,7 @@ def _geom_verts(el):
     try:
         import ifcopenshell.geom as _g
 
-        shape = _g.create_shape(_g.settings(), el)
+        shape = _g.create_shape(_kernel_settings(), el)
         v = shape.geometry.verts
         return [float(x) for x in v]
     except RuntimeError:
@@ -4675,7 +4695,7 @@ def _terrain_triangles(f, project, scale):
         if not getattr(el, "Representation", None):
             continue
         try:
-            shape = _g.create_shape(_g.settings(), el)
+            shape = _g.create_shape(_kernel_settings(), el)
         except RuntimeError:
             continue
         v = [float(x) for x in shape.geometry.verts]

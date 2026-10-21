@@ -27,15 +27,21 @@ import ifcopenshell.guid as _guid
 
 
 class IfcBuilder:
-    def __init__(self, mirror_x=False, storey_elevation=0.0):
+    def __init__(self, mirror_x=False, storey_elevation=0.0, length_units="m"):
         self.mx = -1.0 if mirror_x else 1.0
+        # Builder API stays in metres; ``length_units="mm"`` writes a
+        # MILLI-prefixed file (coordinates and lengths x1000), for tests of
+        # unit handling in the importer (#1217).
+        if length_units not in ("m", "mm"):
+            raise ValueError(f"unsupported length_units: {length_units}")
+        self.u = 1000.0 if length_units == "mm" else 1.0
         self._axes = {}  # wall entity id -> (start, end, thickness), builder frame
         f = self.f = ifcopenshell.file(schema="IFC4")
         project = _Root.create_entity(f, ifc_class="IfcProject", name="Builder")
         _Un.assign_unit(
             f,
             units=[
-                _Un.add_si_unit(f, unit_type="LENGTHUNIT"),
+                _Un.add_si_unit(f, unit_type="LENGTHUNIT", prefix="MILLI" if self.u != 1 else None),
                 _Un.add_si_unit(f, unit_type="AREAUNIT"),
                 _Un.add_si_unit(f, unit_type="VOLUMEUNIT"),
             ],
@@ -51,7 +57,7 @@ class IfcBuilder:
         site = _Root.create_entity(f, ifc_class="IfcSite", name="Site")
         bldg = _Root.create_entity(f, ifc_class="IfcBuilding", name="Building")
         self.storey = _Root.create_entity(f, ifc_class="IfcBuildingStorey", name="Level 1")
-        self.storey.Elevation = float(storey_elevation)
+        self.storey.Elevation = float(storey_elevation) * self.u
         _Ag.assign_object(f, products=[site], relating_object=project)
         _Ag.assign_object(f, products=[bldg], relating_object=site)
         _Ag.assign_object(f, products=[self.storey], relating_object=bldg)
@@ -64,7 +70,9 @@ class IfcBuilder:
 
     # -- primitives -----------------------------------------------------
     def _pt(self, p):
-        return self.f.create_entity("IfcCartesianPoint", Coordinates=tuple(float(v) for v in p))
+        return self.f.create_entity(
+            "IfcCartesianPoint", Coordinates=tuple(float(v) * self.u for v in p)
+        )
 
     def _dir(self, d):
         return self.f.create_entity("IfcDirection", DirectionRatios=tuple(float(v) for v in d))
@@ -88,7 +96,7 @@ class IfcBuilder:
             SweptArea=profile,
             Position=self.f.create_entity("IfcAxis2Placement3D", Location=self._pt((0, 0, 0))),
             ExtrudedDirection=self._dir((0, 0, 1)),
-            Depth=float(depth),
+            Depth=float(depth) * self.u,
         )
         rep = self.f.create_entity(
             "IfcShapeRepresentation",
@@ -112,8 +120,8 @@ class IfcBuilder:
         return self.f.create_entity(
             "IfcRectangleProfileDef",
             ProfileType="AREA",
-            XDim=float(xdim),
-            YDim=float(ydim),
+            XDim=float(xdim) * self.u,
+            YDim=float(ydim) * self.u,
             Position=self.f.create_entity("IfcAxis2Placement2D", Location=self._pt((ox, oy))),
         )
 
@@ -146,7 +154,7 @@ class IfcBuilder:
                     self.f.create_entity(
                         "IfcMaterialLayer",
                         Material=self.f.create_entity("IfcMaterial", Name=m),
-                        LayerThickness=float(t),
+                        LayerThickness=float(t) * self.u,
                     )
                     for m, t in layers
                 ],
@@ -176,7 +184,7 @@ class IfcBuilder:
             (cx, cy, sill), self.storey.ObjectPlacement, refdir=d
         )
         self._solid(fill, self._rect(width, 0.04, 0.0, 0.0), height)
-        fill.OverallWidth, fill.OverallHeight = float(width), float(height)
+        fill.OverallWidth, fill.OverallHeight = float(width) * self.u, float(height) * self.u
         if operation_type is not None and kind == "IfcDoor":
             fill.OperationType = operation_type
         self._contain(fill)
