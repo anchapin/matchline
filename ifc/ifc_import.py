@@ -49,6 +49,11 @@ from building_model import (
     Zone,
 )
 from ifc.ifc_errors import IfcImportError
+from ifc.wall_pset import (
+    PSET_EXTERNAL_MARK,
+    _wall_marked_interior,
+    _wall_pset_external,
+)
 from pipeline_exceptions import PipelineDependencyError
 
 
@@ -2352,52 +2357,6 @@ def _wall_thermal_transmittance(wall):
     return u if u > 0 and math.isfinite(u) else None
 
 
-def _wall_marked_interior(wall):
-    """Pset_WallCommon.IsExternal explicitly False (#747).
-
-    Exported interior partitions (semi-exterior and vestibule boundaries)
-    carry this pset, so a re-imported matchline file does not count them
-    as envelope. A file without the pset, or with it True, is unchanged.
-    """
-    try:
-        import ifcopenshell.util.element as _El
-
-        psets = _El.get_psets(wall) or {}
-    except (ImportError, AttributeError, RuntimeError):
-        return False
-    ext = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
-    if ext is None or ext is True:
-        return False
-    if ext is False:
-        return True
-    return str(ext).strip().lower() in ("false", ".f.", "0")
-
-
-PSET_EXTERNAL_MARK = "; pset IsExternal"
-
-
-def _wall_pset_external(wall):
-    """Pset_WallCommon.IsExternal explicitly True (#1219).
-
-    Authored exterior data outranks the Tier 1 space probe: space polygons
-    can bleed past a perimeter wall's outer face and an atrium can be
-    modelled as a space, so a wall the pset calls exterior stays in the
-    envelope even when the probe finds spaces on both sides.
-    """
-    try:
-        import ifcopenshell.util.element as _El
-
-        psets = _El.get_psets(wall) or {}
-    except (ImportError, AttributeError, RuntimeError):
-        return False
-    ext = (psets.get("Pset_WallCommon") or {}).get("IsExternal")
-    if ext is None or ext is False:
-        return False
-    if ext is True:
-        return True
-    return str(ext).strip().lower() in ("true", ".t.", "1")
-
-
 def _wall_axis_polyline(el):
     """[(x, y)] points of the wall's Axis representation, element-local.
 
@@ -3642,7 +3601,27 @@ def _classify_envelope(model):
             counts["unclassified"] += 1
             if prov is not None:
                 prov.confidence = min(prov.confidence, 0.5)
-                prov.note += "; no space found on either side -- facade unclassified, review"
+                if PSET_EXTERNAL_MARK in (prov.note or ""):
+                    prov.note += "; no space found on either side -- facade unclassified, review"
+                else:
+                    # no authored flag and no space evidence on either side:
+                    # the wall stays in the model for review but is no longer
+                    # counted as exterior envelope length (#1226)
+                    prov.method = "ifc_import:tier1:unclassified"
+                    prov.note += (
+                        "; no space found on either side and no IsExternal flag -- "
+                        "kept for review, not counted as exterior envelope length (#1226)"
+                    )
+                    model.flag_for_review(
+                        kind="facade_unclear",
+                        description=(
+                            f"Envelope wall {w.id} has no IsExternal pset and no space on "
+                            "either side; kept in the model but not counted as exterior "
+                            "envelope length. Confirm the wall is exterior or remove it."
+                        ),
+                        confidence=0.5,
+                        provenance=prov,
+                    )
         keep.append(w)
     model.envelope[:] = keep
     return counts
