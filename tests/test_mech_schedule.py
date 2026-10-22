@@ -8,7 +8,12 @@ import pytest
 from building_model import ReviewItem
 from mech_schedule import (
     SCHEMA,
+    VALUE_SLOTS,
+    ZONE_LOAD_SLOTS,
     MechScheduleResult,
+    MechScheduleRow,
+    MechValue,
+    _row_values,
     link_to_model,
     parse_capacity,
     parse_cobie_workbook,
@@ -265,10 +270,367 @@ def test_clinic_cobie_real_workbook():
     assert by_type.get("ahu", 0) >= 1
     ahu = [r for r in res.rows if r.tag.startswith("AHU")]
     assert ahu and ahu[0].system_type == "ahu"
-    # no silent accepts: every low-confidence row has a review item
+    # no silent accepts: every low-confidence row has a review item, and
+    # the review list is exactly the classification conflicts plus the
+    # unmappable value slots (#1236), never anything fabricated
     low_rows = [r for r in res.rows if r.confidence == "low"]
-    assert len(low_rows) == len(res.review_items)
+    mech_items = [i for i in res.review_items if i.kind == "mech_schedule"]
+    value_items = [i for i in res.review_items if i.kind == "mech_schedule_value"]
+    assert len(low_rows) == len(mech_items)
+    assert len(res.review_items) == len(mech_items) + len(value_items)
+    assert set(value_items) == {i for i in res.review_items if i.kind == "mech_schedule_value"}
+    assert stats["value_review_items"] == len(value_items)
+    for row in res.rows:
+        for value in row.values:
+            assert value.field in VALUE_SLOTS
+            assert value.zone_load_impacting == (value.field in ZONE_LOAD_SLOTS)
     # every system's service area is checked against the Space sheet
     for system in res.systems:
         for room in system.rooms:
             assert isinstance(room["matched"], bool)
+
+
+# ---------------------------------------------------------------------------
+# #1236: generalized value slots, ambiguity to review, zone-load inputs
+# ---------------------------------------------------------------------------
+
+_VALUE_TYPE_ROWS = [
+    ("Chiller", "23 21 23: Chiller", "150 ton"),
+    ("Boiler", "23 52 16: Boiler", "1200 MBH"),
+    ("Heating Coil HW", "23 72 13: Coil", "800 MBH"),
+    ("Cooling Coil CHW", "23 72 13: Coil", "60 ton"),
+    ("Generic Coil", "23 72 13: Coil", "150 MBH"),
+    ("Pump", "23 21 13: Pump", "50 GPM"),
+    ("Exhaust Fan", "23 34 16: Fan", "1200 CFM"),
+    ("VAV Terminal", "23 73 13: VAV", "Minimum 400 CFM, Maximum 1600 CFM"),
+    ("AHU", "23 74 13: AHU", "63300000 J"),
+    ("Pump Motor", "23 21 13: Pump", "Motor 7.5 kW"),
+    ("VAV Power", "23 73 13: VAV", "2 kW"),
+    ("Head Pump", "23 21 13: Pump", "TDH 60 ft"),
+    ("Head Pump kPa", "23 21 13: Pump", "TDH 200 kPa"),
+    ("Chiller kW", "23 21 23: Chiller", "350 kW"),
+    ("Chiller Qual", "23 21 23: Chiller", "Cooling 250 ton"),
+    ("Boiler Qual", "23 52 16: Boiler", "Heating 900 MBH"),
+    ("Bare Fan", "23 34 16: Fan", "24 in x 20 ft duct, 900"),
+    ("Bare Pump", "23 21 13: Pump", "2 in suction, 6 ft offset, 40"),
+    ("Bare Pump No Sizes", "23 21 13: Pump", "40"),
+    ("Bare VAV", "23 73 13: VAV", "12 in collar, 8 ft duct, 300"),
+    ("Conflict Chiller", "23 21 23: Chiller", "Cooling 100 ton"),
+    ("Chiller CompVal", "23 21 23: Chiller", "Chiller"),
+    ("Diffuser Ls", "23 33 13: Diffuser", "50 L/s"),
+]
+_VALUE_COMP_ROWS = [
+    ("Chiller CH-1", "Chiller", "1A01", "Chiller"),
+    ("Boiler B-1", "Boiler", "1A01", "Boiler"),
+    ("Coil HC-1", "Heating Coil HW", "1B21", "Heating Coil"),
+    ("Coil CC-1", "Cooling Coil CHW", "1B21", "Cooling Coil"),
+    ("Coil C-1", "Generic Coil", "1B21", "Coil"),
+    ("Pump P-1", "Pump", "1A01", "Pump"),
+    ("Fan EF-1", "Exhaust Fan", "1C13", "Exhaust Fan"),
+    ("VAV-1", "VAV Terminal", "2B12", "VAV Box"),
+    ("AHU-1", "AHU", "n/a", "Air Handling Unit"),
+    ("Pump P-2", "Pump Motor", "1A01", "Pump"),
+    ("VAV-3", "VAV Power", "2B12", "VAV Box"),
+    ("Pump P-3", "Head Pump", "1A01", "Pump"),
+    ("Pump P-5", "Head Pump kPa", "1A01", "Pump"),
+    ("Chiller CH-2", "Chiller kW", "1A01", "Chiller"),
+    ("Chiller CH-4", "Chiller Qual", "1A01", "Chiller"),
+    ("Boiler B-2", "Boiler Qual", "1A01", "Boiler"),
+    ("Fan EF-2", "Bare Fan", "1C13", "Exhaust Fan"),
+    ("Pump P-4", "Bare Pump", "1A01", "Pump"),
+    ("Pump P-6", "Bare Pump No Sizes", "1A01", "Pump"),
+    ("VAV-2", "Bare VAV", "2B12", "VAV Box"),
+    ("Chiller CH-3", "Conflict Chiller", "1A01", "Cooling 120 ton"),
+    ("Chiller CH-5", "Chiller CompVal", "1A01", "180 ton"),
+    ("Diffuser D-1", "Diffuser Ls", "1A02", "Supply Diffuser"),
+]
+
+
+def _write_value_workbook(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    t = wb.active
+    t.title = "Type"
+    t.append(["Name", "CreatedBy", "CreatedOn", "Category", "Description", "ExtObject"])
+    for name, cat, desc in _VALUE_TYPE_ROWS:
+        t.append([name, "tester@example.com", "2013-10-09", cat, desc, "IfcTypeProduct"])
+    c = wb.create_sheet("Component")
+    c.append(
+        [
+            "Name",
+            "CreatedBy",
+            "CreatedOn",
+            "TypeName",
+            "Space",
+            "Description",
+            "ExtSystem",
+            "ExtObject",
+            "ExtIdentifier",
+            "SerialNumber",
+            "InstallationDate",
+            "WarrantyStartDate",
+            "TagNumber",
+            "BarCode",
+        ]
+    )
+    for name, type_name, space, desc in _VALUE_COMP_ROWS:
+        c.append(
+            [
+                name,
+                "tester@example.com",
+                "2013-10-09",
+                type_name,
+                space,
+                desc,
+                "n/a",
+                "IfcEnergyConversionDevice",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+            ]
+        )
+    s = wb.create_sheet("Space")
+    s.append(["Name", "CreatedBy", "CreatedOn", "Category", "FloorName", "Description"])
+    for name in {"1A01", "1A02", "1B21", "1C13", "2B12"}:
+        s.append([name, "tester@example.com", "2013-10-09", "Space", "F1", "n/a"])
+    path = tmp_path / "value-schedules.xlsx"
+    wb.save(path)
+    return path
+
+
+@pytest.fixture()
+def vresult(tmp_path):
+    return parse_cobie_workbook(_write_value_workbook(tmp_path))
+
+
+def _vrow(res: MechScheduleResult, tag: str) -> MechScheduleRow:
+    matches = [r for r in res.rows if r.tag == tag]
+    assert len(matches) == 1, f"expected one row tagged {tag}, got {matches}"
+    return matches[0]
+
+
+def _slots(row: MechScheduleRow):
+    return {v.field: v for v in row.values}
+
+
+def _value_reviews(res: MechScheduleResult, tag: str):
+    return [i for i in res.review_items if i.kind == "mech_schedule_value" and tag in i.id]
+
+
+def test_coil_text_rules_and_coils_stay_rows(vresult):
+    assert _vrow(vresult, "HC-1").system_type == "heating_coil"
+    assert _vrow(vresult, "CC-1").system_type == "cooling_coil"
+    assert _vrow(vresult, "C-1").system_type == "coil"
+    # coils stay schedule rows, never MechSystem entities
+    system_tags = {s.tag for s in vresult.systems}
+    assert {"HC-1", "CC-1", "C-1"}.isdisjoint(system_tags)
+
+
+def test_bare_thermal_units_map_through_family_defaults(vresult):
+    cooling = _slots(_vrow(vresult, "CH-1"))["cooling_capacity"]
+    assert cooling.value == 150.0
+    assert cooling.unit == "ton"
+    assert cooling.confidence == "medium"
+    assert cooling.zone_load_impacting is False
+    heating = _slots(_vrow(vresult, "B-1"))["heating_capacity"]
+    assert heating.value == 1200.0
+    assert heating.unit == "MBH"
+    assert heating.confidence == "medium"
+
+
+def test_coil_family_defaults_follow_the_coil_kind(vresult):
+    assert _slots(_vrow(vresult, "HC-1"))["heating_capacity"].value == 800.0
+    assert _slots(_vrow(vresult, "CC-1"))["cooling_capacity"].value == 60.0
+    assert _slots(_vrow(vresult, "CC-1"))["cooling_capacity"].unit == "ton"
+
+
+def test_explicit_qualifier_is_high_confidence(vresult):
+    cooling = _slots(_vrow(vresult, "CH-4"))["cooling_capacity"]
+    assert cooling.value == 250.0
+    assert cooling.confidence == "high"
+    heating = _slots(_vrow(vresult, "B-2"))["heating_capacity"]
+    assert heating.value == 900.0
+    assert heating.confidence == "high"
+
+
+def test_airflow_units_min_max_and_lps(vresult):
+    fan = _slots(_vrow(vresult, "EF-1"))["airflow"]
+    assert fan.value == 1200.0
+    assert fan.unit == "CFM"
+    assert fan.confidence == "high"
+    assert fan.zone_load_impacting is True
+    row = _vrow(vresult, "VAV-1")
+    slots = _slots(row)
+    assert slots["airflow_min"].value == 400.0
+    assert slots["airflow_min"].confidence == "high"
+    assert slots["airflow_max"].value == 1600.0
+    assert slots["airflow_max"].zone_load_impacting is True
+    assert "airflow" not in slots
+    diffuser = _slots(_vrow(vresult, "D-1"))["airflow"]
+    assert diffuser.value == 50.0
+    assert diffuser.unit == "L/s"
+    assert diffuser.zone_load_impacting is True
+
+
+def test_water_flow_gpm(vresult):
+    flow = _slots(_vrow(vresult, "P-1"))["water_flow"]
+    assert flow.value == 50.0
+    assert flow.unit == "GPM"
+    assert flow.confidence == "high"
+    assert flow.zone_load_impacting is False
+
+
+def test_power_slots_for_non_thermal_families(vresult):
+    motor = _slots(_vrow(vresult, "P-2"))["power"]
+    assert motor.value == 7.5
+    assert motor.unit == "kW"
+    assert motor.confidence == "high"  # explicit motor qualifier
+    vav = _slots(_vrow(vresult, "VAV-3"))["power"]
+    assert vav.value == 2.0
+    assert vav.confidence == "medium"  # unqualified kW on a non-thermal family
+
+
+def test_head_slot_with_tdh_qualifier(vresult):
+    head_ft = _slots(_vrow(vresult, "P-3"))["head"]
+    assert head_ft.value == 60.0
+    assert head_ft.unit == "ft"
+    assert head_ft.confidence == "high"
+    head_kpa = _slots(_vrow(vresult, "P-5"))["head"]
+    assert head_kpa.value == 200.0
+    assert head_kpa.unit == "kPa"
+    assert head_kpa.confidence == "high"
+
+
+def test_ambiguous_family_thermal_values_are_never_recorded(vresult):
+    # AHU with bare thermal unit, generic coil, chiller with bare kW:
+    # each states a value the family cannot disambiguate, so no value is
+    # emitted and a review item cites the cell instead.
+    for tag, cell in (("AHU-1", None), ("C-1", None), ("CH-2", None)):
+        row = _vrow(vresult, tag)
+        assert row.values == [], f"{tag} must carry no values"
+        reviews = _value_reviews(vresult, tag)
+        assert reviews, f"{tag} must produce a value review item"
+        assert reviews[0].id.startswith(f"mechval:{tag}:")
+        assert "value not recorded" in reviews[0].description
+
+
+def test_value_review_item_cites_sheet_row_cell_and_raw(vresult):
+    item = _value_reviews(vresult, "AHU-1")[0]
+    assert item.kind == "mech_schedule_value"
+    assert item.needs_review is True
+    assert "Type!" in item.description
+    assert "63300000 J" in item.description
+    assert "ahu" in item.description
+
+
+def test_bare_number_ip_defaults_and_unused_bare_numbers(vresult):
+    fan = _slots(_vrow(vresult, "EF-2"))["airflow"]
+    assert fan.value == 900.0
+    assert fan.unit == "CFM"
+    assert fan.confidence == "medium"  # IP default, not a stated unit
+    assert fan.zone_load_impacting is True
+    pump = _slots(_vrow(vresult, "P-4"))["water_flow"]
+    assert pump.value == 40.0
+    assert pump.unit == "GPM"
+    assert pump.confidence == "medium"
+    # no feet+inches in the text, or no family default: bare numbers are
+    # unreadable, never used and never guessed
+    assert _vrow(vresult, "P-6").values == []
+    assert _vrow(vresult, "VAV-2").values == []
+    # dimension sizes (in/ft) inside an IP-default text never become
+    # values or review items
+    assert not _value_reviews(vresult, "P-6")
+    assert not _value_reviews(vresult, "VAV-2")
+    assert not _value_reviews(vresult, "P-4")
+    assert not _value_reviews(vresult, "EF-2")
+
+
+def test_conflicting_slot_values_are_nulled_with_one_review(vresult):
+    row = _vrow(vresult, "CH-3")
+    slots = _slots(row)
+    assert set(slots) == {"cooling_capacity"}
+    values = [v for v in row.values if v.field == "cooling_capacity"]
+    assert len(values) == 2
+    for value in values:
+        assert value.value is None
+        assert value.confidence == "low"
+    assert {v.raw for v in values} == {"100 ton", "120 ton"}
+    conflicts = [i for i in _value_reviews(vresult, "CH-3") if "conflict" in i.description]
+    assert len(conflicts) == 1
+    assert "100 ton" in conflicts[0].description
+    assert "120 ton" in conflicts[0].description
+
+
+def test_value_provenance_cells_name_the_workbook_cell(vresult):
+    cooling = _slots(_vrow(vresult, "CH-1"))["cooling_capacity"]
+    assert cooling.sheet == "Type"
+    assert cooling.cell.startswith("E")
+    assert cooling.row >= 2
+    comp_value = _slots(_vrow(vresult, "CH-5"))["cooling_capacity"]
+    assert comp_value.sheet == "Component"
+    assert comp_value.cell.startswith("F")
+    assert comp_value.row >= 2
+    assert comp_value.value == 180.0
+
+
+def test_zone_load_flag_confined_to_airflow_slots(vresult):
+    for row in vresult.rows:
+        for value in row.values:
+            if value.field in ZONE_LOAD_SLOTS:
+                assert value.zone_load_impacting is True
+            else:
+                assert value.zone_load_impacting is False
+    airflow_count = sum(1 for row in vresult.rows for v in row.values if v.field in ZONE_LOAD_SLOTS)
+    assert vresult.stats["zone_load_inputs"] == airflow_count
+    # recorded inputs only: nothing here sizes equipment, so no slot or
+    # stat carries a sized/derived value
+    assert not any("sized" in s or "load" == s for s in VALUE_SLOTS)
+
+
+def test_stats_carry_value_counts(vresult):
+    assert vresult.stats["values"] == sum(len(r.values) for r in vresult.rows)
+    assert vresult.stats["values"] > 10
+    assert vresult.stats["value_review_items"] == len(
+        [i for i in vresult.review_items if i.kind == "mech_schedule_value"]
+    )
+
+
+def test_system_values_copy_row_values(vresult):
+    systems = {s.tag: s for s in vresult.systems}
+    assert systems["CH-1"].values == _vrow(vresult, "CH-1").values
+    assert systems["EF-1"].values
+    # low-confidence rows still parse values but produce no system
+    assert _vrow(vresult, "CH-3").system_type == "chiller"
+
+
+def test_mechvalue_is_frozen_and_rows_default_to_empty():
+    value = MechValue(
+        field="airflow",
+        value=100.0,
+        unit="CFM",
+        raw="100 CFM",
+        sheet="Type",
+        row=2,
+        cell="E2",
+        confidence="high",
+        zone_load_impacting=True,
+    )
+    with pytest.raises(Exception):
+        value.value = 200.0  # type: ignore[misc]
+    row = MechScheduleRow(
+        tag="X-1",
+        name="X-1",
+        type_name="t",
+        type_description="",
+        category="c",
+        description="",
+        service_area="",
+        system_type="pump",
+        confidence="medium",
+        capacity=None,
+    )
+    assert row.values == []
+    _row_values("X-1", "pump", "", "", "", "")
