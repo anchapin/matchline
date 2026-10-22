@@ -127,7 +127,7 @@ Design rules (from the issue):
   which the same report shows side by side.
 
 Everything is deterministic (same seed reproduces the same sheet), pure
-PIL/numpy, and CPU-friendly. Tests: `tests/test_degrade_scans.py` (32) plus
+PIL/numpy, and CPU-friendly. Tests: `tests/test_degrade_scans.py` (33) plus
 convert integration tests in `tests/test_convert_synth.py`.
 
 Note: the measured clean-vs-degraded robustness delta needs a trained
