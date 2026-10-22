@@ -205,3 +205,19 @@ def test_transform_gt_moves_geometry_together():
 
 def test_eval_severity_pinned():
     assert 0.0 < EVAL_SEVERITY <= 1.0
+
+
+def test_bleed_through_darkens_where_flipped_ink_sits(plan_img):
+    """Bleed-through shows the sheet behind: the plan's own mirrored ink
+    faintly darkens otherwise-blank paper, and the effect is seeded."""
+    out = apply_scan(plan_img, "bleed_through", 1.0, seed=42)
+    arr = np.asarray(out.convert("L"), dtype=np.float32)
+    # plan_img has ink at x in [100..200] and [300..350]; mirrored it lands
+    # at x in [200..300] and [50..100]. Compare a mirrored-ink zone to a
+    # truly blank zone at the same distance from the edges.
+    ink_zone = arr[160:240, 210:290]
+    blank_zone = arr[160:240, 360:400]
+    assert ink_zone.mean() < blank_zone.mean() - 1.0
+    # Deterministic.
+    out2 = apply_scan(plan_img, "bleed_through", 1.0, seed=42)
+    assert (np.asarray(out) == np.asarray(out2)).all()
