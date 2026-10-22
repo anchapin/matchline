@@ -187,7 +187,10 @@ jobs:
         # (GHSA-6q48-6c7w-9gw2), not ignored. Second rotation 2026-10-22
         # (#1239 PR run): the advisory DB published 10 more pillow CVEs
         # (CVE-2026-96636..96644, 96778), same package, same fix version,
-        # same gradio cap; ignored with the same reason.
+        # same gradio cap; ignored with the same reason. Third rotation
+        # 2026-10-22 (#1249 CI run): GHSA-78g4-xqwv-q3g8 on the same
+        # pillow 12.3.0, fix version 13.0.0, still behind the gradio cap;
+        # ignored with the same reason.
         run: >-
           uv pip uninstall matchline && uv run --no-sync pip-audit --strict
           --ignore-vuln CVE-2026-112390
@@ -224,6 +227,7 @@ jobs:
           --ignore-vuln CVE-2026-96643
           --ignore-vuln CVE-2026-96644
           --ignore-vuln CVE-2026-96778
+          --ignore-vuln GHSA-78g4-xqwv-q3g8
 
   deptry:
     # #1190: the #1070 bug class - a shipped module imports a package that is

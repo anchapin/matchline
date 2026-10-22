@@ -32,38 +32,100 @@ def _workbook(path: Path, tamper_row: bool = False) -> Path:
     comp = wb.active
     comp.title = "Component"
     comp.append(
-        ["Name", "CreatedBy", "CreatedOn", "Category", "System", "TypeName",
-         "Space", "ExtObject", "ExtIdentifier", "ExternalObject",
-         "ExternalIdentifier", "Description", "TagNumber"]
+        [
+            "Name",
+            "CreatedBy",
+            "CreatedOn",
+            "Category",
+            "System",
+            "TypeName",
+            "Space",
+            "ExtObject",
+            "ExtIdentifier",
+            "ExternalObject",
+            "ExternalIdentifier",
+            "Description",
+            "TagNumber",
+        ]
     )
     comp.append(
-        ["AC Unit Type 1 AC-1", "", "", "Requirement", "", "AC Unit Type 1",
-         "1A01", "", "", "", "", "Rooftop unit", "n/a"]
+        [
+            "AC Unit Type 1 AC-1",
+            "",
+            "",
+            "Requirement",
+            "",
+            "AC Unit Type 1",
+            "1A01",
+            "",
+            "",
+            "",
+            "",
+            "Rooftop unit",
+            "n/a",
+        ]
     )
     comp.append(
-        ["Chiller CH-2", "", "", "Requirement", "", "Chiller",
-         "1A02", "", "", "", "", "Water cooled", "CH-2"]
+        [
+            "Chiller CH-2",
+            "",
+            "",
+            "Requirement",
+            "",
+            "Chiller",
+            "1A02",
+            "",
+            "",
+            "",
+            "",
+            "Water cooled",
+            "CH-2",
+        ]
     )
     if tamper_row:
         comp.append(
-            ["AC Unit Type 1 AC-1", "", "", "Requirement", "", "AC Unit Type 1",
-             "1A09", "", "", "", "", "Moved", "n/a"]
+            [
+                "AC Unit Type 1 AC-1",
+                "",
+                "",
+                "Requirement",
+                "",
+                "AC Unit Type 1",
+                "1A09",
+                "",
+                "",
+                "",
+                "",
+                "Moved",
+                "n/a",
+            ]
         )
     ty = wb.create_sheet("Type")
-    ty.append(["Name", "CreatedBy", "CreatedOn", "Category", "ExtObject",
-               "ExtIdentifier", "Description"])
+    ty.append(
+        ["Name", "CreatedBy", "CreatedOn", "Category", "ExtObject", "ExtIdentifier", "Description"]
+    )
     ty.append(["AC Unit Type 1", "", "", "Equipment", "", "", "3500 Watt Capacity"])
     ty.append(["Chiller", "", "", "Equipment", "", "", "63300000 J"])
     sp = wb.create_sheet("Space")
-    sp.append(["Name", "CreatedBy", "CreatedOn", "Category", "FloorName",
-               "ExtObject", "ExtIdentifier", "Description"])
+    sp.append(
+        [
+            "Name",
+            "CreatedBy",
+            "CreatedOn",
+            "Category",
+            "FloorName",
+            "ExtObject",
+            "ExtIdentifier",
+            "Description",
+        ]
+    )
     sp.append(["1A01", "", "", "Requirement", "First Floor", "", "", "Clinic"])
     sp.append(["1A02", "", "", "Requirement", "First Floor", "", "", "Clinic"])
     at = wb.create_sheet("Attribute")
-    at.append(["Name", "CreatedBy", "CreatedOn", "Category", "SheetName",
-               "RowName", "Value", "Unit"])
-    at.append(["Total", "", "", "Requirement", "Component",
-               "AC Unit Type 1 AC-1", "300", "L/s"])
+    at.append(
+        ["Name", "CreatedBy", "CreatedOn", "Category", "SheetName", "RowName", "Value", "Unit"]
+    )
+    at.append(["Total", "", "", "Requirement", "Component", "AC Unit Type 1 AC-1", "300", "L/s"])
     wb.save(path)
     return path
 
@@ -102,12 +164,57 @@ def test_truth_reader_reports_untagged_and_duplicate_rows(tmp_path: Path) -> Non
     wb_path = _workbook(tmp_path / "w.xlsx")
     wb = openpyxl.load_workbook(wb_path)
     comp = wb["Component"]
-    comp.append(["Thermostat", "", "", "Requirement", "", "Thermostat",
-                 "1A01", "", "", "", "", "Wall stat", "n/a"])
-    comp.append(["Fan FU-2 HU-2", "", "", "Requirement", "", "Fan Unit",
-                 "1A02", "", "", "", "", "Dup", "n/a"])
-    comp.append(["Fan FU-2 HU-2", "", "", "Requirement", "", "Fan Unit",
-                 "1A03", "", "", "", "", "Dup again", "n/a"])
+    comp.append(
+        [
+            "Thermostat",
+            "",
+            "",
+            "Requirement",
+            "",
+            "Thermostat",
+            "1A01",
+            "",
+            "",
+            "",
+            "",
+            "Wall stat",
+            "n/a",
+        ]
+    )
+    comp.append(
+        [
+            "Fan FU-2 HU-2",
+            "",
+            "",
+            "Requirement",
+            "",
+            "Fan Unit",
+            "1A02",
+            "",
+            "",
+            "",
+            "",
+            "Dup",
+            "n/a",
+        ]
+    )
+    comp.append(
+        [
+            "Fan FU-2 HU-2",
+            "",
+            "",
+            "Requirement",
+            "",
+            "Fan Unit",
+            "1A03",
+            "",
+            "",
+            "",
+            "",
+            "Dup again",
+            "n/a",
+        ]
+    )
     wb.save(wb_path)
     truth = build_truth(wb_path)
     assert truth["counts"]["untagged"] == 1
@@ -191,20 +298,23 @@ def test_run_schedule_bench_reports_real_disagreement(tmp_path: Path) -> None:
     wb_path = _workbook(tmp_path / "w.xlsx")
     truth = build_truth(wb_path)
     truth["rows"]["EX-99"] = {
-        "row": 99, "name": "Exhaust Fan EX-99", "type_name": "Exhaust Fan",
-        "space": "1A03", "description": "", "tag_source": "name",
+        "row": 99,
+        "name": "Exhaust Fan EX-99",
+        "type_name": "Exhaust Fan",
+        "space": "1A03",
+        "description": "",
+        "tag_source": "name",
     }
     result = parse_cobie_workbook(wb_path)
     m = run_schedule_bench(truth, result)
-    assert "EX-99" in [x["tag"] for x in m["tags"]["missed_sample"]] or \
-        m["counts"]["missed_tags"] >= 1
+    assert (
+        "EX-99" in [x["tag"] for x in m["tags"]["missed_sample"]] or m["counts"]["missed_tags"] >= 1
+    )
     assert m["tags"]["recall"] < 1.0
 
 
 def test_bench_json_roundtrip(tmp_path: Path) -> None:
     wb_path = _workbook(tmp_path / "w.xlsx")
     truth = build_truth(wb_path)
-    truth["workbook_sha256"] = json.loads(
-        json.dumps(truth["workbook_sha256"])
-    )
+    truth["workbook_sha256"] = json.loads(json.dumps(truth["workbook_sha256"]))
     assert truth["counts"]["tagged"] == len(truth["rows"])

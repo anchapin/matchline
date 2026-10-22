@@ -64,8 +64,21 @@ _AIRFLOW_UNITS = {"l/s", "lps", "cfm", "m3/s", "m3/h", "l/min"}
 # units above stay separate. A stated ``24 Volt`` is a stated value, but
 # it is not a stated capacity, so it does not enter the capacity metric.
 _CAP_TOKEN_UNITS = {
-    "kw", "kva", "w", "watt", "watts", "j", "kj", "mj",
-    "btu", "btu/h", "mbh", "ton", "tons", "tr", "gpm",
+    "kw",
+    "kva",
+    "w",
+    "watt",
+    "watts",
+    "j",
+    "kj",
+    "mj",
+    "btu",
+    "btu/h",
+    "mbh",
+    "ton",
+    "tons",
+    "tr",
+    "gpm",
 }
 
 # Units that name dimensions, not equipment capacities: a stated "24 mm" is
