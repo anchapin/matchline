@@ -384,7 +384,8 @@
       "classes": {
         "MechScheduleResult": "",
         "MechScheduleRow": "",
-        "MechSystem": ""
+        "MechSystem": "",
+        "MechValue": ""
       },
       "functions": {
         "classify": "tag: str, type_name: str, type_description: str, component_description: str=''",

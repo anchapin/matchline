@@ -338,6 +338,7 @@ module's guide under `docs/`.
 - class `MechScheduleResult`
 - class `MechScheduleRow`
 - class `MechSystem`
+- class `MechValue`
 
 ## `plan_walls`
 
