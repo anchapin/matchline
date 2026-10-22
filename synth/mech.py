@@ -972,12 +972,20 @@ def save_mech_sheet(seed: int, outdir: str | Path) -> tuple[Path, Path]:
 
 
 def render_template(
-    cls: str, margin_px: int = 4, stubs: bool | None = None, style: int = 0
+    cls: str,
+    margin_px: int = 4,
+    stubs: bool | None = None,
+    style: int = 0,
+    lw: int | None = None,
 ) -> np.ndarray:
     """Grayscale template of one symbol at sheet scale.
 
     ``style`` 1 draws the class's other drafting convention (``_ALT_GLYPH_FN``)
     instead of matchline's own glyph.
+
+    ``lw`` overrides the glyph's outline line weight in px (``None`` keeps
+    each class's own default; #1252's lw-variation experiments draw the same
+    glyph at lw 2/3/4).
 
     With stubs=True (default per TEMPLATE_STUBS) the template includes the
     duct stubs that attach to the symbol on real sheets (spine through the
@@ -1020,7 +1028,7 @@ def render_template(
         elif cls in ("diffuser", "grille"):
             d.rectangle([cx - 7.5, 0, cx + 7.5, H], fill=0)  # drop
     fn = _ALT_GLYPH_FN[cls] if style == 1 and cls in _ALT_GLYPH_FN else _GLYPH_FN[cls]
-    fn(d, cx, cy)
+    fn(d, cx, cy) if lw is None else fn(d, cx, cy, lw)
     return np.asarray(img).astype(np.float64)
 
 

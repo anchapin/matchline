@@ -40,7 +40,7 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-from scipy.ndimage import binary_opening
+from scipy.ndimage import binary_dilation, binary_opening
 from scipy.ndimage import label as clabel
 from scipy.signal import fftconvolve
 
@@ -209,6 +209,109 @@ def _tight_confirm_score(gray: np.ndarray, cls: str, cx: float, cy: float) -> fl
     )
 
 
+# Stroke-width-invariant confirm route (#1252). Raw NCC compares ink at
+# whatever weight the sheet drew it: a grille drawn 1 px heavier or lighter
+# than the template covers more or fewer pixels and scores lower. This route
+# binarizes window and template at LW_INK_THRESH, applies the same band mask
+# to both BEFORE skeletonizing (so a duct drop entering the glyph cannot
+# reshape one skeleton and not the other), skeletonizes both to 1 px
+# centre-lines (zhang_suen) and dilates back to a canonical stroke width, so
+# outline weight cancels and only glyph geometry is left to correlate.
+# Stroke radii LW_STROKE_RADII are tried together: radius 1 matches thin
+# clean glyphs, radius 2 matches heavier ones whose blades sit closer
+# together. 0.0 off-sheet or blank, like _local_ncc. Thresholds are read off
+# synthetic sheets only, per the #745 rule; Clinic only measures.
+LW_INK_THRESH = 128
+LW_STROKE_RADII = (1, 2)
+# Bars for the stroke-width-invariant route (#1252), read off synthetic
+# sheets (lw 2/3/4, both grille styles, blank/drop/clutter contexts):
+# true grille sites score 0.825-1.000, a diffuser glyph scored as grille
+# tops out at 0.731 and non-terminal false sites at 0.472. The route is
+# grille-only: the measured varied-loss residue is grille-side (#887), and
+# on Clinic weight/scale runs a diffuser-side route added a false diffuser
+# with no measured gain. LW_CONFIRM_NCC sits above every raw-rejected
+# synthetic false/cross case and below every synthetic true grille score;
+# LW_RELABEL_NCC sits 0.049 above the diffuser-as-grille maximum and 0.045
+# below the grille true minimum. None disables a route. Clinic clean must
+# hold 234/0 diffusers and 206/0 grilles with these on.
+LW_CONFIRM_NCC = 0.74
+LW_RELABEL_NCC = 0.78
+
+
+def _skeleton_ink(a: np.ndarray, radius: int) -> np.ndarray:
+    """Canonical-stroke image of ``a`` (grayscale, ink dark): binarize,
+    skeletonize to 1 px, dilate to a fixed stroke width. All paper if blank."""
+    a = np.asarray(a)
+    ink = a < LW_INK_THRESH
+    if not ink.any():
+        return np.zeros(a.shape, dtype=np.float64)
+    sk = zhang_suen(ink.astype(np.uint8)) > 0
+    if radius:
+        sk = binary_dilation(sk, structure=_disk(2 * radius + 1))
+    return sk.astype(np.float64)
+
+
+def _window_band_mask(mask: np.ndarray, th: int, tw: int, r: int) -> np.ndarray:
+    """Extend a template-shaped tight mask to the (th + 2r, tw + 2r) search
+    window: the same band columns, with the mask's row halves anchored at the
+    window centre (the template sits within +-r of it)."""
+    w, h = tw + 2 * r, th + 2 * r
+    bandc = np.abs(np.arange(w) + 0.5 - w / 2) < TIGHT_CONFIRM_BAND_PX
+    wm = np.ones((h, w), bool)
+    if not mask[: th // 2].all():
+        wm[: h // 2, bandc] = False
+    if not mask[th // 2 :].all():
+        wm[h // 2 :, bandc] = False
+    return wm
+
+
+def _lw_ncc(
+    gray: np.ndarray,
+    tmpl: np.ndarray,
+    cx: float,
+    cy: float,
+    r: int,
+    mask: np.ndarray | None = None,
+) -> float:
+    """Best stroke-normalized NCC of ``tmpl`` (optionally over mask pixels
+    only) centred within r px of (cx, cy); 0.0 off-sheet or blank window.
+
+    Mask-first: the band is blanked in window and template before
+    skeletonization, so both skeletons see the same cut."""
+    th, tw = tmpl.shape
+    y0, x0 = int(round(cy - th / 2)) - r, int(round(cx - tw / 2)) - r
+    if y0 < 0 or x0 < 0 or y0 + th + 2 * r > gray.shape[0] or x0 + tw + 2 * r > gray.shape[1]:
+        return 0.0
+    if mask is None:
+        mask = np.ones(tmpl.shape, bool)
+    win = gray[y0 : y0 + th + 2 * r, x0 : x0 + tw + 2 * r]
+    wmask = _window_band_mask(mask, th, tw, r)
+    best = 0.0
+    for radius in LW_STROKE_RADII:
+        tsk = _skeleton_ink(np.where(mask, tmpl, 255.0), radius)[mask]
+        t = tsk - tsk.mean()
+        tn = math.sqrt(float((t**2).sum()))
+        if tn == 0:
+            continue
+        w2 = _skeleton_ink(np.where(wmask, win, 255.0), radius)
+        for dy in range(2 * r + 1):
+            for dx in range(2 * r + 1):
+                p = w2[dy : dy + th, dx : dx + tw][mask]
+                p = p - p.mean()
+                pn = math.sqrt(float((p**2).sum()))
+                if pn > 0:
+                    best = max(best, float((p * t).sum()) / (pn * tn))
+    return best
+
+
+def _lw_confirm_score(gray: np.ndarray, cls: str, cx: float, cy: float) -> float:
+    return max(
+        _lw_ncc(gray, t, cx, cy, TIGHT_CONFIRM_R_PX, m)
+        for t in _tight_templates(cls)
+        for m in _tight_masks(t, TIGHT_CONFIRM_BAND_PX)
+    )
+
+
 # A grille or diffuser whose WiSARD label fails the tight confirm takes the
 # NCC proposal's class when that is the other terminal class and its tight
 # template scores at least this (#745). It sits above TIGHT_CONFIRM_NCC: at
@@ -232,12 +335,20 @@ def _confirm_label(gray: np.ndarray, d: dict) -> bool:
     label = d["label"]
     if label not in _TERMINAL_PAIR:
         return True
-    if _tight_confirm_score(gray, label, d["cx"], d["cy"]) >= TIGHT_CONFIRM_NCC:
+    if _tight_confirm_score(gray, label, d["cx"], d["cy"]) >= TIGHT_CONFIRM_NCC or (
+        label == "grille"
+        and LW_CONFIRM_NCC is not None
+        and _lw_confirm_score(gray, label, d["cx"], d["cy"]) >= LW_CONFIRM_NCC
+    ):
         return True
     other = _TERMINAL_PAIR[label]
     if RELABEL_CONFIRM_NCC is None or d.get("ncc_cls") != other:
         return False
-    if _tight_confirm_score(gray, other, d["cx"], d["cy"]) >= RELABEL_CONFIRM_NCC:
+    if _tight_confirm_score(gray, other, d["cx"], d["cy"]) >= RELABEL_CONFIRM_NCC or (
+        other == "grille"
+        and LW_RELABEL_NCC is not None
+        and _lw_confirm_score(gray, other, d["cx"], d["cy"]) >= LW_RELABEL_NCC
+    ):
         d["label"] = other
         return True
     return False

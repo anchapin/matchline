@@ -63,8 +63,12 @@ def test_reweighted_grille_called_diffuser_is_kept_as_grille(monkeypatch, lw):
 
 def test_grille_score_between_confirm_and_bar_is_not_relabelled(monkeypatch):
     gray = _sheet("grille", lw=2)
-    s = H._tight_confirm_score(gray, "grille", C, C)
-    monkeypatch.setattr(H, "RELABEL_CONFIRM_NCC", s + 0.01)
+    # #1252 added a second relabel route (stroke-normalized confirm): a score
+    # below BOTH routes stays diffuser
+    raw = H._tight_confirm_score(gray, "grille", C, C)
+    lw = H._lw_confirm_score(gray, "grille", C, C)
+    monkeypatch.setattr(H, "RELABEL_CONFIRM_NCC", raw + 0.01)
+    monkeypatch.setattr(H, "LW_RELABEL_NCC", lw + 0.01)
     assert _run(monkeypatch, gray, "grille", "diffuser") == []
 
 
