@@ -8,7 +8,7 @@ for what is versioned, how versions bump, and what readers accept.
 
 | Artifact | Version field | Current |
 | --- | --- | --- |
-| Canonical model JSON (`model.json`, API payloads) | `model_version` (wrapper) | `1.2` (`MODEL_VERSION`) |
+| Canonical model JSON (`model.json`, API payloads) | `model_version` (wrapper) | `1.3` (`MODEL_VERSION`) |
 | Review decisions file (`out/review/decisions.json`) | `schema` | `matchline.review_decisions/1` |
 | Export package manifest | `schema` | `matchline.package/1` |
 | Trust report | `schema` | `matchline.trust_report/1` |

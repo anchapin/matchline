@@ -25,6 +25,7 @@ module's guide under `docs/`.
 - class `Construction`
 - class `DaylitZone`
 - class `EnvelopeWall`
+- class `Equipment`
 - class `FixtureInstance`
 - class `Level`
 - class `OpeningAttachmentSummary`
@@ -32,6 +33,7 @@ module's guide under `docs/`.
 - class `ReviewItem`
 - class `RevisionEvent`
 - class `RoofPlane`
+- class `ServingRef`
 - class `ShadingSurface`
 - class `Space`
 - class `SpaceAdjacency`

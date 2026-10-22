@@ -149,6 +149,7 @@ py-modules = [
     "area_definitions",
     "air_loops",
     "building_model",
+    "equipment",
     "cli",
     "construction_library",
     "construction_library_data",

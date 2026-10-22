@@ -20,7 +20,7 @@ The `demo-smoke` job installs the package non-editable the way a fresh user woul
 
 **Behavior:**
 - CI runs `pytest --collect-only` to count tests
-- If the count differs from `EXPECTED_TEST_COUNT` (3801; +2 declared-length-over-body-bbox wall tests, #1227; +3 pset-exterior lining guard + unclassified-envelope tests, #1226; +2 geometry-first window-area truth tests, #1220; +3 wall-axis/Qto length-fallback tests, #1219; +2 mm-unit kernel-verts file-units tests, #1217; +1 bodyless-wall direct-fill regression test, #1214; +4 direct-fill window/door enumeration tests, #1206; +2 wall-length body-geometry fallback tests, #1205; +3 rect-profile / face-set space footprint tests, #1204; +2 closet area-cap tests, #1209; +6 mapped-item/CSG body unwrap tests, #1203; +7 independent benchmark truth tests, #1165; +1 API reference doc sync test, #1167), the step fails
+- If the count differs from `EXPECTED_TEST_COUNT` (3816; +15 unified equipment model tests, #1237; +2 declared-length-over-body-bbox wall tests, #1227; +3 pset-exterior lining guard + unclassified-envelope tests, #1226; +2 geometry-first window-area truth tests, #1220; +3 wall-axis/Qto length-fallback tests, #1219; +2 mm-unit kernel-verts file-units tests, #1217; +1 bodyless-wall direct-fill regression test, #1214; +4 direct-fill window/door enumeration tests, #1206; +2 wall-length body-geometry fallback tests, #1205; +3 rect-profile / face-set space footprint tests, #1204; +2 closet area-cap tests, #1209; +6 mapped-item/CSG body unwrap tests, #1203; +7 independent benchmark truth tests, #1165; +1 API reference doc sync test, #1167), the step fails
 - A drift of ±1 or more **requires investigation before merging**
 
 **What to do if you legitimately need to change the test count:**

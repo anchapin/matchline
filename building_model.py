@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Literal, Optional, Union, get_args, get_orig
 
 from datasets_adapter import ScheduleEntry
 
-MODEL_VERSION = "1.2"
+MODEL_VERSION = "1.3"
 # 1.0 -> 1.1: SpaceOpening gained ``source_provenance`` (1-2 per-sheet records,
 # issue #663). 1.0 payloads are migrated on load by _migrate_model_dict.
 # 1.1 -> 1.2: SpaceOpening gained ``adjacent_space_id`` (the space on the far
@@ -425,6 +425,62 @@ class AirLoop:
     box_tags: List[str] = field(default_factory=list)
     zone_ids: List[str] = field(default_factory=list)
     box_airflow_sum_m3s: Optional[float] = None
+    provenance: Provenance | None = None
+
+
+@dataclass
+class ServingRef:
+    """One resolved serving relationship (#1237): the equipment carries it,
+    the HVAC zone it names is served by this piece of equipment, and
+    ``source`` says where the relationship was read:
+
+    * ``plan_terminal_tag``: the zone's terminal unit on the plan carries
+      this equipment's schedule tag.
+    * ``schedule_box_link``: the zone's terminal box names this unit in a
+      schedule column (#747's box-to-unit link).
+    * ``plan_tag_placement``: the schedule tag is placed on the plan in a
+      space the zone serves (``mech_tags`` placement).
+
+    ``note`` carries the human-readable chain ("via box VAV-1"). Zones that
+    resolve to no unit, or to more than one, get no ref and a review item.
+    """
+
+    zone_id: str
+    source: str
+    confidence: float
+    note: str = ""
+
+
+@dataclass
+class Equipment:
+    """One piece of scheduled mechanical equipment (#1237), the unified
+    model the writers consume.
+
+    Built from the mechanical-schedule rows plus the plan geometry matchline
+    already extracts: tag and type from the schedule row, capacities and
+    airflow as the schedule states them (Btu/h and m3/s, None when the row
+    gives no value with units), ``served_by`` naming the central unit that
+    feeds a terminal box ("" when the schedules name none), ``serves``
+    listing the HVAC zones the piece serves each with its source, and
+    ``plan_locs`` the tag placements read off the plans. Export-agnostic:
+    the gbXML writer builds AirLoops from the central units, the BuildingSync
+    writer maps the objects directly.
+
+    ``id`` is an XML-safe identifier (``eq-`` plus the normalized tag).
+    """
+
+    id: str
+    tag: str
+    kind: str
+    sheet: str = ""
+    airflow_m3s: Optional[float] = None
+    cooling_total_btuh: Optional[float] = None
+    cooling_sensible_btuh: Optional[float] = None
+    heating_btuh: Optional[float] = None
+    served_by: str = ""
+    serves: List[ServingRef] = field(default_factory=list)
+    plan_locs: List[dict] = field(default_factory=list)
+    sources: List[str] = field(default_factory=list)
     provenance: Provenance | None = None
 
 
@@ -886,6 +942,9 @@ class BuildingModel:
     zones: Dict[str, Zone] = field(default_factory=dict)
     # scheduled central air handlers (#746); empty -> no AirLoop written
     air_loops: List[AirLoop] = field(default_factory=list)
+    # every scheduled equipment piece with its zone-serving relationships
+    # (#1237); empty -> no scheduled equipment read
+    equipment: List[Equipment] = field(default_factory=list)
     envelope: List[EnvelopeWall] = field(default_factory=list)
     constructions: Dict[str, Construction] = field(default_factory=dict)
     # Construction.id of the roof assembly, when known (IFC import reads it
@@ -1156,7 +1215,7 @@ class BuildingModel:
 #: older version on this chain by migrating it forward, and reject anything
 #: else with a clear error instead of silently re-versioning a payload this
 #: build does not understand.
-_SUPPORTED_MODEL_VERSIONS = ("1.0", "1.1", MODEL_VERSION)
+_SUPPORTED_MODEL_VERSIONS = ("1.0", "1.1", "1.2", MODEL_VERSION)
 
 
 def _migrate_model_dict(version: str, m: dict) -> dict:
@@ -1167,6 +1226,8 @@ def _migrate_model_dict(version: str, m: dict) -> dict:
     they were built in memory or loaded from an old file (the seed also
     covers 1.0's shape on later loads). 1.1 -> 1.2 added
     ``SpaceOpening.adjacent_space_id`` with a default, so 1.1 payloads
+    need no data migration. 1.2 -> 1.3 added ``BuildingModel.equipment``
+    (the unified equipment model, #1237) with a default, so 1.2 payloads
     need no data migration. Pure: returns a new dict, never mutates the
     caller's payload. A version newer than this build, or a string that
     is not a version, raises ValueError with remediation per

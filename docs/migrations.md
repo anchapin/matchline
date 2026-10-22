@@ -14,6 +14,7 @@ no wrapper version loads as `1.0`.
 | 1.0 | Initial shape | None |
 | 1.0 to 1.1 (#669) | `SpaceOpening` gained `source_provenance` (1-2 per-sheet provenance records; the primary record stays in `provenance`) | None: `_migrate_model_dict` seeds it from `provenance` on load |
 | 1.1 to 1.2 (#918 wave, #900) | `SpaceOpening` gained `adjacent_space_id` (the space on the far side), default `None` | None: additive with a default |
+| 1.2 to 1.3 (#1237) | `BuildingModel` gained `equipment` (the unified equipment model: one `Equipment` per scheduled piece with `ServingRef` zone links), default empty | None: additive with a default |
 
 **New reader behavior:** versions newer than the running build, or
 malformed version strings, now raise `ValueError` with the supported

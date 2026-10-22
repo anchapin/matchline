@@ -94,6 +94,7 @@ graph LR
     building_model
     cli
     datasets_adapter
+    equipment
     geometry
     ifc
     ingest
@@ -135,7 +136,7 @@ graph LR
     zone_capacity
   end
   air_loops --> building_model
-  air_loops --> datasets_adapter
+  air_loops --> equipment
   air_loops --> zone_airflow
   air_loops --> zone_capacity
   area_definitions --> datasets_adapter
@@ -214,6 +215,9 @@ graph LR
   diff --> building_model
   elevation_windows --> building_model
   elevation_windows --> registration
+  equipment --> building_model
+  equipment --> datasets_adapter
+  equipment --> zone_capacity
   export_package --> building_model
   export_package --> html_page
   export_package --> review_corrections

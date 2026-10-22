@@ -39,65 +39,45 @@ def loop_id(tag: str) -> str:
 
 
 def build_air_loops(model, equipment: List[dict]) -> List[str]:
-    """Fill ``model.air_loops`` and each HVAC zone's ``air_loop``.
+    """Build ``model.equipment`` (#1237) and fill ``model.air_loops`` plus
+    each HVAC zone's ``air_loop`` from it.
 
     Returns report notes: the schedule link notes, one line per air handler
     (zones and boxes on it, box airflow sum against the supply fan airflow as
-    information), and HVAC zones whose box has no known air handler.
+    information), and the zones left without an air handler. Zone serving
+    resolution and review flags live in ``equipment.build_equipment``; this
+    is the gbXML-facing assembly on top of it.
     """
-    from datasets_adapter import normalize_tag
-    from zone_capacity import BOXES, CENTRAL, _airflow_m3s, _cap, served_by_from_schedules
+    from equipment import build_equipment
+    from zone_capacity import BOXES, CENTRAL
 
-    central = {}
-    for e in equipment or []:
-        if e.get("tag") and e.get("kind") in CENTRAL:
-            central.setdefault(normalize_tag(e["tag"]), e)
-    if not central:
-        return []
-    links, notes = served_by_from_schedules(equipment)
-    boxes = {
-        normalize_tag(e["tag"]): e for e in equipment if e.get("tag") and e.get("kind") in BOXES
-    }
-
+    eq_notes = build_equipment(model, equipment)
     loops: Dict[str, AirLoop] = {}
-    for t in sorted(central):
-        e = central[t]
-        sheet = e.get("sheet", "") or ""
-        lp = AirLoop(tag=t, sheet=sheet)
-        q = _airflow_m3s(e)
-        if q is not None:
-            lp.supply_airflow_m3s = round(q, 6)
-            v = e.get("cfm_max") if e.get("cfm_max") is not None else e.get("cfm")
-            lp.sources.append(f"{t} supply airflow {v:g} {e.get('airflow_unit')}")
-        for duty in ("cooling_total", "cooling_sensible", "heating"):
-            btuh, src = _cap(e, duty)
-            if btuh is not None:
-                setattr(lp, f"{duty}_btuh", round(btuh, 1))
-                lp.sources.append(src)
-            elif src:
-                notes.append(f"air loops: {src}")
-        lp.box_tags = sorted(b for b, u in links.items() if u == t)
-        flows = [_airflow_m3s(boxes[b]) for b in lp.box_tags if b in boxes]
+    for eq in model.equipment:
+        if eq.kind not in CENTRAL:
+            continue
+        lp = AirLoop(tag=eq.tag, sheet=eq.sheet)
+        lp.supply_airflow_m3s = round(eq.airflow_m3s, 6) if eq.airflow_m3s is not None else None
+        lp.cooling_total_btuh = eq.cooling_total_btuh
+        lp.cooling_sensible_btuh = eq.cooling_sensible_btuh
+        lp.heating_btuh = eq.heating_btuh
+        lp.sources = list(eq.sources)
+        lp.box_tags = sorted(
+            b.tag for b in model.equipment if b.kind in BOXES and b.served_by == eq.tag
+        )
+        flows = [b.airflow_m3s for b in model.equipment if b.kind in BOXES and b.tag in lp.box_tags]
         if lp.box_tags and flows and all(f is not None for f in flows):
             lp.box_airflow_sum_m3s = round(sum(flows), 6)
-        lp.provenance = Provenance(sheet, 0, "pdf_schedule_air_loop", 0.8)
-        loops[t] = lp
-
-    unlinked = []
+        lp.provenance = Provenance(eq.sheet, 0, "pdf_schedule_air_loop", 0.8)
+        loops[eq.tag] = lp
+    if not loops:
+        return []
     for zid in sorted(model.zones):
-        z = model.zones[zid]
-        tu = getattr(z, "terminal_unit", None)
-        tag = normalize_tag(getattr(tu, "tag", "") or "") if tu else ""
-        unit = tag if tag in loops else links.get(tag, "")
-        z.air_loop = unit if unit in loops else ""
-        if z.air_loop:
-            loops[z.air_loop].zone_ids.append(zid)
-        elif tag in boxes:
-            unlinked.append(f"{zid} ({tag})")
-
+        t = model.zones[zid].air_loop
+        if t in loops:
+            loops[t].zone_ids.append(zid)
     model.air_loops = [loops[t] for t in sorted(loops)]
-    out = [f"air loops: {n}" for n in notes if not n.startswith("air loops: ")]
-    out += [n for n in notes if n.startswith("air loops: ")]
+    out = [f"air loops: {n}" for n in eq_notes if not n.startswith("air loops: ")]
     for lp in model.air_loops:
         line = (
             f"air loops: {lp.tag} serves {len(lp.zone_ids)} HVAC zone(s), "
@@ -111,10 +91,6 @@ def build_air_loops(model, equipment: List[dict]) -> List[str]:
                 + (", diversity, expected)" if r > 1.0 else ")")
             )
         out.append(line)
-    if unlinked:
-        out.append(
-            "air loops: HVAC zones whose box has no known air handler: " + ", ".join(unlinked)
-        )
     return out
 
 
