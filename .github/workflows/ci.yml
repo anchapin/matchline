@@ -184,7 +184,10 @@ jobs:
         # <13.0 so 13.0.0 is unreachable in every fork of the lock. Ignored
         # with reason until gradio lifts its cap (check on the next gradio
         # bump); certifi was bumped in uv.lock to 2026.10.19
-        # (GHSA-6q48-6c7w-9gw2), not ignored.
+        # (GHSA-6q48-6c7w-9gw2), not ignored. Second rotation 2026-10-22
+        # (#1239 PR run): the advisory DB published 10 more pillow CVEs
+        # (CVE-2026-96636..96644, 96778), same package, same fix version,
+        # same gradio cap; ignored with the same reason.
         run: >-
           uv pip uninstall matchline && uv run --no-sync pip-audit --strict
           --ignore-vuln CVE-2026-112390
@@ -211,6 +214,16 @@ jobs:
           --ignore-vuln CVE-2026-112402
           --ignore-vuln CVE-2026-112900
           --ignore-vuln CVE-2026-112893
+          --ignore-vuln CVE-2026-96636
+          --ignore-vuln CVE-2026-96637
+          --ignore-vuln CVE-2026-96638
+          --ignore-vuln CVE-2026-96639
+          --ignore-vuln CVE-2026-96640
+          --ignore-vuln CVE-2026-96641
+          --ignore-vuln CVE-2026-96642
+          --ignore-vuln CVE-2026-96643
+          --ignore-vuln CVE-2026-96644
+          --ignore-vuln CVE-2026-96778
 
   deptry:
     # #1190: the #1070 bug class - a shipped module imports a package that is

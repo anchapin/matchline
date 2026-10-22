@@ -130,3 +130,28 @@ jobs:
         if: github.event_name == 'push' && steps.skipcheck.outputs.skip != 'true'
         run: |
           uv publish --trusted-publishing automatic --check-url https://pypi.org/p/
+
+  github-release:
+    name: create the GitHub release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [publish]
+    # Tag pushes only: a workflow_dispatch dry-run has no tag to release.
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release on the tag
+        # Idempotent: a tag whose release already exists (a manual backfill
+        # like the ones for v0.1.0-v0.2.1) must not fail the run.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release for $GITHUB_REF_NAME already exists; nothing to do"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
