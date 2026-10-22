@@ -108,7 +108,7 @@ release = [
 # definition and must not require a PyPI declaration (#1190).
 known_first_party = [
     "matchline",
-    "ap50", "classes", "degrade", "eca", "pdf_fixtures",
+    "ap50", "classes", "degrade", "degrade_scans", "eca", "pdf_fixtures",
     "report_ab_stats", "sahi_infer", "train_scratch",
 ]
 
