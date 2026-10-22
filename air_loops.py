@@ -48,9 +48,8 @@ def build_air_loops(model, equipment: List[dict]) -> List[str]:
     resolution and review flags live in ``equipment.build_equipment``; this
     is the gbXML-facing assembly on top of it.
     """
-    from zone_capacity import BOXES, CENTRAL
-
     from equipment import build_equipment
+    from zone_capacity import BOXES, CENTRAL
 
     eq_notes = build_equipment(model, equipment)
     loops: Dict[str, AirLoop] = {}
@@ -66,11 +65,7 @@ def build_air_loops(model, equipment: List[dict]) -> List[str]:
         lp.box_tags = sorted(
             b.tag for b in model.equipment if b.kind in BOXES and b.served_by == eq.tag
         )
-        flows = [
-            b.airflow_m3s
-            for b in model.equipment
-            if b.kind in BOXES and b.tag in lp.box_tags
-        ]
+        flows = [b.airflow_m3s for b in model.equipment if b.kind in BOXES and b.tag in lp.box_tags]
         if lp.box_tags and flows and all(f is not None for f in flows):
             lp.box_airflow_sum_m3s = round(sum(flows), 6)
         lp.provenance = Provenance(eq.sheet, 0, "pdf_schedule_air_loop", 0.8)

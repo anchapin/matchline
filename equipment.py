@@ -29,7 +29,7 @@ objects directly.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from building_model import Equipment, Provenance, ServingRef
 
@@ -54,7 +54,6 @@ def build_equipment(model, equipment: List[dict]) -> List[str]:
     rows = [e for e in (equipment or []) if e.get("tag")]
     if not rows:
         return []
-    central = {e["tag"]: e for e in rows if e.get("kind") in CENTRAL}
     boxes = {e["tag"]: e for e in rows if e.get("kind") in BOXES}
     terminals = {e["tag"]: e for e in rows if e.get("kind") in BOXES or e.get("kind") == "fcu"}
     links, link_notes = served_by_from_schedules(rows)
@@ -139,7 +138,9 @@ def build_equipment(model, equipment: List[dict]) -> List[str]:
                 if eq is None:
                     continue
                 conf = float(loc.get("confidence") or 0.5)
-                eq.serves.append(ServingRef(zid, "plan_tag_placement", conf, f"{tag} tagged in {sid}"))
+                eq.serves.append(
+                    ServingRef(zid, "plan_tag_placement", conf, f"{tag} tagged in {sid}")
+                )
                 if tag in links:
                     got.append((links[tag], "plan_tag_placement", conf, f"{tag} tagged in {sid}"))
         if got:

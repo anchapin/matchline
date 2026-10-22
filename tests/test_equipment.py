@@ -7,8 +7,8 @@ box airflow above the fan airflow stays diversity, never a review item.
 
 from __future__ import annotations
 
-from equipment import build_equipment
 from building_model import BuildingModel, ComponentRef, Equipment, ServingRef, Zone
+from equipment import build_equipment
 
 NSOURCES = ("plan_terminal_tag", "plan_tag_placement", "schedule_box_link")
 
@@ -56,8 +56,13 @@ def _vav(tag, cfm, ahu="AHU-1", located=None):
 
 
 def _loc(space_id, conf=0.8):
-    return {"sheet": "M101", "space_id": space_id, "level_id": "L1",
-            "at_m": [1.0, 2.0], "confidence": conf}
+    return {
+        "sheet": "M101",
+        "space_id": space_id,
+        "level_id": "L1",
+        "at_m": [1.0, 2.0],
+        "confidence": conf,
+    }
 
 
 def _item(model, tag):
@@ -98,7 +103,9 @@ def test_every_serving_relationship_resolved_with_a_source():
     assert m.review_queue == []
     ahu = _item(m, "AHU-1")
     assert [(r.zone_id, r.source) for r in ahu.serves] == [
-        ("z1", "schedule_box_link"), ("z2", "schedule_box_link")]
+        ("z1", "schedule_box_link"),
+        ("z2", "schedule_box_link"),
+    ]
     assert all(isinstance(r, ServingRef) and r.source in NSOURCES for r in ahu.serves)
     assert all("via box" in r.note for r in ahu.serves)
     box = _item(m, "VAV-1")
@@ -129,11 +136,9 @@ def test_placement_of_a_box_tag_feeds_the_zone_it_sits_in():
     m = _model([_z("z1", ["sp-1"])])
     build_equipment(m, [_ahu(), _vav("VAV-2", 800, located=[_loc("sp-1")])])
     box = _item(m, "VAV-2")
-    assert [(r.zone_id, r.source) for r in box.serves] == [
-        ("z1", "plan_tag_placement")]
+    assert [(r.zone_id, r.source) for r in box.serves] == [("z1", "plan_tag_placement")]
     ahu = _item(m, "AHU-1")
-    assert [(r.zone_id, r.source) for r in ahu.serves] == [
-        ("z1", "plan_tag_placement")]
+    assert [(r.zone_id, r.source) for r in ahu.serves] == [("z1", "plan_tag_placement")]
     assert m.zones["z1"].air_loop == "AHU-1" and m.review_queue == []
 
 
@@ -203,7 +208,9 @@ def test_two_boxes_of_the_same_unit_in_one_zone_stay_resolved():
     assert m.zones["z1"].air_loop == "AHU-1" and m.review_queue == []
     ahu = _item(m, "AHU-1")
     assert sorted((r.zone_id, r.source) for r in ahu.serves) == [
-        ("z1", "plan_tag_placement"), ("z1", "schedule_box_link")]
+        ("z1", "plan_tag_placement"),
+        ("z1", "schedule_box_link"),
+    ]
 
 
 def test_flags_do_not_duplicate_on_a_second_pass():
@@ -224,9 +231,7 @@ def test_no_schedule_rows_do_nothing():
 
 def test_equipment_round_trips_through_json():
     m = _model([_z("z1", ["sp-1"], "VAV-1")])
-    build_equipment(
-        m, [_ahu(), _vav("VAV-1", 800, located=[_loc("sp-1", 0.7)])]
-    )
+    build_equipment(m, [_ahu(), _vav("VAV-1", 800, located=[_loc("sp-1", 0.7)])])
     back = BuildingModel.from_json(m.to_json())
     eq = next(e for e in back.equipment if e.tag == "AHU-1")
     assert isinstance(eq, Equipment) and eq.id == "eq-AHU-1"
