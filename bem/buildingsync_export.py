@@ -23,8 +23,8 @@ SI number would claim a unit the file cannot carry.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from bem.bem_geometry import BEMModel
 
@@ -149,9 +149,7 @@ def _write_site_building(facility, model: BEMModel, by_zone: dict) -> None:
         written_sids: set = set()
         for zid, sids in zone_entries:
             zone_key = f"zone-{zid}"
-            thermal_zone = _el(
-                thermal_zones, "ThermalZone", ID=f"ThermalZone-{_id_safe(zid)}"
-            )
+            thermal_zone = _el(thermal_zones, "ThermalZone", ID=f"ThermalZone-{_id_safe(zid)}")
             delivery_ids = by_zone.get(zone_key) or []
             if delivery_ids:
                 ids_el = _el(thermal_zone, "DeliveryIDs")
@@ -185,9 +183,7 @@ def _write_envelope_systems(systems, model: BEMModel) -> None:
     export uses: wall, roof, fenestration, foundation, then the mechanical
     systems after them.
     """
-    wall_us = sorted(
-        {sp.wall_u_value_w_m2k for sp in model.spaces if sp.wall_u_value_w_m2k}
-    )
+    wall_us = sorted({sp.wall_u_value_w_m2k for sp in model.spaces if sp.wall_u_value_w_m2k})
     if wall_us:
         walls_el = _el(systems, "WallSystems")
         for i, u in enumerate(wall_us, 1):
@@ -205,7 +201,8 @@ def _write_envelope_systems(systems, model: BEMModel) -> None:
     if window_constructions:
         fenestration_el = _el(systems, "FenestrationSystems")
         for cid, info in window_constructions:
-            fen = _el(fenestration_el, "FenestrationSystem", ID=f"FenestrationSystemType-{_id_safe(cid)}")
+            fen_id = f"FenestrationSystemType-{_id_safe(cid)}"
+            fen = _el(fenestration_el, "FenestrationSystem", ID=fen_id)
             fenestration_type = _el(fen, "FenestrationType")
             _el(fenestration_type, "Window")
             if info.get("u"):
@@ -250,7 +247,7 @@ def _write_mechanical_systems(systems, model: BEMModel, deliveries: dict) -> Non
                 delivery_type = _el(delivery, "DeliveryType")
                 cad = _el(delivery_type, "CentralAirDistribution")
                 _el(cad, "AirDeliveryType", "Central fan")
-                zid = zone_key[len("zone-"):] if zone_key.startswith("zone-") else zone_key
+                zid = zone_key[len("zone-") :] if zone_key.startswith("zone-") else zone_key
                 diffusers = terminals.get(zid) or []
                 if diffusers:
                     # TerminalUnit carries no child content in 2.6.0; its
@@ -277,9 +274,7 @@ def _write_mechanical_systems(systems, model: BEMModel, deliveries: dict) -> Non
             _udf(fan, "matchline:fan_airflow_lps", f"{lp['fan_airflow_lps']:.4f}")
 
 
-def write_buildingsync(
-    model: BEMModel, path: str | Path, version: str = DEFAULT_VERSION
-) -> Path:
+def write_buildingsync(model: BEMModel, path: str | Path, version: str = DEFAULT_VERSION) -> Path:
     """Write ``model`` as BuildingSync ``version``; returns the path."""
     path = Path(path)
     ET.register_namespace("auc", AUC_NS)
@@ -316,7 +311,9 @@ def _semantic_checks(root) -> list:
     for el in root.iter():
         local = el.tag.split("}")[-1]
         if local in _GEOMETRY_TAGS:
-            errors.append(f"geometry element {local} present; BuildingSync export must not dump geometry")
+            errors.append(
+                f"geometry element {local} present; BuildingSync export must not dump geometry"
+            )
             break
     return errors
 
@@ -334,7 +331,8 @@ def _buildingsync_smoke_check(path: str, errors: list) -> tuple[bool, list]:
         errors.append("missing version attribute on BuildingSync root")
     if not any(el.tag.endswith("Building") for el in root.iter()):
         errors.append("no Building element found")
-    return not errors, errors + _semantic_checks(root.getroot() if hasattr(root, "getroot") else root)
+    source = root.getroot() if hasattr(root, "getroot") else root
+    return not errors, errors + _semantic_checks(source)
 
 
 def validate_buildingsync(

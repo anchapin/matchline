@@ -7,7 +7,6 @@ schema has no slot for travel in namespaced UserDefinedFields instead of
 being dropped or converted. Geometry is never dumped.
 """
 
-from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from bem.bem_geometry import BEMModel, BEMSpace
@@ -77,7 +76,9 @@ def test_version_parameter_is_emitted(tmp_path):
     """The target schema version is a parameter, not hardcoded."""
     default = ET.parse(write_buildingsync(_tiny_model(), tmp_path / "a.xml")).getroot()
     assert default.get("version") == DEFAULT_VERSION
-    other = ET.parse(write_buildingsync(_tiny_model(), tmp_path / "b.xml", version="2.7.0")).getroot()
+    other = ET.parse(
+        write_buildingsync(_tiny_model(), tmp_path / "b.xml", version="2.7.0")
+    ).getroot()
     assert other.get("version") == "2.7.0"
 
 
@@ -145,16 +146,18 @@ def test_unslotted_values_travel_in_namespaced_udfs(tmp_path):
         opening_constructions={
             "W1": {"name": "Double pane", "category": "window", "u": 2.0, "shgc": 0.4}
         },
-        air_loops=[{
-            "id": "AL-1",
-            "name": "AHU 1",
-            "system_type": "VariableAirVolume",
-            "fan_airflow_lps": 1.5,
-            "cooling_total_btuh": 24000.0,
-            "cooling_sensible_btuh": 18000.0,
-            "heating_btuh": 30000.0,
-            "sources": [],
-        }],
+        air_loops=[
+            {
+                "id": "AL-1",
+                "name": "AHU 1",
+                "system_type": "VariableAirVolume",
+                "fan_airflow_lps": 1.5,
+                "cooling_total_btuh": 24000.0,
+                "cooling_sensible_btuh": 18000.0,
+                "heating_btuh": 30000.0,
+                "sources": [],
+            }
+        ],
         zone_air_loop={"zone-z-1": "AL-1"},
     )
     root = ET.parse(write_buildingsync(model, tmp_path / "out.xml")).getroot()
@@ -202,25 +205,22 @@ def test_audit_records_are_minimal_standins(tmp_path):
 def test_idrefs_resolve_across_the_document(tmp_path):
     """Every IDref in an export points at an ID written by the same export."""
     model = _tiny_model(
-        air_loops=[{
-            "id": "AL-1",
-            "name": "AHU 1",
-            "system_type": "",
-            "fan_airflow_lps": 0.0,
-            "cooling_total_btuh": 0.0,
-            "cooling_sensible_btuh": 0.0,
-            "heating_btuh": 0.0,
-            "sources": [],
-        }],
+        air_loops=[
+            {
+                "id": "AL-1",
+                "name": "AHU 1",
+                "system_type": "",
+                "fan_airflow_lps": 0.0,
+                "cooling_total_btuh": 0.0,
+                "cooling_sensible_btuh": 0.0,
+                "heating_btuh": 0.0,
+                "sources": [],
+            }
+        ],
         zone_air_loop={"zone-z-1": "AL-1"},
     )
     root = ET.parse(write_buildingsync(model, tmp_path / "out.xml")).getroot()
     ids = {el.get("ID") for el in root.iter() if el.get("ID")}
-    refs = [
-        el.get(key)
-        for el in root.iter()
-        for key in el.attrib
-        if key.endswith("IDref")
-    ]
+    refs = [el.get(key) for el in root.iter() for key in el.attrib if key.endswith("IDref")]
     assert refs, "expected at least one IDref"
     assert all(ref in ids for ref in refs)
