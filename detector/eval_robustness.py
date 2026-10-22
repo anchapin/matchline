@@ -34,8 +34,15 @@ from collections import Counter, defaultdict
 
 try:  # package import: python -m detector.eval_robustness, pytest
     from detector.degrade import VARIANTS, degrade, variant_seed
+    from detector.degrade_scans import (
+        EVAL_SEVERITY,
+        FAMILY,
+        apply_scan,
+        transform_boxes,
+    )
 except ImportError:  # direct script execution from inside detector/
     from degrade import VARIANTS, degrade, variant_seed
+    from degrade_scans import EVAL_SEVERITY, FAMILY, apply_scan, transform_boxes
 
 try:
     from detector.classes import CLASS_NAMES
@@ -147,7 +154,9 @@ def evaluate(args) -> dict:
         os.path.splitext(f)[0] for f in os.listdir(img_dir) if f.endswith((".png", ".jpg", ".jpeg"))
     )[: args.n]
 
-    agg: dict = {v: defaultdict(Counter) for v in VARIANTS}
+    family = getattr(args, "family", False)
+    variants = ("clean",) + tuple(FAMILY) if family else VARIANTS
+    agg: dict = {v: defaultdict(Counter) for v in variants}
     n_images = 0
     with tempfile.TemporaryDirectory(prefix="robust_") as tmp:
         for idx, stem in enumerate(stems):
@@ -160,9 +169,25 @@ def evaluate(args) -> dict:
                 W, H = im.size
             gt = load_yolo_labels(os.path.join(lbl_dir, stem + ".txt"), W, H)
             n_images += 1
-            for variant in VARIANTS:
+            for variant in variants:
                 if variant == "clean":
                     path = img_path
+                elif family:
+                    # Issue #1241: the scan-degradation family at a pinned
+                    # EVAL_SEVERITY, so clean-vs-degraded deltas are comparable
+                    # across runs. Training samples severity per sheet; eval
+                    # holds it fixed. Truth boxes follow the degradation's
+                    # transform so labels stay aligned.
+                    with Image.open(img_path) as im:
+                        degraded = apply_scan(
+                            im, variant, EVAL_SEVERITY, variant_seed(args.seed, idx)
+                        )
+                    if variant == "rotation_skew":
+                        gt = transform_boxes(
+                            gt, variant, EVAL_SEVERITY, variant_seed(args.seed, idx), (W, H)
+                        )
+                    path = os.path.join(tmp, f"{stem}.{variant}.png")
+                    degraded.save(path)
                 else:
                     with Image.open(img_path) as im:
                         degraded = degrade(im, variant, variant_seed(args.seed, idx))
@@ -194,14 +219,14 @@ def evaluate(args) -> dict:
             "n_images": n_images,
             "seed": args.seed,
             "iou": args.iou,
-            "variants": list(VARIANTS),
+            "variants": list(variants),
             "weights": args.weights,
             "preds_dir": args.preds_dir,
         },
         "variants": {},
     }
     clean_stats = {}
-    for variant in VARIANTS:
+    for variant in variants:
         per_class = {}
         tot = Counter()
         for cls, s in sorted(agg[variant].items()):
@@ -233,7 +258,7 @@ def evaluate(args) -> dict:
             clean_stats = per_class
 
     deltas = {}
-    for variant in VARIANTS:
+    for variant in variants:
         if variant == "clean":
             continue
         deltas[variant] = {
@@ -288,6 +313,12 @@ def main(argv=None) -> int:
     ap.add_argument("--overlap", type=float, default=0.2)
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument(
+        "--family",
+        action="store_true",
+        help="evaluate the scan-degradation family (#1241) at the pinned "
+        "EVAL_SEVERITY instead of the #499 variants",
+    )
     ap.add_argument("--out", default="robustness_report.json")
     args = ap.parse_args(argv)
 

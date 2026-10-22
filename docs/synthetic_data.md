@@ -89,3 +89,47 @@ only 44%: the redacted multi-firm bench is hard even in-distribution.)
 ~/workspace/.venv-ocr/bin/python synth/gap_experiment.py  # ~20 s
 ~/workspace/.venv-ocr/bin/python synth/make_dataset.py --sheets 6 --crops-per-class 250 --seed 7
 ```
+
+## Scan-degradation family (#1241, 2026-10-22)
+
+Real drawings arrive as imperfect scans. `detector/degrade_scans.py` applies a
+family of six degradations to synthetic sheets so detection and parsing train
+on realistic scans instead of clean pages:
+
+| Member | Models | Severity mapping |
+|---|---|---|
+| `rotation_skew` | scanner feed tilt (rotation + shear) | 0.1-1.5 degrees, 30% as shear |
+| `low_dpi` | 150-200 DPI copies of a 300 DPI render | back-resample factor 1.0-0.5 |
+| `jpeg` | JPEG-compressed PDFs | quality 95-50 |
+| `contrast_loss` | faded copies | contrast 1.0-0.6, brightness +0-15% |
+| `bleed_through` | mirrored ink from the sheet behind | blend alpha 0.05-0.20 |
+| `blur` | soft optics, one member of the family, not the whole | Gaussian radius 0.3-1.3 px |
+
+Design rules (from the issue):
+
+- **Severity sampled per sheet, never fixed.** `apply_scan_family(img, seed)`
+  draws one member and one severity from a single seeded rng; training uses
+  the full range. Evaluation pins `EVAL_SEVERITY = 0.7` so clean-vs-degraded
+  deltas are comparable across runs.
+- **Truth stays tied to source geometry.** `transform_boxes` /
+  `transform_points` / `transform_gt` apply the same forward transform the
+  image received; only `rotation_skew` moves geometry (boxes become the
+  axis-aligned bbox of the rotated corners, clipped to the sheet; walls keep
+  their `t_px`, rooms keep their areas, which rotation preserves and the
+  shear changes by <=0.03%). Every other member leaves boxes untouched.
+- **Clean undegraded validation set.** `convert_synth --degrade-family-seed N`
+  degrades TRAIN sheets only (one member + severity per sheet, gt transformed
+  in the same pass, counts and member histogram in the summary); the val
+  split is copied byte-identical, by construction.
+- **Measure before/after.** `eval_robustness.py --family` evaluates the
+  family at the pinned severity against clean with truth-box alignment; the
+  robustness gain on degraded sheets must not cost accuracy on the clean set,
+  which the same report shows side by side.
+
+Everything is deterministic (same seed reproduces the same sheet), pure
+PIL/numpy, and CPU-friendly. Tests: `tests/test_degrade_scans.py` (32) plus
+convert integration tests in `tests/test_convert_synth.py`.
+
+Note: the measured clean-vs-degraded robustness delta needs a trained
+detector (weights or precomputed preds via `--preds-dir`); the pipeline and
+harness above are what the training run consumes.
