@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from pathlib import Path
 
 from bem.bem_geometry import BEMModel
@@ -33,7 +34,44 @@ DEFAULT_VERSION = "2.6.0"
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "assets" / "schemas"
 UDF_PREFIX = "matchline:"
 
+SCHEMATRON_DIR = Path(__file__).resolve().parent.parent / "assets" / "schematron"
+
 _NCNAME_BAD = re.compile(r"[^A-Za-z0-9_.-]")
+
+DEFAULT_AUDIT_LEVEL = "Preliminary Energy-Use Analysis"
+
+
+@dataclass(frozen=True)
+class AuditContext:
+    """Caller-supplied audit facts for the ASHRAE 211 L000 use case (#1239).
+
+    The writer never invents these: every value the export carries comes
+    from the caller (project metadata or utility bills), and anything left
+    unset stays out of the file. With the full context supplied the export
+    passes the published L000 "Preliminary Energy-Use Analysis" schematron
+    in assets/schematron; without it the export stays the #1238
+    equipment-interchange shape and L000's absent pieces are simply absent.
+    """
+
+    building_classification: str
+    occupancy_classification: str
+    year_of_construction: int
+    climate_zone: str | None = None
+    city: str | None = None
+    state: str | None = None
+    audit_level: str = DEFAULT_AUDIT_LEVEL
+    # Measured scenario (annual utility totals). Both are required together:
+    # intensities travel in the schema's own units (kBtu/ft2, $/ft2) so no
+    # unit conversion happens here.
+    site_energy_use_intensity: float | None = None
+    energy_cost_index: float | None = None
+    # Benchmark scenario: tool and year are the L000-required pair; the
+    # value (a score or rating) is optional. The schema restricts the tool
+    # to: Portfolio Manager, Buildings Performance Database Tool, EnergyIQ,
+    # Labs21, Fabs21, Other.
+    benchmark_tool: str | None = None
+    benchmark_year: int | None = None
+    benchmark_value: float | None = None
 
 
 def _el(parent, tag, text=None, **attrib):
@@ -109,28 +147,88 @@ def _write_contacts(facility) -> None:
     _el(contact, "ContactName", "Not specified")
 
 
-def _write_reports(facility) -> None:
-    """Minimal valid stand-in: matchline is not an audit report (#1238)."""
+def _write_reports(facility, audit: AuditContext | None = None) -> None:
+    """Minimal valid stand-in: matchline is not an audit report (#1238).
+
+    With an AuditContext (#1239) the As-is scenario becomes the L000
+    Measured scenario and a Benchmark scenario joins it, both carrying
+    only caller-supplied numbers.
+    """
     reports = _el(facility, "Reports")
     report = _el(reports, "Report", ID="ReportType-1")
     scenarios = _el(report, "Scenarios")
     scenario = _el(scenarios, "Scenario", ID="ScenarioType-1")
     _el(scenario, "ScenarioName", "As-is")
+    measured = (
+        audit
+        and audit.site_energy_use_intensity is not None
+        and audit.energy_cost_index is not None
+    )
+    if measured:
+        scenario_type = _el(scenario, "ScenarioType")
+        current = _el(scenario_type, "CurrentBuilding")
+        method = _el(current, "CalculationMethod")
+        _el(method, "Measured")
+        totals = _el(scenario, "AllResourceTotals")
+        total = _el(totals, "AllResourceTotal", ID="AllResourceTotal-1")
+        _el(total, "SiteEnergyUseIntensity", f"{audit.site_energy_use_intensity:g}")
+        _el(total, "EnergyCostIndex", f"{audit.energy_cost_index:g}")
+        premises = _el(scenario, "LinkedPremises")
+        linked = _el(premises, "Building")
+        _el(linked, "LinkedBuildingID", IDref="BuildingType-1")
+    if audit and audit.benchmark_tool and audit.benchmark_year:
+        benchmark = _el(scenarios, "Scenario", ID="ScenarioType-2")
+        _el(benchmark, "ScenarioName", "Benchmark")
+        btype = _el(benchmark, "ScenarioType")
+        bmark = _el(btype, "Benchmark")
+        # BenchmarkType requires one child; CBECS (the survey benchmark)
+        # is the one whose element carries no required content.
+        benchmark_type = _el(bmark, "BenchmarkType")
+        _el(benchmark_type, "CBECS")
+        _el(bmark, "BenchmarkTool", audit.benchmark_tool)
+        _el(bmark, "BenchmarkYear", audit.benchmark_year)
+        if audit.benchmark_value is not None:
+            _el(bmark, "BenchmarkValue", f"{audit.benchmark_value:g}")
+        premises = _el(benchmark, "LinkedPremises")
+        linked = _el(premises, "Building")
+        _el(linked, "LinkedBuildingID", IDref="BuildingType-1")
+    if audit and audit.audit_level:
+        # The Report sequence puts ASHRAEAuditLevel after Scenarios.
+        _el(report, "ASHRAEAuditLevel", audit.audit_level)
 
 
-def _write_site_building(facility, model: BEMModel, by_zone: dict) -> None:
+def _write_site_building(
+    facility, model: BEMModel, by_zone: dict, audit: AuditContext | None = None
+) -> None:
     """Sites/Site/Buildings/Building with areas, spaces and thermal zones."""
     sites = _el(facility, "Sites")
     site = _el(sites, "Site", ID="SiteType-1")
     buildings = _el(site, "Buildings")
     building = _el(buildings, "Building", ID="BuildingType-1")
     _el(building, "PremisesName", model.building_name)
+    # L000 building facts (#1239): only what the caller supplied, in the
+    # schema sequence order (PremisesName, Address, ClimateZoneType, ...).
+    if audit:
+        if audit.city and audit.state:
+            address = _el(building, "Address")
+            _el(address, "City", audit.city)
+            _el(address, "State", audit.state)
+        if audit.climate_zone:
+            zone_type = _el(building, "ClimateZoneType")
+            ashrae = _el(zone_type, "ASHRAE")
+            _el(ashrae, "ClimateZone", audit.climate_zone)
+        _el(building, "BuildingClassification", audit.building_classification)
+        _el(building, "OccupancyClassification", audit.occupancy_classification)
     gross = sum(sp.area_m2 for sp in model.spaces)
     if gross:
         floor_areas = _el(building, "FloorAreas")
         floor_area = _el(floor_areas, "FloorArea")
         _el(floor_area, "FloorAreaType", "Gross")
         _el(floor_area, "FloorAreaValue", f"{gross:.2f}")
+    if audit:
+        # The Building sequence places YearOfConstruction after the floor
+        # fields, ahead of Sections.
+        _el(building, "YearOfConstruction", audit.year_of_construction)
     sections = _el(building, "Sections")
     section = _el(sections, "Section", ID="SectionType-1")
     _el(section, "SectionType", "Whole building")
@@ -250,10 +348,11 @@ def _write_mechanical_systems(systems, model: BEMModel, deliveries: dict) -> Non
                 zid = zone_key[len("zone-") :] if zone_key.startswith("zone-") else zone_key
                 diffusers = terminals.get(zid) or []
                 if diffusers:
-                    # TerminalUnit carries no child content in 2.6.0; its
-                    # presence marks the zone equipment, the counts travel
-                    # on the HVACSystem's UDFs.
-                    _el(cad, "TerminalUnit")
+                    # TerminalUnit's text is enum-restricted in 2.6.0 and
+                    # schedule diffuser tags are free-form letter codes, so
+                    # the type reads Unknown and the tags stay on the
+                    # HVACSystem's UDFs below (#1239 XSD gate).
+                    _el(cad, "TerminalUnit", "Unknown")
                     _udf(hvac, f"matchline:diffuser_count_{_id_safe(zid)}", str(len(diffusers)))
                     tags = sorted({t for _d, t, _x, _y in diffusers if t})
                     if tags:
@@ -274,27 +373,72 @@ def _write_mechanical_systems(systems, model: BEMModel, deliveries: dict) -> Non
             _udf(fan, "matchline:fan_airflow_lps", f"{lp['fan_airflow_lps']:.4f}")
 
 
-def write_buildingsync(model: BEMModel, path: str | Path, version: str = DEFAULT_VERSION) -> Path:
-    """Write ``model`` as BuildingSync ``version``; returns the path."""
+def write_buildingsync(
+    model: BEMModel,
+    path: str | Path,
+    version: str = DEFAULT_VERSION,
+    audit: AuditContext | None = None,
+) -> Path:
+    """Write ``model`` as BuildingSync ``version``; returns the path.
+
+    ``audit`` carries caller-supplied ASHRAE 211 L000 audit facts (#1239);
+    without it the export is the #1238 equipment-interchange shape.
+    """
     path = Path(path)
     ET.register_namespace("auc", AUC_NS)
     root = ET.Element(f"{{{AUC_NS}}}BuildingSync", {"version": version})
     facilities = _el(root, "Facilities")
     facility = _el(facilities, "Facility", ID="FacilityType-1")
     deliveries, by_zone = _zone_deliveries(model)
-    _write_site_building(facility, model, by_zone)
+    _write_site_building(facility, model, by_zone, audit)
     systems = _el(facility, "Systems")
     # Systems children follow the schema sequence: HVACSystems first, then
     # FanSystems, then the envelope systems (wall, roof, fenestration,
     # foundation).
     _write_mechanical_systems(systems, model, deliveries)
     _write_envelope_systems(systems, model)
-    _write_reports(facility)
+    _write_reports(facility, audit)
     _write_contacts(facility)
     tree = ET.ElementTree(root)
     ET.indent(tree)
     tree.write(path, xml_declaration=True, encoding="utf-8")
     return path
+
+
+def validate_buildingsync_use_case(
+    path: str | Path, schematron_path: str | Path | None = None
+) -> tuple[bool, list]:
+    """Validate a BuildingSync file against a use-case Schematron (#1239).
+
+    Defaults to the committed ASHRAE 211 L000 "Preliminary Energy-Use
+    Analysis" use case in assets/schematron. Returns (ok, failed-assert
+    texts); the schemaVersion metadata upstream (1.0.0-2.7.0) is a tagging
+    note, the asserted element names all bind against 2.6.0 documents.
+    """
+    schematron_path = (
+        Path(schematron_path) if schematron_path else SCHEMATRON_DIR / "L000_Audit-1.0.0.sch"
+    )
+    try:
+        from lxml import etree, isoschematron
+    except ImportError:
+        return False, ["lxml not installed; cannot run use-case validation"]
+    if not Path(schematron_path).exists():
+        return False, [f"schematron not found at {schematron_path}"]
+    try:
+        doc = etree.parse(str(path))
+    except etree.XMLSyntaxError as e:
+        return False, [f"not well-formed: {e}"]
+    schem = isoschematron.Schematron(etree.parse(str(schematron_path)), store_report=True)
+    schem.validate(doc)
+    failures = []
+    for assert_el in schem.validation_report.findall(
+        "{http://purl.oclc.org/dsdl/svrl}failed-assert"
+    ):
+        text = "".join(
+            t.text or "" for t in assert_el.findall("{http://purl.oclc.org/dsdl/svrl}text")
+        )
+        failures.append(text.strip() or "failed assertion")
+    return not failures, failures
 
 
 _GEOMETRY_TAGS = {"PolyLoop", "PlanarCoordinate", "CartesianPoint", "Vertex"}

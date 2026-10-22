@@ -1,0 +1,111 @@
+<?xml version='1.0' encoding='utf-8'?>
+<auc:BuildingSync xmlns:auc="http://buildingsync.net/schemas/bedes-auc/2019" version="2.6.0">
+  <auc:Facilities>
+    <auc:Facility ID="FacilityType-1">
+      <auc:Sites>
+        <auc:Site ID="SiteType-1">
+          <auc:Buildings>
+            <auc:Building ID="BuildingType-1">
+              <auc:PremisesName>Test Building</auc:PremisesName>
+              <auc:ClimateZoneType>
+                <auc:ASHRAE>
+                  <auc:ClimateZone>6A</auc:ClimateZone>
+                </auc:ASHRAE>
+              </auc:ClimateZoneType>
+              <auc:BuildingClassification>Commercial</auc:BuildingClassification>
+              <auc:OccupancyClassification>Office</auc:OccupancyClassification>
+              <auc:FloorAreas>
+                <auc:FloorArea>
+                  <auc:FloorAreaType>Gross</auc:FloorAreaType>
+                  <auc:FloorAreaValue>100.00</auc:FloorAreaValue>
+                </auc:FloorArea>
+              </auc:FloorAreas>
+              <auc:YearOfConstruction>1998</auc:YearOfConstruction>
+              <auc:Sections>
+                <auc:Section ID="SectionType-1">
+                  <auc:SectionType>Whole building</auc:SectionType>
+                  <auc:FloorAreas>
+                    <auc:FloorArea>
+                      <auc:FloorAreaType>Gross</auc:FloorAreaType>
+                      <auc:FloorAreaValue>100.00</auc:FloorAreaValue>
+                    </auc:FloorArea>
+                  </auc:FloorAreas>
+                  <auc:ThermalZones>
+                    <auc:ThermalZone ID="ThermalZone-z-1">
+                      <auc:Spaces>
+                        <auc:Space ID="Space-L1-101">
+                          <auc:PremisesName>Office 101</auc:PremisesName>
+                          <auc:FloorAreas>
+                            <auc:FloorArea>
+                              <auc:FloorAreaType>Gross</auc:FloorAreaType>
+                              <auc:FloorAreaValue>100.00</auc:FloorAreaValue>
+                            </auc:FloorArea>
+                          </auc:FloorAreas>
+                        </auc:Space>
+                      </auc:Spaces>
+                    </auc:ThermalZone>
+                  </auc:ThermalZones>
+                </auc:Section>
+              </auc:Sections>
+            </auc:Building>
+          </auc:Buildings>
+        </auc:Site>
+      </auc:Sites>
+      <auc:Systems />
+      <auc:Reports>
+        <auc:Report ID="ReportType-1">
+          <auc:Scenarios>
+            <auc:Scenario ID="ScenarioType-1">
+              <auc:ScenarioName>As-is</auc:ScenarioName>
+              <auc:ScenarioType>
+                <auc:CurrentBuilding>
+                  <auc:CalculationMethod>
+                    <auc:Measured />
+                  </auc:CalculationMethod>
+                </auc:CurrentBuilding>
+              </auc:ScenarioType>
+              <auc:AllResourceTotals>
+                <auc:AllResourceTotal ID="AllResourceTotal-1">
+                  <auc:SiteEnergyUseIntensity>55</auc:SiteEnergyUseIntensity>
+                  <auc:EnergyCostIndex>1.85</auc:EnergyCostIndex>
+                </auc:AllResourceTotal>
+              </auc:AllResourceTotals>
+              <auc:LinkedPremises>
+                <auc:Building>
+                  <auc:LinkedBuildingID IDref="BuildingType-1" />
+                </auc:Building>
+              </auc:LinkedPremises>
+            </auc:Scenario>
+            <auc:Scenario ID="ScenarioType-2">
+              <auc:ScenarioName>Benchmark</auc:ScenarioName>
+              <auc:ScenarioType>
+                <auc:Benchmark>
+                  <auc:BenchmarkType>
+                    <auc:CBECS />
+                  </auc:BenchmarkType>
+                  <auc:BenchmarkTool>Portfolio Manager</auc:BenchmarkTool>
+                  <auc:BenchmarkYear>2024</auc:BenchmarkYear>
+                  <auc:BenchmarkValue>75</auc:BenchmarkValue>
+                </auc:Benchmark>
+              </auc:ScenarioType>
+              <auc:LinkedPremises>
+                <auc:Building>
+                  <auc:LinkedBuildingID IDref="BuildingType-1" />
+                </auc:Building>
+              </auc:LinkedPremises>
+            </auc:Scenario>
+          </auc:Scenarios>
+          <auc:ASHRAEAuditLevel>Preliminary Energy-Use Analysis</auc:ASHRAEAuditLevel>
+        </auc:Report>
+      </auc:Reports>
+      <auc:Contacts>
+        <auc:Contact ID="ContactType-1">
+          <auc:ContactRoles>
+            <auc:ContactRole>Energy Auditor</auc:ContactRole>
+          </auc:ContactRoles>
+          <auc:ContactName>Not specified</auc:ContactName>
+        </auc:Contact>
+      </auc:Contacts>
+    </auc:Facility>
+  </auc:Facilities>
+</auc:BuildingSync>
