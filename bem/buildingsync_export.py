@@ -434,11 +434,12 @@ def validate_buildingsync_use_case(
     for assert_el in schem.validation_report.findall(
         "{http://purl.oclc.org/dsdl/svrl}failed-assert"
     ):
-        text = "".join(t.text or "" for t in assert_el.findall(
-            "{http://purl.oclc.org/dsdl/svrl}text"
-        ))
+        text = "".join(
+            t.text or "" for t in assert_el.findall("{http://purl.oclc.org/dsdl/svrl}text")
+        )
         failures.append(text.strip() or "failed assertion")
     return not failures, failures
+
 
 _GEOMETRY_TAGS = {"PolyLoop", "PlanarCoordinate", "CartesianPoint", "Vertex"}
 

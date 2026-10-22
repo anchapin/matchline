@@ -22,10 +22,7 @@ from tests.test_buildingsync_export import _tiny_model
 AUC = f"{{{AUC_NS}}}"
 
 EXAMPLE_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "assets"
-    / "examples"
-    / "matchline_l000_example.xml"
+    Path(__file__).resolve().parent.parent / "assets" / "examples" / "matchline_l000_example.xml"
 )
 
 # A complete L000 context: everything the use case requires, caller-supplied.
