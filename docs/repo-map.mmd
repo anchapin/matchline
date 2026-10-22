@@ -13,6 +13,7 @@ graph LR
     bem_bem_roof
     bem_bem_shading
     bem_bem_space_split
+    bem_buildingsync_export
     construction_library
     construction_library_data
     construction_library_prm_data
@@ -175,6 +176,7 @@ graph LR
   bem_bem_multistorey --> geometry_grade
   bem_bem_roof --> bem_bem_helpers
   bem_bem_shading --> bem_bem_geometry
+  bem_buildingsync_export --> bem_bem_geometry
   building_model --> datasets_adapter
   cli --> atomic_io
   cli --> building_model
