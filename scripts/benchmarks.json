@@ -6,7 +6,8 @@
       "license": "CC BY 4.0",
       "arch_ifc": "~/workspace/datasets/matchline-bench/bsi-clinic/arch.ifc",
       "hvac_ifc": "~/workspace/datasets/matchline-bench/bsi-clinic/hvac.ifc",
-      "drawing_set": null
+      "drawing_set": null,
+      "schedule_workbook": "~/workspace/datasets/matchline-bench/clinic-design/clinic-design.xlsx"
     },
     {
       "name": "esplanades",

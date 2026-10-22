@@ -393,6 +393,17 @@ first run are fixed: gni-74's gbXML export no longer divides by zero on
 sub-0.1 m walls (#1011), and the duplex MEP terminals score 73/103 after the
 loader collapses the file's duplicated spaces (#1008).
 
+**Schedule-truth benchmark (#1240).** The clinic's COBie workbook
+(`clinic-design.xlsx`, the project's real schedule deliverable, sha256
+`ceef8f581a5244fe4de66ab9f1c89e5706f6c57868eeccd4f942f92e429fe5f1`) joins
+the bench as `bsi-clinic`'s `schedule_workbook`; truth is frozen next to it
+by `scripts/schedule_truth.py` (openpyxl only, never imports the extractor;
+schema `matchline.schedule_truth/1`; workbook sha256 pinned, and a drifted
+truth file refuses the run until re-frozen). Run:
+`python scripts/schedule_bench.py --config scripts/benchmarks.json
+[--building bsi-clinic] [--export-validity]`; the measured run is recorded
+in [docs/1.0_claims.md](docs/1.0_claims.md#mechanical-schedule-extraction-1240).
+
 **Independent truth (#1165):** the 2026-10-15 area errors (0.0% everywhere)
 compared `import_ifc` with itself, and wall length error was hard-coded to
 0.0. The harness now scores against `truth.json`, read straight from each IFC
