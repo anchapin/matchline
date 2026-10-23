@@ -109,6 +109,73 @@ def test_unaudited_export_has_no_audit_furniture(tmp_path):
     assert not ok and failures
 
 
+def test_report_links_building_and_names_report_type(tmp_path):
+    """ATT import minimums (#1254), element-isolated by upload: a Report
+    that links back to its building and carries the Report Type UDF is
+    what the Audit Template requires. Both are structural plumbing, so
+    they ship with and without audit context; nothing else is invented.
+    """
+    for audit in (None, FULL_AUDIT):
+        path = write_buildingsync(_tiny_model(), tmp_path / "out.xml", audit=audit)
+        root = ET.parse(path).getroot()
+        ok, errs = validate_buildingsync(path)
+        assert ok, errs
+        report = root.find(f".//{AUC}Report")
+        linked = report.find(
+            f"{AUC}LinkedPremisesOrSystem/{AUC}Building/{AUC}LinkedBuildingID"
+        )
+        assert linked is not None and linked.get("IDref") == "BuildingType-1"
+        udf_names = [
+            e.findtext(f"{AUC}FieldName")
+            for e in report.findall(f"{AUC}UserDefinedFields/{AUC}UserDefinedField")
+        ]
+        assert "Audit Template Report Type" in udf_names
+        # The rest of ATT's skeleton imports fine without them; emitting
+        # them would fabricate audit history the sources never state.
+        for tag in ("AuditDates", "AuditFilingStatus", "EarlyCompliance", "AuditorContactID"):
+            assert report.find(f"{AUC}{tag}") is None, f"{tag} invented (audit={audit!r})"
+
+
+def test_address_street_and_postal_pass_through_when_stated(tmp_path):
+    """Stated street and postal travel into the Building address (#1254)."""
+    audit = AuditContext(
+        building_classification="Commercial",
+        occupancy_classification="Office",
+        year_of_construction=1998,
+        city="Golden",
+        state="CO",
+        street_address="1500 Denver West Pkwy",
+        postal_code="80401",
+    )
+    path = write_buildingsync(_tiny_model(), tmp_path / "out.xml", audit=audit)
+    ok, errs = validate_buildingsync(path)
+    assert ok, errs
+    address = ET.parse(path).getroot().find(f".//{AUC}Building/{AUC}Address")
+    street = address.find(
+        f"{AUC}StreetAddressDetail/{AUC}Simplified/{AUC}StreetAddress"
+    )
+    assert street is not None and street.text == "1500 Denver West Pkwy"
+    assert address.findtext(f"{AUC}City") == "Golden"
+    assert address.findtext(f"{AUC}PostalCode") == "80401"
+
+
+def test_address_street_and_postal_absent_unless_stated(tmp_path):
+    """City/state alone still emits no street or postal (#1254)."""
+    audit = AuditContext(
+        building_classification="Commercial",
+        occupancy_classification="Office",
+        year_of_construction=1998,
+        city="Golden",
+        state="CO",
+    )
+    path = write_buildingsync(_tiny_model(), tmp_path / "out.xml", audit=audit)
+    ok, errs = validate_buildingsync(path)
+    assert ok, errs
+    address = ET.parse(path).getroot().find(f".//{AUC}Building/{AUC}Address")
+    assert address.find(f"{AUC}StreetAddressDetail") is None
+    assert address.find(f"{AUC}PostalCode") is None
+
+
 def test_committed_example_is_current_and_valid():
     """The committed L000 example stays byte-identical to the writer's output."""
     rebuild = EXAMPLE_PATH.with_name("matchline_l000_example.rebuild.xml")

@@ -59,6 +59,11 @@ class AuditContext:
     climate_zone: str | None = None
     city: str | None = None
     state: str | None = None
+    # Address pass-through (#1254): the Audit Template import rejects an
+    # export whose stated address lacks a numeric postal code, so each
+    # piece travels only when the caller states it. Nothing is invented.
+    street_address: str | None = None
+    postal_code: str | None = None
     audit_level: str = DEFAULT_AUDIT_LEVEL
     # Measured scenario (annual utility totals). Both are required together:
     # intensities travel in the schema's own units (kBtu/ft2, $/ft2) so no
@@ -195,6 +200,21 @@ def _write_reports(facility, audit: AuditContext | None = None) -> None:
     if audit and audit.audit_level:
         # The Report sequence puts ASHRAEAuditLevel after Scenarios.
         _el(report, "ASHRAEAuditLevel", audit.audit_level)
+    # Audit Template import minimums (#1254), element-isolated by upload
+    # against ATT Release 2026.01.01: of the Report skeleton ATT's own
+    # exports carry, only these two are load-bearing. A Report that links
+    # back to its building and carries the Report Type UDF imports; each
+    # of AuditDates, AuditFilingStatus, EarlyCompliance and
+    # AuditorContactID dropped singly still imported, and removing
+    # LinkedPremisesOrSystem (with the UDF kept) or the UDF (with
+    # LinkedPremisesOrSystem kept) failed ATT's "Rp cities" check. Both
+    # are structural plumbing, not audit facts, so they ship on every
+    # export; the report-type value names the template category ATT sorts
+    # imports into, not a claim an ASHRAE audit was performed.
+    premises = _el(report, "LinkedPremisesOrSystem")
+    linked = _el(premises, "Building")
+    _el(linked, "LinkedBuildingID", IDref="BuildingType-1")
+    _udf(report, "Audit Template Report Type", "ASHRAE Level 2 Base Template")
 
 
 def _write_site_building(
@@ -211,8 +231,15 @@ def _write_site_building(
     if audit:
         if audit.city and audit.state:
             address = _el(building, "Address")
+            if audit.street_address:
+                # StreetAddressDetail > Simplified > StreetAddress is the
+                # schema's complete-address form (BuildingSync 2.6.0).
+                simplified = _el(_el(address, "StreetAddressDetail"), "Simplified")
+                _el(simplified, "StreetAddress", audit.street_address)
             _el(address, "City", audit.city)
             _el(address, "State", audit.state)
+            if audit.postal_code:
+                _el(address, "PostalCode", audit.postal_code)
         if audit.climate_zone:
             zone_type = _el(building, "ClimateZoneType")
             ashrae = _el(zone_type, "ASHRAE")
