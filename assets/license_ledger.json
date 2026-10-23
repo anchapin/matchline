@@ -152,6 +152,13 @@
    "license": "Common BIM Files reuse clause (confirmed 2026-10-20): the 2011-09-14 Office release of the bSa Common BIM Files, developed by ERDC-CERL (US Army Corps of Engineers, project chair Bill East) and first published by the buildingSMART alliance at NIBS. Copy, distribution, display, use and derivative works are allowed with proper academic citation of the source whenever the models are presented; no cost or use restriction in any for-profit or not-for-profit setting. The clause survives in the Wayback snapshot of 10 March 2013 (web.archive.org/web/20130310082112/http://www.buildingsmartalliance.org/index.php/projects/commonbimfiles). IFC-Bench's license.txt had credited the BSI Medical-Dental files and CC BY 4.0 by mistake; IFC-Bench corrected it 2026-10-20 (commit 0e22f2e). NIBS was asked directly 2026-10-20; a different NIBS answer governs and the row is revisited. Citation to use: ERDC-CERL / buildingSMART alliance Common BIM Files, Office (2011), via IFC-Bench projects/wbdg_office.",
    "class": "permissive",
    "source": "https://huggingface.co/datasets/sylvainHellin/ifc-bench projects/wbdg_office (origin bSa Common BIM Files Office release 2011-09-14; original page https://www.wbdg.org/bim/cobie/common-bim-files now 404, clause archived at the Wayback 2013-03-10 snapshot); read-only benchmark use, held out, never committed; derived numbers publishable with the source cited."
+  },
+  {
+   "id": "gni_2026",
+   "name": "TUM GNI BIM Dataset 2026_BIMprojects (16 IFC from 9 WS 2025/26 BIM Project teams, paired arch+str for 7)",
+   "license": "CC BY 4.0",
+   "class": "permissive",
+   "source": "github.com/ZijianWang-ZW/GNI-BIM-Dataset (IFC-models/2026_BIMprojects, IFC-models/LICENSE); held out, never committed"
   }
  ],
  "artifacts": [
