@@ -1355,6 +1355,38 @@ def _synthesized_storeys(f, scale):
     ]
 
 
+def _synthesized_element_storeys(f, scale):
+    """Stand-in storeys for files with no IfcBuildingStorey and no IfcSpaces.
+
+    Structural IFCs hold their IfcWalls and slabs directly under IfcSite
+    (GNI 2026 gni26-p5-str): no IfcBuilding, no storeys, no spaces, so the
+    #928 space-based synthesis finds nothing, returns [], and the walk
+    imports nothing at all. Groups every storey-less element of
+    _ELEMENT_CLASSES by placement z, bucketed at STOREY_ELEVATION_TOL_M,
+    and returns one _SyntheticStorey per bucket, lowest first. Containment
+    stays empty: elements contained in IfcSite flow through the
+    by-elevation fallback (#585) against these bands instead. Returns []
+    when the file has no storey-less elements either, so a truly empty
+    file imports empty exactly as before.
+    """
+    buckets = {}  # bucket key -> [(raw z, element)]
+    for el in _storey_less_elements(f, [], _ELEMENT_CLASSES):
+        try:
+            # raw IFC units: the walk applies the length scale itself when
+            # it reads Elevation, so storing scaled meters would double-scale
+            z_raw = _placement_transform(el, scale)[3]
+        except Exception:
+            z_raw = 0.0
+        if z_raw is None:
+            z_raw = 0.0
+        buckets.setdefault(round(z_raw * scale / STOREY_ELEVATION_TOL_M), []).append((z_raw, el))
+    groups = sorted(buckets.values(), key=lambda g: min(z for z, _ in g))
+    return [
+        _SyntheticStorey(i + 1, min(z for z, _ in g), [])
+        for i, g in enumerate(groups)
+    ]
+
+
 _ROOMNUM = re.compile(r"^[A-Za-z]?\d+[A-Za-z]?$")
 
 
@@ -3963,6 +3995,14 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         # directly under IfcSite, so synthesize stand-in storeys from the
         # space elevations instead of importing nothing (#928)
         storeys = _synthesized_storeys(f, scale)
+        if not storeys:
+            # no spaces either: structural IFCs (GNI 2026 gni26-p5-str) hang
+            # their IfcWalls off IfcSite with no building, storeys, or
+            # spaces, so synthesize the bands from the elements' placement
+            # z instead; the elements then flow through the by-elevation
+            # fallback (#585) exactly as site-contained elements do when
+            # spaces exist (#1262)
+            storeys = _synthesized_element_storeys(f, scale)
 
     def _storey_elevation(s):
         try:
