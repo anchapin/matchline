@@ -121,9 +121,7 @@ def test_report_links_building_and_names_report_type(tmp_path):
         ok, errs = validate_buildingsync(path)
         assert ok, errs
         report = root.find(f".//{AUC}Report")
-        linked = report.find(
-            f"{AUC}LinkedPremisesOrSystem/{AUC}Building/{AUC}LinkedBuildingID"
-        )
+        linked = report.find(f"{AUC}LinkedPremisesOrSystem/{AUC}Building/{AUC}LinkedBuildingID")
         assert linked is not None and linked.get("IDref") == "BuildingType-1"
         udf_names = [
             e.findtext(f"{AUC}FieldName")
@@ -151,9 +149,7 @@ def test_address_street_and_postal_pass_through_when_stated(tmp_path):
     ok, errs = validate_buildingsync(path)
     assert ok, errs
     address = ET.parse(path).getroot().find(f".//{AUC}Building/{AUC}Address")
-    street = address.find(
-        f"{AUC}StreetAddressDetail/{AUC}Simplified/{AUC}StreetAddress"
-    )
+    street = address.find(f"{AUC}StreetAddressDetail/{AUC}Simplified/{AUC}StreetAddress")
     assert street is not None and street.text == "1500 Denver West Pkwy"
     assert address.findtext(f"{AUC}City") == "Golden"
     assert address.findtext(f"{AUC}PostalCode") == "80401"
