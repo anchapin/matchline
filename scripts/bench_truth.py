@@ -42,6 +42,7 @@ import hashlib
 import json
 import math
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 TRUTH_SCHEMA = "matchline.bench_truth/2"
@@ -381,6 +382,25 @@ def truth_path_for(arch_ifc: Path) -> Path:
     return Path(arch_ifc).parent / TRUTH_FILENAME
 
 
+def shared_truth_dirs(entries: Iterable[tuple[str, Path]]) -> dict[Path, list[str]]:
+    """Truth directories that more than one building would write to (#1259).
+
+    Frozen truth lives in one file name (``truth.json``) next to the IFC, so
+    two buildings staged in one shared directory collide: the second
+    building's truth.json overwrites the first's and the harness then reads
+    whichever landed last (each file is pinned to its own IFC's sha256, so
+    the loser reads as a sha256 mismatch). Stage every building in its own
+    directory instead: ``<root>/<building>/arch.ifc`` +
+    ``<root>/<building>/truth.json``.
+
+    Returns ``{truth_dir: [building names]}`` for the offending directories.
+    """
+    by_dir: dict[Path, list[str]] = {}
+    for name, arch_ifc in entries:
+        by_dir.setdefault(Path(arch_ifc).parent, []).append(name)
+    return {d: sorted(names) for d, names in by_dir.items() if len(names) > 1}
+
+
 def write_truth(arch_ifc: Path, out: Path | None = None) -> Path:
     truth = build_truth(arch_ifc)
     out = out or truth_path_for(arch_ifc)
@@ -421,6 +441,27 @@ def main(argv=None) -> int:
 
     cfg = json.loads(Path(args.config).read_text())
     base = Path(args.config).resolve().parent
+    entries: list[tuple[str, Path]] = []
+    for e in cfg.get("buildings", []):
+        v = e.get("arch_ifc")
+        if not v:
+            continue
+        ifc = Path(v).expanduser()
+        ifc = ifc if ifc.is_absolute() else base / ifc
+        entries.append((e["name"], ifc))
+
+    # #1259: two buildings in one directory would write the same truth.json
+    # and the harness would read whichever landed last.
+    shared = shared_truth_dirs(entries)
+    if shared:
+        for d, names in sorted(shared.items()):
+            print(
+                f"error: buildings {', '.join(names)} share the truth directory {d};"
+                " stage each building in its own directory (#1259)",
+                file=sys.stderr,
+            )
+        return 2
+
     n_written = 0
     for e in cfg.get("buildings", []):
         v = e.get("arch_ifc")

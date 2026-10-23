@@ -213,13 +213,53 @@ unzip -j /tmp/gni.zip "2025_BIMfundamentals/model_18.ifc" -d ~/workspace/dataset
 mv ~/workspace/datasets/matchline-bench/gni-18/model_18.ifc ~/workspace/datasets/matchline-bench/gni-18/arch.ifc
 ```
 
+### TUM GNI 2026 BIM projects (GNI 2026_BIMprojects)
+
+**Local path:** `~/workspace/datasets/matchline-bench/gni26-<building>/arch.ifc`
+(one directory per building, e.g. `gni26-p1-arc/`, `gni26-p8-str/`; data never
+committed)
+
+**Environment variable:** None for the paths (the benchmark `--config` carries
+them); the raised import limits below are read from the environment.
+
+**What it is:** the 2026 GNI student-project set (the `GNI 2026_BIMprojects`
+archive), 16 buildings in mixed IFC2X3 / IFC4, scored on the #748 harness. The
+measured scoreboard is [docs/benchmark_gni26.md](docs/benchmark_gni26.md); the
+per-building staging it used follows the one-directory-per-building convention
+documented under the real-building benchmark section (never a shared
+directory, #1259).
+
+**Raised import limits for the large buildings (local runs only):** the
+import caps are environment variables with safe defaults
+(`ifc/ifc_import.py`, `limits.py`):
+
+| variable | default | used for |
+|---|---|---|
+| `MATCHLINE_MAX_IFC_SIZE_MB` | 100 (MB) | `600` for `gni26-p1-arc` (178 MB) and `gni26-p2-arc` (101 MB) |
+| `MATCHLINE_MAX_IFC_ELEMENTS` | 500000 | `1500000` for `gni26-p4-arc` (1.05 M) and `gni26-p5-arc` (1.49 M), `2200000` for `gni26-p2-arc` (1.84 M), `3200000` for `gni26-p1-arc` (3.06 M) |
+
+The same two variables cover the older benchmark rows: molio needs
+`MATCHLINE_MAX_IFC_ELEMENTS=1500000`. CI keeps the defaults; these overrides
+are for local runs on machines with the memory for them.
+
+**Two buildings publish no row** in
+[docs/benchmark_gni26.md](docs/benchmark_gni26.md), for resource reasons, not
+extractor failures: `gni26-p6-arc` (535 MB IFC) exceeds a 3 GiB memory budget
+on import (killed at 3.2 GiB RSS), and `gni26-p8-arc` exceeded a ~870 s
+scoring budget. The measured scoreboard therefore covers 13 of the 16 staged
+buildings.
+
 ---
 
 ## Real-building benchmark (#748)
 
-**Local path:** `~/workspace/datasets/matchline-bench/<building>/`
+**Local path:** `~/workspace/datasets/matchline-bench/<building>/` - one
+directory per building (see the staging convention below)
 
-**Environment variable:** None (path passed via `--config`)
+**Environment variable:** None for the paths (passed via `--config`); the
+raised import limits for large buildings are read from the environment:
+`MATCHLINE_MAX_IFC_SIZE_MB` (default 100 MB) and
+`MATCHLINE_MAX_IFC_ELEMENTS` (default 500000)
 
 **What it is:** A scoreboard over 17 licensed real-building models, each
 with a ground-truth architectural IFC (IfcSpaces) and, where available, an
@@ -366,6 +406,35 @@ mkdir -p ~/workspace/datasets/matchline-bench/
 # files, or fetch the blobs through the LFS batch API.
 ```
 
+**Staging convention: one directory per building (#1259).** Every benchmark
+building is staged in its **own** directory, never several buildings in one
+shared directory:
+
+```
+<root>/<building>/arch.ifc     the building's ground-truth IFC
+<root>/<building>/hvac.ifc     optional HVAC IFC
+<root>/<building>/drawings.pdf optional drawing set
+<root>/<building>/truth.json   frozen truth, written by scripts/bench_truth.py
+```
+
+This is not cosmetic. The frozen truth file has one fixed name (`truth.json`)
+and is written **next to the IFC** (`scripts/bench_truth.py:truth_path_for`),
+pinned to that IFC's sha256. Two buildings staged in one shared directory
+therefore write the same file: the second building's `truth.json` replaces the
+first's, and the harness reads whichever landed last - a truth pin that
+crosses between buildings, scored against the wrong model. (The pin still
+catches the swap as a sha256 mismatch, so the collision surfaces as a
+`TruthMismatch` error row rather than a silently wrong score, but the run is
+lost either way.)
+
+The harness now enforces the convention instead of trusting it (#1259):
+`scripts/benchmark.py` detects buildings that share a truth directory and
+reports each of them as an `error` row naming the shared directory, and
+`scripts/bench_truth.py` refuses to write truth for such a config (exit code
+2) rather than overwriting one building's truth with another's. New dataset
+additions must follow the per-building layout; the 2026-10-23 GNI 2026 staging
+already did.
+
 **Config format** (passed to `--config`; relative paths resolve against the
 config file):
 
@@ -384,7 +453,7 @@ config file):
 }
 ```
 
-Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists seventeen buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149, and from IFC-Bench ac20, digital-hub, fzk-house, smiley-west, wbdg-office); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/`, and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`.
+Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists seventeen buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149, and from IFC-Bench ac20, digital-hub, fzk-house, smiley-west, wbdg-office); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/` (one directory per building - the staging convention below), and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`. Large buildings may also need `MATCHLINE_MAX_IFC_SIZE_MB` raised; both variables are read from the environment, and the defaults (100 MB / 500000 entities) are unchanged in CI.
 
 **2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
 score; rooms, area, window and door counts match ground truth everywhere

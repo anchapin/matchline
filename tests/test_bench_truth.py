@@ -299,3 +299,40 @@ def test_window_area_falls_back_to_stated_attributes_without_a_body(tmp_path: Pa
     t = build_truth(_broken_attr_window_ifc(tmp_path / "arch.ifc", with_body=False))
     assert t["window_area_m2"] == pytest.approx(0.1795 * 1.8)
     assert t["windows_from_geometry"] == 0
+
+
+def test_shared_truth_dirs_flags_two_buildings_in_one_directory(tmp_path: Path) -> None:
+    """Two buildings staged in one dir would collide on truth.json (#1259)."""
+    from scripts.bench_truth import shared_truth_dirs
+
+    a = tmp_path / "a" / "arch.ifc"
+    b = tmp_path / "b" / "arch.ifc"
+    shared = tmp_path / "shared"
+    entries = [("a", a), ("b", b), ("c1", shared / "one.ifc"), ("c2", shared / "two.ifc")]
+    conflicts = shared_truth_dirs(entries)
+    assert conflicts == {shared: ["c1", "c2"]}
+
+
+def test_per_building_staging_is_the_convention_so_truth_pins_never_cross(
+    tmp_path: Path,
+) -> None:
+    """Each building in its own directory: the truth files stay distinct and
+    each one is pinned to its own IFC's sha256."""
+    root = tmp_path / "bench"
+    ifcs = {}
+    for name in ("p1", "p2"):
+        d = root / name
+        d.mkdir(parents=True)
+        ifcs[name] = _tiny_ifc(d / "arch.ifc")
+    truths = {}
+    for name, ifc in ifcs.items():
+        truth, how = load_or_freeze_truth(ifc)
+        assert how == "built"
+        truths[name] = truth
+    assert truths["p1"]["ifc_sha256"] != truths["p2"]["ifc_sha256"]
+    assert truth_path_for(ifcs["p1"]) != truth_path_for(ifcs["p2"])
+    # reloading each finds its own frozen file, still pinned to its own IFC
+    for name, ifc in ifcs.items():
+        again, how = load_or_freeze_truth(ifc)
+        assert how == "frozen"
+        assert again["ifc_sha256"] == truths[name]["ifc_sha256"]
