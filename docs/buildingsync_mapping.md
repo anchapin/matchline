@@ -85,6 +85,29 @@ Implication: anything matchline carries that 2.6.0 has no slot for should
 go into a UserDefinedField with a stable, namespaced FieldName rather than
 be dropped — that is what keeps an ATT re-import lossless.
 
+## Audit Template import minimums (#1254)
+
+The Audit Template (Release 2026.01.01) rejects an export until the Report
+and Building satisfy a few import-time checks. Element-isolated by upload
+against ATT (each probe dropped one element from an otherwise-importing
+file; the failing check is ATT's "Rp cities report can't be blank / does
+not exist"):
+
+- **Report must link its building** and **carry the Report Type UDF**:
+  `Report/LinkedPremisesOrSystem/Building/LinkedBuildingID @IDref` and a
+  Report-level UserDefinedField `Audit Template Report Type`. The writer
+  emits both on every export; the value "ASHRAE Level 2 Base Template"
+  names the template category ATT sorts imports into, not a claim that an
+  ASHRAE audit was performed. Drop either element and the import fails;
+  AuditDates, AuditFilingStatus, EarlyCompliance and AuditorContactID all
+  import fine without them, so the writer emits none.
+- **Building address with a numeric postal code** and **YearOfConstruction**
+  must be present for ATT to accept the import. These are stated facts, so
+  the writer emits them only when the caller supplies them (AuditContext
+  city/state, plus street_address/postal_code as of #1254); an export from
+  sources that state no address or year stays unimportable by ATT, by
+  design.
+
 ## Mapping from matchline's model
 
 | matchline | BuildingSync 2.6.0 | notes |

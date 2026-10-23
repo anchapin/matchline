@@ -96,6 +96,17 @@
             </auc:Scenario>
           </auc:Scenarios>
           <auc:ASHRAEAuditLevel>Preliminary Energy-Use Analysis</auc:ASHRAEAuditLevel>
+          <auc:LinkedPremisesOrSystem>
+            <auc:Building>
+              <auc:LinkedBuildingID IDref="BuildingType-1" />
+            </auc:Building>
+          </auc:LinkedPremisesOrSystem>
+          <auc:UserDefinedFields>
+            <auc:UserDefinedField>
+              <auc:FieldName>Audit Template Report Type</auc:FieldName>
+              <auc:FieldValue>ASHRAE Level 2 Base Template</auc:FieldValue>
+            </auc:UserDefinedField>
+          </auc:UserDefinedFields>
         </auc:Report>
       </auc:Reports>
       <auc:Contacts>
