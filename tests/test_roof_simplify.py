@@ -4,6 +4,7 @@ import copy
 import json
 import math
 import random
+import time
 
 import pytest
 
@@ -175,3 +176,155 @@ def test_no_latitude_is_an_error():
 def test_empty_roof_is_a_no_op():
     res = simplify_roof([], LAT)
     assert res.planes == [] and res.area_delta_pct == 0 and res.aperture_delta_pct == 0
+
+
+def _grid(nx, ny, size=2.0):
+    """A flat roof tiled with coplanar square facets, all mergeable."""
+    planes = []
+    i = 0
+    for j in range(ny):
+        for k in range(nx):
+            x0, y0 = k * size, j * size
+            planes.append(
+                _rp(
+                    f"P{i:04d}",
+                    [
+                        (x0, y0, 3.0),
+                        (x0 + size, y0, 3.0),
+                        (x0 + size, y0 + size, 3.0),
+                        (x0, y0 + size, 3.0),
+                    ],
+                )
+            )
+            i += 1
+    return planes
+
+
+def test_big_roof_is_deterministic_in_any_input_order():
+    """Batching must not depend on the order the planes arrive in (#1265)."""
+    planes = _grid(8, 8)
+    first = json.dumps(roof_simplify_report(simplify_roof(planes, LAT)), sort_keys=True)
+    rng = random.Random(11)
+    for _ in range(3):
+        shuffled = planes[:]
+        rng.shuffle(shuffled)
+        again = json.dumps(roof_simplify_report(simplify_roof(shuffled, LAT)), sort_keys=True)
+        assert again == first
+
+
+def test_big_roof_simplifies_quickly_down_to_one_plane():
+    """A 225-plane roof must not cost minutes per pass (#1265)."""
+    planes = _grid(15, 15)
+    assert len(planes) == 225
+    t0 = time.time()
+    res = simplify_roof(planes, LAT)
+    dt = time.time() - t0
+    assert res.n_before == 225 and res.n_after == 1
+    assert abs(res.area_delta_pct) <= 2 and abs(res.aperture_delta_pct) <= 2
+    # generous wall-clock bound: the old scan took minutes per pass here
+    assert dt < 60.0, f"simplify took {dt:.1f}s"
+    # structural bound: the candidate scan stays linear in the roof size
+    # instead of quadratic, and the plan cache is not rebuilt per pair
+    assert res.stats["pair_scans"] < 12 * len(planes)
+    assert res.stats["plan_computations"] <= 2 * len(planes)
+    # and the merges are batched: many merges per pass, not one
+    assert len(res.merges) == 224
+    assert res.stats["passes"] < len(res.merges)
+
+
+def test_batched_merges_stay_inside_the_budgets():
+    """Every accepted merge is inside the area and aperture budgets (#1265)."""
+    planes = _grid(9, 9)
+    res = simplify_roof(planes, LAT)
+    assert res.n_after == 1
+    for m in res.merges:
+        assert abs(m["area_delta_pct"]) <= 2
+        assert abs(m["aperture_delta_pct"]) <= 2
+    # the one remaining plane covers the whole roof
+    assert res.planes[0].area_m2 == pytest.approx(18 * 18, rel=1e-6)
+    note = res.planes[0].provenance.note.replace("merged from ", "")
+    assert sorted(note.split(", ")) == sorted(p.id for p in planes)
+
+
+def _reference_one_per_pass(planes, lat, angle_tol_deg=5.0, small_facet_frac=0.05):
+    """The pre-#1265 greedy: exactly one merge per pass, full pair scan.
+
+    Kept in the test suite as the reference the batched implementation is
+    compared against (same filters, same budgets, same "cheapest first"
+    order, but no batching and no caching).
+    """
+    from solar_aperture import solar_aperture
+
+    from geometry.roof_simplify import (
+        MIN_SHARED_EDGE_M,
+        _angle_deg,
+        _merge,
+        _pct,
+        _plan,
+        _shared_edge_ok,
+        _unit_normal,
+    )
+
+    work = sorted((copy.deepcopy(p) for p in planes), key=lambda p: p.id)
+    area0 = sum(p.area_m2 for p in work)
+    ap0 = solar_aperture(work, lat).total
+    merges, refused = [], set()
+    while True:
+        total = sum(p.area_m2 for p in work)
+        cands = []
+        for i, a in enumerate(work):
+            for b in work[i + 1 :]:
+                key = (a.id, b.id)
+                if a.level_id != b.level_id or key in refused:
+                    continue
+                pa, pb = _plan(a), _plan(b)
+                if _shared_edge_ok(a, b, pa, pb) < MIN_SHARED_EDGE_M:
+                    continue
+                ang = _angle_deg(_unit_normal(a.vertices_m), _unit_normal(b.vertices_m))
+                small = min(a.area_m2, b.area_m2) <= small_facet_frac * total
+                if ang > angle_tol_deg and not small:
+                    continue
+                host, other = (a, b) if (a.area_m2, b.id) >= (b.area_m2, a.id) else (b, a)
+                merged, _why = _merge(host, other, host.id)
+                if merged is None:
+                    refused.add(key)
+                    continue
+                trial = [p for p in work if p.id not in key] + [merged]
+                da = _pct(sum(p.area_m2 for p in trial), area0)
+                dap = _pct(solar_aperture(trial, lat).total, ap0)
+                cands.append((abs(dap), abs(da), key, host.id, other.id, merged, trial, da, dap))
+        if not cands:
+            break
+        progressed = False
+        for c in sorted(cands, key=lambda c: (round(c[0], 12), round(c[1], 12), c[2])):
+            _, _, key, hid, oid, merged, trial, da, dap = c
+            if abs(da) > 0.02 or abs(dap) > 0.02:
+                refused.add(key)
+                continue
+            merges.append((hid, oid))
+            work = sorted(trial, key=lambda p: p.id)
+            progressed = True
+            break
+        if not progressed:
+            break
+    return work, merges
+
+
+def test_batching_merges_at_least_as_much_as_one_merge_per_pass():
+    """Batched, disjoint merges must not leave more planes behind (#1265)."""
+    planes = _grid(6, 6)
+    res = simplify_roof(planes, LAT)
+    ref_work, ref_merges = _reference_one_per_pass(planes, LAT)
+    assert res.n_after <= len(ref_work)
+    assert abs(res.area_delta_pct) <= 2 and abs(res.aperture_delta_pct) <= 2
+    for m in res.merges:
+        assert abs(m["area_delta_pct"]) <= 2 and abs(m["aperture_delta_pct"]) <= 2
+
+
+def test_batching_keeps_the_hip_and_dormer_merges():
+    """The small case the budgets were written for is unchanged (#1265)."""
+    planes = _hip(notch=True) + [_dormer()]
+    res = simplify_roof(planes, LAT)
+    ref_work, ref_merges = _reference_one_per_pass(planes, LAT)
+    assert [m["from"] for m in res.merges] == [list(sorted(m)) for m in ref_merges]
+    assert res.n_after == len(ref_work)
