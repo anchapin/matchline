@@ -1381,10 +1381,7 @@ def _synthesized_element_storeys(f, scale):
             z_raw = 0.0
         buckets.setdefault(round(z_raw * scale / STOREY_ELEVATION_TOL_M), []).append((z_raw, el))
     groups = sorted(buckets.values(), key=lambda g: min(z for z, _ in g))
-    return [
-        _SyntheticStorey(i + 1, min(z for z, _ in g), [])
-        for i, g in enumerate(groups)
-    ]
+    return [_SyntheticStorey(i + 1, min(z for z, _ in g), []) for i, g in enumerate(groups)]
 
 
 _ROOMNUM = re.compile(r"^[A-Za-z]?\d+[A-Za-z]?$")

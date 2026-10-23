@@ -33,9 +33,7 @@ def _site_wall(b: IfcBuilder, site, name: str, start, end, z: float = 0.0):
     length = math.hypot(x1 - x0, y1 - y0)
     direction = ((x1 - x0) / length, (y1 - y0) / length, 0.0)
     wall = _Root.create_entity(b.f, ifc_class="IfcWall", name=name)
-    wall.ObjectPlacement = b._placement(
-        (x0, y0, z), site.ObjectPlacement, refdir=direction
-    )
+    wall.ObjectPlacement = b._placement((x0, y0, z), site.ObjectPlacement, refdir=direction)
     b._solid(wall, b._rect(length, 0.2, length / 2, 0.0), 3.0)
     b.f.create_entity(
         "IfcRelContainedInSpatialStructure",
@@ -44,9 +42,7 @@ def _site_wall(b: IfcBuilder, site, name: str, start, end, z: float = 0.0):
         RelatingStructure=site,
     )
     pset = ifcopenshell.api.run("pset.add_pset", b.f, product=wall, name="Pset_WallCommon")
-    ifcopenshell.api.run(
-        "pset.edit_pset", b.f, pset=pset, properties={"IsExternal": True}
-    )
+    ifcopenshell.api.run("pset.edit_pset", b.f, pset=pset, properties={"IsExternal": True})
     return wall
 
 
@@ -93,9 +89,7 @@ def test_element_z_bands_become_separate_levels(tmp_path):
     )
     model = import_ifc(str(p))
     assert len(model.levels) == 2, "z bands 0 m and 3 m make two storey stand-ins"
-    bim_walls = [
-        el for el in (model.bim_elements or []) if el.ifc_class.startswith("IfcWall")
-    ]
+    bim_walls = [el for el in (model.bim_elements or []) if el.ifc_class.startswith("IfcWall")]
     levels = {el.level_id for el in bim_walls}
     assert levels == {"L1", "L2"}, "each wall lands on its own synthesized level"
     assert len(model.envelope) == 2
