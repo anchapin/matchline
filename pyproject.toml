@@ -85,7 +85,7 @@ ui = ["gradio>=4.0"]
 # CI tool pins live here so the lockfile pins them and workflow files stop
 # carrying inline version pins; Renovate bumps these with the pre-commit pin.
 dev = [
-    "ruff==0.17.1",
+    "ruff==0.17.2",
     "mypy==2.4.0",
     "deptry==0.23.1",
     "matplotlib",
@@ -108,7 +108,7 @@ release = [
 # definition and must not require a PyPI declaration (#1190).
 known_first_party = [
     "matchline",
-    "ap50", "classes", "degrade", "eca", "pdf_fixtures",
+    "ap50", "classes", "degrade", "degrade_scans", "eca", "pdf_fixtures",
     "report_ab_stats", "sahi_infer", "train_scratch",
 ]
 

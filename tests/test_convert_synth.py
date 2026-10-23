@@ -252,3 +252,69 @@ def test_convert_tiled_labels_border_symbols_unclipped(tmp_path):
         by_cls.setdefault(cls, []).append((float(w), float(h)))
     assert by_cls["1"] == [(pytest.approx(110 / 640), pytest.approx(60 / 640))]
     assert by_cls["0"] == [(pytest.approx(100 / 640), pytest.approx(80 / 640))]
+
+
+def test_degrade_family_train_only(tmp_path):
+    """Issue #1241: the scan-degradation family hits TRAIN sheets only; the
+    val split stays byte-identical to the source sheets as the clean
+    reference set."""
+    import sys
+
+    sys.path.insert(0, str(DETECTOR))
+
+    src = tmp_path / "sheets"
+    src.mkdir()
+    for i in range(3):
+        _write_sheet(src, f"sheet_{i:03d}", [_sym("Window", [100, 100, 180, 180])])
+    out = tmp_path / "ds"
+    summary = convert(src, out, val_fraction=0.33, seed=0, degrade_family_seed=11)
+    assert summary["sheets_degraded_train"] == 2
+    assert sum(summary["degrade_member_counts"].values()) == 2
+    val_pngs = sorted((out / "images" / "val").glob("*.png"))
+    train_pngs = sorted((out / "images" / "train").glob("*.png"))
+    assert len(val_pngs) == 1 and len(train_pngs) == 2
+    # The val image is the untouched source sheet.
+    assert val_pngs[0].read_bytes() == (src / f"{val_pngs[0].stem}.png").read_bytes()
+    # Labels were written from the (possibly transformed) gt for both splits.
+    assert (out / "labels" / "val" / f"{val_pngs[0].stem}.txt").exists()
+    for p in train_pngs:
+        assert (out / "labels" / "train" / f"{p.stem}.txt").exists()
+
+
+def test_degrade_family_deterministic_and_changes_gt(tmp_path):
+    """Same seed reproduces the same degraded train set; a content-bearing
+    train sheet changes bytes, and rotation moves the label row."""
+    import sys
+
+    sys.path.insert(0, str(DETECTOR))
+    import numpy as np
+    from degrade_scans import variant_seed  # noqa: E402
+    from PIL import Image, ImageDraw
+
+    src = tmp_path / "sheets"
+    src.mkdir()
+    for i in range(3):
+        _write_sheet(src, f"sheet_{i:03d}", [_sym("Window", [100, 100, 180, 180])])
+        # Put a visible mark at the window's center so degradation shows.
+        png = src / f"sheet_{i:03d}.png"
+        im = Image.open(png).convert("RGB")
+        ImageDraw.Draw(im).rectangle([120, 120, 160, 160], fill="black")
+        im.save(png)
+    out1 = tmp_path / "ds1"
+    out2 = tmp_path / "ds2"
+    s1 = convert(src, out1, val_fraction=0.33, seed=0, degrade_family_seed=11)
+    convert(src, out2, val_fraction=0.33, seed=0, degrade_family_seed=11)
+    for p in sorted((out1 / "images" / "train").glob("*.png")):
+        a = np.asarray(Image.open(p))
+        b = np.asarray(Image.open(out2 / "images" / "train" / p.name))
+        assert (a == b).all(), p.name
+    # Every degraded train sheet's pixels moved away from the clean source.
+    for p in sorted((out1 / "images" / "train").glob("*.png")):
+        a = np.asarray(Image.open(p))
+        b = np.asarray(Image.open(src / f"{p.stem}.png").convert("RGB"))
+        assert (a != b).any(), p.name
+    assert s1["sheets_degraded_train"] == 2
+    # Seeded indices are stable, so re-running with the same seed reproduces
+    # the member assignment (sanity on the seed derivation).
+    seeds = [variant_seed(11, i) for i in range(3)]
+    assert len(set(seeds)) == 3

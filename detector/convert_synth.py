@@ -19,6 +19,12 @@ symbol types are looked up in AEC_MAP, so door variants collapse to "door"
 and windows to "window"; unmapped types (fixtures) are skipped and counted.
 The split is a deterministic seeded shuffle of sheet ids, so the same
 in_dir + seed always yields the same train/val split.
+
+With --degrade-family-seed N (issue #1241), the scan-degradation family
+(detector/degrade_scans.py) is applied per training sheet: one member and one
+severity sampled per sheet from a seeded rng, with the gt geometry moved by
+the same transform so labels stay aligned. The val split is left clean and
+undegraded by construction.
 """
 
 from __future__ import annotations
@@ -34,8 +40,10 @@ import numpy as np
 
 try:  # package import: python -m detector.convert_synth, pytest
     from detector.classes import AEC_MAP, CLASS_IDS
+    from detector.degrade_scans import apply_family_with_boxes, transform_gt, variant_seed
 except ImportError:  # direct script execution from inside detector/
     from classes import AEC_MAP, CLASS_IDS
+    from degrade_scans import apply_family_with_boxes, transform_gt, variant_seed
 
 # Inverse map: synth symbol type -> unified class id (or None to skip).
 SYMBOL_CLASS = {k: (CLASS_IDS[v] if v is not None else None) for k, v in AEC_MAP.items()}
@@ -189,7 +197,14 @@ def _wall_rows(walls, sheet_w, sheet_h, x0=0.0, y0=0.0, tw=None, th=None):
 
 
 def convert(
-    in_dir, out_dir, val_fraction=0.2, seed=0, include_empty=False, tile_size=0, stride=512
+    in_dir,
+    out_dir,
+    val_fraction=0.2,
+    seed=0,
+    include_empty=False,
+    tile_size=0,
+    stride=512,
+    degrade_family_seed=None,
 ):
     """Convert a synth sheets tree to a YOLO dataset. Returns a summary dict."""
     in_dir = Path(in_dir)
@@ -224,8 +239,10 @@ def convert(
         "sheets_kept_empty": 0,
         "tiles_written": 0,
         "tiles_kept_empty": 0,
+        "sheets_degraded_train": 0,
+        "degrade_member_counts": {},
     }
-    for js in sheets:
+    for sheet_idx, js in enumerate(sheets):
         stem = js.name[: -len(".gt.json")]
         png = in_dir / f"{stem}.png"
         if not png.exists():
@@ -236,14 +253,37 @@ def convert(
         walls = gt.get("walls", [])
         sheet_w, sheet_h = gt["sheet_size_px"]
         split = "val" if re.sub(r"_s\d+$", "", stem) in val_bases else "train"
+        # Issue #1241: degrade TRAIN sheets only, per-sheet member + severity,
+        # truth transformed with the image so labels stay aligned. Val is the
+        # clean, undegraded reference set by construction.
+        symbols = gt.get("symbols", [])
+        degraded_img = None
+        if degrade_family_seed is not None and split == "train":
+            from PIL import Image
+
+            img_d, _aligned, meta = apply_family_with_boxes(
+                Image.open(png).convert("RGB"),
+                [sym["bbox_px"] for sym in symbols if "bbox_px" in sym],
+                variant_seed(degrade_family_seed, sheet_idx),
+            )
+            transform_gt(
+                gt,
+                meta["member"],
+                meta["severity"],
+                variant_seed(degrade_family_seed, sheet_idx),
+                img_d.size,
+            )
+            degraded_img = img_d
+            member_counts = summary["degrade_member_counts"]
+            member_counts[meta["member"]] = member_counts.get(meta["member"], 0) + 1
+            summary["sheets_degraded_train"] += 1
         if tile_size > 0:
             from PIL import Image
 
-            symbols = gt.get("symbols", [])
             summary["boxes_skipped_unmapped"] += sum(
                 1 for sym in symbols if SYMBOL_CLASS.get(sym.get("type")) is None
             )
-            img = Image.open(png)
+            img = degraded_img if degraded_img is not None else Image.open(png)
             x_starts = _tile_starts(sheet_w, tile_size, stride)
             y_starts = _tile_starts(sheet_h, tile_size, stride)
             claimed = _assign_to_tiles(symbols, tile_size, x_starts, y_starts)
@@ -281,7 +321,10 @@ def convert(
         if not rows and not include_empty:
             summary["sheets_kept_empty"] += 1
             continue
-        shutil.copyfile(png, out_dir / "images" / split / f"{stem}.png")
+        if degraded_img is not None:
+            degraded_img.save(out_dir / "images" / split / f"{stem}.png")
+        else:
+            shutil.copyfile(png, out_dir / "images" / split / f"{stem}.png")
         (out_dir / "labels" / split / f"{stem}.txt").write_text("".join(r + "\n" for r in rows))
         wall_rows = _wall_rows(walls, sheet_w, sheet_h)
         (out_dir / "labels" / split / f"{stem}.wallcls.txt").write_text(
@@ -329,6 +372,13 @@ def main():
         default=512,
         help="tile stride in px (used when --tile-size > 0)",
     )
+    ap.add_argument(
+        "--degrade-family-seed",
+        type=int,
+        default=None,
+        help="apply the scan-degradation family (#1241) to TRAIN sheets only, "
+        "one member + severity sampled per sheet; the value is the base seed",
+    )
     args = ap.parse_args()
     summary = convert(
         args.in_dir,
@@ -338,6 +388,7 @@ def main():
         args.include_empty,
         args.tile_size,
         args.stride,
+        args.degrade_family_seed,
     )
     for k, v in summary.items():
         print(f"{k}: {v}")
