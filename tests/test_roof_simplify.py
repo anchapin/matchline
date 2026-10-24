@@ -360,3 +360,15 @@ def test_merge_is_refused_when_the_shared_edge_ends_disagree():
     res = simplify_roof([a, b], LAT)
     assert res.n_before == 2 and res.n_after == 2
     assert res.merges == []
+
+
+def test_roof_simplify_does_not_reach_into_solar_aperture_privates():
+    # #1272: the aperture cache must go through solar_aperture's public
+    # helpers, so a solar_aperture internal refactor cannot break roof
+    # simplify at call time.
+    from pathlib import Path
+
+    import geometry.roof_simplify as _rs
+
+    source = Path(_rs.__file__).read_text()
+    assert "_cos_sum" not in source

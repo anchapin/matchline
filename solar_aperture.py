@@ -79,7 +79,13 @@ def orientation_bucket(tilt_deg: Optional[float], azimuth_deg: Optional[float]) 
     return ("N", "E", "S", "W")[int(((azimuth_deg % 360.0) + 45.0) // 90.0) % 4]
 
 
-def _cos_sum(normal, suns) -> float:
+def cos_sum(normal, suns) -> float:
+    """Clipped cosine-of-incidence sum of ``normal`` against ``suns`` (#1272).
+
+    The per-plane building block of :func:`solar_aperture` and the per-facet
+    aperture share used by ``geometry.roof_simplify``.  Public so callers
+    outside this module need no underscore reach-in.
+    """
     return sum(max(0.0, normal[0] * s[0] + normal[1] * s[1] + normal[2] * s[2]) for s in suns)
 
 
@@ -89,7 +95,7 @@ def solar_aperture(planes: Iterable, latitude_deg: float) -> SolarAperture:
     suns = sun_vectors(latitude_deg)
     by = {k: 0.0 for k in ORIENTATIONS}
     for p in planes:
-        a = float(p.area_m2 or 0.0) * _cos_sum(plane_normal(p.tilt_deg, p.azimuth_deg), suns)
+        a = float(p.area_m2 or 0.0) * cos_sum(plane_normal(p.tilt_deg, p.azimuth_deg), suns)
         by[orientation_bucket(p.tilt_deg, p.azimuth_deg)] += a
     return SolarAperture(
         total=sum(by.values()),
@@ -112,7 +118,7 @@ def facet_aperture(vertices: Sequence[Sequence[float]], latitude_deg: float) -> 
     if n[2] < 0:
         n = tuple(-x for x in n)
     unit = tuple(x / ln for x in n)
-    return (ln / 2.0) * _cos_sum(unit, sun_vectors(latitude_deg))
+    return (ln / 2.0) * cos_sum(unit, sun_vectors(latitude_deg))
 
 
 def model_aperture(model, latitude_deg: Optional[float] = None) -> SolarAperture:

@@ -137,3 +137,16 @@ def test_ifc_import_without_latitude_leaves_none(tmp_path):
     box_plan(b)
     m = import_ifc(str(b.write(tmp_path / "site.ifc")))
     assert m.site_latitude_deg is None
+
+
+def test_cos_sum_is_public_and_clips_negative_terms():
+    from solar_aperture import cos_sum
+
+    # zero-incidence terms clip to zero, never negative
+    assert cos_sum((0.0, 0.0, 1.0), [(0.0, 0.0, 1.0), (0.0, 0.0, -1.0)]) == 1.0
+    # matches the direct clipped-dot-product definition
+    normal, suns = (0.6, 0.0, 0.8), [(0.0, 1.0, 0.0), (1.0, 0.0, 0.0)]
+    expected = sum(
+        max(0.0, normal[0] * sx + normal[1] * sy + normal[2] * sz) for sx, sy, sz in suns
+    )
+    assert cos_sum(normal, suns) == expected == 0.6
