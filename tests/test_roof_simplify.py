@@ -253,8 +253,6 @@ def _reference_one_per_pass(planes, lat, angle_tol_deg=5.0, small_facet_frac=0.0
     compared against (same filters, same budgets, same "cheapest first"
     order, but no batching and no caching).
     """
-    from solar_aperture import solar_aperture
-
     from geometry.roof_simplify import (
         MIN_SHARED_EDGE_M,
         _angle_deg,
@@ -264,6 +262,7 @@ def _reference_one_per_pass(planes, lat, angle_tol_deg=5.0, small_facet_frac=0.0
         _shared_edge_ok,
         _unit_normal,
     )
+    from solar_aperture import solar_aperture
 
     work = sorted((copy.deepcopy(p) for p in planes), key=lambda p: p.id)
     area0 = sum(p.area_m2 for p in work)

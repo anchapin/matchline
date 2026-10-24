@@ -329,9 +329,7 @@ def simplify_roof(
             if ang > angle_tol_deg and not small:
                 continue
             host, other = (a, b) if (a.area_m2, b.id) >= (b.area_m2, a.id) else (b, a)
-            merged, why = _merge(
-                host, other, host.id, cache.plan(host), cache.plan(other), cache
-            )
+            merged, why = _merge(host, other, host.id, cache.plan(host), cache.plan(other), cache)
             if merged is None:
                 refused.add(key)
                 skipped.append({"pair": list(key), "reason": why})
@@ -352,18 +350,14 @@ def simplify_roof(
                             ap0,
                         )
                     ),
-                    "da": abs(
-                        _pct(work_area - a.area_m2 - b.area_m2 + merged.area_m2, area0)
-                    ),
+                    "da": abs(_pct(work_area - a.area_m2 - b.area_m2 + merged.area_m2, area0)),
                 }
             )
         if not cands:
             break
         # cheapest first; ties by the sorted pair of ids -> input order never
         # matters
-        cands.sort(
-            key=lambda c: (round(c["dap"], 12), round(c["da"], 12), c["key"])
-        )
+        cands.sort(key=lambda c: (round(c["dap"], 12), round(c["da"], 12), c["key"]))
         stats["passes"] += 1
         touched = set()
         accepted = []
@@ -374,9 +368,7 @@ def simplify_roof(
             host, other, merged = c["host"], c["other"], c["merged"]
             # budget against the working set as it stands now, i.e. with the
             # merges already accepted in this pass applied
-            da = _pct(
-                work_area - host.area_m2 - other.area_m2 + merged.area_m2, area0
-            )
+            da = _pct(work_area - host.area_m2 - other.area_m2 + merged.area_m2, area0)
             dap = _pct(
                 work_ap
                 - cache.aperture(host, suns)
