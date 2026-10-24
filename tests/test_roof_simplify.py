@@ -329,6 +329,39 @@ def test_batching_keeps_the_hip_and_dormer_merges():
     assert res.n_after == len(ref_work)
 
 
+def _edge_twist_pair():
+    """Two facets sharing a 10 m edge whose *midpoint* heights agree but
+    whose end heights differ by 8 cm (> EDGE_Z_TOL_M = 5 cm).
+
+    The height difference along the shared edge is linear (both facets are
+    planar), so it runs +8 cm at x=0 through 0 at the midpoint to -8 cm at
+    x=10: a midpoint probe sees perfect agreement and misses both ends.
+    """
+    a = _rp("A", [(0, 0, 3.0), (10, 0, 3.0), (10, 5, 3.0), (0, 5, 3.0)])
+    b = _rp("B", [(0, 0, 3.08), (10, 0, 2.92), (10, -5, 2.92), (0, -5, 3.08)])
+    return a, b
+
+
+def test_shared_edge_is_probed_at_its_endpoints_not_only_the_midpoint():
+    """A shared edge only counts when the heights agree along all of it (#1271)."""
+    from geometry.roof_simplify import EDGE_Z_TOL_M, _plan, _plane, _shared_edge_ok, _z_at
+
+    a, b = _edge_twist_pair()
+    assert EDGE_Z_TOL_M == 0.05
+    # the midpoint agrees ...
+    assert abs(_z_at(_plane(a), 5.0, 0.0) - _z_at(_plane(b), 5.0, 0.0)) <= EDGE_Z_TOL_M
+    # ... the ends do not, so the edge must not be counted
+    assert _shared_edge_ok(a, b, _plan(a), _plan(b)) == 0.0
+
+
+def test_merge_is_refused_when_the_shared_edge_ends_disagree():
+    """simplify_roof must not merge across an edge whose ends disagree (#1271)."""
+    a, b = _edge_twist_pair()
+    res = simplify_roof([a, b], LAT)
+    assert res.n_before == 2 and res.n_after == 2
+    assert res.merges == []
+
+
 def test_roof_simplify_does_not_reach_into_solar_aperture_privates():
     # #1272: the aperture cache must go through solar_aperture's public
     # helpers, so a solar_aperture internal refactor cannot break roof
