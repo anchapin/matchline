@@ -336,3 +336,18 @@ def test_per_building_staging_is_the_convention_so_truth_pins_never_cross(
         again, how = load_or_freeze_truth(ifc)
         assert how == "frozen"
         assert again["ifc_sha256"] == truths[name]["ifc_sha256"]
+
+
+def test_shared_truth_dirs_survives_dotdot_spellings(tmp_path: Path) -> None:
+    """#1273: two spellings of one directory still collide after resolve()."""
+    from scripts.bench_truth import shared_truth_dirs
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    entries = [
+        ("c1", str(shared / "one.ifc")),
+        ("c2", str(shared / ".." / "shared" / "two.ifc")),
+    ]
+    conflicts = shared_truth_dirs(entries)
+    assert len(conflicts) == 1
+    assert sorted(next(iter(conflicts.values()))) == ["c1", "c2"]
