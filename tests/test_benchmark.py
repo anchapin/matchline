@@ -206,3 +206,38 @@ def test_convention_report_failure_is_recorded_not_raised(tmp_path: Path) -> Non
 
     verdict = _convention_report(Broken(), tmp_path / "b.json")
     assert verdict.startswith("error: ") and not (tmp_path / "b.json").exists()
+
+
+def test_staging_conflicts_flag_two_buildings_in_one_truth_dir(tmp_path: Path) -> None:
+    """Two buildings in one shared directory collide on truth.json (#1259)."""
+    from scripts.benchmark import staging_conflicts
+
+    shared = tmp_path / "shared"
+    buildings = [
+        Building(name="a", arch_ifc=tmp_path / "a" / "arch.ifc"),
+        Building(name="b", arch_ifc=shared / "one.ifc"),
+        Building(name="c", arch_ifc=shared / "two.ifc"),
+    ]
+    conflicts = staging_conflicts(buildings)
+    assert conflicts == {shared: ["b", "c"]}
+    # per-building staging has no conflicts
+    assert staging_conflicts(buildings[:1]) == {}
+
+
+def test_shared_truth_dir_buildings_are_error_rows_not_scored(tmp_path: Path) -> None:
+    """A colliding building is an error row with a pointer to the convention."""
+    from scripts.benchmark import staging_conflicts
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    buildings = [
+        Building(name="b", arch_ifc=shared / "one.ifc"),
+        Building(name="c", arch_ifc=shared / "two.ifc"),
+    ]
+    conflicts = staging_conflicts(buildings)
+    assert conflicts[shared] == ["b", "c"]
+    md = render_scoreboard(
+        [Row(name="b", status="error", detail="shares the truth directory")],
+        openstudio=False,
+    )
+    assert "| b |  | error |" in md
