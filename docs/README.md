@@ -90,6 +90,7 @@ disclosed, not hidden.
 ## Ops and governance
 
 | `ci.md` | CI gates, test count regression policy, and merge requirements |
+| `gradio-pillow-cap-investigation.md` | Why the pip-audit pillow ignores stay: gradio's pillow<13.0 cap, checked against PyPI metadata, plus a scheduled rotation check (#1274) |
 | `CODE-REVIEW.md` | Code review standards and per-PR checklist (severity levels, domain-specific focus, anti-patterns) |
 | `PLANS.md` | Planning conventions and plan template (3-digit prefix, work/designs folders, Status lifecycle) |
 | `release.md` | Release notes and scope (v0.1.0, v0.2.0) |
