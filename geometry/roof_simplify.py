@@ -185,7 +185,12 @@ class _PlaneCache:
 
 
 def _shared_edge_ok(a, b, pa, pb, cache=None):
-    """Total length of shared plan edge on which both planes agree in height."""
+    """Total length of shared plan edge on which both planes agree in height.
+
+    Both facets are planar, so the height difference along a shared segment
+    is linear and its extreme value sits at an endpoint: the heights must
+    agree at *both* ends of every segment, not only at its midpoint (#1271).
+    """
     shared = pa.boundary.intersection(pb.boundary)
     segs = []
     for g in getattr(shared, "geoms", [shared]):
@@ -201,8 +206,17 @@ def _shared_edge_ok(a, b, pa, pb, cache=None):
     for s in segs:
         coords = list(s.coords)
         for p, q in zip(coords, coords[1:]):
+            # z is linear along a segment of a planar facet, so the height
+            # difference between the two planes is linear too and its
+            # largest magnitude sits at an endpoint.  Probing the midpoint
+            # alone therefore bounds nothing: both ends could disagree by
+            # ~2x EDGE_Z_TOL_M while the midpoint agrees (#1271).  Probe
+            # both endpoints (and the midpoint for good measure).
             mx, my = (p[0] + q[0]) / 2, (p[1] + q[1]) / 2
-            if abs(_z_at(pla, mx, my) - _z_at(plb, mx, my)) <= EDGE_Z_TOL_M:
+            probes = ((p[0], p[1]), (mx, my), (q[0], q[1]))
+            if all(
+                abs(_z_at(pla, x, y) - _z_at(plb, x, y)) <= EDGE_Z_TOL_M for x, y in probes
+            ):
                 ok += math.dist(p, q)
     return ok
 
