@@ -327,3 +327,59 @@ def test_batching_keeps_the_hip_and_dormer_merges():
     ref_work, ref_merges = _reference_one_per_pass(planes, LAT)
     assert [m["from"] for m in res.merges] == [list(sorted(m)) for m in ref_merges]
     assert res.n_after == len(ref_work)
+
+
+def test_build_refusal_does_not_leak_to_merged_facet_with_same_id(monkeypatch):
+    """#1269: refusals are keyed by plane identity, not by plane id.
+
+    Pass 1 refuses the (A, B) merge artificially while A is still the
+    original 4-vertex facet; after A absorbs C, the merged facet wears A's
+    id, and the old id-keyed refusal would have blocked it forever.
+    """
+
+    import geometry.roof_simplify as rs
+
+    a = _rp("A", _on(30, "S", 3, [(0, 0), (10, 0), (10, -6), (0, -6)]))
+    b = _rp("B", _on(30, "S", 3, [(0, -6), (10, -6), (10, -9), (0, -9)]))
+    c = _rp("C", _on(30, "S", 3, [(0, 0), (10, 0), (10, 3), (0, 3)]))
+    real_merge = rs._merge
+
+    def flaky(host, other, pid, pa=None, pb=None, cache=None):
+        # The deep-copied original A keeps A's area; a merged facet wearing
+        # A's id covers A plus C and is bigger, so this refuses only the
+        # first-pass (A, B) merge.
+        if {host.id, other.id} == {"A", "B"} and abs(host.area_m2 - a.area_m2) < 1e-9:
+            return None, "boom"
+        return real_merge(host, other, pid, pa=pa, pb=pb, cache=cache)
+
+    monkeypatch.setattr(rs, "_merge", flaky)
+    res = simplify_roof([a, b, c], LAT)
+    assert len(res.planes) == 1
+    assert len(res.merges) == 2
+    assert all(m["into"] == "A" for m in res.merges)
+    assert any(s["reason"] == "boom" for s in res.skipped)
+
+
+def test_budget_refusal_is_reported_once_but_reoffered():
+    """#1269: a budget-refused pair is re-offered next pass, reported once.
+
+    A and C are real candidates whose merged plane differs from A's, so the
+    merged sloped area falls short of the parts (vector areas add, lengths
+    do not); with a near-zero area tolerance the pair is refused for budget
+    in every pass. B1/B2 are a coplanar merge that keeps the loop alive for
+    a second pass. The report must carry the (A, C) refusal exactly once
+    even though the pair was evaluated twice.
+    """
+    t30, t40 = math.tan(math.radians(30)), math.tan(math.radians(40))
+    z_edge = 3 + 3 * t30
+    c0 = z_edge - 3 * t40
+    a = _rp("A", _on(30, "S", 3, [(0, 0), (10, 0), (10, -3), (0, -3)]))
+    c = _rp("C", [(x, y, c0 + t40 * -y) for x, y in [(0, -3), (10, -3), (10, -3.3), (0, -3.3)]])
+    b1 = _rp("B1", _on(30, "S", 3, [(20, 0), (30, 0), (30, -3), (20, -3)]))
+    b2 = _rp("B2", _on(30, "S", 3, [(20, -3), (30, -3), (30, -6), (20, -6)]))
+    res = simplify_roof([a, b1, b2, c], LAT, area_tol=1e-9)
+    assert [m["into"] for m in res.merges] == ["B1"]
+    assert res.stats["passes"] >= 2
+    pair_entries = [s for s in res.skipped if s["pair"] == ["A", "C"]]
+    assert len(pair_entries) == 1
+    assert "area budget" in pair_entries[0]["reason"]

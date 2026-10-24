@@ -58,6 +58,16 @@ each one sees the same geometry the next pass would have seen, and the
 budget of each is checked against the state it really lands in. The order of
 acceptance is a pure function of the input geometry (never of the order the
 planes were handed in), which keeps "same input in any order, same output".
+
+Refusal memory (#1269)
+----------------------
+A pair whose merge cannot be built (union not one polygon, merge would
+leave a hole, merged facet rejected) is remembered by plane *identity*,
+not by plane id: a merged facet takes over its host's id, so an id-keyed
+refusal would wrongly block the new facet's candidates. A pair refused
+for budget is not remembered at all: its merge is cached and the pair is
+re-offered on every later pass against the state then current, and it is
+reported in ``skipped`` once, not once per pass.
 """
 
 from __future__ import annotations
@@ -307,7 +317,13 @@ def simplify_roof(
     area0 = sum(p.area_m2 for p in work)
     ap0 = solar_aperture(work, latitude_deg).total
     members = {p.id: [p.id] for p in work}
-    merges, skipped, refused = [], [], set()
+    merges, skipped = [], []
+    # #1269: refusal memory keyed by plane identity (never by plane id, which
+    # a merged facet inherits), with strong refs so identity stays stable.
+    build_refused: dict = {}
+    merged_cache: dict = {}
+    budget_reported: set = set()
+    refs: dict = {}
     cache = _PlaneCache()
     suns = sun_vectors(latitude_deg)
     stats = {"passes": 0, "pair_scans": 0, "plan_computations": 0, "geometry_computations": 0}
@@ -319,7 +335,10 @@ def simplify_roof(
         for a, b in _candidate_pairs(work, cache):
             stats["pair_scans"] += 1
             key = (a.id, b.id)
-            if a.level_id != b.level_id or key in refused:
+            ikey = (id(a), id(b))
+            refs[ikey[0]] = a
+            refs[ikey[1]] = b
+            if a.level_id != b.level_id or ikey in build_refused:
                 continue
             pa, pb = cache.plan(a), cache.plan(b)
             if _shared_edge_ok(a, b, pa, pb, cache) < MIN_SHARED_EDGE_M:
@@ -329,14 +348,20 @@ def simplify_roof(
             if ang > angle_tol_deg and not small:
                 continue
             host, other = (a, b) if (a.area_m2, b.id) >= (b.area_m2, a.id) else (b, a)
-            merged, why = _merge(host, other, host.id, cache.plan(host), cache.plan(other), cache)
+            merged = merged_cache.get(ikey)
             if merged is None:
-                refused.add(key)
-                skipped.append({"pair": list(key), "reason": why})
-                continue
+                merged, why = _merge(
+                    host, other, host.id, cache.plan(host), cache.plan(other), cache
+                )
+                if merged is None:
+                    build_refused[ikey] = why
+                    skipped.append({"pair": list(key), "reason": why})
+                    continue
+                merged_cache[ikey] = merged
             cands.append(
                 {
                     "key": key,
+                    "ikey": ikey,
                     "host": host,
                     "other": other,
                     "merged": merged,
@@ -363,6 +388,7 @@ def simplify_roof(
         accepted = []
         for c in cands:
             key = c["key"]
+            ikey = c["ikey"]
             if key[0] in touched or key[1] in touched:
                 continue  # a plane takes part in at most one merge per pass
             host, other, merged = c["host"], c["other"], c["merged"]
@@ -377,16 +403,20 @@ def simplify_roof(
                 ap0,
             )
             if abs(da) > area_tol or abs(dap) > aperture_tol:
-                refused.add(key)
-                which = "area" if abs(da) > area_tol else "solar aperture"
-                skipped.append(
-                    {
-                        "pair": list(key),
-                        "reason": (
-                            f"{which} budget: area {da * 100:+.3f}%, aperture {dap * 100:+.3f}%"
-                        ),
-                    }
-                )
+                # #1269: budget refusals are not remembered, so the pair is
+                # re-offered on later passes against the state then current;
+                # report each pair once, not once per pass.
+                if ikey not in budget_reported:
+                    budget_reported.add(ikey)
+                    which = "area" if abs(da) > area_tol else "solar aperture"
+                    skipped.append(
+                        {
+                            "pair": list(key),
+                            "reason": (
+                                f"{which} budget: area {da * 100:+.3f}%, aperture {dap * 100:+.3f}%"
+                            ),
+                        }
+                    )
                 continue
             touched.update(key)
             accepted.append((c, da, dap))
