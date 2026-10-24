@@ -395,9 +395,12 @@ def shared_truth_dirs(entries: Iterable[tuple[str, Path]]) -> dict[Path, list[st
 
     Returns ``{truth_dir: [building names]}`` for the offending directories.
     """
+    # Resolve before grouping (#1273): `b1/../b1/arch.ifc` and `b1/arch.ifc`
+    # are one directory, and a lexical Path comparison would let the #1259
+    # refusal be dodged by config spelling.
     by_dir: dict[Path, list[str]] = {}
     for name, arch_ifc in entries:
-        by_dir.setdefault(Path(arch_ifc).parent, []).append(name)
+        by_dir.setdefault(Path(arch_ifc).expanduser().resolve().parent, []).append(name)
     return {d: sorted(names) for d, names in by_dir.items() if len(names) > 1}
 
 
