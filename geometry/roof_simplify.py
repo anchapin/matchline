@@ -214,9 +214,7 @@ def _shared_edge_ok(a, b, pa, pb, cache=None):
             # both endpoints (and the midpoint for good measure).
             mx, my = (p[0] + q[0]) / 2, (p[1] + q[1]) / 2
             probes = ((p[0], p[1]), (mx, my), (q[0], q[1]))
-            if all(
-                abs(_z_at(pla, x, y) - _z_at(plb, x, y)) <= EDGE_Z_TOL_M for x, y in probes
-            ):
+            if all(abs(_z_at(pla, x, y) - _z_at(plb, x, y)) <= EDGE_Z_TOL_M for x, y in probes):
                 ok += math.dist(p, q)
     return ok
 
