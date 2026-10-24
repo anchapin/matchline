@@ -327,3 +327,14 @@ def test_batching_keeps_the_hip_and_dormer_merges():
     ref_work, ref_merges = _reference_one_per_pass(planes, LAT)
     assert [m["from"] for m in res.merges] == [list(sorted(m)) for m in ref_merges]
     assert res.n_after == len(ref_work)
+
+
+def test_roof_simplify_does_not_reach_into_solar_aperture_privates():
+    # #1272: the aperture cache must go through solar_aperture's public
+    # helpers, so a solar_aperture internal refactor cannot break roof
+    # simplify at call time.
+    import geometry.roof_simplify as _rs
+    from pathlib import Path
+
+    source = Path(_rs.__file__).read_text()
+    assert "_cos_sum" not in source

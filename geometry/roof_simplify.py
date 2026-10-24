@@ -170,11 +170,11 @@ class _PlaneCache:
 
     def aperture(self, rp, suns):
         """This facet's share of the solar aperture (see solar_aperture)."""
-        from solar_aperture import _cos_sum, plane_normal
+        from solar_aperture import cos_sum, plane_normal
 
         def make(p):
             a = float(p.area_m2 or 0.0)
-            return a * _cos_sum(plane_normal(p.tilt_deg, p.azimuth_deg), suns)
+            return a * cos_sum(plane_normal(p.tilt_deg, p.azimuth_deg), suns)
 
         return self._get(self._aperture, rp, make)
 
