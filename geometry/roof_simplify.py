@@ -18,6 +18,46 @@ with the area-weighted mean normal, through their area-weighted centroid.
 The input list is never changed: the result carries new RoofPlanes plus a
 report with both deltas, every merge and every refusal. Same input in any
 order gives the same output and report.
+
+Scale (#1265)
+-------------
+The first implementation scanned every pair of planes on every pass, rebuilt
+both plan polygons per pair and recomputed the whole scan after each single
+merge, so a 385-plane roof took minutes per pass and never converged. Three
+changes keep the same semantics but make the work proportional to the roof:
+
+* **Plan cache** -- ``_PlaneCache`` computes the plan polygon, the plane
+  equation and the unit normal of a facet once per run and reuses them
+  across candidate pairs and across passes. Only a freshly merged facet
+  invalidates an entry (it is a new object under the host's id).
+* **Spatial index** -- candidate pairs come from a shapely ``STRtree`` over
+  the plan polygons, so only facets whose outlines actually touch are
+  considered; the boundary intersection in ``_shared_edge_ok`` runs on
+  neighbours instead of on every pair.
+* **Batched merges** -- one pass accepts several *disjoint* merges instead of
+  exactly one, so a pass costs one scan instead of one scan per merge.
+
+Batching order
+--------------
+Candidates of a pass are sorted by
+
+    (abs(aperture change), abs(area change), (id_a, id_b))
+
+i.e. cheapest first, ties broken by the sorted pair of plane ids. The sort
+key is rounded to 12 decimals so the order never depends on floating point
+noise. The sorted list is walked in that order and a candidate is accepted
+when
+
+* neither of its two planes has already been merged in this pass (no plane
+  takes part in two merges of the same pass), and
+* the area and aperture budgets still hold for the working set *with the
+  merges already accepted in this pass applied*.
+
+Accepted merges therefore never interact: they touch disjoint planes, so
+each one sees the same geometry the next pass would have seen, and the
+budget of each is checked against the state it really lands in. The order of
+acceptance is a pure function of the input geometry (never of the order the
+planes were handed in), which keeps "same input in any order, same output".
 """
 
 from __future__ import annotations
@@ -48,6 +88,7 @@ class RoofSimplifyResult:
     skipped: list = field(default_factory=list)
     n_before: int = 0
     n_after: int = 0
+    stats: dict = field(default_factory=dict)
 
 
 def _unit_normal(vertices):
@@ -84,7 +125,66 @@ def _angle_deg(n1, n2):
     return math.degrees(math.acos(c))
 
 
-def _shared_edge_ok(a, b, pa, pb):
+class _PlaneCache:
+    """Per-facet geometry computed once per simplify run (#1265).
+
+    The plan polygon, the plane equation, the unit normal and the solar
+    contribution of a facet do not change while the facet sits in the
+    working set, so they are computed once and reused for every candidate
+    pair and every pass. A merged facet is a *new* object that takes over
+    its host's id, so the identity check in ``_get`` recomputes the entry
+    for it and nothing else is invalidated.
+    """
+
+    __slots__ = ("_plan", "_plane", "_normal", "_aperture", "computations", "plans")
+
+    def __init__(self):
+        self._plan = {}
+        self._plane = {}
+        self._normal = {}
+        self._aperture = {}
+        self.computations = 0
+        self.plans = 0
+
+    def _get(self, store, rp, make):
+        hit = store.get(rp.id)
+        if hit is not None and hit[0] is rp:
+            return hit[1]
+        val = make(rp)
+        self.computations += 1
+        store[rp.id] = (rp, val)
+        return val
+
+    def plan(self, rp):
+        def make(p):
+            self.plans += 1
+            return _plan(p)
+
+        return self._get(self._plan, rp, make)
+
+    def plane(self, rp):
+        return self._get(self._plane, rp, _plane)
+
+    def normal(self, rp):
+        return self._get(self._normal, rp, lambda p: _unit_normal(p.vertices_m))
+
+    def aperture(self, rp, suns):
+        """This facet's share of the solar aperture (see solar_aperture)."""
+        from solar_aperture import _cos_sum, plane_normal
+
+        def make(p):
+            a = float(p.area_m2 or 0.0)
+            return a * _cos_sum(plane_normal(p.tilt_deg, p.azimuth_deg), suns)
+
+        return self._get(self._aperture, rp, make)
+
+    def drop(self, rp):
+        """Forget a facet that is leaving the working set."""
+        for store in (self._plan, self._plane, self._normal, self._aperture):
+            store.pop(rp.id, None)
+
+
+def _shared_edge_ok(a, b, pa, pb, cache=None):
     """Total length of shared plan edge on which both planes agree in height."""
     shared = pa.boundary.intersection(pb.boundary)
     segs = []
@@ -93,7 +193,10 @@ def _shared_edge_ok(a, b, pa, pb):
             segs.append(g)
         elif g.geom_type == "MultiLineString":
             segs.extend(g.geoms)
-    pla, plb = _plane(a), _plane(b)
+    if cache is not None:
+        pla, plb = cache.plane(a), cache.plane(b)
+    else:
+        pla, plb = _plane(a), _plane(b)
     ok = 0.0
     for s in segs:
         coords = list(s.coords)
@@ -104,25 +207,33 @@ def _shared_edge_ok(a, b, pa, pb):
     return ok
 
 
-def _merge(a, b, pid):
+def _merge(a, b, pid, pa=None, pb=None, cache=None):
     """One RoofPlane over the plan union of a and b, or (None, reason)."""
     from shapely.ops import unary_union
 
     from geometry.roof_geometry import RoofGeometryError, roof_plane
 
-    pa, pb = _plan(a), _plan(b)
+    if pa is None:
+        pa = _plan(a)
+    if pb is None:
+        pb = _plan(b)
     u = unary_union([pa, pb]).buffer(0)
     if u.geom_type != "Polygon":
         return None, "plan union is not one polygon"
     if sum(type(u)(r).area for r in u.interiors) > 1e-6:
         return None, "merge would leave a hole"
-    na, nb = _unit_normal(a.vertices_m), _unit_normal(b.vertices_m)
+    if cache is not None:
+        na, nb = cache.normal(a), cache.normal(b)
+        pla, plb = cache.plane(a), cache.plane(b)
+    else:
+        na, nb = _unit_normal(a.vertices_m), _unit_normal(b.vertices_m)
+        pla, plb = _plane(a), _plane(b)
     wa, wb = a.area_m2, b.area_m2
     n = tuple((na[k] * wa + nb[k] * wb) / (wa + wb) for k in range(3))
     ln = math.sqrt(sum(x * x for x in n))
     n = tuple(x / ln for x in n)
     ca, cb = pa.centroid, pb.centroid
-    za, zb = _z_at(_plane(a), ca.x, ca.y), _z_at(_plane(b), cb.x, cb.y)
+    za, zb = _z_at(pla, ca.x, ca.y), _z_at(plb, cb.x, cb.y)
     c = (
         (ca.x * wa + cb.x * wb) / (wa + wb),
         (ca.y * wa + cb.y * wb) / (wa + wb),
@@ -145,6 +256,35 @@ def _pct(new, old):
     return (new - old) / old if old else 0.0
 
 
+def _candidate_pairs(work, cache):
+    """Pairs of planes whose plan outlines touch, in a deterministic order.
+
+    A spatial index (STRtree) over the plan polygons keeps the scan linear
+    in the size of the roof: two facets can only share a plan edge if their
+    bounding boxes meet, so only those pairs are looked at. The pairs are
+    returned sorted by index, the working set itself being sorted by id.
+    """
+    geoms = [cache.plan(p) for p in work]
+    pairs = []
+    if len(geoms) > 1:
+        try:
+            from shapely.strtree import STRtree
+
+            tree = STRtree(geoms)
+            for i, g in enumerate(geoms):
+                for j in tree.query(g):
+                    j = int(j)
+                    if j > i:
+                        pairs.append((i, j))
+        except ImportError:  # pragma: no cover - shapely always ships STRtree
+            for i, gi in enumerate(geoms):
+                for j in range(i + 1, len(geoms)):
+                    if gi.envelope.intersects(geoms[j].envelope):
+                        pairs.append((i, j))
+    pairs.sort()
+    return [(work[i], work[j]) for i, j in pairs]
+
+
 def simplify_roof(
     planes,
     latitude_deg: float,
@@ -153,8 +293,14 @@ def simplify_roof(
     area_tol: float = AREA_TOL,
     aperture_tol: float = APERTURE_TOL,
 ) -> RoofSimplifyResult:
-    """Simplify roof planes under area and solar-aperture budgets (#616)."""
-    from solar_aperture import solar_aperture
+    """Simplify roof planes under area and solar-aperture budgets (#616).
+
+    Merges are taken cheapest first (smallest absolute aperture change, then
+    smallest absolute area change, then by plane id) and several disjoint
+    merges are accepted per pass; see the module docstring for the exact
+    order and why it is deterministic (#1265).
+    """
+    from solar_aperture import solar_aperture, sun_vectors
 
     work: List = sorted((copy.deepcopy(p) for p in planes), key=lambda p: p.id)
     n0 = len(work)
@@ -162,38 +308,74 @@ def simplify_roof(
     ap0 = solar_aperture(work, latitude_deg).total
     members = {p.id: [p.id] for p in work}
     merges, skipped, refused = [], [], set()
+    cache = _PlaneCache()
+    suns = sun_vectors(latitude_deg)
+    stats = {"passes": 0, "pair_scans": 0, "plan_computations": 0, "geometry_computations": 0}
     while True:
         total = sum(p.area_m2 for p in work)
+        work_area = total
+        work_ap = sum(cache.aperture(p, suns) for p in work)
         cands = []
-        for i, a in enumerate(work):
-            for b in work[i + 1 :]:
-                if a.level_id != b.level_id or (a.id, b.id) in refused:
-                    continue
-                pa, pb = _plan(a), _plan(b)
-                if _shared_edge_ok(a, b, pa, pb) < MIN_SHARED_EDGE_M:
-                    continue
-                ang = _angle_deg(_unit_normal(a.vertices_m), _unit_normal(b.vertices_m))
-                small = min(a.area_m2, b.area_m2) <= small_facet_frac * total
-                if ang > angle_tol_deg and not small:
-                    continue
-                host, other = (a, b) if (a.area_m2, b.id) >= (b.area_m2, a.id) else (b, a)
-                merged, why = _merge(host, other, host.id)
-                key = (a.id, b.id)
-                if merged is None:
-                    refused.add(key)
-                    skipped.append({"pair": list(key), "reason": why})
-                    continue
-                trial = [p for p in work if p.id not in key] + [merged]
-                da = _pct(sum(p.area_m2 for p in trial), area0)
-                dap = _pct(solar_aperture(trial, latitude_deg).total, ap0)
-                cands.append(
-                    (abs(dap), abs(da), key, host.id, other.id, merged, trial, da, dap, ang)
-                )
+        for a, b in _candidate_pairs(work, cache):
+            stats["pair_scans"] += 1
+            key = (a.id, b.id)
+            if a.level_id != b.level_id or key in refused:
+                continue
+            pa, pb = cache.plan(a), cache.plan(b)
+            if _shared_edge_ok(a, b, pa, pb, cache) < MIN_SHARED_EDGE_M:
+                continue
+            ang = _angle_deg(cache.normal(a), cache.normal(b))
+            small = min(a.area_m2, b.area_m2) <= small_facet_frac * total
+            if ang > angle_tol_deg and not small:
+                continue
+            host, other = (a, b) if (a.area_m2, b.id) >= (b.area_m2, a.id) else (b, a)
+            merged, why = _merge(host, other, host.id, cache.plan(host), cache.plan(other), cache)
+            if merged is None:
+                refused.add(key)
+                skipped.append({"pair": list(key), "reason": why})
+                continue
+            cands.append(
+                {
+                    "key": key,
+                    "host": host,
+                    "other": other,
+                    "merged": merged,
+                    "ang": ang,
+                    "dap": abs(
+                        _pct(
+                            work_ap
+                            - cache.aperture(a, suns)
+                            - cache.aperture(b, suns)
+                            + cache.aperture(merged, suns),
+                            ap0,
+                        )
+                    ),
+                    "da": abs(_pct(work_area - a.area_m2 - b.area_m2 + merged.area_m2, area0)),
+                }
+            )
         if not cands:
             break
-        progressed = False
-        for c in sorted(cands, key=lambda c: (round(c[0], 12), round(c[1], 12), c[2])):
-            _, _, key, hid, oid, merged, trial, da, dap, ang = c
+        # cheapest first; ties by the sorted pair of ids -> input order never
+        # matters
+        cands.sort(key=lambda c: (round(c["dap"], 12), round(c["da"], 12), c["key"]))
+        stats["passes"] += 1
+        touched = set()
+        accepted = []
+        for c in cands:
+            key = c["key"]
+            if key[0] in touched or key[1] in touched:
+                continue  # a plane takes part in at most one merge per pass
+            host, other, merged = c["host"], c["other"], c["merged"]
+            # budget against the working set as it stands now, i.e. with the
+            # merges already accepted in this pass applied
+            da = _pct(work_area - host.area_m2 - other.area_m2 + merged.area_m2, area0)
+            dap = _pct(
+                work_ap
+                - cache.aperture(host, suns)
+                - cache.aperture(other, suns)
+                + cache.aperture(merged, suns),
+                ap0,
+            )
             if abs(da) > area_tol or abs(dap) > aperture_tol:
                 refused.add(key)
                 which = "area" if abs(da) > area_tol else "solar aperture"
@@ -206,21 +388,45 @@ def simplify_roof(
                     }
                 )
                 continue
-            members[hid] = sorted(members[hid] + members.pop(oid))
+            touched.update(key)
+            accepted.append((c, da, dap))
+            work_area = work_area - host.area_m2 - other.area_m2 + merged.area_m2
+            work_ap = (
+                work_ap
+                - cache.aperture(host, suns)
+                - cache.aperture(other, suns)
+                + cache.aperture(merged, suns)
+            )
+        if not accepted:
+            break
+        removed = set()
+        for c, da, dap in accepted:
+            key, host, other, merged, ang = (
+                c["key"],
+                c["host"],
+                c["other"],
+                c["merged"],
+                c["ang"],
+            )
+            members[host.id] = sorted(members[host.id] + members.pop(other.id))
             merges.append(
                 {
-                    "into": hid,
-                    "from": list(members[hid]),
+                    "into": host.id,
+                    "from": list(members[host.id]),
                     "angle_deg": round(ang, 4),
                     "area_delta_pct": round(da * 100, 4),
                     "aperture_delta_pct": round(dap * 100, 4),
                 }
             )
-            work = sorted(trial, key=lambda p: p.id)
-            progressed = True
-            break
-        if not progressed:
-            break
+            removed.update(key)
+            cache.drop(host)
+            cache.drop(other)
+        work = sorted(
+            [p for p in work if p.id not in removed] + [c[0]["merged"] for c in accepted],
+            key=lambda p: p.id,
+        )
+    stats["plan_computations"] = cache.plans
+    stats["geometry_computations"] = cache.computations
     from building_model import Provenance
 
     for p in work:
@@ -243,6 +449,7 @@ def simplify_roof(
         skipped=sorted(skipped, key=lambda s: (s["pair"], s["reason"])),
         n_before=n0,
         n_after=len(work),
+        stats=stats,
     )
 
 
@@ -258,6 +465,7 @@ def roof_simplify_report(res: RoofSimplifyResult) -> dict:
         "aperture_tol_pct": round(res.aperture_tol * 100, 4),
         "merges": res.merges,
         "skipped": res.skipped,
+        "stats": dict(res.stats),
         "planes": [
             {
                 "id": p.id,
