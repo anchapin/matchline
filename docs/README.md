@@ -81,6 +81,8 @@ disclosed, not hidden.
 | `belief_derivation.md` | Derivation of the WiSARD belief/normalization formulas |
 | `r1_vector_spike.md` | R1 vector spike (#973) |
 | `sim_smoke.md` | Simulation smoke test (#752) |
+| `crab-evaluation.md` | CRAB cuboid BIM evaluated against the simplifier, BEM and IFC paths (#1257) |
+| `tempfit-evaluation.md` | TempFit template-fitting evaluated against the YOLO detector (#1256) |
 | `adr/` | Decision records |
 | `design-docs/` | Design documents |
 | `plans/` | Work plans (see `PLANS.md` for conventions) |

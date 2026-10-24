@@ -319,6 +319,7 @@ is not on disk shows as `missing`.
   values keep this building's paired window-area error an open defect
   (930.5%, the scoreboard's worst). Doors are genuinely absent (0 `IfcDoor`).
 
+- TUM GNI BIM Dataset `2026_BIMprojects` (CC BY 4.0 for the IFC models), <https://github.com/ZijianWang-ZW/GNI-BIM-Dataset> (WS 2025/26 *BIM Project* master course): 16 IFC from 9 student teams, 7 with paired architectural + structural models of the same building. Used for the 2026-10-23 GNI 2026 scoreboard pass ([docs/benchmark_gni26.md](docs/benchmark_gni26.md), #748); staged under per-building directories, never committed.
 - IFC-Bench projects, <https://huggingface.co/datasets/sylvainHellin/ifc-bench>
   (TUM, Hellin et al. 2026; each project ships its own `license.txt`). Five
   joined `scripts/benchmarks.json` on 2026-10-20; checked by reading each IFC
@@ -454,6 +455,23 @@ config file):
 ```
 
 Run: `python scripts/benchmark.py --config scripts/benchmarks.json --out scoreboard.md --json scoreboard.json [--openstudio]`. The checked-in config lists seventeen buildings (bsi-clinic, esplanades, duplex, molio, gni-18/49/50/54/74/115/136/149, and from IFC-Bench ac20, digital-hub, fzk-house, smiley-west, wbdg-office); rows report `missing` until each IFC is placed under `~/workspace/datasets/matchline-bench/<building>/` (one directory per building - the staging convention below), and molio additionally needs `MATCHLINE_MAX_IFC_ELEMENTS=1500000`. Large buildings may also need `MATCHLINE_MAX_IFC_SIZE_MB` raised; both variables are read from the environment, and the defaults (100 MB / 500000 entities) are unchanged in CI.
+
+**Per-building staging (required).** Every benchmark building gets its own
+directory under the bench root (`matchline-bench/<building>/…`) holding its
+IFC and its `truth.json` together. Truth is pinned to the IFC's sha256, so two
+buildings sharing one directory can serve the wrong truth file (a collision
+reads whatever landed last); never stage two buildings side-by-side in one
+flat directory. The GNI 2026 staging follows this convention.
+
+**Large buildings (raised limits, local runs only).** CI defaults stay
+untouched. Large GNI 2026 buildings need the import caps raised in local runs:
+`MATCHLINE_MAX_IFC_SIZE_MB=600` (the limit reads file size as MiB: gni26-p1-arc is 178 MiB, gni26-p2-arc 101 MiB)
+and `MATCHLINE_MAX_IFC_ELEMENTS=1500000` (gni26-p4-arc has 1.05M elements,
+gni26-p5-arc 1.49M), `2200000` for gni26-p2-arc (1.84M) and `3200000` for
+gni26-p1-arc (3.06M). Two buildings publish no rows in the 2026-10-23
+scoreboard as environment caps, not extractor failures: `gni26-p6-arc` (535 MB)
+exceeds a 3 GiB memory budget on import, and `gni26-p8-arc` did not finish
+scoring inside a ~870 s budget across three attempts.
 
 **2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
 score; rooms, area, window and door counts match ground truth everywhere
