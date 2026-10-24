@@ -241,3 +241,42 @@ def test_shared_truth_dir_buildings_are_error_rows_not_scored(tmp_path: Path) ->
         openstudio=False,
     )
     assert "| b |  | error |" in md
+
+
+def test_staging_conflict_run_exits_2_like_bench_truth(tmp_path: Path) -> None:
+    """#1268: staging conflicts are a config error, so benchmark exits 2."""
+    import json
+
+    from scripts.benchmark import main
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    cfg = tmp_path / "bench.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "buildings": [
+                    {"name": "b", "arch_ifc": str(shared / "one.ifc")},
+                    {"name": "c", "arch_ifc": str(shared / "two.ifc")},
+                ]
+            }
+        )
+    )
+    # The staging check runs before any IFC is touched, so the files need not
+    # exist for the exit code to be observable.
+    rc = main(["--config", str(cfg), "--out", str(tmp_path / "sb.md")])
+    assert rc == 2
+
+
+def test_clean_config_still_exits_zero_despite_error_rows(tmp_path: Path) -> None:
+    """#1268: no staging conflict means exit 0, error/missing rows included."""
+    import json
+
+    from scripts.benchmark import main
+
+    cfg = tmp_path / "bench.json"
+    cfg.write_text(
+        json.dumps({"buildings": [{"name": "a", "arch_ifc": str(tmp_path / "a" / "a.ifc")}]})
+    )
+    rc = main(["--config", str(cfg), "--out", str(tmp_path / "sb.md")])
+    assert rc == 0
