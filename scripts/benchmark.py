@@ -632,7 +632,11 @@ def main(argv=None) -> int:
         f"{len(rows)} buildings: {len(rows) - n_missing - n_err} scored,"
         f" {n_missing} missing, {n_err} errored"
     )
-    return 0
+    # #1268: staging conflicts are a config error and bench_truth refuses the
+    # same condition with exit 2, so the scoreboard still renders but the exit
+    # code says the run was not clean. Per-building error rows keep their
+    # pre-existing scoreboard-only semantics.
+    return 2 if conflicted else 0
 
 
 if __name__ == "__main__":
