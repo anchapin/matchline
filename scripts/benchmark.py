@@ -59,7 +59,11 @@ if str(ROOT) not in sys.path:
 from building_model import BuildingModel  # noqa: E402
 from geometry.geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
 from ifc.ifc_import import import_ifc  # noqa: E402
-from scripts.bench_truth import TruthMismatch, load_or_freeze_truth  # noqa: E402
+from scripts.bench_truth import (  # noqa: E402
+    TruthMismatch,
+    load_or_freeze_truth,
+    shared_truth_dirs,
+)
 
 # Rooms whose id/number match are paired; area error is mean |a_model - a_truth|
 # over paired rooms as a fraction of truth. Room-count error is the raw delta.
@@ -519,6 +523,18 @@ def load_config(path: Path) -> list[Building]:
     return out
 
 
+def staging_conflicts(buildings: list[Building]) -> dict[Path, list[str]]:
+    """Buildings whose frozen truth would land in the same directory (#1259).
+
+    Each building's truth.json lives next to its IFC, so two buildings staged
+    in one shared directory collide on that file name and the harness reads
+    whichever landed last. The convention is one directory per building
+    (``<root>/<building>/arch.ifc`` + ``<root>/<building>/truth.json``).
+    """
+    entries = [(b.name, b.arch_ifc) for b in buildings if b.arch_ifc is not None]
+    return shared_truth_dirs(entries)
+
+
 def render_scoreboard(rows: list[Row], openstudio: bool) -> str:
     lines = [
         "# Matchline real-building benchmark",
@@ -583,7 +599,24 @@ def main(argv=None) -> int:
         print("config lists no buildings", file=sys.stderr)
         return 2
     out_dir = Path(args.out).resolve().parent
-    rows = [evaluate_building(b, out_dir, args.openstudio, args.simplify_tol) for b in buildings]
+    # #1259: refuse to score buildings that share a truth directory; their
+    # truth.json would collide and the harness would read whichever landed
+    # last. Stage every building in its own directory instead.
+    conflicts = staging_conflicts(buildings)
+    conflicted = {name for names in conflicts.values() for name in names}
+    rows = []
+    for b in buildings:
+        if b.name in conflicted:
+            shared = next(d for d, names in conflicts.items() if b.name in names)
+            row = Row(name=b.name, status="error")
+            row.detail = (
+                f"shares the truth directory {shared} with "
+                f"{', '.join(n for n in conflicts[shared] if n != b.name)};"
+                " stage each building in its own directory (#1259)"
+            )
+            rows.append(row)
+            continue
+        rows.append(evaluate_building(b, out_dir, args.openstudio, args.simplify_tol))
     md = render_scoreboard(rows, args.openstudio)
     Path(args.out).write_text(md)
     print(md)
