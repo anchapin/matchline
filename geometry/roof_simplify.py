@@ -332,9 +332,13 @@ def simplify_roof(
     merges, skipped = [], []
     # #1269: refusal memory keyed by plane identity (never by plane id, which
     # a merged facet inherits), with strong refs so identity stays stable.
-    build_refused: dict = {}
+    # only the fact that a pair was refused is needed; the reason rides in
+    # ``skipped``, so the memory is a plain set of pair identities
+    build_refused: set = set()
     merged_cache: dict = {}
     budget_reported: set = set()
+    # strong references to every plane ever seen, so that the id() based
+    # pair keys below are never recycled by a later object
     refs: dict = {}
     cache = _PlaneCache()
     suns = sun_vectors(latitude_deg)
@@ -348,8 +352,8 @@ def simplify_roof(
             stats["pair_scans"] += 1
             key = (a.id, b.id)
             ikey = (id(a), id(b))
-            refs[ikey[0]] = a
-            refs[ikey[1]] = b
+            refs.setdefault(ikey[0], a)
+            refs.setdefault(ikey[1], b)
             if a.level_id != b.level_id or ikey in build_refused:
                 continue
             pa, pb = cache.plan(a), cache.plan(b)
@@ -366,7 +370,7 @@ def simplify_roof(
                     host, other, host.id, cache.plan(host), cache.plan(other), cache
                 )
                 if merged is None:
-                    build_refused[ikey] = why
+                    build_refused.add(ikey)
                     skipped.append({"pair": list(key), "reason": why})
                     continue
                 merged_cache[ikey] = merged
