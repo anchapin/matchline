@@ -286,9 +286,11 @@ def test_run_schedule_bench_scores_extraction_against_truth(tmp_path: Path) -> N
     assert m["tags"]["precision"] == 1.0
     # Zone linkage: every matched tag's service area equals the stated space.
     assert m["zone_linkage"]["mismatch"] == 0
-    # Airflow: the stated Attribute requirement has no extractor slot yet.
+    # Airflow: the stated Attribute requirement fills the extractor's
+    # airflow slots now (#1240 follow-up), so every stated requirement the
+    # extractor rows recover is agreed, value and stated unit both.
     if m["airflow"]["stated"]:
-        assert m["airflow"]["agree"] <= m["airflow"]["stated"]
+        assert m["airflow"]["agree"] == m["airflow"]["stated"]
 
 
 def test_run_schedule_bench_reports_real_disagreement(tmp_path: Path) -> None:
