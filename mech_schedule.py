@@ -159,6 +159,7 @@ VALUE_SLOTS = frozenset(
         "airflow",
         "airflow_min",
         "airflow_max",
+        "outside_air_flow",
         "water_flow",
         "head",
         "power",
@@ -169,7 +170,7 @@ VALUE_SLOTS = frozenset(
 # nothing here sizes equipment. Any downstream HVAC sizing consumes zone
 # loads first (ledger decision #1236); this module records the stated
 # inputs and flags them, it never computes or sizes a load.
-ZONE_LOAD_SLOTS = frozenset({"airflow", "airflow_min", "airflow_max"})
+ZONE_LOAD_SLOTS = frozenset({"airflow", "airflow_min", "airflow_max", "outside_air_flow"})
 
 # Units that name their slot unambiguously, whatever the equipment family.
 _AIRFLOW_UNITS = {"cfm": "CFM", "l/s": "L/s"}
@@ -403,6 +404,76 @@ def _value_candidates(
     return candidates, reviews
 
 
+_ATTR_NO_VALUE = {"n/a", "na", "", "none", "-"}
+
+_ATTR_RANGE_RE = re.compile(r"^(\d[\d,]*)\s*-\s*(\d[\d,]*)$")
+
+
+def _attribute_candidates(
+    reqs: List[dict], family: Optional[str]
+) -> List[Tuple[str, Optional[float], str, str, str, str, int, str]]:
+    """Turn stated ``Attribute``-sheet requirements into slot candidates.
+
+    The clinic workbook states per-component requirements on the
+    ``Attribute`` sheet (``Total`` / ``Outside Air``, L/s); the text scan
+    never sees those cells, so the airflow slots stayed empty and the
+    schedule-truth benchmark measured airflow recovery 0/33 (#1240
+    follow-up). Each requirement's unit is read directly from the stated
+    ``Unit`` cell, no text parsing, at ``high`` confidence; its stated
+    ``Name`` picks the slot. ``Outside Air`` is ventilation air, not a
+    supply total, so it fills its own slot and can never misstate a
+    fan's airflow; ``min``/``max`` in the name map to the min/max slots;
+    everything else fills ``airflow``.
+
+    Scope line: only requirements whose unit names airflow are read in
+    this pass (the measured gap). Requirements in other units, and value
+    cells that state no readable number (``n/a``, prose), are left for a
+    separate decision, recorded here rather than silently invented.
+    """
+
+    fam = family or "unclassified"
+    out: List[Tuple[str, Optional[float], str, str, str, str, int, str]] = []
+    for req in reqs:
+        unit_lower = req["unit"].strip().lower()
+        if unit_lower not in _AIRFLOW_UNITS:
+            continue
+        text = str(req["value"] if req["value"] is not None else "").strip()
+        if text.lower() in _ATTR_NO_VALUE:
+            continue
+        value: Optional[float]
+        range_hit = _ATTR_RANGE_RE.match(text.replace(" ", ""))
+        if range_hit:
+            value = None  # the requirement states an interval, not a number
+        else:
+            try:
+                value = float(text.replace(",", ""))
+            except ValueError:
+                continue
+        name_lower = req["name"].strip().lower()
+        if "outside air" in name_lower:
+            slot = "outside_air_flow"
+        elif "min" in name_lower:
+            slot = "airflow_min"
+        elif "max" in name_lower:
+            slot = "airflow_max"
+        else:
+            slot = "airflow"
+        _ = fam  # the unit is explicit; no family default is in play
+        out.append(
+            (
+                slot,
+                value,
+                _AIRFLOW_UNITS[unit_lower],
+                text,
+                "high",
+                "Attribute",
+                int(req["row"]),
+                req["value_cell"],
+            )
+        )
+    return out
+
+
 def _row_values(
     tag: str,
     family: Optional[str],
@@ -410,19 +481,26 @@ def _row_values(
     component_description: str,
     type_cell: str,
     component_cell: str,
+    attribute_candidates: Optional[
+        List[Tuple[str, Optional[float], str, str, str, str, int, str]]
+    ] = None,
 ) -> Tuple[List[MechValue], List[ReviewItem]]:
     """Resolve one row's stated values into ``MechValue``s and review items.
 
-    Both the Type description and the Component description are scanned.
-    A slot stated twice with different numbers is a conflict: every value
-    for that slot is nulled (``value=None``, confidence ``low``) and one
-    review item names both raw strings. A stated value that maps to no
-    slot gets no value and one review item. Nothing is ever fabricated.
+    Both the Type description and the Component description are scanned,
+    and any stated ``Attribute``-sheet requirement candidates join them,
+    so a slot stated twice with different numbers across sources is one
+    conflict: every value for that slot is nulled (``value=None``,
+    confidence ``low``) and one review item names both raw strings. A
+    stated value that maps to no slot gets no value and one review item.
+    Nothing is ever fabricated.
     """
 
     fam = family or "unclassified"
     candidates: List[Tuple[str, Optional[float], str, str, str, str, int, str]] = []
     reviews: List[Tuple[str, str, str, str]] = []
+    if attribute_candidates:
+        candidates.extend(attribute_candidates)
     for text, sheet, cell in (
         (type_description, "Type", type_cell),
         (component_description, "Component", component_cell),
@@ -683,6 +761,8 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
     the excluded type names. Service areas are matched against the
     workbook's own ``Space`` sheet, so ``MechSystem.rooms`` is
     self-contained; ``link_to_model`` later binds them to a model.
+    Stated per-component requirements on the ``Attribute`` sheet fill
+    slots too (airflow units in this pass; see ``_attribute_candidates``).
     """
 
     try:
@@ -699,6 +779,27 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
     types = list(wb["Type"].iter_rows(values_only=True))
     comps = list(wb["Component"].iter_rows(values_only=True))
     spaces = list(wb["Space"].iter_rows(values_only=True))
+    attr_reqs: Dict[str, List[dict]] = {}
+    if "Attribute" in wb.sheetnames:
+        attrs = list(wb["Attribute"].iter_rows(values_only=True))
+        acol = {str(h): i for i, h in enumerate(attrs[0]) if h is not None}
+        if all(k in acol for k in ("SheetName", "RowName", "Name", "Value", "Unit")):
+            value_letter = get_column_letter(acol["Value"] + 1)
+            for ai, arow in enumerate(attrs[1:], start=2):
+                if str(arow[acol["SheetName"]] or "") != "Component":
+                    continue
+                row_name = str(arow[acol["RowName"]] or "")
+                if not row_name:
+                    continue
+                attr_reqs.setdefault(row_name, []).append(
+                    {
+                        "name": str(arow[acol["Name"]] or ""),
+                        "value": arow[acol["Value"]],
+                        "unit": str(arow[acol["Unit"]] or ""),
+                        "row": ai,
+                        "value_cell": f"{value_letter}{ai}",
+                    }
+                )
     theader = [str(h) for h in types[0]]
     cheader = [str(h) for h in comps[0]]
     space_names = {str(r[0]) for r in spaces[1:] if r[0] is not None}
@@ -759,6 +860,7 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
             description,
             f"{tcol_letter}{type_row}" if type_row is not None else "",
             f"{ccol_letter}{ri}",
+            attribute_candidates=_attribute_candidates(attr_reqs.get(name, []), system_type),
         )
         result.review_items.extend(value_reviews)
         row = MechScheduleRow(

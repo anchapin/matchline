@@ -634,3 +634,172 @@ def test_mechvalue_is_frozen_and_rows_default_to_empty():
     )
     assert row.values == []
     _row_values("X-1", "pump", "", "", "", "")
+
+
+_ATTR_TYPE_ROWS = [("AHU", "23-75 35 14 17: Modular Indoor", "")]
+_ATTR_COMP_ROWS = [("AHU-1", "AHU", "1B21", "Air Handling Unit")]
+
+
+def _write_attribute_workbook(tmp_path, attr_rows, include_sheet=True):
+    """A minimal workbook plus an ``Attribute`` sheet of stated requirements."""
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    t = wb.active
+    t.title = "Type"
+    t.append(["Name", "CreatedBy", "CreatedOn", "Category", "Description", "ExtObject"])
+    for name, cat, desc in _ATTR_TYPE_ROWS:
+        t.append([name, "tester@example.com", "2013-10-09", cat, desc, "IfcTypeProduct"])
+    c = wb.create_sheet("Component")
+    c.append(
+        [
+            "Name",
+            "CreatedBy",
+            "CreatedOn",
+            "TypeName",
+            "Space",
+            "Description",
+            "ExtSystem",
+            "ExtObject",
+            "ExtIdentifier",
+            "SerialNumber",
+            "InstallationDate",
+            "WarrantyStartDate",
+            "TagNumber",
+            "BarCode",
+        ]
+    )
+    for name, type_name, space, desc in _ATTR_COMP_ROWS:
+        c.append(
+            [
+                name,
+                "tester@example.com",
+                "2013-10-09",
+                type_name,
+                space,
+                desc,
+                "n/a",
+                "IfcEnergyConversionDevice",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+            ]
+        )
+    s = wb.create_sheet("Space")
+    s.append(["Name", "CreatedBy", "CreatedOn", "Category", "FloorName", "Description"])
+    s.append(["1B21", "tester@example.com", "2013-10-09", "Space", "F1", "n/a"])
+    if include_sheet:
+        at = wb.create_sheet("Attribute")
+        at.append(
+            ["Name", "CreatedBy", "CreatedOn", "Category", "SheetName", "RowName", "Value", "Unit"]
+        )
+        for req_name, value, unit in attr_rows:
+            at.append([req_name, "", "", "Requirement", "Component", "AHU-1", value, unit])
+    path = tmp_path / "attribute-schedules.xlsx"
+    wb.save(path)
+    return path
+
+
+def test_attribute_requirements_fill_airflow_slots(tmp_path):
+    """#1240 follow-up: stated Attribute requirements fill the slots.
+
+    The clinic workbook states ``Total`` / ``Outside Air`` in L/s on the
+    ``Attribute`` sheet; the text scan never sees those cells, so the
+    benchmark measured airflow recovery 0/33. The requirement's stated
+    name picks the slot: outside air is ventilation air, not a supply
+    total, so it fills its own slot and can never misstate a fan's
+    airflow. Provenance points at the stated Value cell.
+    """
+    path = _write_attribute_workbook(
+        tmp_path, [("Total", "12.5", "L/s"), ("Outside Air", "3", "L/s")]
+    )
+    res = parse_cobie_workbook(path)
+    row = _vrow(res, "AHU-1")
+    slots = _slots(row)
+    assert slots["airflow"].value == 12.5
+    assert slots["airflow"].unit == "L/s"
+    assert slots["airflow"].sheet == "Attribute"
+    assert slots["airflow"].confidence == "high"
+    assert slots["airflow"].zone_load_impacting is True
+    assert slots["outside_air_flow"].value == 3.0
+    assert slots["outside_air_flow"].unit == "L/s"
+    assert slots["outside_air_flow"].sheet == "Attribute"
+    # the stated Value cell is the provenance: Attribute!G2 is the Total row
+    assert slots["airflow"].row == 2 and slots["airflow"].cell.endswith("2")
+    assert res.stats["zone_load_inputs"] == 2
+
+
+def test_attribute_conflict_with_stated_text_nulls_the_slot(tmp_path):
+    """A slot stated twice with different numbers is one conflict, cross-source.
+
+    The Type description's stated airflow and the Attribute requirement's
+    stated airflow disagree: every airflow value is nulled at low
+    confidence and one review item names both raw strings, the same
+    #1236 conflict rule as two text statements.
+    """
+    _ATTR_TYPE_ROWS[0] = ("AHU", "23-75 35 14 17: Modular Indoor", "500 L/s")
+    try:
+        path = _write_attribute_workbook(tmp_path, [("Total", "12.5", "L/s")])
+    finally:
+        _ATTR_TYPE_ROWS[0] = ("AHU", "23-75 35 14 17: Modular Indoor", "")
+    res = parse_cobie_workbook(path)
+    row = _vrow(res, "AHU-1")
+    airflow = [v for v in row.values if v.field == "airflow"]
+    assert len(airflow) == 2
+    assert all(v.value is None and v.confidence == "low" for v in airflow)
+    conflict = [
+        i
+        for i in res.review_items
+        if i.kind == "mech_schedule_value" and "conflict" in i.description
+    ]
+    assert len(conflict) == 1
+    assert "500 L/s" in conflict[0].description and "12.5" in conflict[0].description
+
+
+def test_missing_attribute_sheet_is_a_noop(tmp_path):
+    """A workbook without an ``Attribute`` sheet parses exactly as before."""
+    path = _write_attribute_workbook(tmp_path, [], include_sheet=False)
+    res = parse_cobie_workbook(path)
+    row = _vrow(res, "AHU-1")
+    assert row.values == []
+    assert res.stats["zone_load_inputs"] == 0
+
+
+def test_attribute_skips_non_airflow_and_unreadable_requirements(tmp_path):
+    """Scope line: only airflow-unit requirements are read in this pass.
+
+    A requirement in a unit the reader does not table (``m3/h`` here), a
+    stated ``n/a``, and prose are left for a separate decision, recorded
+    in the reader rather than silently invented as values. A stated
+    range keeps value ``None`` (an interval, never a number), the same
+    rule as text ranges.
+    """
+    path = _write_attribute_workbook(
+        tmp_path,
+        [
+            ("Total", "10-20", "L/s"),
+            ("Outside Air", "n/a", "L/s"),
+            ("Total", "12.5", "m3/h"),
+            ("Fan Power", "see schedule", "L/s"),
+        ],
+    )
+    res = parse_cobie_workbook(path)
+    row = _vrow(res, "AHU-1")
+    slots = _slots(row)
+    assert set(slots) == {"airflow"}
+    assert slots["airflow"].value is None  # stated range
+    assert slots["airflow"].unit == "L/s"
+    assert res.stats["value_review_items"] == 0
+
+
+def test_attribute_min_max_names_map_to_their_slots(tmp_path):
+    """``Minimum``/``Maximum`` in a stated requirement's name picks the slot."""
+    path = _write_attribute_workbook(
+        tmp_path, [("Minimum Flow", "2", "L/s"), ("Maximum Flow", "20", "L/s")]
+    )
+    res = parse_cobie_workbook(path)
+    slots = _slots(_vrow(res, "AHU-1"))
+    assert slots["airflow_min"].value == 2.0
+    assert slots["airflow_max"].value == 20.0
