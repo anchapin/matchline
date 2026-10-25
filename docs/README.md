@@ -83,6 +83,7 @@ disclosed, not hidden.
 | `sim_smoke.md` | Simulation smoke test (#752) |
 | `crab-evaluation.md` | CRAB cuboid BIM evaluated against the simplifier, BEM and IFC paths (#1257) |
 | `tempfit-evaluation.md` | TempFit template-fitting evaluated against the YOLO detector (#1256) |
+| `roof-simplify-wiring-decision.md` | Roof simplification wiring: the current state and the options for `simplify_roof` (#1275) |
 | `adr/` | Decision records |
 | `design-docs/` | Design documents |
 | `plans/` | Work plans (see `PLANS.md` for conventions) |
