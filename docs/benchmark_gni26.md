@@ -4,6 +4,8 @@ Measured 2026-10-23, runs over 16 staged buildings per config `gni26` (GNI 2026_
 per-building under an external path; dataset and license in DATASETS.md, data itself never committed).
 `gni26-p5-str` was re-measured and `gni26-p8-arc` first scored later the same day, after the
 storey-less structural IFC import fix (#1262); see the notes for what each run covered.
+`gni26-p8-arc` was re-scored on 2026-10-24 with roof simplification enabled (its 2026-10-23 row
+had been scored with the roof simplifier skipped); see the notes for what each run covered.
 
 **Caveat:** every number below measures IFC self-consistency (matchline's model against a truth file
 built from the same IFC), not drawings-vs-model accuracy. Geometry truth is derived from the IFC's own
@@ -24,7 +26,7 @@ spaces and wall geometry, so a perfect row means the pipeline preserved what the
 | gni26-p7-arc | IFC2X3 | ok | 31 / 28 | 2.6% | 1.5% |  | 17 / 13 |  |  |  | 34 / 13 | 41 / 41 | 1428 |  | skipped |
 | gni26-p7-str | IFC2X3 | ok |  |  | 2.5% |  |  |  |  |  |  |  |  |  | skipped |
 | gni26-p8-str | IFC4 | ok |  |  | 0.0% |  |  |  |  |  |  |  |  |  | skipped |
-| gni26-p8-arc | IFC4 | ok | 0 / 0 |  |  | 0 / 0 | 33 / 33 |  |  |  |  |  |  |  | skipped |
+| gni26-p8-arc | IFC4 | ok | 0 / 0 |  |  | 0 / 0 | 33 / 33 |  |  |  |  | 385 / 118 |  |  | skipped |
 
 OpenStudio column skipped: rerun with `--openstudio` and the CLI on PATH.
 
@@ -52,15 +54,27 @@ OpenStudio column skipped: rerun with `--openstudio` and the CLI on PATH.
   exterior wall length err 1.00% mean over the 12 buildings with wall truth (p1-arc/p1-str,
   p2-arc, p3-arc/p3-str, p4-arc/p4-str, p5-arc, p5-str, p7-arc/p7-str, p8-str; p5-str re-measured
   after #1262).
-- **`gni26-p8-arc` scored with roof simplification skipped** (a cap of this scoring run, not the
-  shipped benchmark): the roof has 385 planes and the greedy simplifier merges one pair per pass,
-  measured ~15 s per pass and still 335 planes after 50 passes (~12 min), far beyond the local
-  budget. Roof (in / out) is blank in its row; every other column is measured as usual. Tracked as
-  a roof-simplifier scaling issue (#1265). p8-arc has no IfcSpace rooms and the truth reader finds
-  no wall with `Pset_WallCommon.IsExternal = True`, so rooms/area/walls are blank; doors 33 / 33
-  matched.
+- **`gni26-p8-arc` was re-scored on 2026-10-24 with roof simplification enabled; the skip is
+  removed because #1267 (plan cache + STRtree candidates + batched disjoint merges in
+  `simplify_roof`) made the simplifier fast enough to finish inside the budget.** The roof now
+  measures 385 / 118 (in / out) and the whole scoring run took 65 s wall with a 320 MiB peak RSS
+  (`/usr/bin/time -v`, `timeout 1800`, exit 0; same entry point as the other rows, see the run
+  recipe below). The other columns are unchanged by the re-score.
+  *History (kept, not erased):* the 2026-10-23 run scored this row with roof simplification
+  **skipped** (a cap of that scoring run, not the shipped benchmark) because the roof has 385
+  planes and the greedy simplifier merged one pair per pass — measured ~15 s per pass and still
+  335 planes after 50 passes (~12 min), far beyond the ~870 s local budget, so roof (in / out) was
+  blank and the row was published without it (tracked as a roof-simplifier scaling issue, #1265).
+  p8-arc has no IfcSpace rooms and the truth reader finds no wall with
+  `Pset_WallCommon.IsExternal = True`, so rooms/area/walls are blank; doors 33 / 33 matched.
+  The gbXML export still cannot run for this building ("no spaces to export"), so the surfaces
+  column stays blank.
 - Per-building convention reports (volume conventions, area sources, external-wall state) are written
   next to the scoreboard by the harness; numbers here are exactly as measured, no tuning against truth.
 
 Run recipe: `MATCHLINE_MAX_IFC_ELEMENTS=... scripts/benchmark.py --config gni26.json --out scoreboard.md --json scoreboard.json`
 against the staged per-building dataset dirs (config + staging documented in DATASETS.md).
+The 2026-10-24 p8-arc re-score (roof simplification enabled) ran the same `scripts/benchmark.py`
+entry point with a single-building config containing only `gni26-p8-arc`, under a bounded wrapper:
+`/usr/bin/time -v timeout 1800 scripts/benchmark.py --config <p8-only config> --out scoreboard.md --json scoreboard.json`
+(65 s wall, 320 MiB peak RSS, exit 0).

@@ -242,12 +242,14 @@ The same two variables cover the older benchmark rows: molio needs
 `MATCHLINE_MAX_IFC_ELEMENTS=1500000`. CI keeps the defaults; these overrides
 are for local runs on machines with the memory for them.
 
-**Two buildings publish no row** in
-[docs/benchmark_gni26.md](docs/benchmark_gni26.md), for resource reasons, not
-extractor failures: `gni26-p6-arc` (535 MB IFC) exceeds a 3 GiB memory budget
-on import (killed at 3.2 GiB RSS), and `gni26-p8-arc` exceeded a ~870 s
-scoring budget. The measured scoreboard therefore covers 13 of the 16 staged
-buildings.
+**Resource caps in the GNI 2026 scoreboard:** `gni26-p6-arc` (535 MB IFC)
+exceeds a 3 GiB memory budget on import (killed at 3.2 GiB RSS) and publishes no
+row - a resource cap of the run environment, not an extractor failure.
+`gni26-p8-arc` hit the same kind of cap on 2026-10-23 (a ~870 s scoring budget,
+scored with the roof simplifier skipped) and was re-scored on 2026-10-24 with
+roof simplification enabled, now that #1267 made `simplify_roof` fast (65 s
+wall, 320 MiB peak RSS); its row carries the measured roof facets (385 / 118).
+The measured scoreboard covers 14 of the 16 staged buildings.
 
 ---
 
@@ -468,10 +470,14 @@ untouched. Large GNI 2026 buildings need the import caps raised in local runs:
 `MATCHLINE_MAX_IFC_SIZE_MB=600` (the limit reads file size as MiB: gni26-p1-arc is 178 MiB, gni26-p2-arc 101 MiB)
 and `MATCHLINE_MAX_IFC_ELEMENTS=1500000` (gni26-p4-arc has 1.05M elements,
 gni26-p5-arc 1.49M), `2200000` for gni26-p2-arc (1.84M) and `3200000` for
-gni26-p1-arc (3.06M). Two buildings publish no rows in the 2026-10-23
-scoreboard as environment caps, not extractor failures: `gni26-p6-arc` (535 MB)
-exceeds a 3 GiB memory budget on import, and `gni26-p8-arc` did not finish
-scoring inside a ~870 s budget across three attempts.
+gni26-p1-arc (3.06M). `gni26-p6-arc` (535 MB)
+exceeds a 3 GiB memory budget on import and publishes no row in the
+2026-10-23 scoreboard - an environment cap, not an extractor failure.
+`gni26-p8-arc` did not finish scoring inside a ~870 s budget across three
+attempts on 2026-10-23 (scored with the roof simplifier skipped); it was
+re-scored on 2026-10-24 with roof simplification enabled after #1267 made
+`simplify_roof` fast (65 s wall, 320 MiB peak RSS) and its row now carries the
+measured roof facets (385 / 118).
 
 **2026-10-15 scoreboard (no `--openstudio`):** all twelve buildings import and
 score; rooms, area, window and door counts match ground truth everywhere
