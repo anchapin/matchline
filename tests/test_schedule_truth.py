@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.schedule_bench import (  # noqa: E402
+    BenchRow,
     _norm_pair,
+    render,
     run_schedule_bench,
     stated_values,
 )
@@ -338,3 +340,53 @@ def test_stated_values_normalize_watt_family() -> None:
 def test_capacity_agreement_folds_kw_into_watts() -> None:
     assert _norm_pair({"value": 2.5, "unit": "kW"}) == _norm_pair({"value": 2500, "unit": "W"})
     assert _norm_pair({"value": 100, "unit": "BTU"}) != _norm_pair({"value": 100, "unit": "W"})
+
+
+def test_category_cross_tab_scores_by_stated_category(tmp_path: Path) -> None:
+    from mech_schedule import parse_cobie_workbook
+
+    wb_path = _workbook(tmp_path / "w.xlsx")
+    truth = build_truth(wb_path)
+    truth["rows"]["MX-99"] = {
+        "row": 99,
+        "name": "Mail Box MX-99",
+        "type_name": "Mail Box",
+        "space": "1A03",
+        "description": "",
+        "tag_source": "name",
+    }
+    truth["types"]["Mail Box"] = {"category": "Mail Boxes", "description": ""}
+    result = parse_cobie_workbook(wb_path)
+    m = run_schedule_bench(truth, result)
+    cats = {c["category"]: c for c in m["category_cross_tab"]}
+    assert cats["Mail Boxes"] == {
+        "category": "Mail Boxes",
+        "truth": 1,
+        "matched": 0,
+        "missed": 1,
+    }
+    matched_cats = [c for c in m["category_cross_tab"] if c["missed"] == 0]
+    assert matched_cats and all(c["matched"] == c["truth"] for c in matched_cats)
+
+
+def test_render_lists_missed_categories(tmp_path: Path) -> None:
+    from mech_schedule import parse_cobie_workbook
+
+    wb_path = _workbook(tmp_path / "w.xlsx")
+    truth = build_truth(wb_path)
+    truth["rows"]["MX-99"] = {
+        "row": 99,
+        "name": "Mail Box MX-99",
+        "type_name": "Mail Box",
+        "space": "1A03",
+        "description": "",
+        "tag_source": "name",
+    }
+    truth["types"]["Mail Box"] = {"category": "Mail Boxes", "description": ""}
+    result = parse_cobie_workbook(wb_path)
+    m = run_schedule_bench(truth, result)
+    row = BenchRow(name="test")
+    row.extras = m
+    text = render([row])
+    assert "category cross-tab" in text
+    assert "Mail Boxes: truth 1, matched 0, missed 1" in text
