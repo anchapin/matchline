@@ -116,7 +116,10 @@ convention.
 ## Gaps / v2
 
 - Input is a single exterior ring. Courtyard buildings (holes) and
-  multi-wing campuses need per-part simplification with a shared budget.
+  multi-wing campuses are handled per-part: `footprint_multipart_from_regions`
+  keeps every wing, and `simplify_multipart_footprint` (#1311) simplifies
+  all parts under one shared envelope-area budget (each wing capped at its
+  area share, unspent allowance re-pooled; see Limitations).
 - Wall heights are uniform (`wall_height` scalar); varying story heights
   need per-edge heights.
 - No window/door area reallocation: punched openings are handled by the
