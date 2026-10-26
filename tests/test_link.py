@@ -298,3 +298,102 @@ class TestSymbolLinkageGraph:
             for lnk in unlinked:
                 assert lnk.symbol_id
                 assert lnk.symbol_tag
+
+
+NORTH_SEED = 4
+
+
+@pytest.fixture(scope="module")
+def bldg_n():
+    """Building with north-elevation sheets (#1310)."""
+    return generate_building(NORTH_SEED, north_elevation=True)
+
+
+class TestNorthFacadeElevation:
+    """North facade end to end (#1310): windows link to the right rooms,
+    with correct sill/head and schedule marks; south behaviour unchanged."""
+
+    @staticmethod
+    def _north_openings(model):
+        out = {}
+        for sp in model.spaces.values():
+            for op in sp.openings:
+                if op.category == "window" and op.host_facade == "north":
+                    out[op.id.removeprefix("north-")] = op
+        return out
+
+    @pytest.mark.parametrize("key", ["elev_north", "elev_north_nogrid"])
+    def test_north_windows_link_to_correct_rooms(self, bldg_n, key):
+        model, report = build_model(bldg_n, elevation_key=key, building_name=bldg_n["building_id"])
+        gt = bldg_n["gt_links"]["window_room_north"]
+        got = {
+            wid: sp.number
+            for sp in model.spaces.values()
+            for op in sp.openings
+            if op.category == "window" and op.host_facade == "north"
+            for wid in [op.id.removeprefix("north-")]
+        }
+        assert got == gt
+        assert report.windows_unlinked == 0
+        assert report.windows_linked == len(gt)
+
+    @pytest.mark.parametrize("key", ["elev_north", "elev_north_nogrid"])
+    def test_north_openings_have_sill_head_and_schedule_marks(self, bldg_n, key):
+        model, _ = build_model(bldg_n, elevation_key=key, building_name=bldg_n["building_id"])
+        openings = self._north_openings(model)
+        assert openings
+        schedule = {row["tag"]: row for row in bldg_n["window_schedule"]}
+        for op in openings.values():
+            assert op.host_facade == "north"
+            assert op.sill_m == pytest.approx(0.9, abs=0.01)  # synth sill convention
+            assert op.tag in schedule
+            row = schedule[op.tag]
+            assert op.width_m == pytest.approx(row["width_m"], abs=0.01)
+            assert op.height_m == pytest.approx(row["height_m"], abs=0.01)
+            assert op.head_m == pytest.approx(op.sill_m + row["height_m"], abs=0.01)
+            assert op.host_interval_m[0] < op.host_interval_m[1]
+
+    def test_north_grid_sheet_uses_the_grid_path(self, bldg_n):
+        # The path follows the SHEET (grid bubbles present), not the key name.
+        _, report = build_model(
+            bldg_n, elevation_key="elev_north", building_name=bldg_n["building_id"]
+        )
+        assert report.elevation_path == "grid"
+
+    def test_north_nogrid_sheet_uses_the_geometric_path(self, bldg_n):
+        _, report = build_model(
+            bldg_n, elevation_key="elev_north_nogrid", building_name=bldg_n["building_id"]
+        )
+        assert report.elevation_path == "geometric"
+
+    def test_south_and_north_link_in_one_run(self, bldg_n):
+        model, report = build_model(
+            bldg_n,
+            elevation_key=("elev_grid", "elev_north"),
+            building_name=bldg_n["building_id"],
+        )
+        facades = {
+            op.host_facade
+            for sp in model.spaces.values()
+            for op in sp.openings
+            if op.category == "window"
+        }
+        assert facades == {"south", "north"}
+        assert report.windows_unlinked == 0
+
+    def test_south_behaviour_unchanged(self, bldg_n):
+        # The south elevation links exactly as before: same rooms, same marks.
+        model, report = build_model(
+            bldg_n, elevation_key="elev_grid", building_name=bldg_n["building_id"]
+        )
+        gt = bldg_n["gt_links"]["window_room"]
+        got = {
+            wid: sp.number
+            for sp in model.spaces.values()
+            for op in sp.openings
+            if op.category == "window" and op.host_facade == "south"
+            for wid in [op.id.removeprefix("south-")]
+        }
+        assert got == gt
+        assert report.elevation_path == "grid"
+        assert report.windows_unlinked == 0
