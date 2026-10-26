@@ -169,6 +169,7 @@ py-modules = [
     "facade_takeoff",
     "grid_detect",
     "hvac_legend",
+    "hvac_sizing",
     "hvac_trace",
     "jesse",
     "lighting",

@@ -18,8 +18,8 @@ from mech_schedule import parse_cobie_workbook
 from hvac_sizing import collect_zone_load_inputs, size_from_zone_loads
 
 result = parse_cobie_workbook("/path/clinic-design.xlsx")
-inputs = collect_zone_load_inputs(result)   # phase 1: collect
-sized = size_from_zone_loads(inputs)        # phase 2: size
+inputs = collect_zone_load_inputs(result)  # phase 1: collect
+sized = size_from_zone_loads(inputs)  # phase 2: size
 ```
 
 **Phase 1 — collect.** `collect_zone_load_inputs(result)` walks the rows
