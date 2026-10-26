@@ -68,8 +68,7 @@ def build_model(
     # The elevation path follows each SHEET (grid bubbles present or not),
     # not the sheet's key name, so any facade's sheet reports its own path.
     paths = [
-        elevation_path_for(bldg["sheets"][k]["meta"], bldg["sheets"][k]["data"])
-        for k in elev_keys
+        elevation_path_for(bldg["sheets"][k]["meta"], bldg["sheets"][k]["data"]) for k in elev_keys
     ]
     report = LinkReport(
         building_id=bldg["building_id"],
