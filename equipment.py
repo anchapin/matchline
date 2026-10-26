@@ -33,6 +33,26 @@ from typing import Dict, List, Tuple
 
 from building_model import Equipment, Provenance, ServingRef
 
+# Confidences the equipment model records for schedule-derived facts
+# (#1295). They are named here so the schedule-truth benchmark can bucket
+# the claims they cover and measure them against the frozen truth (see
+# docs/bench_schedule_confidence.md).
+#
+# * SCHEDULE_EQUIPMENT_CONFIDENCE: a schedule row read as stated (tag,
+#   type, service area, capacity). The workbook states these cells, the
+#   reader transcribes them, so the confidence is the reader's, not the
+#   schedule's.
+# * PLAN_TERMINAL_TAG_CONFIDENCE: a zone's terminal unit on the plan
+#   carries this equipment's schedule tag. The tag is read off the plan
+#   (symbol detection, 0.9), so the serving relationship inherits it.
+# * SCHEDULE_BOX_LINK_CONFIDENCE: the zone's terminal box names this
+#   central unit in a schedule column (#747). The link is read from the
+#   schedule, so it is a schedule claim, one step below the plan claim
+#   above it.
+SCHEDULE_EQUIPMENT_CONFIDENCE = 0.8
+PLAN_TERMINAL_TAG_CONFIDENCE = 0.9
+SCHEDULE_BOX_LINK_CONFIDENCE = 0.8
+
 
 def _norm(tag) -> str:
     from datasets_adapter import normalize_tag
@@ -73,7 +93,9 @@ def build_equipment(model, equipment: List[dict]) -> List[str]:
             sheet=e.get("sheet") or "",
             airflow_m3s=_airflow_m3s(e),
             plan_locs=[x for x in (e.get("located") or []) if isinstance(x, dict)],
-            provenance=Provenance(e.get("sheet") or "", 0, "pdf_schedule_equipment", 0.8),
+            provenance=Provenance(
+                e.get("sheet") or "", 0, "pdf_schedule_equipment", SCHEDULE_EQUIPMENT_CONFIDENCE
+            ),
         )
         v = e.get("cfm_max") if e.get("cfm_max") is not None else e.get("cfm")
         if eq.airflow_m3s is not None:
@@ -120,13 +142,26 @@ def build_equipment(model, equipment: List[dict]) -> List[str]:
         got: List[Tuple[str, str, float, str]] = []
         if t:
             if t in central_tags:
-                got.append((t, "plan_terminal_tag", 0.9, f"terminal unit {t}"))
+                got.append(
+                    (t, "plan_terminal_tag", PLAN_TERMINAL_TAG_CONFIDENCE, f"terminal unit {t}")
+                )
             elif t in by_tag:
                 # a scheduled terminal (box or fan coil) serves its own zone
                 eq = by_tag[t]
-                eq.serves.append(ServingRef(zid, "plan_terminal_tag", 0.9, f"terminal unit {t}"))
+                eq.serves.append(
+                    ServingRef(
+                        zid, "plan_terminal_tag", PLAN_TERMINAL_TAG_CONFIDENCE, f"terminal unit {t}"
+                    )
+                )
                 if t in links:
-                    got.append((links[t], "schedule_box_link", 0.8, f"via box {t}"))
+                    got.append(
+                        (
+                            links[t],
+                            "schedule_box_link",
+                            SCHEDULE_BOX_LINK_CONFIDENCE,
+                            f"via box {t}",
+                        )
+                    )
         # plan placements of terminal tags inside the zone's rooms
         spaces = set(z.space_ids)
         for tag, row in terminals.items():

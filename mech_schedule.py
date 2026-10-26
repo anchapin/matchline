@@ -172,6 +172,40 @@ VALUE_SLOTS = frozenset(
 # inputs and flags them, it never computes or sizes a load.
 ZONE_LOAD_SLOTS = frozenset({"airflow", "airflow_min", "airflow_max", "outside_air_flow"})
 
+# Numeric confidence for a stated value, by the qualitative confidence the
+# value carries (#1295). The labels above ("high": explicit qualifier or
+# unambiguous unit, "medium": family or IP default, "low": nulled by a
+# same-slot conflict) are the reader's evidence grades; these are the
+# numbers the rest of the model records and the schedule-truth benchmark
+# calibrates them against (see docs/bench_schedule_confidence.md).
+#
+# * high -> 0.9: the unit names the slot on its own or an explicit
+#   qualifier does, so the value is read, not guessed.
+# * medium -> 0.8: the slot came from a family or IP default, one step
+#   weaker than an explicit statement. It matches the confidence the
+#   equipment model records for a schedule row it read as stated
+#   (``equipment.SCHEDULE_EQUIPMENT_CONFIDENCE``).
+# * low -> 0.4: the value was nulled by a same-slot conflict, so nothing
+#   is asserted; the number is the review signal, and it matches the
+#   confidence the conflict review item already carries.
+VALUE_CONFIDENCE = {"high": 0.9, "medium": 0.8, "low": 0.4}
+
+# The slots whose values the #1240 schedule truth set can score: the
+# workbook states airflow requirements (L/s) on its Attribute sheet and
+# capacities on its Type sheet.
+TRUTH_SCORABLE_SLOTS = frozenset(
+    {
+        "cooling_capacity",
+        "heating_capacity",
+        "airflow",
+        "airflow_min",
+        "airflow_max",
+        "outside_air_flow",
+        "water_flow",
+        "power",
+    }
+)
+
 # Units that name their slot unambiguously, whatever the equipment family.
 _AIRFLOW_UNITS = {"cfm": "CFM", "l/s": "L/s"}
 _WATER_FLOW_UNITS = {"gpm": "GPM"}

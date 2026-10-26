@@ -34,6 +34,12 @@ Metrics, per building:
 - export validity rate (with ``--export-validity``): the building's
   BuildingSync export passes XSD validation. Measured per building, never
   asserted.
+- confidence calibration (#1295): every fact the extractor asserts about
+  a schedule row, bucketed by the confidence the model records for it,
+  with the correctness the frozen truth set measures. The table says how
+  many claims each confidence covers and how many of them the truth
+  confirms, so a hand-set confidence can be checked against measured
+  correctness instead of asserted.
 
 Writes a markdown scoreboard plus the raw JSON.
 """
@@ -51,8 +57,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bem.buildingsync_export import validate_buildingsync, write_buildingsync  # noqa: E402
-from mech_schedule import parse_cobie_workbook  # noqa: E402
-from scripts.schedule_score import mech_row_to_dict, score_schedule_rows  # noqa: E402
+from mech_schedule import ZONE_LOAD_SLOTS, parse_cobie_workbook  # noqa: E402
+from scripts.schedule_score import (  # noqa: E402
+    calibration_by_confidence,
+    calibration_table,
+    mech_row_to_dict,
+    score_schedule_rows,
+)
 from scripts.schedule_truth import TruthMismatch, load_or_freeze_truth  # noqa: E402
 
 # Units that name airflow (the slots the value-slot reader fills, #1236) or
@@ -285,6 +296,7 @@ def run_schedule_bench(truth: dict, result) -> dict:
             "mismatch": zone_mismatch,
             "referenced_rooms_not_in_space_sheet": zone_bad_rooms,
         },
+        "calibration": _calibration_block(truth, result),
         "stats": dict(result.stats),
     }
 
@@ -294,6 +306,205 @@ def _num(text: str):
         return float(str(text).replace(",", ""))
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Confidence calibration (#1295)
+# ---------------------------------------------------------------------------
+
+# Unit spellings that mean the same unit. The extractor normalizes a
+# stated unit to its own display spelling ("Watt" -> "W"), the truth
+# keeps the unit as the workbook states it ("Watt"). The calibration
+# compares units by meaning, not by spelling, so a normalization
+# difference is never scored as a wrong claim.
+_UNIT_ALIASES = {
+    "watt": "w",
+    "watts": "w",
+    "kilowatt": "kw",
+    "kilowatts": "kw",
+    "joule": "j",
+    "joules": "j",
+    "kilojoule": "kj",
+    "kilojoules": "kj",
+    "megajoule": "mj",
+    "ton": "ton",
+    "tons": "ton",
+    "tonne": "ton",
+    "tonnes": "ton",
+}
+
+# Claims the #1240 truth set cannot score, stated rather than dropped.
+# The serving relationships are plan facts (a zone's terminal unit, a
+# terminal box's schedule column); the frozen truth carries no zone and
+# no terminal truth, so the benchmark cannot score them either way.
+NOT_MEASURABLE_CLAIMS = [
+    {
+        "kind": "serving:plan_terminal_tag",
+        "confidence": 0.9,
+        "why": (
+            "the frozen schedule truth carries no zone or terminal truth; the claim "
+            "is read off the plan, not off the schedules"
+        ),
+    },
+    {
+        "kind": "serving:schedule_box_link",
+        "confidence": 0.8,
+        "why": (
+            "the frozen schedule truth records no schedule column values, so a "
+            "box-to-unit link cannot be scored against it"
+        ),
+    },
+]
+
+
+def _unit_key(unit) -> str:
+    """A unit compared by meaning: lowercased, with the common spellings folded."""
+    u = (unit or "").strip().lower()
+    return _UNIT_ALIASES.get(u, u)
+
+
+def _cap_equal(a, b) -> bool:
+    """Two stated capacities agree when value and unit agree."""
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    av, bv = a.get("value"), b.get("value")
+    if av is None or bv is None:
+        if av is not None or bv is not None:
+            return False
+    else:
+        try:
+            if abs(float(av) - float(bv)) > 1e-9:
+                return False
+        except (TypeError, ValueError):
+            if av != bv:
+                return False
+    return _unit_key(a.get("unit")) == _unit_key(b.get("unit"))
+
+
+def _airflow_claim(value, requirements) -> bool | None:
+    """Score one asserted airflow value against the truth's stated requirements.
+
+    Returns ``True``/``False`` when the truth can score the claim, and
+    ``None`` when it cannot (the truth states a range where the extractor
+    asserts a single number, so the two are not comparable).
+    """
+    unit = (value.unit or "").strip().lower()
+    same_unit = [r for r in requirements if (r.get("unit") or "").strip().lower() == unit]
+    if not same_unit:
+        return False
+    stated = []
+    for r in same_unit:
+        num = _num(r.get("value"))
+        if num is not None:
+            stated.append(num)
+    if not stated:
+        return None
+    return any(abs(value.value - s) < 1e-9 for s in stated)
+
+
+def _calibration_block(truth: dict, result) -> dict:
+    """The calibration table: buckets per claim kind and per confidence."""
+    buckets = calibration_table(calibration_claims(truth, result))
+    return {
+        "buckets": [b.as_dict() for b in buckets],
+        "by_confidence": calibration_by_confidence(buckets),
+        "not_measurable": NOT_MEASURABLE_CLAIMS,
+    }
+
+
+def calibration_claims(truth: dict, result) -> list[dict]:
+    """One claim per fact the extractor asserts about a schedule row.
+
+    Each claim is ``{"confidence": float, "kind": str, "correct": bool}``,
+    or ``{"abstained": True}`` for a fact the truth states and the
+    extractor deliberately did not assert (a value nulled by a conflict,
+    a unit the reader refuses to map), or ``{"unverifiable": True}`` for a
+    claim the truth cannot score.
+
+    The confidence is the number the model records for that kind of
+    claim: the facts read off a schedule row carry the equipment model's
+    schedule confidence (``equipment.SCHEDULE_EQUIPMENT_CONFIDENCE``),
+    and each stated value carries its own confidence
+    (``mech_schedule.VALUE_CONFIDENCE``).
+    """
+    from equipment import SCHEDULE_EQUIPMENT_CONFIDENCE
+    from mech_schedule import VALUE_CONFIDENCE
+
+    truth_rows = truth["rows"]
+    types = truth["types"]
+    requirements = truth["requirements"]
+
+    pred_by_tag: dict = {}
+    for r in result.rows:
+        if r.tag and r.tag not in pred_by_tag:
+            pred_by_tag[r.tag] = r
+
+    claims: list[dict] = []
+    for tag in sorted(pred_by_tag):
+        row = pred_by_tag[tag]
+        trow = truth_rows.get(tag)
+        claims.append(
+            {
+                "confidence": SCHEDULE_EQUIPMENT_CONFIDENCE,
+                "kind": "schedule_row_tag",
+                "correct": trow is not None,
+            }
+        )
+        if trow is None:
+            # no truth row: nothing else this row states can be scored
+            continue
+        claims.append(
+            {
+                "confidence": SCHEDULE_EQUIPMENT_CONFIDENCE,
+                "kind": "schedule_row_service_area",
+                "correct": row.service_area == trow["space"],
+            }
+        )
+        stated = stated_values(types.get(trow["type_name"], {}).get("description", ""))
+        stated_caps = [{"value": s["value"], "unit": s["unit"]} for s in stated]
+        if row.capacity is None:
+            if stated:
+                # the truth states a capacity the extractor did not claim
+                claims.append(
+                    {
+                        "confidence": SCHEDULE_EQUIPMENT_CONFIDENCE,
+                        "kind": "schedule_row_capacity",
+                        "abstained": True,
+                    }
+                )
+        else:
+            claims.append(
+                {
+                    "confidence": SCHEDULE_EQUIPMENT_CONFIDENCE,
+                    "kind": "schedule_row_capacity",
+                    "correct": any(_cap_equal(row.capacity, c) for c in stated_caps),
+                }
+            )
+        reqs = requirements.get(trow["name"], [])
+        for v in row.values:
+            conf = VALUE_CONFIDENCE.get(v.confidence)
+            if conf is None:
+                continue
+            kind = (
+                "schedule_value_airflow"
+                if v.field in ZONE_LOAD_SLOTS
+                else "schedule_value_capacity"
+            )
+            if v.value is None:
+                # nulled by a same-slot conflict: nothing is asserted
+                claims.append({"confidence": conf, "kind": kind, "abstained": True})
+                continue
+            if kind == "schedule_value_airflow":
+                verdict = _airflow_claim(v, reqs)
+            else:
+                verdict = any(
+                    _cap_equal({"value": v.value, "unit": v.unit}, c) for c in stated_caps
+                )
+            if verdict is None:
+                claims.append({"confidence": conf, "kind": kind, "unverifiable": True})
+            else:
+                claims.append({"confidence": conf, "kind": kind, "correct": verdict})
+    return claims
 
 
 def _norm_pair(cap):
@@ -384,6 +595,26 @@ def render(rows: list[BenchRow]) -> str:
         ]
         if e.get("export_validity"):
             lines.append(f"- export validity: {e['export_validity']['status']}")
+        cal = e.get("calibration")
+        if cal:
+            lines.append("")
+            lines.append("### Confidence calibration (#1295)")
+            lines.append("")
+            lines.append("| confidence | claim kind | claims | correct | measured correctness |"
+                         " abstained | unverifiable |")
+            lines.append("|---|---|---|---|---|---|---|")
+            for b in cal["buckets"]:
+                measured = b["measured_correctness"]
+                lines.append(
+                    f"| {b['confidence']:.2f} | {b['kind']} | {b['claims']} | {b['correct']} | "
+                    + (f"{measured:.3f} | " if measured is not None else "n/a | ")
+                    + f"{b['abstained']} | {b['unverifiable']} |"
+                )
+            for nm in cal.get("not_measurable", []):
+                lines.append(
+                    f"- not measurable against this truth set: {nm['kind']} "
+                    f"(confidence {nm['confidence']:.2f}) - {nm['why']}"
+                )
         lines.append("")
     return "\n".join(lines)
 
