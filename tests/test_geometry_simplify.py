@@ -696,9 +696,7 @@ def _over_segmented_rect(x0, y0, w, h, per_edge=4):
     for i in range(4):
         p, q = corners[i], corners[(i + 1) % 4]
         for k in range(per_edge):
-            pts.append(
-                (p[0] + (q[0] - p[0]) * k / per_edge, p[1] + (q[1] - p[1]) * k / per_edge)
-            )
+            pts.append((p[0] + (q[0] - p[0]) * k / per_edge, p[1] + (q[1] - p[1]) * k / per_edge))
     return pts
 
 
@@ -841,9 +839,7 @@ class TestSimplifyMultipartFootprint:
         assert abs(combined_simplified - combined_original) <= 0.02 * combined_original + 1e-9
         # ... and wing B is neither starved nor over-simplified
         assert res.parts[1].simplified_count < res.parts[1].original_count
-        wing_b_error = abs(
-            envelope_area(res.parts[1].ring, h) - envelope_area(parts[1].ring, h)
-        )
+        wing_b_error = abs(envelope_area(res.parts[1].ring, h) - envelope_area(parts[1].ring, h))
         assert wing_b_error <= 0.02 * combined_original + 1e-9
         # wing B spends no more than the allowance it was granted
         assert res.part_spent[1] <= res.part_budget[1] + 1e-6
