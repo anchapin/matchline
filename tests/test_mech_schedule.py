@@ -173,6 +173,75 @@ def test_capacity_parser_skips_dimensions_and_keeps_units_as_stated():
     assert cap["value"] == 5.0
 
 
+def test_watt_family_units_normalize_to_watt_without_converting():
+    # #1290: the spelled-out watt unit normalizes to the canonical "W"
+    # the way "BTU"/"btu" normalizes today, and the value stays in watts.
+    cap = parse_capacity("Air Handling Unit, 4500 Watt")
+    assert cap is not None
+    assert cap["value"] == 4500.0
+    assert cap["unit"] == "W"
+    assert cap["raw"] == "4500 Watt"
+    watts = parse_capacity("4500 Watts")
+    assert watts["value"] == 4500.0
+    assert watts["unit"] == "W"
+    # never converted into kW
+    assert parse_capacity("4500 Watt")["value"] != 4.5
+
+
+def test_bare_watt_after_the_quantity_is_the_unit():
+    # #1290: a bare W/w right after the quantity is the unit watt and is
+    # never dropped in favour of a token that follows it.
+    for text in ("Heat Pump, 9.3 W", "Heat Pump, 9.3 w", "Heat Pump, 9.3W"):
+        cap = parse_capacity(text)
+        assert cap is not None, text
+        assert cap["value"] == 9.3, text
+        assert cap["unit"] == "W", text
+        assert cap["raw"] == "9.3 W" or cap["raw"] == "9.3 w" or cap["raw"] == "9.3W"
+    # a stated watt is the unit even when a token follows it
+    cap = parse_capacity("9.3 W Capacity")
+    assert cap["unit"] == "W"
+    assert cap["value"] == 9.3
+
+
+def test_kw_keeps_its_value_and_unit():
+    # #1290: kW/KW after the quantity keeps its value and its unit, the
+    # same as the spelled watt keeps its value in watts.
+    cap = parse_capacity("Air Handling Unit, 4.5 kW")
+    assert cap["value"] == 4.5
+    assert cap["unit"] == "kW"
+    upper = parse_capacity("Air Handling Unit, 4.5 KW")
+    assert upper["value"] == 4.5
+    assert upper["unit"] == "kW"
+
+
+def test_watt_policy_applies_to_the_value_slot_path():
+    # #1290: the policy holds on every path the capacity parser serves,
+    # so a spelled watt fills the same slot a bare watt fills, with the
+    # value unchanged.
+    values, reviews = _row_values("P-1", "pump", "4500 Watt", "", "B1", "C1")
+    assert reviews == []
+    assert len(values) == 1
+    assert values[0].field == "power"
+    assert values[0].value == 4500.0
+    assert values[0].unit == "W"
+    bare, bare_reviews = _row_values("P-1", "pump", "4500 W", "", "B1", "C1")
+    assert bare_reviews == []
+    assert bare[0].field == values[0].field
+    assert bare[0].unit == values[0].unit
+    assert bare[0].value == values[0].value
+
+
+def test_model_tags_and_model_strings_are_not_watt_units():
+    # #1290 non-goal: an ALL-CAPS token in a schedule cell is an
+    # equipment tag or a model string, never a unit; only a whole token
+    # counts, so "KWIK" is never read as "kW".
+    assert parse_capacity("30RB-060...WATTS...") is None
+    assert parse_capacity("30RB-060WATTS") is None
+    assert parse_capacity("GRUNDFOS ... KWIK") is None
+    assert parse_capacity("Heat Pump, 9.3 WATTS") is None
+    assert parse_capacity("Chiller 100 kW")["unit"] == "kW"
+
+
 def test_no_evidence_excluded_from_schedule(result):
     tags = [r.tag for r in result.rows]
     types = [r.type_name for r in result.rows]

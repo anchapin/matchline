@@ -146,6 +146,68 @@ _NUMBER = r"\d[\d,]*(?:\.\d+)?"
 _CAP_RE = re.compile(rf"({_NUMBER})(?:\s*-\s*({_NUMBER}))?\s*([A-Za-z/]+)")
 _NOT_A_UNIT = {"x", "mm", "cm", "m", "ft", "in"}
 
+# Watt-family unit tokens (#1290). A bare ``W``/``w`` right after the
+# quantity is the unit watt, never dropped in favour of a token that
+# follows it. The spelled-out ``Watt``/``Watts`` normalize to the same
+# canonical ``W``, exactly as ``BTU``/``btu`` and ``BTU/h``/``btu/h``
+# normalize today. Values are never converted: ``4500 Watt`` stays
+# ``4500 W`` (not 4.5 kW) and ``kW``/``KW`` keeps its own value and unit.
+#
+# The spelled forms count only when they stand as a unit phrase: a space
+# separates them from the quantity, and they are not written in ALL
+# CAPS. An ALL-CAPS token in a schedule cell is an equipment tag or a
+# model string (``30RB-060...WATTS...``), never a unit, and a spelled
+# watt glued to the quantity (``060WATTS``) is part of that model
+# string too. ``KWIK`` in a model string likewise never reads as
+# ``kW``: only the whole token counts.
+_WATT_UNIT_TOKENS = frozenset({"w", "watt", "watts"})
+
+
+def _glued_to_quantity(raw: str, unit_raw: str) -> bool:
+    """True when the unit token is glued to the quantity it follows.
+
+    ``"4500 Watt"`` separates the unit from the number with a space;
+    ``"30RB-060WATTS"`` glues it, which makes the token part of a model
+    string rather than a stated unit.
+    """
+
+    prefix = raw[: len(raw) - len(unit_raw)]
+    return bool(prefix) and not prefix[-1].isspace()
+
+
+def _watt_unit(unit_raw: str, glued: bool) -> Optional[str]:
+    """Canonical watt-family unit for a stated unit token, or ``None``.
+
+    A bare ``W``/``w`` is the unit watt, glued to the quantity or not.
+    The spelled-out ``Watt``/``Watts`` normalize to the same canonical
+    ``W`` only as a unit phrase (not glued, not ALL CAPS); otherwise the
+    token is a tag or a model string and is not a unit at all.
+    """
+
+    token = unit_raw.strip()
+    lowered = token.lower()
+    if lowered not in _WATT_UNIT_TOKENS:
+        return None
+    if lowered == "w":
+        return "W"
+    if glued or token.isupper():
+        return None
+    return "W"
+
+
+def _capacity_unit(unit_raw: str, glued: bool = False) -> Optional[str]:
+    """The canonical capacity unit for a stated unit token, or ``None``.
+
+    The watt family is normalized first (see ``_watt_unit``); every
+    other token is looked up in ``CAPACITY_UNITS`` as stated, so the
+    unit is recorded as the schedule states it and never converted.
+    """
+
+    watt = _watt_unit(unit_raw, glued)
+    if watt is not None:
+        return watt
+    return CAPACITY_UNITS.get(unit_raw.strip().lower())
+
 # ---------------------------------------------------------------------------
 # Per-value schedule slots (#1236)
 # ---------------------------------------------------------------------------
@@ -380,13 +442,23 @@ def _value_candidates(
     spans: List[Tuple[int, int]] = []
     prev_end = 0
     for m in _CAP_RE.finditer(text):
-        unit_lower = m.group(3).lower()
+        unit_raw = m.group(3)
+        unit_lower = unit_raw.lower()
+        # The watt family normalizes to the canonical ``W``/``kW`` on
+        # this path too, so a spelled watt maps to the same slot a bare
+        # watt maps to, with its value unchanged.
+        canonical = _capacity_unit(unit_raw, _glued_to_quantity(m.group(0), unit_raw))
         qualifier = _qualifier_before(text, m.start(), prev_end)
         prev_end = m.end()
         spans.append(m.span())
         raw = m.group(0).strip()
         value = float(m.group(1).replace(",", "")) if m.group(2) is None else None
-        slot, unit, confidence, reason = _map_value_slot(family, unit_lower, m.group(3), qualifier)
+        if canonical is None:
+            slot, unit, confidence, reason = _map_value_slot(family, unit_lower, unit_raw, qualifier)
+        else:
+            slot, unit, confidence, reason = _map_value_slot(
+                family, canonical.lower(), canonical, qualifier
+            )
         if slot is not None and unit is not None and confidence is not None:
             candidates.append((slot, value, unit, raw, confidence))
         elif reason is not None:
@@ -741,7 +813,7 @@ def parse_capacity(text: str) -> Optional[Dict[str, Any]]:
         return None
     for m in _CAP_RE.finditer(text):
         lo, hi, unit_raw = m.group(1), m.group(2), m.group(3)
-        unit = CAPACITY_UNITS.get(unit_raw.lower())
+        unit = _capacity_unit(unit_raw, _glued_to_quantity(m.group(0), unit_raw))
         if unit is None or unit_raw.lower() in _NOT_A_UNIT:
             continue
         raw = m.group(0).strip()

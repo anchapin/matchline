@@ -40,6 +40,36 @@ is never committed: pass its path in, and tests skip without
   left for a separate decision, recorded in the reader rather than
   silently invented.
 
+## Unit policy
+
+A capacity is recorded as the schedule states it: the parser reads the
+value, the unit and the raw string, and **no value is ever converted**
+into another unit's magnitude. The unit table is `CAPACITY_UNITS` in
+`mech_schedule.py`, and a unit is only ever read as a whole token, so a
+substring inside a model string is never a unit.
+
+- **BTU family**: `BTU` and `BTU/h` are recognized whatever their case
+  (`btu`, `btu/h`) and normalize to the canonical spellings `BTU` and
+  `BTU/h`; `MBH`, `ton`, `tons` and `tr` normalize the same way. A
+  stated range (`633-703 kW`) keeps `value=None` with the raw string.
+- **Watt family** (#1290): a bare `W`/`w` right after the quantity is
+  the unit watt and is never silently dropped in favour of a token that
+  follows it (`Heat Pump, 9.3 W` -> value 9.3, unit `W`). The
+  spelled-out `Watt`/`Watts` normalize to the same canonical `W`, with
+  the value **unchanged in watts**: `Air Handling Unit, 4500 Watt` ->
+  value 4500, unit `W`, never 4.5 kW. `kW`/`KW` after the quantity
+  likewise keeps its own value and unit (`4.5 kW` -> value 4.5, unit
+  `kW`).
+- The spelled watt forms are written in mixed or lower case. An
+  ALL-CAPS token in a schedule cell is an equipment tag or a model
+  string, never a unit: `30RB-060...WATTS...` and `GRUNDFOS ... KWIK`
+  parse exactly as they did before (no capacity at all), and `KWIK` is
+  never read as `kW`, because only a whole token counts.
+
+The policy holds on every path the capacity parser serves: the row
+capacity (`parse_capacity`) and the per-slot values (`MechValue`), so a
+spelled watt fills the same slot a bare watt fills, with the same value.
+
 ## Classification rules
 
 The workbook's OmniClass category column is unreliable (`Duplex
