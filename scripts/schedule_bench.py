@@ -244,6 +244,22 @@ def run_schedule_bench(truth: dict, result) -> dict:
     families: Counter = Counter(
         truth_by_tag[t]["type_name"].split("-")[0].split()[0] for t in missed
     )
+
+    # category cross-tab (#1291): recall grouped by the workbook's own stated
+    # Type Category, so the recall gap is measured in the workbook's
+    # vocabulary instead of the extractor's family prefixes. The category is
+    # provenance read from the workbook, never an extractor decision.
+    matched_set = set(matched)
+    cat_counts: dict[str, dict] = {}
+    for tag, trow in truth_by_tag.items():
+        cat = (types.get(trow["type_name"], {}) or {}).get("category") or "(no stated category)"
+        entry = cat_counts.setdefault(cat, {"category": cat, "truth": 0, "matched": 0, "missed": 0})
+        entry["truth"] += 1
+        if tag in matched_set:
+            entry["matched"] += 1
+        else:
+            entry["missed"] += 1
+    category_cross_tab = sorted(cat_counts.values(), key=lambda e: (-e["missed"], e["category"]))
     return {
         "counts": {
             "truth_rows": len(truth_rows),
@@ -289,6 +305,7 @@ def run_schedule_bench(truth: dict, result) -> dict:
             "mismatch": zone_mismatch,
             "referenced_rooms_not_in_space_sheet": zone_bad_rooms,
         },
+        "category_cross_tab": category_cross_tab,
         "stats": dict(result.stats),
     }
 
@@ -400,6 +417,18 @@ def render(rows: list[BenchRow]) -> str:
             f"- zone linkage: {e['zone_linkage']['matched']} matched, "
             f"{e['zone_linkage']['mismatch']} mismatch",
         ]
+        if e.get("category_cross_tab"):
+            missed_cats = [c for c in e["category_cross_tab"] if c["missed"]]
+            fully = len(e["category_cross_tab"]) - len(missed_cats)
+            lines.append(
+                f"- category cross-tab: {fully} stated categories fully matched,"
+                f" {len(missed_cats)} with misses"
+            )
+            lines += [
+                f"  - {c['category']}: truth {c['truth']},"
+                f" matched {c['matched']}, missed {c['missed']}"
+                for c in missed_cats
+            ]
         if e.get("export_validity"):
             lines.append(f"- export validity: {e['export_validity']['status']}")
         lines.append("")
