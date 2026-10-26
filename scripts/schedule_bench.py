@@ -22,7 +22,7 @@ Metrics, per building:
   silently deflating the score. Grouped/flat/KR/EM/VF1 come from
   ``scripts/schedule_score`` over the stated fields (service area, capacity).
 - capacity error: over matched tags whose type description states capacity
-  tokens, the extractor's parsed capacity (value, unit) agrees with an
+  tokens, the extractor's parsed capacity (value, unit) agrees with the
   independent parse of the same stated string. Ranges state an interval and
   parse to value ``None`` on both sides.
 - airflow error: over matched tags with stated component requirements in an
@@ -117,6 +117,10 @@ def stated_values(text: str) -> list[dict]:
     out: list[dict] = []
     for m in _VALUE_RE.finditer(text or ""):
         unit = m.group(3).strip()
+        # #1290 Watt-family policy, mirrored from mech_schedule's stated-unit
+        # normalization (the truth reader never imports it): stated
+        # ``Watt``/``watts`` spellings normalize to ``W`` at read time.
+        unit = _WATT_FAMILY_SPELLINGS.get(unit.lower(), unit)
         if unit.lower() in _NOT_A_UNIT:
             continue
         value = None
@@ -289,6 +293,16 @@ def run_schedule_bench(truth: dict, result) -> dict:
     }
 
 
+# Stated Watt-family spellings -> canonical unit tokens (#1290). Magnitudes
+# are never converted here; _norm_pair folds kW into W at comparison time.
+_WATT_FAMILY_SPELLINGS = {
+    "watt": "W",
+    "watts": "W",
+    "kilowatt": "kW",
+    "kilowatts": "kW",
+}
+
+
 def _num(text: str):
     try:
         return float(str(text).replace(",", ""))
@@ -306,6 +320,10 @@ def _norm_pair(cap):
             value = float(value)
         except (TypeError, ValueError):
             return None
+    # #1290: compare the Watt family in watts, so a stated ``2.5 kW`` and a
+    # parsed ``2500 W`` agree. Everything else keeps its stated token.
+    if unit == "kw" and value is not None:
+        return (value * 1000.0, "w")
     return (value, unit)
 
 

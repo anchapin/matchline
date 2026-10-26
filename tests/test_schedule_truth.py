@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.schedule_bench import (  # noqa: E402
+    _norm_pair,
     run_schedule_bench,
     stated_values,
 )
@@ -256,9 +257,10 @@ def test_truth_freezes_then_loads_and_refuses_drift(tmp_path: Path) -> None:
 
 
 def test_stated_values_parse_independent_tokens() -> None:
-    # A stated capacity with a unit the extractor does not table yet.
+    # A stated Watt spelling normalizes to the canonical token at read
+    # time (#1290); the magnitude is never converted.
     assert stated_values("3500 Watt Capacity") == [
-        {"value": 3500.0, "unit": "Watt", "raw": "3500 Watt"}
+        {"value": 3500.0, "unit": "W", "raw": "3500 Watt"}
     ]
     # A stated range keeps value None on both sides.
     assert stated_values("633-703 kW") == [{"value": None, "unit": "kW", "raw": "633-703 kW"}]
@@ -320,3 +322,19 @@ def test_bench_json_roundtrip(tmp_path: Path) -> None:
     truth = build_truth(wb_path)
     truth["workbook_sha256"] = json.loads(json.dumps(truth["workbook_sha256"]))
     assert truth["counts"]["tagged"] == len(truth["rows"])
+
+
+def test_stated_values_normalize_watt_family() -> None:
+    # #1290: stated Watt spellings normalize to the canonical token at read
+    # time; magnitudes are never converted.
+    vals = stated_values("Coil 2500 Watt, 633-703 kW")
+    assert vals[0]["value"] == 2500.0
+    assert vals[0]["unit"] == "W"
+    assert vals[0]["raw"] == "2500 Watt"
+    assert vals[1]["unit"] == "kW"
+    assert vals[1]["value"] is None  # stated range
+
+
+def test_capacity_agreement_folds_kw_into_watts() -> None:
+    assert _norm_pair({"value": 2.5, "unit": "kW"}) == _norm_pair({"value": 2500, "unit": "W"})
+    assert _norm_pair({"value": 100, "unit": "BTU"}) != _norm_pair({"value": 100, "unit": "W"})
