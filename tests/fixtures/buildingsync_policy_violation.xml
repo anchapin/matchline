@@ -1,0 +1,188 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+  Sample-violation fixture for the matchline BuildingSync policy ruleset
+  (assets/schematron/matchline_policy-1.0.0.sch, issue #1293).
+
+  It is a writer export (tests/test_buildingsync_policy.py::_policy_model)
+  with three policy violations worked into it:
+
+    * ML-POL-001 - the served thermal zone lost every zone-load-impacting
+      input (its space floor area and its scheduled airflow), so the HVAC
+      system's sizing capacity has no zone load behind it;
+    * ML-POL-002 - the fan lost the LinkedSystemID that ties its airflow to
+      the HVAC system whose sizing it serves;
+    * ML-POL-003 - the fenestration element was renamed to a bare index, so
+      its thermal value no longer names its source construction (a
+      drawing-derived construction id or an ASHRAE 90.1-2019 Table 5.5
+      library id).
+
+  The document stays XSD-valid: it breaks policy, not structure.
+-->
+<auc:BuildingSync xmlns:auc="http://buildingsync.net/schemas/bedes-auc/2019" version="2.6.0">
+  <auc:Facilities>
+    <auc:Facility ID="FacilityType-1">
+      <auc:Sites>
+        <auc:Site ID="SiteType-1">
+          <auc:Buildings>
+            <auc:Building ID="BuildingType-1">
+              <auc:PremisesName>Policy Fixture Building</auc:PremisesName>
+              <auc:FloorAreas>
+                <auc:FloorArea>
+                  <auc:FloorAreaType>Gross</auc:FloorAreaType>
+                  <auc:FloorAreaValue>100.00</auc:FloorAreaValue>
+                </auc:FloorArea>
+              </auc:FloorAreas>
+              <auc:Sections>
+                <auc:Section ID="SectionType-1">
+                  <auc:SectionType>Whole building</auc:SectionType>
+                  <auc:FloorAreas>
+                    <auc:FloorArea>
+                      <auc:FloorAreaType>Gross</auc:FloorAreaType>
+                      <auc:FloorAreaValue>100.00</auc:FloorAreaValue>
+                    </auc:FloorArea>
+                  </auc:FloorAreas>
+                  <auc:ThermalZones>
+                    <auc:ThermalZone ID="ThermalZone-z-1">
+                      <auc:DeliveryIDs>
+                        <auc:DeliveryID IDref="DeliveryType-AL-1-zone-z-1" />
+                      </auc:DeliveryIDs>
+                      <auc:Spaces>
+                        <auc:Space ID="Space-L1-101">
+                          <auc:PremisesName>Office 101</auc:PremisesName>
+                        </auc:Space>
+                      </auc:Spaces>
+                    </auc:ThermalZone>
+                  </auc:ThermalZones>
+                </auc:Section>
+              </auc:Sections>
+            </auc:Building>
+          </auc:Buildings>
+        </auc:Site>
+      </auc:Sites>
+      <auc:Systems>
+        <auc:HVACSystems>
+          <auc:HVACSystem ID="HVACSystemType-AL-1">
+            <auc:HeatingAndCoolingSystems>
+              <auc:Deliveries>
+                <auc:Delivery ID="DeliveryType-AL-1-zone-z-1">
+                  <auc:DeliveryType>
+                    <auc:CentralAirDistribution>
+                      <auc:AirDeliveryType>Central fan</auc:AirDeliveryType>
+                    </auc:CentralAirDistribution>
+                  </auc:DeliveryType>
+                </auc:Delivery>
+              </auc:Deliveries>
+            </auc:HeatingAndCoolingSystems>
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:schedule_sources</auc:FieldName>
+                <auc:FieldValue>pdf_schedule_equipment</auc:FieldValue>
+              </auc:UserDefinedField>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:system_type</auc:FieldName>
+                <auc:FieldValue>VariableAirVolume</auc:FieldValue>
+              </auc:UserDefinedField>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:cooling_total_btuh</auc:FieldName>
+                <auc:FieldValue>24000.0000</auc:FieldValue>
+              </auc:UserDefinedField>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:cooling_sensible_btuh</auc:FieldName>
+                <auc:FieldValue>18000.0000</auc:FieldValue>
+              </auc:UserDefinedField>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:heating_btuh</auc:FieldName>
+                <auc:FieldValue>30000.0000</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:HVACSystem>
+        </auc:HVACSystems>
+        <auc:FanSystems>
+          <auc:FanSystem ID="FanSystemType-AL-1">
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:fan_airflow_lps</auc:FieldName>
+                <auc:FieldValue>1.5000</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:FanSystem>
+        </auc:FanSystems>
+        <auc:WallSystems>
+          <auc:WallSystem ID="WallSystemType-1">
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:wall_u_value_w_m2k</auc:FieldName>
+                <auc:FieldValue>0.3500</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:WallSystem>
+        </auc:WallSystems>
+        <auc:RoofSystems>
+          <auc:RoofSystem ID="RoofSystemType-1">
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:roof_u_value_w_m2k</auc:FieldName>
+                <auc:FieldValue>0.1800</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:RoofSystem>
+        </auc:RoofSystems>
+        <auc:FenestrationSystems>
+          <auc:FenestrationSystem ID="FenestrationSystemType-1">
+            <auc:FenestrationType>
+              <auc:Window />
+            </auc:FenestrationType>
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:u_value_w_m2k</auc:FieldName>
+                <auc:FieldValue>2.0000</auc:FieldValue>
+              </auc:UserDefinedField>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:shgc</auc:FieldName>
+                <auc:FieldValue>0.400</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:FenestrationSystem>
+        </auc:FenestrationSystems>
+        <auc:FoundationSystems>
+          <auc:FoundationSystem ID="FoundationSystemType-1">
+            <auc:UserDefinedFields>
+              <auc:UserDefinedField>
+                <auc:FieldName>matchline:slab_u_value_w_m2k</auc:FieldName>
+                <auc:FieldValue>0.3000</auc:FieldValue>
+              </auc:UserDefinedField>
+            </auc:UserDefinedFields>
+          </auc:FoundationSystem>
+        </auc:FoundationSystems>
+      </auc:Systems>
+      <auc:Reports>
+        <auc:Report ID="ReportType-1">
+          <auc:Scenarios>
+            <auc:Scenario ID="ScenarioType-1">
+              <auc:ScenarioName>As-is</auc:ScenarioName>
+            </auc:Scenario>
+          </auc:Scenarios>
+          <auc:LinkedPremisesOrSystem>
+            <auc:Building>
+              <auc:LinkedBuildingID IDref="BuildingType-1" />
+            </auc:Building>
+          </auc:LinkedPremisesOrSystem>
+          <auc:UserDefinedFields>
+            <auc:UserDefinedField>
+              <auc:FieldName>Audit Template Report Type</auc:FieldName>
+              <auc:FieldValue>ASHRAE Level 2 Base Template</auc:FieldValue>
+            </auc:UserDefinedField>
+          </auc:UserDefinedFields>
+        </auc:Report>
+      </auc:Reports>
+      <auc:Contacts>
+        <auc:Contact ID="ContactType-1">
+          <auc:ContactRoles>
+            <auc:ContactRole>Energy Auditor</auc:ContactRole>
+          </auc:ContactRoles>
+          <auc:ContactName>Not specified</auc:ContactName>
+        </auc:Contact>
+      </auc:Contacts>
+    </auc:Facility>
+  </auc:Facilities>
+</auc:BuildingSync>
