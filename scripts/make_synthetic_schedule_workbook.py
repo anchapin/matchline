@@ -451,9 +451,7 @@ def _canonical_zip(raw: bytes) -> bytes:
     return out.getvalue()
 
 
-_MODIFIED_RE = re.compile(
-    rb"(<dcterms:modified[^>]*>)[^<]*(</dcterms:modified>)"
-)
+_MODIFIED_RE = re.compile(rb"(<dcterms:modified[^>]*>)[^<]*(</dcterms:modified>)")
 
 
 def _fix_core_modified(data: bytes) -> bytes:
