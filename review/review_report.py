@@ -1528,6 +1528,22 @@ def render_html(model, doc: dict, sheets: Optional[List[dict]] = None) -> str:
     )
 
 
+def write_decisions(out_path: Path, doc: dict) -> Path:
+    """Write a decisions document in the report's format (#1294).
+
+    The file is the same document ``write_review`` writes as
+    ``decisions.json``: the schema, the model's SHA-256, the automatic
+    state of every review item and the decisions taken. ``matchline review
+    --apply`` replays it, so a batch of decisions written here round-trips
+    through the same path as a file exported from the HTML page.
+    """
+    p = Path(out_path)
+    if p.parent != Path(""):
+        p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    return p
+
+
 def write_review(out_dir: Path, model) -> Path:
     """Write ``out_dir/review`` (model.json, decisions.json, review.html)."""
     d = Path(out_dir) / "review"
@@ -1535,7 +1551,7 @@ def write_review(out_dir: Path, model) -> Path:
     text = model.to_json()
     (d / "model.json").write_text(text, encoding="utf-8")
     doc = template(model, sha256_text(text))
-    (d / "decisions.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    write_decisions(d / "decisions.json", doc)
     (d / "review.html").write_text(
         render_html(model, doc, sheet_overlays(out_dir, model)), encoding="utf-8"
     )
@@ -1556,5 +1572,5 @@ def summarize(summary: dict) -> str:
 __all__: List[str] = [
     "SCHEMA", "ACTIONS", "apply_decisions", "check", "decide", "final_states", "item_links",
     "render_html", "sheet_overlays",
-    "template", "worst_first", "write_review", "summarize",
+    "template", "worst_first", "write_decisions", "write_review", "summarize",
 ]  # fmt: skip

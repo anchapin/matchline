@@ -16,6 +16,20 @@ Usage:
     matchline review <model.json> --show-all             # list all items
     matchline review <model.json> --confirm <id>         # confirm item
     matchline review <model.json> --reject <id>          # reject item
+    matchline review <model.json> --confirm-kind <kind>  # confirm every open item of a kind
+    matchline review <model.json> --reject-kind <kind>   # reject every open item of a kind
+
+Batch triage (#1294)
+--------------------
+``--confirm-kind`` / ``--reject-kind`` (optionally narrowed with
+``--confirm-sheet`` / ``--reject-sheet``) decide a whole class of review
+items at once: every OPEN item matching the filter is confirmed or rejected
+through the same path the single-item ``--confirm`` / ``--reject`` flags use
+(same state, same revision log entry, same correction history). The
+decisions are recorded in a decisions file in the report's format
+(``matchline.review_decisions/1``), written beside the model as
+``review_decisions.json`` unless ``--decisions-out`` says otherwise, so the
+batch can be replayed with ``matchline review <model.json> --apply``.
 
 Triage flow
 -----------
@@ -367,6 +381,62 @@ def _reject_item(
     return _decide(model, item_id, "reject", corrections_path=corrections_path, emitter=emitter)
 
 
+def _batch_request(args) -> tuple[str, str | None, str | None] | None:
+    """The batch triage request in ``args``, or None when there is none.
+
+    Returns ``(action, kind, sheet)`` with ``action`` either ``"confirm"``
+    or ``"reject"``. Raises ValueError when both actions are asked for.
+    """
+    confirm_kind = getattr(args, "confirm_kind", None)
+    reject_kind = getattr(args, "reject_kind", None)
+    confirm_sheet = getattr(args, "confirm_sheet", None)
+    reject_sheet = getattr(args, "reject_sheet", None)
+    given = (confirm_kind, reject_kind, confirm_sheet, reject_sheet)
+    if not any(v is not None for v in given):
+        return None
+    if (confirm_kind is not None or confirm_sheet is not None) and (
+        reject_kind is not None or reject_sheet is not None
+    ):
+        raise ValueError(
+            "specify only one of --confirm-kind/--confirm-sheet or "
+            "--reject-kind/--reject-sheet, not both."
+        )
+    action = (
+        "confirm"
+        if (confirm_kind is not None or confirm_sheet is not None)
+        else "reject"
+    )
+    kind = confirm_kind if confirm_kind is not None else reject_kind
+    sheet = confirm_sheet if confirm_sheet is not None else reject_sheet
+    return action, kind, sheet
+
+
+def _batch_items(
+    model: BuildingModel,
+    kind: str | None = None,
+    sheet: str | None = None,
+) -> list[ReviewItem]:
+    """Every OPEN review item matching the batch filters, worst-first.
+
+    The same order the queue is listed in (open first, highest urgency,
+    lowest confidence), so a batch run reads like the list it came from.
+    """
+    import review.review_report as review_report
+
+    out: list[ReviewItem] = []
+    for item in review_report.worst_first(model.review_queue):
+        if item.status != "open":
+            continue
+        if kind and item.kind != kind:
+            continue
+        if sheet:
+            prov = item.provenance
+            if prov is None or prov.sheet_id != sheet:
+                continue
+        out.append(item)
+    return out
+
+
 def _write_review_telemetry(emitter, dest) -> None:
     """Write the consent-gated telemetry payload beside the run's outputs (#1126).
 
@@ -427,6 +497,13 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args.auto_triage:
         model.auto_triage = True
 
+    # --- Batch triage request (#1294), resolved once -----------------------
+    try:
+        batch = _batch_request(args)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
     # --- Correction history modes (#997) take no other action ---------------
     history_modes = [
         getattr(args, "undo", None) is not None,
@@ -442,6 +519,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         or getattr(args, "list", None)
         or getattr(args, "bulk_confirm", False)
         or getattr(args, "bulk_reject", False)
+        or batch is not None
     ):
         print(
             "Error: --undo, --revert-to-auto and --corrections take no other action.",
@@ -535,6 +613,75 @@ def main(args: argparse.Namespace | None = None) -> None:
         model_path.write_text(model.to_json(), encoding="utf-8")
         action = "confirmed" if is_confirm else "rejected"
         print(f"Bulk {action}: {len(matched)} item(s) matched the filters, {changed} changed.")
+        print(_summarize_validation(run_checks(model)))
+        _write_review_telemetry(emitter, model_path.parent)
+        return
+
+    # --- Batch triage by filter (#1294) ---
+    if batch is not None:
+        action, kind, sheet = batch
+        if args.confirm is not None or args.reject is not None:
+            print(
+                "Error: --confirm-kind/--reject-kind take no --confirm/--reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if getattr(args, "bulk_confirm", False) or getattr(args, "bulk_reject", False):
+            print(
+                "Error: --confirm-kind/--reject-kind take no --bulk-confirm/--bulk-reject.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not kind and not sheet:
+            print(
+                "Error: --confirm-kind/--reject-kind need a filter "
+                "(--confirm-kind/--reject-kind or --confirm-sheet/--reject-sheet).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        import review.review_report as review_report
+
+        matched = _batch_items(model, kind=kind, sheet=sheet)
+        decisions_path = pathlib.Path(
+            getattr(args, "decisions_out", None) or (model_path.parent / "review_decisions.json")
+        )
+        if not matched:
+            print("No open review items match the batch filters; nothing changed.")
+            print(f"No decisions written to {decisions_path}.")
+            return
+
+        # The decisions file records the queue as it was BEFORE this batch
+        # (automatic states, model hash) plus the decisions taken, exactly
+        # like the file the HTML review page exports.
+        doc = review_report.template(model, review_report.sha256_text(model.to_json()))
+
+        changed = 0
+        try:
+            for item in matched:
+                if action == "confirm":
+                    model, _msg = _confirm_item(
+                        model, item.id, corrections_path=model_path, emitter=emitter
+                    )
+                else:
+                    model, _msg = _reject_item(
+                        model, item.id, corrections_path=model_path, emitter=emitter
+                    )
+                changed += 1
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        model_path.write_text(model.to_json(), encoding="utf-8")
+        doc["decisions"] = [{"id": item.id, "action": action} for item in matched]
+        review_report.write_decisions(decisions_path, doc)
+
+        verb = "confirmed" if action == "confirm" else "rejected"
+        print(f"Batch {verb}: {len(matched)} item(s) matched the filters, {changed} changed.")
+        for item in matched:
+            print(f"  {item.id} {item.kind} {verb}")
+        print(f"Model saved: {model_path}")
+        print(f"Decisions written: {decisions_path}")
         print(_summarize_validation(run_checks(model)))
         _write_review_telemetry(emitter, model_path.parent)
         return
@@ -639,6 +786,16 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args.list:
         model = BuildingModel.from_json(pathlib.Path(args.model).read_text())
         items = [item for item in model.review_queue if args.show_all or item.status == "open"]
+        list_kind = getattr(args, "list_kind", None)
+        list_sheet = getattr(args, "list_sheet", None)
+        if list_kind:
+            items = [i for i in items if i.kind == list_kind]
+        if list_sheet:
+            items = [
+                i
+                for i in items
+                if i.provenance is not None and i.provenance.sheet_id == list_sheet
+            ]
         items.sort(key=lambda i: (i.provenance.sheet_id if i.provenance else "", i.kind))
         if not items:
             print("No pending review items.")
@@ -790,6 +947,42 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--level",
         metavar="LEVEL",
         help="Bulk filter: level id (floor) the item's target belongs to",
+    )
+    parser.add_argument(
+        "--confirm-kind",
+        metavar="KIND",
+        help="Batch: confirm every OPEN item of this kind and record the decisions (#1294)",
+    )
+    parser.add_argument(
+        "--reject-kind",
+        metavar="KIND",
+        help="Batch: reject every OPEN item of this kind and record the decisions (#1294)",
+    )
+    parser.add_argument(
+        "--confirm-sheet",
+        metavar="SHEET",
+        help="Batch: confirm every OPEN item from this sheet and record the decisions (#1294)",
+    )
+    parser.add_argument(
+        "--reject-sheet",
+        metavar="SHEET",
+        help="Batch: reject every OPEN item from this sheet and record the decisions (#1294)",
+    )
+    parser.add_argument(
+        "--decisions-out",
+        metavar="PATH",
+        help="With a batch confirm/reject: write the decisions file here "
+        "(default: review_decisions.json beside the model)",
+    )
+    parser.add_argument(
+        "--list-kind",
+        metavar="KIND",
+        help="With --list: only list items of this kind",
+    )
+    parser.add_argument(
+        "--list-sheet",
+        metavar="SHEET",
+        help="With --list: only list items from this sheet",
     )
     return parser
 
