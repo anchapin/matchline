@@ -600,8 +600,10 @@ def render(rows: list[BenchRow]) -> str:
             lines.append("")
             lines.append("### Confidence calibration (#1295)")
             lines.append("")
-            lines.append("| confidence | claim kind | claims | correct | measured correctness |"
-                         " abstained | unverifiable |")
+            lines.append(
+                "| confidence | claim kind | claims | correct | measured correctness |"
+                " abstained | unverifiable |"
+            )
             lines.append("|---|---|---|---|---|---|---|")
             for b in cal["buckets"]:
                 measured = b["measured_correctness"]

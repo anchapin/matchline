@@ -281,10 +281,7 @@ def calibration_table(claims: Iterable[Dict[str, Any]]) -> List[CalibrationBucke
             bucket.claims += 1
             if claim.get("correct"):
                 bucket.correct += 1
-    return [
-        buckets[k]
-        for k in sorted(buckets, key=lambda k: (-k[0], k[1]))
-    ]
+    return [buckets[k] for k in sorted(buckets, key=lambda k: (-k[0], k[1]))]
 
 
 def calibration_by_confidence(buckets: Iterable[CalibrationBucket]) -> List[Dict[str, Any]]:
@@ -297,8 +294,13 @@ def calibration_by_confidence(buckets: Iterable[CalibrationBucket]) -> List[Dict
     for b in buckets:
         row = merged.setdefault(
             b.confidence,
-            {"confidence": b.confidence, "claims": 0, "correct": 0, "abstained": 0,
-             "unverifiable": 0},
+            {
+                "confidence": b.confidence,
+                "claims": 0,
+                "correct": 0,
+                "abstained": 0,
+                "unverifiable": 0,
+            },
         )
         row["claims"] += b.claims
         row["correct"] += b.correct
