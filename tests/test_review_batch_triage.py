@@ -205,7 +205,7 @@ class TestBatchDecisionsRoundTrip:
 
     def test_decisions_file_matches_the_golden_format_byte_for_byte(self, tmp_path: Path):
         """An empty decisions document is byte-identical to the golden file."""
-        from review.review_report import template, sha256_text, write_decisions
+        from review.review_report import sha256_text, template, write_decisions
         from tests.make_goldens import _pinned_review_model
 
         model = _pinned_review_model()
