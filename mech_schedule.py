@@ -98,9 +98,24 @@ TEXT_RULES: List[Tuple[str, "re.Pattern[str]"]] = [
     ("heating_coil", re.compile(r"heat(?:ing)?\s*coil", re.I)),
     ("cooling_coil", re.compile(r"cool(?:ing)?\s*coil", re.I)),
     ("coil", re.compile(r"\bcoil\b", re.I)),
+    # Families the schedule-truth benchmark (#1291) shows the parser
+    # missed: an air separator and an expansion tank state a mechanical
+    # device but name no family the rules above cover.
+    ("air_separator", re.compile(r"air\s*separator", re.I)),
+    ("expansion_tank", re.compile(r"expansion\s*tank", re.I)),
     ("fan", re.compile(r"\bfan\b", re.I)),
     ("pump", re.compile(r"\bpump\b", re.I)),
     ("terminal", re.compile(r"diffuser|grille|grill|louver", re.I)),
+]
+
+# Category evidence, used only when the tag and the text name nothing.
+# The OmniClass category column is unreliable on its own (a "Duplex
+# Receptacle" sits under an HVAC category), so a category hit never
+# overrules tag or text evidence; it only keeps a row the text rules
+# would have dropped. The schedule-truth benchmark (#1291) shows a
+# steam plant tank ("Boilout") named only by its category.
+CATEGORY_RULES: List[Tuple[str, "re.Pattern[str]"]] = [
+    ("tank", re.compile(r"\btanks?,?\s+reservoirs\b", re.I)),
 ]
 
 # System types that become first-class MechSystem entities. Air terminals
@@ -695,11 +710,25 @@ def _text_type(*texts: str) -> Optional[str]:
 _FAN_FAMILY = {"fan", "exhaust_fan"}
 
 
+def _category_type(category: str) -> Optional[str]:
+    """The system type a row's OmniClass category names, if any.
+
+    Category evidence is the weakest signal (the column is unreliable),
+    so it is only consulted when the tag and the text name nothing.
+    """
+
+    for system_type, pattern in CATEGORY_RULES:
+        if pattern.search(category or ""):
+            return system_type
+    return None
+
+
 def classify(
     tag: str,
     type_name: str,
     type_description: str,
     component_description: str = "",
+    category: str = "",
 ) -> Tuple[Optional[str], str]:
     """Classify one row's system type from tag and text evidence.
 
@@ -708,7 +737,8 @@ def classify(
     confidence; a single signal is medium; conflicting evidence is low
     (the caller routes those rows to the review queue); no evidence at
     all is ``"none"`` (the caller excludes those rows from the
-    schedule).
+    schedule). The category column is a last resort only (#1291): it
+    names a family when neither the tag nor the text does.
     """
 
     tag_prefix = _tag_prefix(tag)
@@ -724,7 +754,69 @@ def classify(
         return tag_type, "medium"
     if text_type:
         return text_type, "medium"
+    category_type = _category_type(category)
+    if category_type:
+        return category_type, "medium"
     return None, "none"
+
+
+def _header_repeat(row: tuple, header: List[str]) -> bool:
+    """True when a sheet row repeats the sheet's header line.
+
+    A repeated header is a header continuation, not data: it is dropped
+    instead of being read as a type or a component.
+    """
+
+    if not row or not header:
+        return False
+    first = "" if row[0] is None else str(row[0]).strip()
+    head_first = "" if header[0] is None else str(header[0]).strip()
+    if not first or first.casefold() != head_first.casefold():
+        return False
+    hits = 0
+    for value, head in zip(row, header):
+        if value is None or head is None:
+            continue
+        if str(value).strip().casefold() == str(head).strip().casefold():
+            hits += 1
+    return hits >= 2
+
+
+def _merge_continuation_rows(
+    rows: List[tuple], header: List[str]
+) -> List[Tuple[int, tuple, List[int]]]:
+    """Sheet rows merged into logical records.
+
+    A row whose first cell is empty continues the record above it: it
+    fills the cells that record left empty, so a tag stated on the first
+    row and a capacity stated on the continuation row are read as one
+    record (the multi-row layout the schedule-truth benchmark showed
+    missed). A row that repeats the sheet header is a header
+    continuation, never data, and is dropped.
+
+    Returns ``(row_number, merged_row, continuation_row_numbers)`` per
+    logical record; the row number is the first row of the record, so
+    provenance still points at the stated row.
+    """
+
+    out: List[Tuple[int, tuple, List[int]]] = []
+    for number, row in enumerate(rows, start=2):
+        row = tuple(row)
+        if _header_repeat(row, header):
+            continue
+        first = "" if not row or row[0] is None else str(row[0]).strip()
+        if not first and out:
+            number0, merged, conts = out[-1]
+            filled = list(merged)
+            for i, value in enumerate(row):
+                if i >= len(filled):
+                    break
+                if filled[i] in (None, "") and value not in (None, ""):
+                    filled[i] = value
+            out[-1] = (number0, tuple(filled), conts + [number])
+            continue
+        out.append((number, row, []))
+    return out
 
 
 def parse_capacity(text: str) -> Optional[Dict[str, Any]]:
@@ -763,6 +855,13 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
     self-contained; ``link_to_model`` later binds them to a model.
     Stated per-component requirements on the ``Attribute`` sheet fill
     slots too (airflow units in this pass; see ``_attribute_candidates``).
+
+    Multi-row layouts are read as one record (#1291): a sheet row that
+    continues the record above it (its first cell empty) fills the
+    cells that record left empty, so a tag stated on one row and a
+    capacity stated on its continuation row are read together; a row
+    that repeats the sheet header is a header continuation and is
+    dropped, never read as data.
     """
 
     try:
@@ -815,11 +914,14 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
     excluded_samples: List[str] = []
     systems_by_tag: Dict[str, MechSystem] = {}
 
+    type_records = _merge_continuation_rows(list(types[1:]), theader)
+    comp_records = _merge_continuation_rows(list(comps[1:]), cheader)
+
     type_rows: Dict[str, Tuple[int, tuple]] = {}
-    for ti, trow in enumerate(types[1:], start=2):
+    for ti, trow, _cont in type_records:
         type_rows[str(trow[tcol["Name"]])] = (ti, trow)
 
-    for ri, crow in enumerate(comps[1:], start=2):
+    for ri, crow, cont_rows in comp_records:
         name = str(crow[ccol["Name"]] or "")
         type_name = str(crow[ccol["TypeName"]] or "")
         entry = type_rows.get(type_name)
@@ -836,7 +938,7 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
         created_on = str(crow[ccol["CreatedOn"]] or "")
 
         tag = parse_tag(name)
-        system_type, confidence = classify(tag, type_name, type_description, description)
+        system_type, confidence = classify(tag, type_name, type_description, description, category)
         if system_type is None and confidence == "none":
             # No positive evidence anywhere (no known tag prefix, no
             # type/description text hit): not schedule material.
@@ -852,7 +954,17 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
             "ext_object": ext_object,
             "created_on": created_on,
         }
+        if cont_rows:
+            provenance["continuation_rows"] = list(cont_rows)
         capacity = parse_capacity(type_description)
+        # Stated requirements on the Attribute sheet are keyed by the
+        # component's stated row name: some workbooks key them by the
+        # equipment tag instead (#1291), so both are read.
+        attr_rows = list(attr_reqs.get(name, []))
+        if tag and tag != name:
+            for req in attr_reqs.get(tag, []):
+                if req not in attr_rows:
+                    attr_rows.append(req)
         values, value_reviews = _row_values(
             tag or name,
             system_type,
@@ -860,7 +972,7 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
             description,
             f"{tcol_letter}{type_row}" if type_row is not None else "",
             f"{ccol_letter}{ri}",
-            attribute_candidates=_attribute_candidates(attr_reqs.get(name, []), system_type),
+            attribute_candidates=_attribute_candidates(attr_rows, system_type),
         )
         result.review_items.extend(value_reviews)
         row = MechScheduleRow(
@@ -925,6 +1037,7 @@ def parse_cobie_workbook(path: "str | Path") -> MechScheduleResult:
         "review_items": len(result.review_items),
         "excluded": excluded,
         "excluded_samples": excluded_samples,
+        "continuation_rows": sum(len(cont) for _n, _r, cont in comp_records),
         "by_type": dict(by_type),
         "by_confidence": dict(by_confidence),
         "values": sum(len(r.values) for r in result.rows),
