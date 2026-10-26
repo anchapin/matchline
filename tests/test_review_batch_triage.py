@@ -157,9 +157,7 @@ class TestBatchReject:
 
         doc = json.loads((model_path.parent / "review_decisions.json").read_text())
         assert doc["schema"] == "matchline.review_decisions/1"
-        assert [(d["id"], d["action"]) for d in doc["decisions"]] == [
-            ("R3", "reject")
-        ]
+        assert [(d["id"], d["action"]) for d in doc["decisions"]] == [("R3", "reject")]
 
 
 class TestBatchNoMatch:

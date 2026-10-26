@@ -401,11 +401,7 @@ def _batch_request(args) -> tuple[str, str | None, str | None] | None:
             "specify only one of --confirm-kind/--confirm-sheet or "
             "--reject-kind/--reject-sheet, not both."
         )
-    action = (
-        "confirm"
-        if (confirm_kind is not None or confirm_sheet is not None)
-        else "reject"
-    )
+    action = "confirm" if (confirm_kind is not None or confirm_sheet is not None) else "reject"
     kind = confirm_kind if confirm_kind is not None else reject_kind
     sheet = confirm_sheet if confirm_sheet is not None else reject_sheet
     return action, kind, sheet
@@ -792,9 +788,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             items = [i for i in items if i.kind == list_kind]
         if list_sheet:
             items = [
-                i
-                for i in items
-                if i.provenance is not None and i.provenance.sheet_id == list_sheet
+                i for i in items if i.provenance is not None and i.provenance.sheet_id == list_sheet
             ]
         items.sort(key=lambda i: (i.provenance.sheet_id if i.provenance else "", i.kind))
         if not items:
