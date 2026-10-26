@@ -497,6 +497,20 @@ truth file refuses the run until re-frozen). Run:
 [--building bsi-clinic] [--export-validity]`; the measured run is recorded
 in [docs/1.0_claims.md](docs/1.0_claims.md#mechanical-schedule-extraction-1240).
 
+**Second schedule-truth dataset (#1296).** `synth-office` joins the bench as
+the second schedule-truth dataset so the #1240 numbers are not read off the
+clinic alone. It is a synthetic small-office COBie workbook — not a real
+building — generated deterministically (fixed seed, no wall-clock) by
+`scripts/make_synthetic_schedule_workbook.py` into
+`~/workspace/datasets/matchline-bench/synth-office/synth-office.xlsx`
+(datasets are never committed; the generator is the committed artefact).
+Truth is frozen next to it by the same `scripts/schedule_truth.py` path as
+the clinic's. The scoreboard now opens with a per-dataset table (one row
+per dataset) before the per-dataset sections, and only workbook-carrying
+buildings are scored as schedule datasets. First measured run on the
+generating machine: 18 truth rows, recall 0.889, precision 1.000, flat F1
+0.925, capacity agreement 15/16, airflow agreement 20/20.
+
 **Independent truth (#1165):** the 2026-10-15 area errors (0.0% everywhere)
 compared `import_ifc` with itself, and wall length error was hard-coded to
 0.0. The harness now scores against `truth.json`, read straight from each IFC
