@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -172,7 +173,9 @@ def build_schedule_table(
             headers = table_data.get("headers", [])
             raw_rows = table_data.get("rows", [])
 
+            row_offset = len(rows)
             for ri, raw_row in enumerate(raw_rows):
+                row_index = row_offset + ri
                 cells = []
                 for ci, cell_value in enumerate(raw_row):
                     prov = _cell_provenance(
@@ -181,7 +184,7 @@ def build_schedule_table(
                     cells.append(
                         ScheduleCell(
                             value=str(cell_value),
-                            row=ri,
+                            row=row_index,
                             col=ci,
                             provenance=prov,
                         )
@@ -189,13 +192,14 @@ def build_schedule_table(
                 row_prov = _cell_provenance(
                     sheet_id, revision, "dwg_table_entity", entity.provenance.confidence
                 )
-                rows.append(ScheduleRow(cells=cells, row_index=ri, provenance=row_prov))
+                rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
 
     for block in blocks:
         if "SCHEDULE" in block.block_name.upper() or block.attribute_tags:
             if not headers and block.attribute_tags:
                 headers = block.attribute_tags
 
+            row_index = len(rows)
             cells = []
             for ci, val in enumerate(block.attribute_values):
                 prov = _cell_provenance(
@@ -204,7 +208,7 @@ def build_schedule_table(
                 cells.append(
                     ScheduleCell(
                         value=val,
-                        row=0,
+                        row=row_index,
                         col=ci,
                         provenance=prov,
                     )
@@ -212,7 +216,7 @@ def build_schedule_table(
             row_prov = _cell_provenance(
                 sheet_id, revision, "dwg_block_schedule", block.provenance.confidence
             )
-            rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
+            rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
 
     for ole in ole_schedules:
         if ole is None:
@@ -222,7 +226,9 @@ def build_schedule_table(
             headers = table_data.get("headers", headers)
             raw_rows = table_data.get("rows", [])
 
+            row_offset = len(rows)
             for ri, raw_row in enumerate(raw_rows):
+                row_index = row_offset + ri
                 cells = []
                 for ci, cell_value in enumerate(raw_row):
                     prov = _cell_provenance(
@@ -231,7 +237,7 @@ def build_schedule_table(
                     cells.append(
                         ScheduleCell(
                             value=str(cell_value),
-                            row=ri,
+                            row=row_index,
                             col=ci,
                             provenance=prov,
                         )
@@ -239,7 +245,7 @@ def build_schedule_table(
                 row_prov = _cell_provenance(
                     sheet_id, revision, "ole_spreadsheet", ole.provenance.confidence
                 )
-                rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
+                rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
 
     table_name = ""
     for entity in entities:
@@ -266,6 +272,74 @@ def build_schedule_table(
     )
 
 
+_GENERIC_NAME_TOKENS = {"SCHEDULE", "TABLE", "LEGEND", "TAG", "BLOCK"}
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Split a schedule/table name into comparable uppercase tokens."""
+    parts = re.split(r"[^A-Za-z0-9]+", name or "")
+    return {p.upper() for p in parts if p}
+
+
+def _distinctive_tokens(name: str) -> set[str]:
+    """Tokens of a name that actually identify the schedule (not generic words)."""
+    return _name_tokens(name) - _GENERIC_NAME_TOKENS
+
+
+def _assign_source(
+    table_entities: list[TableEntity],
+    name: str,
+    handles: tuple[str, ...] = (),
+    tags: list[str] | None = None,
+) -> int:
+    """Return the index of the TABLE entity a secondary source belongs to.
+
+    Matching order: explicit handle (owner) reference, then distinctive name
+    token overlap, then attribute-tag overlap with the table headers.
+    Returns -1 when no table matches.
+    """
+    if not table_entities:
+        return -1
+
+    for handle in handles:
+        if not handle:
+            continue
+        for idx, entity in enumerate(table_entities):
+            if entity.handle == handle or entity.owner_handle == handle:
+                return idx
+
+    tokens = _distinctive_tokens(name)
+    if tokens:
+        best_idx = -1
+        best_score = 0
+        for idx, entity in enumerate(table_entities):
+            table_name = str(entity.data.get("name", ""))
+            overlap = tokens & _distinctive_tokens(table_name)
+            if len(overlap) > best_score:
+                best_score = len(overlap)
+                best_idx = idx
+        if best_idx >= 0:
+            return best_idx
+
+    if tags:
+        tag_set = {t.strip().lower() for t in tags if t.strip()}
+        if tag_set:
+            best_idx = -1
+            best_score = 0
+            for idx, entity in enumerate(table_entities):
+                headers = {
+                    str(h).strip().lower() for h in entity.data.get("headers", []) if str(h).strip()
+                }
+                score = len(tag_set & headers)
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+            if best_idx >= 0:
+                return best_idx
+
+    return -1
+
+
 def parse_schedules(
     drawing: dict[str, Any],
     sheet_id: str,
@@ -287,9 +361,63 @@ def parse_schedules(
     tables: list[ScheduleTable] = []
 
     table_entities = [e for e in entities if e.entity_type == "TABLE"]
-    if table_entities or blocks or ole_schedules:
-        table = build_schedule_table(table_entities, blocks, ole_schedules, sheet_id, revision)
-        tables.append(table)
+
+    if not table_entities:
+        # No TABLE entity on the sheet: keep the legacy single combined table
+        # built from blocks and OLE schedules only.
+        if blocks or ole_schedules:
+            table = build_schedule_table([], blocks, ole_schedules, sheet_id, revision)
+            tables.append(table)
+    else:
+        # One ScheduleTable per TABLE entity.  Blocks / OLE schedules that
+        # belong to a table (its attribute blocks) are combined with that
+        # table; unmatched secondary sources are kept with the first table so
+        # no data is dropped.
+        block_groups: list[list[BlockSchedule]] = [[] for _ in table_entities]
+        ole_groups: list[list[OleSchedule | None]] = [[] for _ in table_entities]
+
+        for block in blocks:
+            idx = _assign_source(
+                table_entities,
+                block.block_name,
+                handles=(block.handle,),
+                tags=block.attribute_tags,
+            )
+            if idx < 0:
+                idx = 0
+            block_groups[idx].append(block)
+
+        for ole in ole_schedules:
+            if ole is None:
+                continue
+            ole_name = ""
+            if isinstance(ole.data, dict):
+                ole_name = str(ole.data.get("name", ""))
+            idx = _assign_source(
+                table_entities,
+                ole_name,
+                handles=(ole.source_entity or "",),
+            )
+            if idx < 0:
+                idx = 0
+            ole_groups[idx].append(ole)
+
+        for idx, entity in enumerate(table_entities):
+            table = build_schedule_table(
+                [entity], block_groups[idx], ole_groups[idx], sheet_id, revision
+            )
+            entity_headers = entity.data.get("headers") or []
+            ole_has_headers = any(
+                o is not None
+                and isinstance(o.data, dict)
+                and (o.data.get("headers") or [])
+                for o in ole_groups[idx]
+            )
+            if len(table_entities) > 1 and entity_headers and not ole_has_headers:
+                # Each table keeps its own headers; never inherit another
+                # table's header set.
+                table.headers = list(entity_headers)
+            tables.append(table)
 
     for entity in entities:
         if entity.entity_type != "TABLE":

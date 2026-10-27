@@ -264,3 +264,186 @@ def test_provenance_attached_to_all_facts():
             assert cell.provenance.revision == "R1"
             assert cell.provenance.method == "dwg_table_entity"
             assert 0.0 <= cell.provenance.confidence <= 1.0
+
+
+def _two_table_drawing():
+    return {
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "WINDOW SCHEDULE",
+                    "headers": ["Mark", "Width"],
+                    "rows": [["W1", "1200"], ["W2", "900"]],
+                },
+            },
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL002",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "DOOR SCHEDULE",
+                    "headers": ["Tag", "Type"],
+                    "rows": [["D1", "Single"], ["D2", "Double"]],
+                },
+            },
+        ],
+        "block_refs": [],
+        "block_defs": {},
+        "ole_entities": [],
+    }
+
+
+def test_parse_schedules_splits_per_table_entity():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    assert len(tables) == 2
+
+    window, door = tables
+    assert window.name == "WINDOW SCHEDULE"
+    assert window.headers == ["Mark", "Width"]
+    assert door.name == "DOOR SCHEDULE"
+    assert door.headers == ["Tag", "Type"]
+
+    assert [r.cells[0].value for r in window.rows] == ["W1", "W2"]
+    assert [r.cells[0].value for r in door.rows] == ["D1", "D2"]
+
+
+def test_parse_schedules_tables_do_not_share_rows():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    window, door = tables
+    window_values = {c.value for r in window.rows for c in r.cells}
+    door_values = {c.value for r in door.rows for c in r.cells}
+
+    assert not window_values & door_values
+
+
+def test_parse_schedules_cell_coords_unique_and_match_row_index():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    for table in tables:
+        coords = set()
+        for row in table.rows:
+            assert row.row_index == table.rows.index(row)
+            for cell in row.cells:
+                assert cell.row == row.row_index
+                assert (cell.row, cell.col) not in coords
+                coords.add((cell.row, cell.col))
+
+
+def test_parse_schedules_block_rows_keep_consistent_coords():
+    drawing = {
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "WINDOW SCHEDULE",
+                    "headers": ["Mark", "Width"],
+                    "rows": [["W1", "1200"]],
+                },
+            }
+        ],
+        "block_refs": [
+            {
+                "handle": "BLK001",
+                "name": "WINDOW_SCHEDULE",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "attributes": [{"tag": "Mark", "value": "W2"}],
+            }
+        ],
+        "block_defs": {},
+        "ole_entities": [],
+    }
+
+    tables = parse_schedules(drawing, "sheet_003", "rev3")
+
+    assert len(tables) == 1
+    table = tables[0]
+    assert len(table.rows) == 2
+
+    coords = set()
+    for row in table.rows:
+        for cell in row.cells:
+            assert cell.row == row.row_index
+            assert (cell.row, cell.col) not in coords
+            coords.add((cell.row, cell.col))
+
+    block_row = table.rows[-1]
+    assert block_row.cells[0].value == "W2"
+    assert block_row.cells[0].row == block_row.row_index
+
+
+def test_parse_schedules_single_table_keeps_combined_sources():
+    drawing = {
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "ROOM SCHEDULE",
+                    "headers": ["Mark", "Area"],
+                    "rows": [["101", "25"]],
+                },
+            }
+        ],
+        "block_refs": [
+            {
+                "handle": "BLK001",
+                "name": "ROOM_SCHEDULE",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "attributes": [{"tag": "Mark", "value": "102"}],
+            }
+        ],
+        "block_defs": {},
+        "ole_entities": [
+            {
+                "type": "Excel",
+                "data": {"headers": ["Mark", "Area"], "rows": [["103", "30"]]},
+                "source_entity": "TBL001",
+            }
+        ],
+    }
+
+    tables = parse_schedules(drawing, "sheet_004", "rev4")
+
+    assert len(tables) == 1
+    table = tables[0]
+    assert table.name == "ROOM SCHEDULE"
+    assert table.headers == ["Mark", "Area"]
+    assert [r.cells[0].value for r in table.rows] == ["101", "102", "103"]
+
+
+def test_build_schedule_table_block_cell_row_matches_row_index():
+    block_ref = {
+        "handle": "SCH001",
+        "name": "ROOM_SCHEDULE",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "attributes": [
+            {"tag": "Room", "value": "101"},
+            {"tag": "Area", "value": "25"},
+        ],
+    }
+    block = parse_block_schedule(block_ref, {"name": "ROOM_SCHEDULE"})
+
+    table = build_schedule_table([], [block], [], "sheet_A101", "2")
+
+    assert len(table.rows) == 1
+    row = table.rows[0]
+    for cell in row.cells:
+        assert cell.row == row.row_index
