@@ -97,6 +97,11 @@ def build_reference_model(levels: int = REF_LEVELS, grid: tuple[int, int] = REF_
                     level_id=lid,
                     polygon_m=poly,
                     area_m2=(x1 - x0) * (y1 - y0),
+                    # a healthy model has numbered rooms; the #1307
+                    # area-conservation check reads a digit-bearing id with
+                    # no number as a lost room number, which would flag the
+                    # whole synthetic reference and fail the export gate
+                    number=f"{li + 1}{ix:02d}{iy:02d}",
                 )
                 space.openings.append(
                     SpaceOpening(
