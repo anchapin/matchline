@@ -13,6 +13,7 @@ from mech_schedule import (
     MechScheduleResult,
     MechScheduleRow,
     MechValue,
+    _map_value_slot,
     _row_values,
     link_to_model,
     parse_capacity,
@@ -945,3 +946,30 @@ def test_requirements_keyed_by_tag_fill_the_airflow_slot(tmp_path):
     slots = {v.field: v for v in ahu.values}
     assert slots["airflow"].value == 12.5
     assert slots["airflow"].unit == "L/s"
+
+
+# ---------------------------------------------------------------------------
+# #1290: Watt-family stated tokens normalize to canonical unit tokens
+# ---------------------------------------------------------------------------
+
+
+def test_watt_family_stated_tokens_normalize_to_canonical():
+    cap = parse_capacity("2500 Watt")
+    assert cap["value"] == 2500.0
+    assert cap["unit"] == "W"
+    assert cap["raw"] == "2500 Watt"
+
+
+def test_watt_family_kw_magnitude_is_never_converted():
+    cap = parse_capacity("2.5 kW")
+    assert cap["value"] == 2.5
+    assert cap["unit"] == "kW"
+    assert cap["raw"] == "2.5 kW"
+
+
+def test_watt_family_power_slot_accepts_stated_watt_and_stays_ambiguous_on_thermal():
+    slot, unit, conf, reason = _map_value_slot("fan", "watt", "Watt", None)
+    assert (slot, unit, conf, reason) == ("power", "W", "medium", None)
+    slot, unit, conf, reason = _map_value_slot("chiller", "watt", "Watt", None)
+    assert slot is None and unit is None and conf is None
+    assert "ambiguous between power" in reason
