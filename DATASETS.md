@@ -495,7 +495,7 @@ schema `matchline.schedule_truth/1`; workbook sha256 pinned, and a drifted
 truth file refuses the run until re-frozen). Run:
 `python scripts/schedule_bench.py --config scripts/benchmarks.json
 [--building bsi-clinic] [--export-validity]`; the measured run is recorded
-in [docs/1.0_claims.md](docs/1.0_claims.md#mechanical-schedule-extraction-1240).
+in [docs/1.0_claims.md](docs/1.0_claims.md#mechanical-schedule-extraction-1240). The report also carries a category cross-tab (#1291): recall grouped by the workbook's own stated Type Category, so the recall gap is measured in the workbook's vocabulary rather than the extractor's family prefixes.
 
 **Second schedule-truth dataset (#1296).** `synth-office` joins the bench as
 the second schedule-truth dataset so the #1240 numbers are not read off the
