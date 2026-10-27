@@ -125,9 +125,14 @@ SYSTEM_CLASSES = {
 # HVAC capacity units accepted by the capacity parser. Anything else
 # (dimensions like "600 x 600" or "200 mm") is not a capacity and is
 # skipped. Units are recorded as stated, never converted.
+# The Watt family (#1290): stated ``Watt``/``watts`` spellings normalize to
+# the canonical token ``W`` at ingestion, raw string kept. Magnitudes are
+# never converted: a stated ``kW`` keeps its value and its ``kW`` token.
 CAPACITY_UNITS = {
     "kw": "kW",
     "w": "W",
+    "watt": "W",
+    "watts": "W",
     "j": "J",
     "kj": "kJ",
     "mj": "MJ",
@@ -177,7 +182,8 @@ ZONE_LOAD_SLOTS = frozenset({"airflow", "airflow_min", "airflow_max", "outside_a
 # Units that name their slot unambiguously, whatever the equipment family.
 _AIRFLOW_UNITS = {"cfm": "CFM", "l/s": "L/s"}
 _WATER_FLOW_UNITS = {"gpm": "GPM"}
-_POWER_UNITS = {"kw": "kW", "w": "W"}
+# Watt-family spellings normalize to the canonical token, #1290.
+_POWER_UNITS = {"kw": "kW", "w": "W", "watt": "W", "watts": "W"}
 _HEAD_UNITS = {"ft": "ft", "m": "m", "kpa": "kPa", "psi": "psi"}
 
 # Bare thermal units (no cooling/heating qualifier) map through family
