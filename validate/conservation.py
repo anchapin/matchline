@@ -155,8 +155,7 @@ def _check_area_conservation(ctx: _Ctx) -> CheckResult:
         lid, lost, total, fp, err = unassigned_levels[0]
         lost_area = sum(sp.area_m2 or 0.0 for sp in lost)
         names = ", ".join(
-            f"{sp.id} ({sp.area_m2 or 0.0:.2f} m^2)"
-            for sp in sorted(lost, key=lambda s: s.id)
+            f"{sp.id} ({sp.area_m2 or 0.0:.2f} m^2)" for sp in sorted(lost, key=lambda s: s.id)
         )
         return CheckResult(
             "area_conservation",
