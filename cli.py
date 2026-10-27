@@ -84,6 +84,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             "simplify_tolerance",
             "wall_height",
             "review_confidence",
+            "roof_simplify",
             "datasets",
             "telemetry_consent",
             "telemetry_local_only",
@@ -723,6 +724,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["elev_grid", "elev_nogrid"],
     )
     p.add_argument("--simplify-tol", type=float, default=0.02)
+    p.add_argument(
+        "--no-roof-simplify",
+        action="store_true",
+        help="do not simplify the roof planes (#1275); on by default",
+    )
     p.add_argument(
         "--mode",
         default="full",
