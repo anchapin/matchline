@@ -206,3 +206,109 @@ def score_schedule_rows(
         extra_tags=sorted(pred_tags - truth_tags),
         duplicate_tags=dupes,
     )
+
+
+# ---------------------------------------------------------------------------
+# Confidence calibration (#1295)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CalibrationBucket:
+    """One (confidence, claim kind) cell of the calibration table.
+
+    Attributes:
+        confidence: The confidence number the model records for the claims
+            in this bucket (0..1).
+        kind: What the claims assert (e.g. ``"schedule_row_service_area"``).
+        claims: How many claims the bucket holds.
+        correct: How many of them the truth set confirms.
+        abstained: How many facts the truth states that the extractor
+            deliberately did not assert (a nulled value, an unread unit).
+            An abstention is neither right nor wrong: nothing was claimed.
+        unverifiable: Claims the truth set cannot score (e.g. the truth
+            states a range, so a single number cannot be compared).
+    """
+
+    confidence: float
+    kind: str
+    claims: int = 0
+    correct: int = 0
+    abstained: int = 0
+    unverifiable: int = 0
+
+    @property
+    def measured_correctness(self) -> float | None:
+        """Measured correctness of the bucket, or ``None`` with no claims."""
+        return self.correct / self.claims if self.claims else None
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "confidence": self.confidence,
+            "kind": self.kind,
+            "claims": self.claims,
+            "correct": self.correct,
+            "abstained": self.abstained,
+            "unverifiable": self.unverifiable,
+            "measured_correctness": self.measured_correctness,
+        }
+
+
+def calibration_table(claims: Iterable[Dict[str, Any]]) -> List[CalibrationBucket]:
+    """Bucket calibration claims by confidence and claim kind.
+
+    Each claim is a dict with ``confidence`` (float), ``kind`` (str) and
+    one of:
+
+    * ``correct: True`` / ``correct: False`` — a scored claim.
+    * ``abstained: True`` — the truth states a fact and the extractor
+      asserted nothing (a nulled value, an unread unit). Counted apart.
+    * ``unverifiable: True`` — the truth cannot score the claim (e.g. it
+      states a range where the extractor asserts a number). Counted apart.
+
+    Buckets come back sorted by descending confidence, then by kind, so
+    the table reads the same on every run.
+    """
+    buckets: Dict[Tuple[float, str], CalibrationBucket] = {}
+    for claim in claims:
+        key = (float(claim["confidence"]), str(claim["kind"]))
+        bucket = buckets.setdefault(key, CalibrationBucket(confidence=key[0], kind=key[1]))
+        if claim.get("abstained"):
+            bucket.abstained += 1
+        elif claim.get("unverifiable"):
+            bucket.unverifiable += 1
+        else:
+            bucket.claims += 1
+            if claim.get("correct"):
+                bucket.correct += 1
+    return [buckets[k] for k in sorted(buckets, key=lambda k: (-k[0], k[1]))]
+
+
+def calibration_by_confidence(buckets: Iterable[CalibrationBucket]) -> List[Dict[str, Any]]:
+    """Aggregate calibration buckets by confidence, kinds merged.
+
+    One row per confidence value: how many claims carry it, how many the
+    truth set confirms, and the measured correctness over those claims.
+    """
+    merged: Dict[float, Dict[str, Any]] = {}
+    for b in buckets:
+        row = merged.setdefault(
+            b.confidence,
+            {
+                "confidence": b.confidence,
+                "claims": 0,
+                "correct": 0,
+                "abstained": 0,
+                "unverifiable": 0,
+            },
+        )
+        row["claims"] += b.claims
+        row["correct"] += b.correct
+        row["abstained"] += b.abstained
+        row["unverifiable"] += b.unverifiable
+    out = []
+    for conf in sorted(merged, reverse=True):
+        row = merged[conf]
+        row["measured_correctness"] = row["correct"] / row["claims"] if row["claims"] else None
+        out.append(row)
+    return out
