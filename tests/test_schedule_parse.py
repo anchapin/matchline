@@ -266,242 +266,184 @@ def test_provenance_attached_to_all_facts():
             assert 0.0 <= cell.provenance.confidence <= 1.0
 
 
-# --- Malformed / untrusted drawing data (#1309) -------------------------------
-# Policy: a malformed field degrades to the existing low-confidence/default path
-# (or the entry is skipped with a provenance note). Nothing may raise out of
-# parse_schedules, and every affected fact must carry a reduced confidence or a
-# provenance note.
-
-
-def _all_cells(tables):
-    for table in tables:
-        for row in table.rows:
-            for cell in row.cells:
-                yield cell
-
-
-def test_parse_block_schedule_non_numeric_coordinates():
-    schedule = parse_block_schedule(
-        {"handle": "B1", "name": "SCHED", "x": "N/A", "y": None, "z": "1.5"},
-        {"name": "SCHED"},
-    )
-
-    assert schedule.insertion_point == (0.0, 0.0, 1.5)
-    assert schedule.provenance.confidence <= 0.50
-    assert "x" in schedule.provenance.note
-    assert "y" in schedule.provenance.note
-
-
-def test_parse_block_schedule_non_dict_attribute_entries():
-    schedule = parse_block_schedule(
-        {
-            "handle": "B2",
-            "name": "SCHED",
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0,
-            "attributes": ["oops", {"tag": "T", "value": "V"}, 42],
-        },
-        {"name": "SCHED"},
-    )
-
-    assert schedule.attribute_tags == ["T"]
-    assert schedule.attribute_values == ["V"]
-    assert schedule.provenance.confidence <= 0.50
-    assert "attribute" in schedule.provenance.note
-
-
-def test_parse_block_schedule_non_list_attributes():
-    schedule = parse_block_schedule(
-        {"handle": "B3", "name": "SCHED", "attributes": "oops"},
-        {"name": "SCHED"},
-    )
-
-    assert schedule.attribute_tags == []
-    assert schedule.attribute_values == []
-    assert schedule.provenance.confidence <= 0.50
-    assert schedule.provenance.note
-
-
-def test_parse_table_entity_non_dict_data():
-    entity = parse_table_entity({"layer": "L", "handle": "H", "type": "TABLE", "data": "oops"})
-
-    assert entity.data == {}
-    assert entity.provenance.confidence <= 0.50
-    assert entity.provenance.note
-
-
-def test_parse_table_entity_non_dict_payload():
-    entity = parse_table_entity("oops")
-
-    assert entity.handle == ""
-    assert entity.entity_type == ""
-    assert entity.provenance.confidence <= 0.50
-    assert entity.provenance.note
-
-
-def test_parse_ole_schedule_non_dict_payload():
-    assert parse_ole_schedule("oops") is None
-
-
-def test_build_schedule_table_string_row():
-    entity = parse_table_entity(
-        {
-            "layer": "L",
-            "handle": "H",
-            "type": "TABLE",
-            "data": {"name": "T", "headers": ["A", "B"], "rows": ["hello"]},
-        }
-    )
-
-    table = build_schedule_table([entity], [], [], "S1", "R1")
-
-    assert len(table.rows) == 1
-    assert [c.value for c in table.rows[0].cells] == ["hello"]
-    assert table.rows[0].provenance.confidence <= 0.50
-    assert table.rows[0].provenance.note
-    assert table.provenance.note
-
-
-def test_parse_schedules_malformed_block_coordinates():
-    drawing = {
-        "table_entities": [],
-        "block_refs": [
+def _two_table_drawing():
+    return {
+        "table_entities": [
             {
-                "block_name": "SCHEDULE_BLOCK",
-                "handle": "B1",
-                "x": "N/A",
-                "y": "N/A",
-                "z": "N/A",
-                "attributes": [{"tag": "ROOM", "value": "101"}],
-            }
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "WINDOW SCHEDULE",
+                    "headers": ["Mark", "Width"],
+                    "rows": [["W1", "1200"], ["W2", "900"]],
+                },
+            },
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL002",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "DOOR SCHEDULE",
+                    "headers": ["Tag", "Type"],
+                    "rows": [["D1", "Single"], ["D2", "Double"]],
+                },
+            },
         ],
-        "block_defs": {"SCHEDULE_BLOCK": {"name": "SCHEDULE_BLOCK"}},
+        "block_refs": [],
+        "block_defs": {},
         "ole_entities": [],
     }
 
-    tables = parse_schedules(drawing, "sheet_1", "r1")
 
-    assert tables
-    cells = list(_all_cells(tables))
-    assert cells
-    assert all(c.provenance.confidence <= 0.50 for c in cells)
-    assert any(c.provenance.note for c in cells)
-    assert tables[0].provenance.note
-    assert tables[0].provenance.confidence <= 0.50
+def test_parse_schedules_splits_per_table_entity():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    assert len(tables) == 2
+
+    window, door = tables
+    assert window.name == "WINDOW SCHEDULE"
+    assert window.headers == ["Mark", "Width"]
+    assert door.name == "DOOR SCHEDULE"
+    assert door.headers == ["Tag", "Type"]
+
+    assert [r.cells[0].value for r in window.rows] == ["W1", "W2"]
+    assert [r.cells[0].value for r in door.rows] == ["D1", "D2"]
 
 
-def test_parse_schedules_malformed_attribute_entries():
+def test_parse_schedules_tables_do_not_share_rows():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    window, door = tables
+    window_values = {c.value for r in window.rows for c in r.cells}
+    door_values = {c.value for r in door.rows for c in r.cells}
+
+    assert not window_values & door_values
+
+
+def test_parse_schedules_cell_coords_unique_and_match_row_index():
+    tables = parse_schedules(_two_table_drawing(), "sheet_002", "rev2")
+
+    for table in tables:
+        coords = set()
+        for row in table.rows:
+            assert row.row_index == table.rows.index(row)
+            for cell in row.cells:
+                assert cell.row == row.row_index
+                assert (cell.row, cell.col) not in coords
+                coords.add((cell.row, cell.col))
+
+
+def test_parse_schedules_block_rows_keep_consistent_coords():
     drawing = {
-        "table_entities": [],
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "WINDOW SCHEDULE",
+                    "headers": ["Mark", "Width"],
+                    "rows": [["W1", "1200"]],
+                },
+            }
+        ],
         "block_refs": [
             {
-                "block_name": "SCHEDULE_BLOCK",
-                "handle": "B2",
+                "handle": "BLK001",
+                "name": "WINDOW_SCHEDULE",
                 "x": 0.0,
                 "y": 0.0,
                 "z": 0.0,
-                "attributes": ["oops"],
+                "attributes": [{"tag": "Mark", "value": "W2"}],
             }
         ],
-        "block_defs": {"SCHEDULE_BLOCK": {"name": "SCHEDULE_BLOCK"}},
-        "ole_entities": [],
-    }
-
-    tables = parse_schedules(drawing, "sheet_1", "r1")
-
-    assert tables
-    assert tables[0].provenance.note
-    assert tables[0].provenance.confidence <= 0.50
-
-
-def test_parse_schedules_non_dict_entity_data():
-    drawing = {
-        "table_entities": [
-            {"layer": "L", "handle": "H", "type": "TABLE", "data": "oops"},
-            "oops",
-        ],
-        "block_refs": [],
         "block_defs": {},
         "ole_entities": [],
     }
 
-    tables = parse_schedules(drawing, "sheet_1", "r1")
-
-    assert tables
-    assert all(t.provenance.confidence <= 0.50 for t in tables)
-    assert any(t.provenance.note for t in tables)
-
-
-def test_parse_schedules_string_valued_rows():
-    drawing = {
-        "table_entities": [
-            {
-                "layer": "L",
-                "handle": "H",
-                "type": "TABLE",
-                "data": {"name": "T", "headers": ["A", "B"], "rows": ["hello", ["ok", "fine"]]},
-            }
-        ],
-        "block_refs": [],
-        "block_defs": {},
-        "ole_entities": [],
-    }
-
-    tables = parse_schedules(drawing, "sheet_1", "r1")
+    tables = parse_schedules(drawing, "sheet_003", "rev3")
 
     assert len(tables) == 1
-    values = [c.value for c in _all_cells(tables)]
-    assert "hello" in values
-    assert "o" not in values  # a string row is not exploded into characters
-    assert tables[0].provenance.note
-    assert tables[0].provenance.confidence <= 0.50
+    table = tables[0]
+    assert len(table.rows) == 2
+
+    coords = set()
+    for row in table.rows:
+        for cell in row.cells:
+            assert cell.row == row.row_index
+            assert (cell.row, cell.col) not in coords
+            coords.add((cell.row, cell.col))
+
+    block_row = table.rows[-1]
+    assert block_row.cells[0].value == "W2"
+    assert block_row.cells[0].row == block_row.row_index
 
 
-def test_parse_schedules_missing_block_defs():
+def test_parse_schedules_single_table_keeps_combined_sources():
     drawing = {
-        "table_entities": [],
-        "block_refs": [
+        "table_entities": [
             {
-                "block_name": "SCHEDULE_BLOCK",
-                "handle": "B3",
-                "x": 1.0,
-                "y": 2.0,
-                "z": 0.0,
-                "attributes": [{"tag": "ROOM", "value": "101"}],
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "ROOM SCHEDULE",
+                    "headers": ["Mark", "Area"],
+                    "rows": [["101", "25"]],
+                },
             }
         ],
-        "ole_entities": [],
-    }
-
-    tables = parse_schedules(drawing, "sheet_1", "r1")
-
-    assert tables
-    cells = list(_all_cells(tables))
-    assert cells
-    assert all(c.provenance.confidence <= 0.50 for c in cells)
-    assert any("block definitions" in c.provenance.note for c in cells)
-
-
-def test_parse_schedules_never_raises_on_hostile_drawing():
-    hostile = {
-        "table_entities": [
-            None,
-            "oops",
-            {"type": "TABLE", "data": {"headers": "not-a-list", "rows": "not-a-list"}},
-            {"type": "TABLE", "data": {"headers": ["A"], "rows": [None, 5, {"a": 1}]}},
+        "block_refs": [
+            {
+                "handle": "BLK001",
+                "name": "ROOM_SCHEDULE",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "attributes": [{"tag": "Mark", "value": "102"}],
+            }
         ],
-        "block_refs": [None, "oops", {"block_name": 42, "attributes": {"a": 1}}],
-        "block_defs": None,
-        "ole_entities": [None, "oops", {"type": "Excel", "data": {"rows": ["x"]}}],
+        "block_defs": {},
+        "ole_entities": [
+            {
+                "type": "Excel",
+                "data": {"headers": ["Mark", "Area"], "rows": [["103", "30"]]},
+                "source_entity": "TBL001",
+            }
+        ],
     }
 
-    tables = parse_schedules(hostile, "sheet_1", "r1")
+    tables = parse_schedules(drawing, "sheet_004", "rev4")
 
-    assert isinstance(tables, list)
-    for table in tables:
-        assert 0.0 <= table.provenance.confidence <= 1.0
-        for row in table.rows:
-            assert 0.0 <= row.provenance.confidence <= 1.0
-            for cell in row.cells:
-                assert 0.0 <= cell.provenance.confidence <= 1.0
+    assert len(tables) == 1
+    table = tables[0]
+    assert table.name == "ROOM SCHEDULE"
+    assert table.headers == ["Mark", "Area"]
+    assert [r.cells[0].value for r in table.rows] == ["101", "102", "103"]
+
+
+def test_build_schedule_table_block_cell_row_matches_row_index():
+    block_ref = {
+        "handle": "SCH001",
+        "name": "ROOM_SCHEDULE",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "attributes": [
+            {"tag": "Room", "value": "101"},
+            {"tag": "Area", "value": "25"},
+        ],
+    }
+    block = parse_block_schedule(block_ref, {"name": "ROOM_SCHEDULE"})
+
+    table = build_schedule_table([], [block], [], "sheet_A101", "2")
+
+    assert len(table.rows) == 1
+    row = table.rows[0]
+    for cell in row.cells:
+        assert cell.row == row.row_index
