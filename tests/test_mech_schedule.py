@@ -806,6 +806,148 @@ def test_attribute_min_max_names_map_to_their_slots(tmp_path):
     assert slots["airflow_max"].value == 20.0
 
 
+# --- #1291: multi-row layouts (continuation rows, repeated headers) ---
+
+_MULTIROW_TYPE_ROWS = [
+    ("AHU", "23-75 35 14 17: Modular Indoor", ""),
+    ("", "", "63300000 J"),
+    ("Air Separator", "23-23 23 13: Air Separator", "Air Separator"),
+    ("Expansion Tank", "23-15 30 27: Expansion Tank", "Expansion Tank"),
+    ("Blowoff Unit", "23-15 30 27 11: Tanks, Reservoirs", "Steam blowoff vessel"),
+]
+
+_MULTIROW_COMP_ROWS = [
+    ("AHU-1", "AHU", "", ""),
+    ("", "", "1B21", "Air Handling Unit"),
+    ("HEADER-REPEAT", "", "", ""),
+    ("Air Separator AS-1", "Air Separator", "1B21", "Air Separator"),
+    ("Expansion Tank ET-1", "Expansion Tank", "1B21", "Expansion Tank"),
+    ("Blowoff Unit BU-1", "Blowoff Unit", "1B21", "Blowoff Unit"),
+]
+
+_COMP_HEADER = [
+    "Name",
+    "CreatedBy",
+    "CreatedOn",
+    "TypeName",
+    "Space",
+    "Description",
+    "ExtSystem",
+    "ExtObject",
+    "ExtIdentifier",
+    "SerialNumber",
+    "InstallationDate",
+    "WarrantyStartDate",
+    "TagNumber",
+    "BarCode",
+]
+
+
+def _write_multirow_workbook(tmp_path, with_attributes=False):
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    t = wb.active
+    t.title = "Type"
+    t.append(["Name", "CreatedBy", "CreatedOn", "Category", "Description", "ExtObject"])
+    for name, cat, desc in _MULTIROW_TYPE_ROWS:
+        t.append([name, "tester@example.com", "2013-10-09", cat, desc, "IfcTypeProduct"])
+    c = wb.create_sheet("Component")
+    c.append(_COMP_HEADER)
+    for name, type_name, space, desc in _MULTIROW_COMP_ROWS:
+        if name == "HEADER-REPEAT":
+            c.append(_COMP_HEADER)
+            continue
+        c.append(
+            [
+                name,
+                "tester@example.com",
+                "2013-10-09",
+                type_name,
+                space,
+                desc,
+                "n/a",
+                "IfcEnergyConversionDevice",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+            ]
+        )
+    s = wb.create_sheet("Space")
+    s.append(["Name", "CreatedBy", "CreatedOn", "Category", "FloorName", "Description"])
+    s.append(["1B21", "tester@example.com", "2013-10-09", "Space", "F1", "n/a"])
+    if with_attributes:
+        at = wb.create_sheet("Attribute")
+        at.append(
+            ["Name", "CreatedBy", "CreatedOn", "Category", "SheetName", "RowName", "Value", "Unit"]
+        )
+        # Keyed by the equipment tag, not the component's stated name.
+        at.append(["Total", "", "", "Requirement", "Component", "AHU-1", "12.5", "L/s"])
+    path = tmp_path / "multirow-schedules.xlsx"
+    wb.save(path)
+    return path
+
+
+def test_type_continuation_row_carries_the_capacity(tmp_path):
+    """A Type row's description may continue on the next (nameless) row:
+    the capacity stated there belongs to the type above it (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path))
+    ahu = _row(res, "AHU-1")
+    assert ahu.capacity is not None
+    assert ahu.capacity["value"] == 63300000.0
+    assert ahu.capacity["unit"] == "J"
+
+
+def test_component_continuation_row_merges_into_the_tagged_row(tmp_path):
+    """A Component row with an empty Name continues the record above it:
+    it fills the cells that record left empty and is provenance, not a
+    row of its own (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path))
+    ahu = _row(res, "AHU-1")
+    assert ahu.service_area == "1B21"
+    assert ahu.description == "Air Handling Unit"
+    assert res.stats["continuation_rows"] == 1
+    assert ahu.provenance["continuation_rows"] == [3]
+
+
+def test_repeated_header_row_is_not_read_as_data(tmp_path):
+    """A sheet row repeating the header is a header continuation, never
+    a component (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path))
+    names = [r.name for r in res.rows]
+    assert "Name" not in names
+    assert sorted(r.tag for r in res.rows) == ["AHU-1", "AS-1", "BU-1", "ET-1"]
+
+
+def test_air_separator_and_expansion_tank_are_classified(tmp_path):
+    """Families the truth bench showed missed state a device the old
+    text rules named nothing for (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path))
+    assert _row(res, "AS-1").system_type == "air_separator"
+    assert _row(res, "ET-1").system_type == "expansion_tank"
+
+
+def test_category_only_row_is_classified_from_its_category(tmp_path):
+    """When neither tag nor text names a family, the OmniClass category
+    is the last-resort evidence (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path))
+    blowoff = _row(res, "BU-1")
+    assert blowoff.system_type == "tank"
+    assert blowoff.confidence == "medium"
+
+
+def test_requirements_keyed_by_tag_fill_the_airflow_slot(tmp_path):
+    """Attribute requirements keyed by the equipment tag (rather than
+    the component's stated row name) still reach the row (#1291)."""
+    res = parse_cobie_workbook(_write_multirow_workbook(tmp_path, with_attributes=True))
+    ahu = _row(res, "AHU-1")
+    slots = {v.field: v for v in ahu.values}
+    assert slots["airflow"].value == 12.5
+    assert slots["airflow"].unit == "L/s"
+
+
 # ---------------------------------------------------------------------------
 # #1290: Watt-family stated tokens normalize to canonical unit tokens
 # ---------------------------------------------------------------------------
