@@ -640,3 +640,19 @@ $ python3 -m pytest tests/test_roof_simplify.py -q
 The grep output is identical to the one quoted in
 [§2.2](#22-every-caller-and-reference): three hits, all inside
 `geometry/roof_simplify.py`, none of them a production call site.
+
+---
+
+## Decision taken (2026-10-25) — default ON, supersedes Option C
+
+Alex decided on 2026-10-25 that simplification methods are ON by default.
+For #1275 this supersedes the Option C recommendation above (opt-in flag):
+`run_pipeline.py` Stage 3 now calls `apply_roof_simplification` on every
+run (see `_stage_3_roof_simplify`), records the `roof_simplify_report` in
+`stage_03_simplified.json` under `roof_simplify`, and populates
+`model.source_roof_planes` so the `roof_solar_aperture` check fires on real
+runs. Opt-out: `--no-roof-simplify` on the CLI or `roof_simplify: false` in
+the YAML config. A model with no usable site latitude skips simplification
+with the reason recorded in the artifact instead of failing the run. The
+function's own budgets (2% area, 2% aperture, 5°, 5%) are unchanged.
+Pipeline coverage: `tests/test_pipeline_roof_simplify.py`.
