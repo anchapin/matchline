@@ -393,8 +393,40 @@ def load_config(path: Path) -> list[SchedRow]:
     ]
 
 
+def render_dataset_table(rows: list[BenchRow]) -> list[str]:
+    """One row per dataset, so the numbers are read per dataset and not in aggregate.
+
+    The section below each dataset carries the detail; this table is the
+    comparison across datasets (two datasets today: the clinic and the
+    synthetic office), with every cell measured, never assumed.
+    """
+    lines = [
+        "## Datasets",
+        "",
+        "| dataset | status | truth rows | recall | precision | flat F1 | "
+        "capacity agree | airflow agree |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        e = r.extras
+        if not e:
+            lines.append(f"| {r.name} | {r.status} | - | - | - | - | - | - |")
+            continue
+        c, t = e["counts"], e["tags"]
+        lines.append(
+            f"| {r.name} | {r.status} | {c['truth_rows']} | {t['recall']:.3f} | "
+            f"{t['precision']:.3f} | {e['score']['flat_f1']:.3f} | "
+            f"{e['capacity']['agree']}/{e['capacity']['stated']} | "
+            f"{e['airflow']['agree']}/{e['airflow']['stated']} |"
+        )
+    lines.append("")
+    return lines
+
+
 def render(rows: list[BenchRow]) -> str:
+    """The scoreboard: a per-dataset summary table, then one section per dataset."""
     lines = ["# Schedule-truth benchmark (#1240)", ""]
+    lines += render_dataset_table(rows)
     for r in rows:
         lines.append(f"## {r.name} ({r.status})")
         if r.detail:
@@ -449,9 +481,15 @@ def main(argv=None) -> int:
     if not buildings:
         print("no such building", file=sys.stderr)
         return 1
+    # Only buildings that carry a schedule workbook are schedule datasets
+    # for this bench; the rest of the config is the geometry bench's list.
+    # They are counted, not scored, so the scoreboard reports one row per
+    # dataset (#1296).
+    datasets = [b for b in buildings if b.schedule_workbook is not None]
+    n_without = len(buildings) - len(datasets)
     rows: list[BenchRow] = []
     json_rows: dict[str, dict] = {}
-    for b in buildings:
+    for b in datasets:
         row = BenchRow(name=b.name)
         if b.schedule_workbook is None or not b.schedule_workbook.exists():
             row.status = "missing"
@@ -482,6 +520,8 @@ def main(argv=None) -> int:
     out.write_text(render(rows))
     Path(args.json_out).expanduser().write_text(json.dumps(json_rows, indent=1))
     print(out.read_text())
+    if n_without:
+        print(f"{n_without} configured building(s) carry no schedule workbook: not scored here")
     return 0
 
 
