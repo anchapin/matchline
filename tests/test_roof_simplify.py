@@ -385,6 +385,138 @@ def test_budget_refusal_is_reported_once_but_reoffered():
     assert "area budget" in pair_entries[0]["reason"]
 
 
+def _budget_payoff_case():
+    """Four facets set up so (A, C) is refused for budget in pass 1 and
+    accepted in a later pass (#1283).
+
+    A/C are a coplanar north-facing pair, B1/B2 a coplanar south-facing
+    pair.  The *reported* areas are deliberately out of step with the
+    geometry: A and C under-report 3 m2 each, B1 and B2 over-report 2 m2
+    each.  A merged facet's area is measured from its geometry, so merging
+    A and C *adds* 6 m2 to the reported total, while merging B1 and B2
+    *removes* 4 m2.
+
+    The north-facing pair also moves the solar aperture less than the
+    south-facing one, so the cheapest-first order puts (A, C) first: it is
+    refused while the working set is still untouched (+2.73 % area, over the
+    2 % budget).  B1/B2 is merged next (-1.82 %, inside the budget).  In
+    the next pass the working set has lost those 4 m2, so the very same
+    (cached) merge of A and C now costs only +0.91 % and the pair is
+    accepted.
+
+    With consistent areas this could not happen: a merge never increases
+    the reported area (the merged sloped area is |w_a + w_b|, at most the
+    sum of the two) nor the solar aperture, so a budget refusal could only
+    get worse in later passes.  A pair can only be accepted later when its
+    own merge *adds* area relative to the reported totals, which is what
+    the under-reported A/C pair does here.
+    """
+    a = _rp("A", _on(20, "N", 3, [(0, 0), (10, 0), (10, -5), (0, -5)]))
+    c = _rp("C", _on(20, "N", 3, [(0, -5), (10, -5), (10, -10), (0, -10)]))
+    b1 = _rp("B1", _on(30, "S", 3, [(20, 0), (30, 0), (30, -5), (20, -5)]))
+    b2 = _rp("B2", _on(30, "S", 3, [(20, -5), (30, -5), (30, -10), (20, -10)]))
+    a.area_m2 -= 3.0
+    c.area_m2 -= 3.0
+    b1.area_m2 += 2.0
+    b2.area_m2 += 2.0
+    return a, c, b1, b2
+
+
+def test_budget_refused_pair_is_accepted_in_a_later_pass():
+    """#1283: the payoff of the re-offer -- a pair refused for budget in
+    pass 1 lands in a later pass, once the competing candidate has merged
+    away and the budget has room again.
+
+    The pair must be refused *and* merged: the refusal shows up in
+    ``skipped`` (reported once), the merge in ``merges``.  If the re-offer
+    were broken (the pair remembered and never offered again) the merge
+    would be missing; if the refusal never happened the skip entry would
+    be missing.
+    """
+    a, c, b1, b2 = _budget_payoff_case()
+    res = simplify_roof([a, c, b1, b2], LAT, area_tol=0.02, aperture_tol=0.03)
+    # pass 1 refuses (A, C) and merges (B1, B2); a later pass merges (A, C)
+    assert res.stats["passes"] >= 2
+    assert {m["into"]: m["from"] for m in res.merges} == {
+        "B1": ["B1", "B2"],
+        "A": ["A", "C"],
+    }
+    assert res.n_before == 4 and res.n_after == 2
+    # the refusal is reported exactly once, with the pass-1 numbers
+    entries = [s for s in res.skipped if s["pair"] == ["A", "C"]]
+    assert len(entries) == 1
+    assert "area budget" in entries[0]["reason"]
+    assert "+2.729%" in entries[0]["reason"]
+    # and the merge that followed it was accepted inside the budget
+    ac = next(m for m in res.merges if m["into"] == "A")
+    assert ac["area_delta_pct"] == pytest.approx(0.9096, abs=1e-3)
+    assert abs(ac["area_delta_pct"]) <= 2.0
+
+
+def test_reoffered_pair_reuses_the_cached_merge_unchanged(monkeypatch):
+    """#1283: the cached merge of a re-offered pair is shared state.
+
+    The merge of a pair is built once and cached; a later pass must reuse
+    that facet, and nothing may mutate it on the way.  So the facet that
+    ends up in the result must be geometrically the same as a fresh
+    ``_merge`` of the same pair.
+    """
+    import geometry.roof_simplify as rs
+
+    a, c, b1, b2 = _budget_payoff_case()
+    real_merge = rs._merge
+    calls = []
+
+    def counting(host, other, pid, pa=None, pb=None, cache=None):
+        calls.append((host.id, other.id))
+        return real_merge(host, other, pid, pa=pa, pb=pb, cache=cache)
+
+    monkeypatch.setattr(rs, "_merge", counting)
+    res = simplify_roof([a, c, b1, b2], LAT, area_tol=0.02, aperture_tol=0.03)
+    # the (A, C) merge was built once and taken from the cache in pass 2
+    assert calls.count(("A", "C")) == 1
+    assert ("B1", "B2") in calls
+    # and the cached facet came out of the run unchanged
+    fresh, why = real_merge(a, c, "A")
+    assert why == ""
+    merged = next(p for p in res.planes if p.id == "A")
+    assert len(merged.vertices_m) == len(fresh.vertices_m)
+    for got, want in zip(merged.vertices_m, fresh.vertices_m):
+        assert got == pytest.approx(want, abs=1e-9)
+    assert merged.area_m2 == pytest.approx(fresh.area_m2, rel=1e-9)
+    assert merged.tilt_deg == pytest.approx(fresh.tilt_deg, abs=1e-9)
+    assert merged.azimuth_deg == pytest.approx(fresh.azimuth_deg, abs=1e-9)
+
+
+def test_refusal_memory_key_follows_the_id_order():
+    """#1283: the refusal memory is keyed by ``(id(a), id(b))``.
+
+    That key is direction dependent, and it is safe only because the
+    candidate pairs are enumerated over the id-sorted working set, so the
+    first element always carries the smaller id.  Pin the invariant, so a
+    future change in the enumeration cannot silently make the same pair
+    look like two different ones.
+    """
+    import geometry.roof_simplify as rs
+
+    planes = _hip(notch=True) + [_dormer()]
+    work = sorted((copy.deepcopy(p) for p in planes), key=lambda p: p.id)
+    assert [p.id for p in work] == sorted(p.id for p in work)
+    index = {id(p): i for i, p in enumerate(work)}
+    pairs = rs._candidate_pairs(work, rs._PlaneCache())
+    assert pairs
+    for a, b in pairs:
+        assert a.id < b.id
+        assert index[id(a)] < index[id(b)]
+    # the pairs come out in that order too, each one once
+    assert pairs == sorted(pairs, key=lambda ab: (ab[0].id, ab[1].id))
+    assert len(pairs) == len({(a.id, b.id) for a, b in pairs})
+    # and the report keys the pairs the same way
+    res = simplify_roof(planes, LAT)
+    for s in res.skipped:
+        assert s["pair"][0] < s["pair"][1]
+
+
 def _edge_twist_pair():
     """Two facets sharing a 10 m edge whose *midpoint* heights agree but
     whose end heights differ by 8 cm (> EDGE_Z_TOL_M = 5 cm).
