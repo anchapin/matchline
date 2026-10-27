@@ -98,6 +98,31 @@ def wall_segments(bldg, facade: Facade) -> list:
     return segs
 
 
+def facade_grid_map(bldg, facade: Facade) -> dict:
+    """Plan grid labels -> facade metres (s from the facade's reference corner).
+
+    The plan's vertical grids (``grids_v``) run along x, so they tie an
+    x-axis facade (south/north); the horizontal grids (``grids_h``) run
+    along y and tie a y-axis facade (east/west). Facade metres are measured
+    from the facade's reference corner, exactly like ``wall_segments``, so
+    grid-fitted and geometrically-fitted intervals are comparable.
+    """
+    raw = bldg.get("grids_v") if facade.axis == "x" else bldg.get("grids_h")
+    along_i = 0 if facade.axis == "x" else 1
+    ref_along = facade.ref_corner_m[along_i]
+    return {label: float(v) - ref_along for label, v in (raw or {}).items()}
+
+
+def elevation_path_for(meta: dict, data: dict) -> str:
+    """Registration path for one elevation sheet.
+
+    Chosen from the SHEET, not from its key name: a sheet that carries grid
+    bubbles ties to the plan grids (high confidence); one without falls back
+    to the geometric corner assumption (low confidence, flagged for review).
+    """
+    return "grid" if (data.get("bubbles") or []) else "geometric"
+
+
 def south_wall_segments(bldg) -> list:
     """Wall segments along the south facade, one per room edge touching it."""
     return wall_segments(bldg, facade_from_meta({}, bldg["D_m"], bldg["W_m"]))
@@ -114,18 +139,29 @@ def _link_elevation(
     D, W = bldg["D_m"], bldg["W_m"]
     facade = facade_from_meta(meta, D, W)
 
-    if elev_key == "elev_grid":
-        reg = register_elevation_grid(
-            meta["sheet_id"],
-            facade,
-            plan_grid_m=bldg["grids_v"],
-            elev_bubbles=data["bubbles"],
-            v_ground_px=data["v_ground_px"],
-            elev_px_per_m=data["px_per_m"],
-            revision=meta["revision"],
-        )
-        path = "grid"
+    # The path follows the SHEET, not its key name: any facade's sheet with
+    # grid bubbles ties to the plan grids (high confidence); one without
+    # falls back to the geometric corner assumption (#1310).
+    path = elevation_path_for(meta, data)
+    if path == "grid":
+        try:
+            reg = register_elevation_grid(
+                meta["sheet_id"],
+                facade,
+                plan_grid_m=facade_grid_map(bldg, facade),
+                elev_bubbles=data["bubbles"],
+                v_ground_px=data["v_ground_px"],
+                elev_px_per_m=data["px_per_m"],
+                revision=meta["revision"],
+            )
+        except (KeyError, ValueError):
+            # Bubbles present but they do not tie to the plan grids (or the
+            # sheet lacks the grid scale): fall back to the geometric path
+            # rather than dropping the sheet.
+            reg = None
     else:
+        reg = None
+    if reg is None:
         reg = register_elevation_geometric(
             meta["sheet_id"],
             facade,

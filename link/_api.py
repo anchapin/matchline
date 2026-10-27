@@ -8,7 +8,7 @@ from building_model import (
 )
 from door_detect import detect_door_swings
 from link._dedupe import _dedupe_space_openings
-from link._elevation import _link_elevation
+from link._elevation import _link_elevation, elevation_path_for
 from link._envelope import _build_envelope
 from link._lighting import _link_lighting
 from link._mech import _link_mech
@@ -24,9 +24,23 @@ OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup
 """Main build_model orchestration."""
 
 
+def elevation_keys_for_facade(bldg: dict, facade: str) -> list:
+    """Sheet keys whose meta names ``facade`` (south/north/east/west).
+
+    Facade selection is by SHEET META, not by key name, so any facade's
+    sheets can be found without knowing how the caller named them.
+    """
+    out = []
+    for key, sheet in (bldg.get("sheets") or {}).items():
+        meta = sheet.get("meta") or {}
+        if "data" in sheet and meta.get("facade", "south") == facade:
+            out.append(key)
+    return out
+
+
 def build_model(
     bldg: dict,
-    elevation_key: str = "elev_grid",
+    elevation_key: str | tuple = "elev_grid",
     building_name: str = "",
 ) -> tuple[BuildingModel, LinkReport]:
     """Build the canonical BuildingModel for one building.
@@ -34,20 +48,31 @@ def build_model(
     elevation_key: "elev_grid" or "elev_nogrid" -- the two elevations are
     linked in separate runs; cross-sheet window dedup is applied as a
     post-processing step (window tag + geometric proximity, see Issue #1
-    in docs/design-docs/open-issues.md). Pass None to skip elevation
-    linking entirely (used by elevation_windows.link_elevations, which
-    does multi-elevation detect -> dedup -> attach itself).
+    in docs/design-docs/open-issues.md). A tuple of keys links several
+    elevation sheets (e.g. the south and the north elevations) in one run;
+    each sheet's facade comes from its own meta. Pass None to skip
+    elevation linking entirely (used by elevation_windows.link_elevations,
+    which does multi-elevation detect -> dedup -> attach itself).
     """
     from dataclasses import asdict
 
     model = BuildingModel(name=building_name or bldg["building_id"])
     level_id = bldg["level_id"]
     model.levels.append(Level(id=level_id, name="Level 1", wall_height_m=bldg["wall_height_m"]))
+    if elevation_key is None:
+        elev_keys: tuple = ()
+    elif isinstance(elevation_key, str):
+        elev_keys = (elevation_key,)
+    else:
+        elev_keys = tuple(elevation_key)
+    # The elevation path follows each SHEET (grid bubbles present or not),
+    # not the sheet's key name, so any facade's sheet reports its own path.
+    paths = [
+        elevation_path_for(bldg["sheets"][k]["meta"], bldg["sheets"][k]["data"]) for k in elev_keys
+    ]
     report = LinkReport(
         building_id=bldg["building_id"],
-        elevation_path=(
-            "grid" if elevation_key == "elev_grid" else "geometric" if elevation_key else "none"
-        ),
+        elevation_path=",".join(dict.fromkeys(paths)) if paths else "none",
     )
 
     spaces = _build_spaces(bldg, model, level_id, bldg["wall_height_m"])
@@ -59,8 +84,9 @@ def build_model(
 
     _link_lighting(bldg, model, spaces, light_sched, report)
     _link_mech(bldg, model, spaces, report)
-    if elevation_key is not None:
-        _link_elevation(bldg, model, spaces, elevation_key, win_sched, report)
+    if elev_keys:
+        for key in elev_keys:
+            _link_elevation(bldg, model, spaces, key, win_sched, report)
         from elevation_windows import compute_daylit_zones
 
         W = bldg["W_m"]
