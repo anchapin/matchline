@@ -22,7 +22,7 @@ Metrics, per building:
   silently deflating the score. Grouped/flat/KR/EM/VF1 come from
   ``scripts/schedule_score`` over the stated fields (service area, capacity).
 - capacity error: over matched tags whose type description states capacity
-  tokens, the extractor's parsed capacity (value, unit) agrees with an
+  tokens, the extractor's parsed capacity (value, unit) agrees with the
   independent parse of the same stated string. Ranges state an interval and
   parse to value ``None`` on both sides.
 - airflow error: over matched tags with stated component requirements in an
@@ -128,6 +128,10 @@ def stated_values(text: str) -> list[dict]:
     out: list[dict] = []
     for m in _VALUE_RE.finditer(text or ""):
         unit = m.group(3).strip()
+        # #1290 Watt-family policy, mirrored from mech_schedule's stated-unit
+        # normalization (the truth reader never imports it): stated
+        # ``Watt``/``watts`` spellings normalize to ``W`` at read time.
+        unit = _WATT_FAMILY_SPELLINGS.get(unit.lower(), unit)
         if unit.lower() in _NOT_A_UNIT:
             continue
         value = None
@@ -251,6 +255,22 @@ def run_schedule_bench(truth: dict, result) -> dict:
     families: Counter = Counter(
         truth_by_tag[t]["type_name"].split("-")[0].split()[0] for t in missed
     )
+
+    # category cross-tab (#1291): recall grouped by the workbook's own stated
+    # Type Category, so the recall gap is measured in the workbook's
+    # vocabulary instead of the extractor's family prefixes. The category is
+    # provenance read from the workbook, never an extractor decision.
+    matched_set = set(matched)
+    cat_counts: dict[str, dict] = {}
+    for tag, trow in truth_by_tag.items():
+        cat = (types.get(trow["type_name"], {}) or {}).get("category") or "(no stated category)"
+        entry = cat_counts.setdefault(cat, {"category": cat, "truth": 0, "matched": 0, "missed": 0})
+        entry["truth"] += 1
+        if tag in matched_set:
+            entry["matched"] += 1
+        else:
+            entry["missed"] += 1
+    category_cross_tab = sorted(cat_counts.values(), key=lambda e: (-e["missed"], e["category"]))
     return {
         "counts": {
             "truth_rows": len(truth_rows),
@@ -297,8 +317,19 @@ def run_schedule_bench(truth: dict, result) -> dict:
             "referenced_rooms_not_in_space_sheet": zone_bad_rooms,
         },
         "calibration": _calibration_block(truth, result),
+        "category_cross_tab": category_cross_tab,
         "stats": dict(result.stats),
     }
+
+
+# Stated Watt-family spellings -> canonical unit tokens (#1290). Magnitudes
+# are never converted here; _norm_pair folds kW into W at comparison time.
+_WATT_FAMILY_SPELLINGS = {
+    "watt": "W",
+    "watts": "W",
+    "kilowatt": "kW",
+    "kilowatts": "kW",
+}
 
 
 def _num(text: str):
@@ -517,6 +548,10 @@ def _norm_pair(cap):
             value = float(value)
         except (TypeError, ValueError):
             return None
+    # #1290: compare the Watt family in watts, so a stated ``2.5 kW`` and a
+    # parsed ``2500 W`` agree. Everything else keeps its stated token.
+    if unit == "kw" and value is not None:
+        return (value * 1000.0, "w")
     return (value, unit)
 
 
@@ -593,6 +628,18 @@ def render(rows: list[BenchRow]) -> str:
             f"- zone linkage: {e['zone_linkage']['matched']} matched, "
             f"{e['zone_linkage']['mismatch']} mismatch",
         ]
+        if e.get("category_cross_tab"):
+            missed_cats = [c for c in e["category_cross_tab"] if c["missed"]]
+            fully = len(e["category_cross_tab"]) - len(missed_cats)
+            lines.append(
+                f"- category cross-tab: {fully} stated categories fully matched,"
+                f" {len(missed_cats)} with misses"
+            )
+            lines += [
+                f"  - {c['category']}: truth {c['truth']},"
+                f" matched {c['matched']}, missed {c['missed']}"
+                for c in missed_cats
+            ]
         if e.get("export_validity"):
             lines.append(f"- export validity: {e['export_validity']['status']}")
         cal = e.get("calibration")
