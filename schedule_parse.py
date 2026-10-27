@@ -408,9 +408,7 @@ def parse_schedules(
             )
             entity_headers = entity.data.get("headers") or []
             ole_has_headers = any(
-                o is not None
-                and isinstance(o.data, dict)
-                and (o.data.get("headers") or [])
+                o is not None and isinstance(o.data, dict) and (o.data.get("headers") or [])
                 for o in ole_groups[idx]
             )
             if len(table_entities) > 1 and entity_headers and not ole_has_headers:
