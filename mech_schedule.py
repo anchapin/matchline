@@ -39,8 +39,9 @@ Parsing rules carried from the ledger decisions:
   never mapped, it becomes a review item (kind
   ``"mech_schedule_value"``);
 - zone-load-impacting inputs (the airflow slots) are recorded inputs
-  only: nothing here sizes equipment, and any downstream HVAC sizing
-  consumes zone loads first.
+  only: this module never sizes equipment. The downstream consumer is
+  ``hvac_sizing``, which consumes zone loads first (ledger decision
+  #1236) and refuses to size before they are registered.
 
 Typical use::
 
@@ -172,9 +173,10 @@ VALUE_SLOTS = frozenset(
 )
 
 # Slots whose values feed zone loads downstream. Recorded inputs only:
-# nothing here sizes equipment. Any downstream HVAC sizing consumes zone
-# loads first (ledger decision #1236); this module records the stated
-# inputs and flags them, it never computes or sizes a load.
+# this module never sizes equipment. The downstream consumer is
+# ``hvac_sizing``, which consumes zone loads first (ledger decision
+# #1236); this module records the stated inputs and flags them, it never
+# computes or sizes a load.
 ZONE_LOAD_SLOTS = frozenset({"airflow", "airflow_min", "airflow_max", "outside_air_flow"})
 
 # Units that name their slot unambiguously, whatever the equipment family.
@@ -262,9 +264,10 @@ class MechValue:
             ``"medium"`` (family default or IP default), ``"low"``
             (nulled by a same-slot conflict).
         zone_load_impacting: True for the airflow slots, which feed
-            zone loads downstream. Recorded inputs only: nothing here
-            sizes equipment, and any downstream HVAC sizing consumes
-            zone loads first.
+            zone loads downstream. Recorded inputs only: this module
+            never sizes equipment; ``hvac_sizing`` is the downstream
+            consumer and it consumes zone loads first (ledger decision
+            #1236).
     """
 
     field: str

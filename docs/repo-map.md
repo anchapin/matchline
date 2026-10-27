@@ -57,6 +57,7 @@ graph LR
   end
   subgraph HVAC
     hvac_legend
+    hvac_sizing
     hvac_trace
     legend_learning
     mech_schedule
@@ -247,6 +248,7 @@ graph LR
   geometry_roof_simplify --> geometry_roof_geometry
   geometry_roof_simplify --> solar_aperture
   geometry_semi_exterior --> bem_bem_space_split
+  hvac_sizing --> mech_schedule
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
