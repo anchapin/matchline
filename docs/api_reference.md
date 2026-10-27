@@ -403,6 +403,7 @@ module's guide under `docs/`.
 - `summarize(summary: dict)`
 - `template(model, model_sha: str)`
 - `worst_first(items)`
+- `write_decisions(out_path: Path, doc: dict)`
 - `write_review(out_dir: Path, model)`
 
 ## `review.review_viewer`
