@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.schedule_bench import (  # noqa: E402
+    BenchRow,
+    _norm_pair,
+    render,
     run_schedule_bench,
     stated_values,
 )
@@ -256,9 +259,10 @@ def test_truth_freezes_then_loads_and_refuses_drift(tmp_path: Path) -> None:
 
 
 def test_stated_values_parse_independent_tokens() -> None:
-    # A stated capacity with a unit the extractor does not table yet.
+    # A stated Watt spelling normalizes to the canonical token at read
+    # time (#1290); the magnitude is never converted.
     assert stated_values("3500 Watt Capacity") == [
-        {"value": 3500.0, "unit": "Watt", "raw": "3500 Watt"}
+        {"value": 3500.0, "unit": "W", "raw": "3500 Watt"}
     ]
     # A stated range keeps value None on both sides.
     assert stated_values("633-703 kW") == [{"value": None, "unit": "kW", "raw": "633-703 kW"}]
@@ -286,9 +290,11 @@ def test_run_schedule_bench_scores_extraction_against_truth(tmp_path: Path) -> N
     assert m["tags"]["precision"] == 1.0
     # Zone linkage: every matched tag's service area equals the stated space.
     assert m["zone_linkage"]["mismatch"] == 0
-    # Airflow: the stated Attribute requirement has no extractor slot yet.
+    # Airflow: the stated Attribute requirement fills the extractor's
+    # airflow slots now (#1240 follow-up), so every stated requirement the
+    # extractor rows recover is agreed, value and stated unit both.
     if m["airflow"]["stated"]:
-        assert m["airflow"]["agree"] <= m["airflow"]["stated"]
+        assert m["airflow"]["agree"] == m["airflow"]["stated"]
 
 
 def test_run_schedule_bench_reports_real_disagreement(tmp_path: Path) -> None:
@@ -318,3 +324,69 @@ def test_bench_json_roundtrip(tmp_path: Path) -> None:
     truth = build_truth(wb_path)
     truth["workbook_sha256"] = json.loads(json.dumps(truth["workbook_sha256"]))
     assert truth["counts"]["tagged"] == len(truth["rows"])
+
+
+def test_stated_values_normalize_watt_family() -> None:
+    # #1290: stated Watt spellings normalize to the canonical token at read
+    # time; magnitudes are never converted.
+    vals = stated_values("Coil 2500 Watt, 633-703 kW")
+    assert vals[0]["value"] == 2500.0
+    assert vals[0]["unit"] == "W"
+    assert vals[0]["raw"] == "2500 Watt"
+    assert vals[1]["unit"] == "kW"
+    assert vals[1]["value"] is None  # stated range
+
+
+def test_capacity_agreement_folds_kw_into_watts() -> None:
+    assert _norm_pair({"value": 2.5, "unit": "kW"}) == _norm_pair({"value": 2500, "unit": "W"})
+    assert _norm_pair({"value": 100, "unit": "BTU"}) != _norm_pair({"value": 100, "unit": "W"})
+
+
+def test_category_cross_tab_scores_by_stated_category(tmp_path: Path) -> None:
+    from mech_schedule import parse_cobie_workbook
+
+    wb_path = _workbook(tmp_path / "w.xlsx")
+    truth = build_truth(wb_path)
+    truth["rows"]["MX-99"] = {
+        "row": 99,
+        "name": "Mail Box MX-99",
+        "type_name": "Mail Box",
+        "space": "1A03",
+        "description": "",
+        "tag_source": "name",
+    }
+    truth["types"]["Mail Box"] = {"category": "Mail Boxes", "description": ""}
+    result = parse_cobie_workbook(wb_path)
+    m = run_schedule_bench(truth, result)
+    cats = {c["category"]: c for c in m["category_cross_tab"]}
+    assert cats["Mail Boxes"] == {
+        "category": "Mail Boxes",
+        "truth": 1,
+        "matched": 0,
+        "missed": 1,
+    }
+    matched_cats = [c for c in m["category_cross_tab"] if c["missed"] == 0]
+    assert matched_cats and all(c["matched"] == c["truth"] for c in matched_cats)
+
+
+def test_render_lists_missed_categories(tmp_path: Path) -> None:
+    from mech_schedule import parse_cobie_workbook
+
+    wb_path = _workbook(tmp_path / "w.xlsx")
+    truth = build_truth(wb_path)
+    truth["rows"]["MX-99"] = {
+        "row": 99,
+        "name": "Mail Box MX-99",
+        "type_name": "Mail Box",
+        "space": "1A03",
+        "description": "",
+        "tag_source": "name",
+    }
+    truth["types"]["Mail Box"] = {"category": "Mail Boxes", "description": ""}
+    result = parse_cobie_workbook(wb_path)
+    m = run_schedule_bench(truth, result)
+    row = BenchRow(name="test")
+    row.extras = m
+    text = render([row])
+    assert "category cross-tab" in text
+    assert "Mail Boxes: truth 1, matched 0, missed 1" in text

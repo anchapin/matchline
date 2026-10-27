@@ -560,3 +560,126 @@ def test_roof_simplify_does_not_reach_into_solar_aperture_privates():
 
     source = Path(_rs.__file__).read_text()
     assert "_cos_sum" not in source
+
+
+def _budget_flip_scene():
+    """Two far-apart coplanar pairs for the budget-flip tests.
+
+    A+C face north (low solar weight), B1+B2 face south (high), so the
+    injected area deltas land on the area budget while the aperture
+    deltas keep A+C sorting before B1+B2.
+    """
+    return (
+        _rp("A", _on(30, "N", 3, [(0, -3), (10, -3), (10, -5), (0, -5)])),
+        _rp("C", _on(30, "N", 3, [(0, -5), (10, -5), (10, -6), (0, -6)])),
+        _rp("B1", _on(30, "S", 3, [(100, 0), (110, 0), (110, -4), (100, -4)])),
+        _rp("B2", _on(30, "S", 3, [(100, -4), (110, -4), (110, -7), (100, -7)])),
+    )
+
+
+def _shape_budget_deltas(monkeypatch, gain, deficit):
+    """Force the A+C merge to gain ``gain`` m2 and the B1+B2 merge to lose
+    ``deficit`` m2, the way a steeper host projects a shallower facet to
+    more area (gain) and a coplanar merge can fall short (deficit).
+    Returns the call counter and the real _merge.
+    """
+    import geometry.roof_simplify as rs
+
+    real_merge = rs._merge
+    calls = {"AC": 0, "B": 0}
+
+    def shaped(host, other, pid, pa=None, pb=None, cache=None):
+        merged, why = real_merge(host, other, pid, pa=pa, pb=pb, cache=cache)
+        if merged is None:
+            return None, why
+        pair = {host.id, other.id}
+        if pair == {"A", "C"}:
+            calls["AC"] += 1
+            merged.area_m2 += gain
+        elif pair == {"B1", "B2"}:
+            calls["B"] += 1
+            merged.area_m2 -= deficit
+        return merged, why
+
+    monkeypatch.setattr(rs, "_merge", shaped)
+    return calls, real_merge, rs
+
+
+def test_budget_refused_pair_lands_in_a_later_pass(monkeypatch):
+    """#1283: the payoff path a budget refusal exists for.
+
+    A+C's merge gains 3.0 m2 (2.6% of the roof), over the 2% area budget,
+    while the pair still sorts first: its aperture delta (1.4%) is smaller
+    than B1+B2's (1.7%). So A+C is refused for area budget in pass 1,
+    before B1+B2's 1.6 m2 loss is accepted; in pass 2 the working set's
+    area has dropped enough (net +1.4 m2, 1.2%) that the same cached merge
+    is inside the budget and lands.
+    """
+    calls, _real_merge, _rs = _shape_budget_deltas(monkeypatch, gain=3.0, deficit=1.6)
+    a, c, b1, b2 = _budget_flip_scene()
+    res = simplify_roof([a, b1, b2, c], LAT)
+    assert [m["into"] for m in res.merges] == ["B1", "A"]
+    assert res.stats["passes"] == 2
+    assert len(res.planes) == 2
+    entries = [s for s in res.skipped if s["pair"] == ["A", "C"]]
+    assert len(entries) == 1
+    assert "area budget" in entries[0]["reason"]
+    assert calls["AC"] == 1  # pass 2 reused the cached merge
+
+
+def test_cached_merge_is_not_mutated_across_passes(monkeypatch):
+    """#1283: a re-offered pair reuses the cached merged facet unmutated.
+
+    The facet cached in pass 1 for the budget-refused A+C pair is shared
+    state across passes; this pins that the acceptance path does not
+    change it. The facet that lands in pass 2 must carry exactly the
+    vertices of a fresh _merge of the originals, plus the injected area
+    gain and nothing else.
+    """
+    calls, real_merge, rs = _shape_budget_deltas(monkeypatch, gain=3.0, deficit=1.6)
+    a, c, b1, b2 = _budget_flip_scene()
+    res = simplify_roof([a, b1, b2, c], LAT)
+    landed = next(p for p in res.planes if p.id == "A")
+    fresh, _ = real_merge(
+        copy.deepcopy(a), copy.deepcopy(c), "A", rs._plan(a), rs._plan(c), rs._PlaneCache()
+    )
+    assert calls["AC"] == 1  # no rebuild on the re-offer
+    assert [tuple(v) for v in landed.vertices_m] == [tuple(v) for v in fresh.vertices_m]
+    assert landed.area_m2 == pytest.approx(fresh.area_m2 + 3.0)
+
+
+def test_build_refusal_holds_across_passes_in_reversed_order(monkeypatch):
+    """#1283: refusal memory keys on candidate identity, not its direction.
+
+    _candidate_pairs is what keeps (id(a), id(b)) stable across passes
+    (pairs are index-sorted over the id-sorted working set); this pins
+    that a consistently *reversed* enumeration behaves identically, so a
+    future change of direction cannot silently break refusals. The
+    artificially refused (A, C) build must hold in pass 2 with no rebuild,
+    whatever direction the pair arrives in.
+    """
+    import geometry.roof_simplify as rs
+
+    real_pairs = rs._candidate_pairs
+    monkeypatch.setattr(
+        rs,
+        "_candidate_pairs",
+        lambda work, cache: [(b, a) for a, b in real_pairs(work, cache)],
+    )
+    a, c, b1, b2 = _budget_flip_scene()
+    real_merge = rs._merge
+    calls = {"AC": 0}
+
+    def flaky(host, other, pid, pa=None, pb=None, cache=None):
+        if {host.id, other.id} == {"A", "C"}:
+            calls["AC"] += 1
+            if calls["AC"] == 1:
+                return None, "boom"
+        return real_merge(host, other, pid, pa=pa, pb=pb, cache=cache)
+
+    monkeypatch.setattr(rs, "_merge", flaky)
+    res = simplify_roof([a, b1, b2, c], LAT)
+    assert [m["into"] for m in res.merges] == ["B1"]
+    assert len(res.planes) == 3
+    assert calls["AC"] == 1  # pass 2 did not retry the refused build
+    assert len([s for s in res.skipped if s["reason"] == "boom"]) == 1

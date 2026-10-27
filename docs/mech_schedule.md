@@ -23,10 +23,25 @@ is never committed: pass its path in, and tests skip without
   trailing `PREFIX-digits` token.
 - `Type` sheet: category (OmniClass string) and description. Capacities
   live here as stated (`63300000 J` for the AHU, `633-703 kW` for the
-  chiller) and are recorded as stated, never converted; a stated range
-  keeps `value=None` with the raw string.
+  chiller) and are recorded with their magnitude never converted; a stated
+  range keeps `value=None` with the raw string. Stated Watt-family
+  spellings (`Watt`, `watts`) normalize to the canonical token `W` at
+  ingestion (#1290), raw strings kept; a stated `kW` keeps its value and
+  its `kW` token.
 - `Space` sheet: the room list (`1A01`-style numbers) the service areas
   are matched against, so `MechSystem.rooms` is self-contained.
+- `Attribute` sheet: stated per-component requirements (`SheetName`
+  `Component`, keyed by `RowName`). Requirements whose unit names
+  airflow (`L/s`, `CFM`) fill slots directly at high confidence, no text
+  parsing: `Outside Air` is ventilation air and fills its own
+  `outside_air_flow` slot, so it can never misstate a fan's supply
+  airflow; `min`/`max` in the requirement name map to the min/max slots;
+  anything else fills `airflow`. A stated range keeps `value=None`. The
+  clinic workbook states these (`Total` / `Outside Air`, L/s) and the
+  schedule-truth benchmark measured airflow recovery 0/33 before this
+  source was read (#1240 follow-up). Requirements in other units are
+  left for a separate decision, recorded in the reader rather than
+  silently invented.
 
 ## Classification rules
 
