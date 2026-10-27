@@ -391,6 +391,11 @@ def parse_args():
         help="tolerance for geometry simplification (default: 0.02 = 2%%)",
     )
     ap.add_argument(
+        "--no-roof-simplify",
+        action="store_true",
+        help="do not simplify the roof planes (#1275); on by default",
+    )
+    ap.add_argument(
         "--mode",
         default="full",
         choices=["full", "progressive"],
@@ -705,10 +710,88 @@ def _stage_2_build_model(bldg, args, out_dir: Path, model=None):
         return model, link_report
 
 
-def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out_dir: Path):
+def _roof_simplify_enabled(args, config: dict | None) -> bool:
+    """Is the roof-plane simplification on for this run? (default: yes)
+
+    Opt-out, following the ``--simplify-tol`` / ``simplify_tolerance``
+    conventions: the CLI flag ``--no-roof-simplify`` and the YAML config key
+    ``roof_simplify: false`` each turn it off; anything else leaves it on.
+    """
+    enabled = True
+    if config:
+        value = config.get("roof_simplify", True)
+        if isinstance(value, str):
+            enabled = value.strip().lower() not in ("false", "no", "0", "off")
+        else:
+            enabled = bool(value)
+    if getattr(args, "no_roof_simplify", False):
+        enabled = False
+    return enabled
+
+
+def _stage_3_roof_simplify(model, enabled: bool = True) -> dict:
+    """Simplify the model's roof planes and return the audit record (#1275).
+
+    On by default; the ``roof_solar_aperture`` check compares the simplified
+    roof against ``model.source_roof_planes``, which this call populates.
+    Skips are recorded, never raised: a model with no roof planes or no
+    usable site latitude keeps its roof as it is and the reason is written
+    into the stage artifact.
+    """
+    from geometry.roof_simplify import apply_roof_simplification, roof_simplify_report
+
+    planes = list(getattr(model, "roof_planes", None) or [])
+    if not enabled:
+        return {
+            "method": "roof_simplify",
+            "applied": False,
+            "reason": "disabled (--no-roof-simplify / roof_simplify: false)",
+            "n_planes_before": len(planes),
+            "n_planes_after": len(planes),
+        }
+    if not planes:
+        return {
+            "method": "roof_simplify",
+            "applied": False,
+            "reason": "no roof planes to simplify",
+            "n_planes_before": 0,
+            "n_planes_after": 0,
+        }
+    lat = getattr(model, "site_latitude_deg", None)
+    try:
+        res = apply_roof_simplification(model)
+    except ValueError as e:
+        # The wrapper raises ValueError only when no latitude is available
+        # (neither an explicit one nor model.site_latitude_deg); anything
+        # else is a real failure and must not be swallowed.
+        if lat is not None or "latitude" not in str(e).lower():
+            raise
+        return {
+            "method": "roof_simplify",
+            "applied": False,
+            "reason": f"no site latitude; roof simplification skipped ({e})",
+            "n_planes_before": len(planes),
+            "n_planes_after": len(planes),
+        }
+    report = roof_simplify_report(res)
+    # NOTE: the report's own "skipped" key is the merge-skip list from
+    # roof_simplify_report; the stage-level outcome rides on "applied".
+    report["applied"] = True
+    report["reason"] = None
+    return report
+
+
+def _stage_3_simplify(
+    model,
+    simplify_tol: float,
+    wall_height: float | None,
+    out_dir: Path,
+    roof_simplify: bool = True,
+):
     """Stage 3: Simplify building geometry.
 
-    Returns:
+    Simplifies the footprint (walls) and, by default, the roof planes
+    (#1275). Returns:
         tuple: (simplify_result, wall_height)
     """
     if wall_height is None:
@@ -744,6 +827,9 @@ def _stage_3_simplify(model, simplify_tol: float, wall_height: float | None, out
             }
             for p, hs in zip(sres.parts, sres.holes)
         ]
+    # #1275: the roof planes are simplified here too (on by default), so the
+    # roof_solar_aperture check has a "before" roof to compare against.
+    payload["roof_simplify"] = _stage_3_roof_simplify(model, enabled=roof_simplify)
     write_json(out_dir / "stage_03_simplified.json", payload)
     return sres, wall_height
 
@@ -949,6 +1035,7 @@ def main(args, config: dict | None = None) -> None:
         simplify_tol = args.simplify_tol
         wall_height = None
         min_review_confidence = None
+        roof_simplify = _roof_simplify_enabled(args, config)
         if config:
             simplify_tol = config.get("simplify_tolerance", simplify_tol)
             wall_height = config.get("wall_height", None)
@@ -997,7 +1084,9 @@ def main(args, config: dict | None = None) -> None:
         # --- Stage 3: simplify geometry --------------------------------------
         try:
             with _stage_telemetry(emitter, "3.simplify"):
-                sres, wall_height = _stage_3_simplify(model, simplify_tol, wall_height, out_dir)
+                sres, wall_height = _stage_3_simplify(
+                    model, simplify_tol, wall_height, out_dir, roof_simplify=roof_simplify
+                )
         except StageError:
             raise
         except Exception as e:
