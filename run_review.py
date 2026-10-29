@@ -64,7 +64,6 @@ import argparse
 import pathlib
 import sys
 import warnings
-from typing import TextIO
 
 from building_model import BuildingModel, ReviewItem
 from review_classifier.data import Example
@@ -154,26 +153,6 @@ def _load_classifier_for_task(task: str) -> TypedDecider | None:
 def _urgency_sort_key(item: ReviewItem) -> tuple[int, bool]:
     """Sort key: urgency descending, then auto_resolved False first (human needs first)."""
     return (-item.urgency, item.auto_resolved)
-
-
-def _format_item(item: ReviewItem, out: TextIO = sys.stdout) -> None:
-    """Print a single ReviewItem to stdout with triage metadata."""
-    prov = item.provenance
-    prov_str = f"{prov.sheet_id} r{prov.revision} via {prov.method}" if prov else "no provenance"
-
-    # Triage indicators
-    triage_parts = []
-    if item.urgency > 0:
-        triage_parts.append(f"urgency={item.urgency}")
-    if item.auto_resolved:
-        triage_parts.append(f"AUTO-{item.resolution}")
-    triage_str = f"  [{', '.join(triage_parts)}]" if triage_parts else ""
-
-    print(f"  [{item.id}] {item.kind}  conf={item.confidence:.2f}{triage_str}", file=out)
-    print(f"    → {item.description}", file=out)
-    print(f"    provenance: {prov_str}", file=out)
-    if item.needs_human < 1.0:
-        print(f"    needs_human: {item.needs_human:.2f}", file=out)
 
 
 def list_review_items(
