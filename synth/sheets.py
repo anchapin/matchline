@@ -22,7 +22,6 @@ coords). PX_PER_M converts to sheet pixels.
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 
 import numpy as np
@@ -230,64 +229,6 @@ class OpeningPlacer:
 # ---------------------------------------------------------------------------
 # Sheet rendering
 # ---------------------------------------------------------------------------
-
-
-def _draw_double_door_glyph(d, cpx, cpy, w_px, orient, side, lw):
-    """Double door: two leaves swinging outward, mirroring the training
-    glyph (synth.symbols.glyph_double_door): left/top leaf swings away
-    from center on one side, right/bottom leaf on the other."""
-    a = math.radians(58)
-    L = w_px / 2
-    if orient == "h":
-        for sgn, hx in ((-1, cpx - w_px / 2), (1, cpx + w_px / 2)):
-            ex, ey = hx + sgn * L * math.cos(a), cpy + side * L * math.sin(a)
-            d.line([hx, cpy, ex, ey], fill=0, width=lw)
-            if side > 0:
-                start, end = (0, 58) if sgn > 0 else (122, 180)
-            else:
-                start, end = (302, 360) if sgn > 0 else (180, 238)
-            d.arc([hx - L, cpy - L, hx + L, cpy + L], start=start, end=end, fill=0, width=lw)
-    else:
-        for sgn, hy in ((-1, cpy - w_px / 2), (1, cpy + w_px / 2)):
-            ex, ey = cpx + side * L * math.sin(a), hy + sgn * L * math.cos(a)
-            d.line([cpx, hy, ex, ey], fill=0, width=lw)
-            if side > 0:
-                start, end = (270, 328) if sgn < 0 else (32, 90)
-            else:
-                start, end = (212, 270) if sgn < 0 else (90, 148)
-            d.arc([cpx - L, hy - L, cpx + L, hy + L], start=start, end=end, fill=0, width=lw)
-
-
-def _draw_door_glyph(d, hinge_px, orient, side, L_px, lw):
-    """Leaf + swing arc. orient 'h'/'v'; side +1/-1 = room side along the
-    wall normal (for 'h': +1 is +y; for 'v': +1 is +x)."""
-    hx, hy = hinge_px
-    a = math.radians(58)
-    if orient == "h":
-        ex, ey = hx + L_px * math.cos(a), hy + side * L_px * math.sin(a)
-        d.line([hx, hy, ex, ey], fill=0, width=lw)
-        start, end = (0, 58) if side > 0 else (302, 360)
-        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px], start=start, end=end, fill=0, width=lw)
-    else:
-        ex, ey = hx + side * L_px * math.sin(a), hy + L_px * math.cos(a)
-        d.line([hx, hy, ex, ey], fill=0, width=lw)
-        start, end = (32, 90) if side > 0 else (90, 148)
-        d.arc([hx - L_px, hy - L_px, hx + L_px, hy + L_px], start=start, end=end, fill=0, width=lw)
-    return (ex, ey)
-
-
-def _draw_window_glyph(d, c_px, w_px, wt_px, lw, orient):
-    cx, cy = c_px
-    if orient == "h":
-        for yy in (cy - wt_px / 2, cy, cy + wt_px / 2):
-            d.line([cx - w_px / 2, yy, cx + w_px / 2, yy], fill=0, width=2)
-        for xx in (cx - w_px / 2, cx + w_px / 2):
-            d.line([xx, cy - wt_px / 2, xx, cy + wt_px / 2], fill=0, width=lw)
-    else:
-        for xx in (cx - wt_px / 2, cx, cx + wt_px / 2):
-            d.line([xx, cy - w_px / 2, xx, cy + w_px / 2], fill=0, width=2)
-        for yy in (cy - w_px / 2, cy + w_px / 2):
-            d.line([cx - wt_px / 2, yy, cx + wt_px / 2, yy], fill=0, width=lw)
 
 
 def generate_sheet(seed: int, px_per_m: float = PX_PER_M):
