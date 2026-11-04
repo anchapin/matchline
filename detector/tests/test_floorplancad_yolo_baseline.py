@@ -176,21 +176,23 @@ def test_image_list_is_the_deterministic_subset():
     assert stems == sorted(stems)
 
 
-def test_committed_prediction_files_reconcile_with_the_image_list():
+def test_committed_per_image_summaries_reconcile_with_the_image_list():
+    import csv
+
     stems = [
         line.strip()
         for line in open(os.path.join(RESULTS_DIR, "images.txt"))
         if line.strip()
     ]
     for run in ("coco", "doorwindow"):
-        d = os.path.join(RESULTS_DIR, f"preds_yolo11n_{run}")
-        files = [f for f in os.listdir(d) if f.endswith(".json")]
-        assert len(files) == len(stems) * len(VARIANTS)
-        for stem in stems:
-            got = sorted(
-                f for f in files if f.startswith(stem + ".")
-            )
-            assert got == sorted(f"{stem}.{v}.json" for v in VARIANTS)
+        with open(
+            os.path.join(RESULTS_DIR, f"per_image_yolo11n_{run}.csv"), newline=""
+        ) as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == len(stems) * len(VARIANTS)
+        assert {(r["stem"], r["variant"]) for r in rows} == {
+            (stem, v) for stem in stems for v in VARIANTS
+        }
 
 
 def test_committed_reports_use_the_dataset_root_convention():

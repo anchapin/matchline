@@ -385,7 +385,8 @@ detector/.venv-det/bin/python detector/floorplancad_yolo_baseline.py \
 ```
 
 Result (50 prediction JSONs = 10 images × 5 variants) compared against the
-committed `preds_yolo11n_doorwindow/`:
+Run B prediction JSONs from the original session (not committed; regenerable
+with `--dump-preds`):
 
 ```
 new pred files: 50
@@ -551,9 +552,7 @@ Caveats worth carrying into #1328:
 | `report_yolo11n_coco.json` | Run A report (COCO negative control) |
 | `per_image_yolo11n_doorwindow.csv` | Run B per-image rows (500 = 100 × 5) |
 | `per_image_yolo11n_coco.csv` | Run A per-image rows (500 = 100 × 5) |
-| `preds_yolo11n_doorwindow/` | 500 Run B prediction JSONs (100 × 5) |
-| `preds_yolo11n_coco/` | 500 Run A prediction JSONs (100 × 5) |
+| per-image prediction JSONs | NOT committed — 500 per run, regenerable with `--dump-preds`; determinism verified at authoring time (see §5) |
 
 No machine path is stored in any of these files (the reports use the
-`$MATCHLINE_DATASETS/...` convention; the prediction JSONs store only the
-image file name, its size and the boxes).
+`$MATCHLINE_DATASETS/...` convention).
