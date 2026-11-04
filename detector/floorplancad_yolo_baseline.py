@@ -349,11 +349,18 @@ def evaluate(args) -> dict:
             },
             "transform_spec": {
                 "scale_0.8": "resize image to round(W*0.8) x round(H*0.8); GT boxes scaled by 0.8",
-                "scale_1.25": "resize image to round(W*1.25) x round(H*1.25); GT boxes scaled by 1.25",
-                "rot_p15": "PIL rotate +15 deg CCW about the image centre, expand=True, white fill; "
-                "GT box corners rotated about the centre, axis-aligned bounds kept",
-                "rot_m15": "PIL rotate -15 deg CCW about the image centre, expand=True, white fill; "
-                "GT box corners rotated about the centre, axis-aligned bounds kept",
+                "scale_1.25": (
+                    "resize image to round(W*1.25) x round(H*1.25); "
+                    "GT boxes scaled by 1.25"
+                ),
+                "rot_p15": (
+                    "PIL rotate +15 deg CCW about the image centre, expand=True, white fill; "
+                    "GT box corners rotated about the centre, axis-aligned bounds kept"
+                ),
+                "rot_m15": (
+                    "PIL rotate -15 deg CCW about the image centre, expand=True, white fill; "
+                    "GT box corners rotated about the centre, axis-aligned bounds kept"
+                ),
             },
             "matching": "detector/eval_robustness.py:match_predictions "
             "(greedy IoU, same algorithm as eval_zero_shot.py)",
@@ -388,7 +395,10 @@ def print_tables(report: dict) -> None:
     names = {"0": "door", "1": "window"}
     for subset, per in report["subsets"].items():
         print(f"\n== subset: {subset} ==")
-        header = f"{'class':10s}{'P':>10s}{'R':>10s}{'tp':>8s}{'fp':>8s}{'fn':>8s}{'gt':>8s}{'pred':>8s}"
+        header = (
+            f"{'class':10s}{'P':>10s}{'R':>10s}{'tp':>8s}"
+            f"{'fp':>8s}{'fn':>8s}{'gt':>8s}{'pred':>8s}"
+        )
         print(header)
         print("-" * len(header))
         for k in keys:
@@ -413,7 +423,11 @@ def print_tables(report: dict) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", default=None, help="floorplancad YOLO dataset root")
-    ap.add_argument("--weights", default=None, help="YOLO weights (default $MATCHLINE_DATASETS/yolo11n.pt)")
+    ap.add_argument(
+        "--weights",
+        default=None,
+        help="YOLO weights (default $MATCHLINE_DATASETS/yolo11n.pt)",
+    )
     ap.add_argument("--n", type=int, default=50, help="subset size (first N sorted stems)")
     ap.add_argument("--iou", type=float, default=0.5)
     ap.add_argument("--conf", type=float, default=0.25)

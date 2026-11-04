@@ -7,7 +7,6 @@ shaping); no model weights and no dataset access are required.
 
 from __future__ import annotations
 
-import math
 import os
 import sys
 
