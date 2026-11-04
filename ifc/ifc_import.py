@@ -4879,12 +4879,6 @@ def _terrain_triangles(f, project, scale):
     return tris
 
 
-def _plan_rect(product, scale):
-    """Canonical-frame plan bounding rectangle of a product's solid, or None."""
-    got = _plan_rect_z(product, scale)
-    return got[0] if got else None
-
-
 def _plan_rect_z(product, scale):
     """(plan rectangle, z min, z max) of a product's solid in world metres, or None."""
     verts = _geom_verts(product)
