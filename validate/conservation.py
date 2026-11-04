@@ -1275,10 +1275,10 @@ def _check_roof_solar_aperture(ctx: _Ctx) -> CheckResult:
     Roadmap item 2. Compares ``solar_aperture`` of ``model.roof_planes``
     against ``model.source_roof_planes`` (kept by
     ``roof_simplify.apply_roof_simplification``) at the site latitude, total
-    and per orientation. Warn-only, like the ASHRAE checks, until the export
-    writes sloped roofs (#618/#619).
+    and per orientation. Error-level since the export writes sloped roofs
+    (#618/#619).
 
-    warn  -- total aperture moved more than ROOF_APERTURE_TOL; the
+    error -- total aperture moved more than ROOF_APERTURE_TOL; the
              orientations that moved past it are named.
     pass  -- within tolerance; message gives area and aperture deltas.
     skip  -- roof never simplified (no source planes), no roof planes, or no
@@ -1326,7 +1326,7 @@ def _check_roof_solar_aperture(ctx: _Ctx) -> CheckResult:
         return CheckResult(
             cid_,
             name,
-            "warn",
+            "error",
             f"{head}; past the {ROOF_APERTURE_TOL:.0%} tolerance"
             + (f", moved on {', '.join(moved)}" if moved else ""),
             entities=moved,
