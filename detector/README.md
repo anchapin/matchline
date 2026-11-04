@@ -45,7 +45,7 @@ takeoff-critical symbols. Per-dataset label maps:
 |---|---|---|
 | `convert_cubicasa.py` | CubiCasa5K `model.svg` | Walks SVG accumulating affine transforms; bbox of descendant geometry per symbol group (door bbox includes swing arc). Images **rendered from SVG via PyMuPDF** at uniform scale (longest side 1408) — verified that `F1_scaled.png` does NOT match the SVG viewBox geometry, so it is not used. Box alignment verified against independent visual grounding (9/9 symbols, centers within ~20px). |
 | `convert_aec.py` | AEC bench PDF + CVAT XML | Renders each sheet PDF at 300dpi, resizes to exact XML dims. 15 sheets -> `eval` split (zero-shot set). |
-| `convert_floorplancad.py` | FloorPlanCAD parquet | 1000x1000 PNGs, bboxes 0-1000 -> /1000. Test split only -> `eval` split. |
+| `convert_floorplancad.py` | FloorPlanCAD parquet | 1000x1000 PNGs, bboxes are COCO `[x, y, w, h]` in 0-1000 -> /1000. Test split only -> `eval` split. |
 
 ## Training
 
