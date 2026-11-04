@@ -245,3 +245,103 @@ def test_export_ifc_writes_convention_report(tmp_path):
     report = json.loads(report_path.read_text())
     assert report["schema"] == SCHEMA
     assert report["building"] == model.name
+
+
+def _representations(element):
+    """RepresentationIdentifier -> shape representation for an IFC product."""
+    reps = element.Representation.Representations if element.Representation else []
+    return {r.RepresentationIdentifier: r for r in reps}
+
+
+def _element_quantities(ifc_file, element):
+    """Name -> value for the IfcElementQuantity sets defining `element`."""
+    out = {}
+    for rel in ifc_file.by_type("IfcRelDefinesByProperties"):
+        definition = rel.RelatingPropertyDefinition
+        if element in rel.RelatedObjects and definition.is_a("IfcElementQuantity"):
+            for quantity in definition.Quantities:
+                value = getattr(quantity, "AreaValue", None)
+                if value is None:
+                    value = getattr(quantity, "LengthValue", None)
+                out[quantity.Name] = float(value)
+    return out
+
+
+def _shoelace_area(points):
+    """Polygon area for (x, y) points (absolute value, closing edge included)."""
+    total = 0.0
+    for i, (x0, y0) in enumerate(points):
+        x1, y1 = points[(i + 1) % len(points)]
+        total += x0 * y1 - x1 * y0
+    return abs(total) / 2.0
+
+
+def test_spaces_carry_solid_body_extruded_from_footprint(tmp_path):
+    """#1332: every IfcSpace carries a Body solid over its footprint polygon.
+
+    An independent reader that does not know the FootPrint convention must
+    still recover the room (and its volume) from geometry alone.
+    """
+    model = make_clean_model()
+    ifc_path = tmp_path / "space_solids.ifc"
+    _export_ifc(model, str(ifc_path))
+
+    f = ifcopenshell.open(str(ifc_path))
+    spaces = f.by_type("IfcSpace")
+    assert spaces
+    for space in spaces:
+        reps = _representations(space)
+        footprint = reps["FootPrint"]
+        (curve_set,) = footprint.Items
+        (polyline,) = curve_set.Elements
+        footprint_points = [
+            (float(p.Coordinates[0]), float(p.Coordinates[1])) for p in polyline.Points
+        ]
+        body = reps["Body"]
+        assert body.RepresentationType == "SweptSolid"
+        (solid,) = body.Items
+        assert solid.is_a("IfcExtrudedAreaSolid")
+        assert solid.SweptArea.is_a("IfcArbitraryClosedProfileDef")
+        profile_points = [
+            (float(p.Coordinates[0]), float(p.Coordinates[1]))
+            for p in solid.SweptArea.OuterCurve.Points
+        ]
+        if len(profile_points) > 1 and profile_points[0] == profile_points[-1]:
+            profile_points = profile_points[:-1]  # closing point of the profile
+        assert profile_points == footprint_points
+        assert float(solid.Depth) == pytest.approx(3.0)
+        quantities = _element_quantities(f, space)
+        assert _shoelace_area(profile_points) == pytest.approx(quantities["GrossFloorArea"])
+
+
+def test_wall_fills_carry_overall_width_and_height(tmp_path):
+    """#1332: wall-hosted fills carry their size as attributes, not only in the name."""
+    model = make_clean_model()
+    ifc_path = tmp_path / "fill_dimensions.ifc"
+    _export_ifc(model, str(ifc_path))
+
+    f = ifcopenshell.open(str(ifc_path))
+    wall_fills = []
+    for fill in list(f.by_type("IfcWindow")) + list(f.by_type("IfcDoor")):
+        for fill_rel in fill.FillsVoids:
+            opening = fill_rel.RelatingOpeningElement
+            (void_rel,) = opening.VoidsElements
+            if void_rel.RelatingBuildingElement.is_a("IfcWall"):
+                wall_fills.append(fill)
+    assert len(wall_fills) == 2  # the two tag-A windows of make_clean_model
+    schedule = model.schedules["A"]
+    for fill in wall_fills:
+        assert fill.OverallWidth == pytest.approx(schedule["width_m"])
+        assert fill.OverallHeight == pytest.approx(schedule["height_m"])
+
+
+def test_storey_carries_gross_height(tmp_path):
+    """#1332: the storey carries GrossHeight so a reader recovers the level height."""
+    model = make_clean_model()
+    ifc_path = tmp_path / "storey_height.ifc"
+    _export_ifc(model, str(ifc_path))
+
+    f = ifcopenshell.open(str(ifc_path))
+    (storey,) = f.by_type("IfcBuildingStorey")
+    quantities = _element_quantities(f, storey)
+    assert quantities["GrossHeight"] == pytest.approx(model.levels[0].wall_height_m)
