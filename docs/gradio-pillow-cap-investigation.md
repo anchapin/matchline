@@ -40,7 +40,8 @@ ui = ["gradio>=4.0"]
 `.github/workflows/ci.yml` (pip-audit job) currently carries a block of
 pillow `--ignore-vuln` pins whose stated reason is, verbatim from the file,
 that gradio "pins pillow>=8.0, <13.0 so 13.0.0 is unreachable in every fork
-of the lock". That block has been rotated four times in five days:
+of the lock". That block has been rotated five times (rotations 1-4 in five
+days, rotation 5 on 2026-11-04):
 
 | Rotation | Date | Issue / PR run | Newly ignored IDs |
 |---|---|---|---|
@@ -48,6 +49,15 @@ of the lock". That block has been rotated four times in five days:
 | 2 | 2026-10-22 | #1239 | 10 more (`CVE-2026-96636..96644`, `CVE-2026-96778`) |
 | 3 | 2026-10-22 | #1249 | `GHSA-78g4-xqwv-q3g8` |
 | 4 | 2026-10-24 | #1259 / #1265 | `CVE-2026-112398`, `CVE-2026-114501` |
+| 5 | 2026-11-04 | #1320 / PR #1319 CI run 40820871285 | `PYSEC-2026-4327` (CVE-2026-112394), `PYSEC-2026-4332` (CVE-2026-112403) — pillow 12.3.0, ignore count 37 → 39; gradio cap still in place (released gradio 6.31.0: `pillow<13.0,>=8.0`) |
+
+Cap status at rotation 5 (re-checked 2026-11-04): the newest *released*
+gradio is **6.31.0** and its PyPI metadata (`info.requires_dist`) still
+declares `pillow<13.0,>=8.0`, so pillow 13.0.0 remains unreachable through
+gradio and the ignores stay. One forward-looking change was observed:
+gradio's unreleased `main` branch now declares `pillow>=8.0,<14.0`
+(`requirements.txt` line 16, read 2026-11-04), i.e. the cap has been lifted
+upstream but is not yet in any release — no bump is possible today.
 
 All of them are the same package (`pillow` 12.3.0), the same fix version
 (pillow 13.0.0), and the same cause (gradio's cap). Retiring them therefore
