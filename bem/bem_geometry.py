@@ -234,6 +234,42 @@ def _fmt(v: float) -> str:
     return f"{v:.4f}"
 
 
+# ---------------------------------------------------------------------------
+# Shared geometry-simplification tolerance rule (#1340)
+# ---------------------------------------------------------------------------
+# One rule, one unit, one place. Both BEM model factories
+# (``model_from_takeoff`` here and ``model_from_linked_model`` in
+# run_pipeline.py) go through the helpers below, so a simplification that is
+# too coarse is rejected on every path instead of only on the takeoff path.
+
+# Maximum geometry-simplification tolerance accepted for BEM export, in PERCENT.
+MAX_SIMPLIFY_TOL = 3.0
+
+
+def simplify_tolerance_pct(tol_fraction: float) -> float:
+    """Convert a simplification tolerance FRACTION (0.02) to PERCENT (2.0).
+
+    The single fraction-to-percent conversion used by every BEM factory.
+    ``BEMModel.simplify_tolerance`` is stored in PERCENT.
+    """
+    return tol_fraction * 100.0
+
+
+def validate_simplify_tolerance(simplify_tolerance: float) -> float:
+    """Validate a PERCENT simplification tolerance against MAX_SIMPLIFY_TOL.
+
+    Returns the tolerance unchanged when it is within the threshold, raises
+    ValueError otherwise. Shared by every BEM model factory (#1340).
+    """
+    if simplify_tolerance > MAX_SIMPLIFY_TOL:
+        raise ValueError(
+            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
+            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
+            f"introduced too much distortion for reliable BEM export"
+        )
+    return simplify_tolerance
+
+
 def model_from_takeoff(
     takeoff, labeled, sres, wall_height_m: float = 3.0, building_name: str = "Jesse Building"
 ) -> BEMModel:
@@ -325,15 +361,10 @@ def model_from_takeoff(
         f"{len(skipped)} tags skipped (see skipped_openings)."
     )
 
-    simplify_tolerance = sres.tol * 100.0
-    # Validate simplify_tolerance against maximum threshold (same as tol_area = 3%)
-    MAX_SIMPLIFY_TOL = 3.0
-    if simplify_tolerance > MAX_SIMPLIFY_TOL:
-        raise ValueError(
-            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
-            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
-            f"introduced too much distortion for reliable BEM export"
-        )
+    # fraction -> percent in one shared place, then one shared max-tolerance
+    # rule (#1340)
+    simplify_tolerance = simplify_tolerance_pct(sres.tol)
+    validate_simplify_tolerance(simplify_tolerance)
 
     return BEMModel(
         building_name=building_name,
