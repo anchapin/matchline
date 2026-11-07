@@ -70,10 +70,17 @@ def test_space_id_set_only_when_one_room_behind_wall(roundtrip):
 
 
 def test_space_volume_derived_from_wall_height(roundtrip):
+    """The space volume is the area times the storey height (#1332).
+
+    Before #1332 the space carried no solid, so the importer derived the
+    volume from the wall height; now the space's own Body solid carries that
+    height and the volume comes from the solid -- the same number either way.
+    """
     _, bm = roundtrip
     for s in bm.spaces.values():
         assert s.volume_m3 == pytest.approx(s.area_m2 * 3.0, rel=1e-6)
-        assert "volume derived" in s.core_provenance.note
+        assert s.height_m == pytest.approx(3.0, rel=1e-6)
+        assert "IfcExtrudedAreaSolid" in s.core_provenance.note
 
 
 def test_zone_links_reciprocated(roundtrip):
