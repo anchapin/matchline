@@ -54,32 +54,16 @@ from ifc.wall_pset import (
     _wall_marked_interior,
     _wall_pset_external,
 )
-from pipeline_exceptions import PipelineDependencyError
+from pipeline_exceptions import ensure_ifcopenshell
 
 
 def _ensure_ifc():
+    """Import IfcOpenShell; raises PipelineDependencyError if it is unusable.
 
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
+    The probe itself lives in pipeline_exceptions.ensure_ifcopenshell (#1339);
+    this block used to be pasted three times.
+    """
+    ensure_ifcopenshell()
 
 
 # ---------------------------------------------------------------------------
