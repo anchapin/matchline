@@ -131,9 +131,7 @@ def test_broken_binary_raises_pipeline_dependency_error(broken_ifcopenshell):
     assert isinstance(exc_info.value.__cause__, OSError)
 
 
-MISSING_MESSAGE = (
-    "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
-)
+MISSING_MESSAGE = "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
 BROKEN_MESSAGE = (
     "ifcopenshell is installed but failed to import (broken binary or missing "
     "system library). Reinstall with: pip install ifcopenshell --force-reinstall"
@@ -154,6 +152,7 @@ def test_broken_message_says_how_to_reinstall(broken_ifcopenshell):
         ensure_ifcopenshell()
     assert str(exc_info.value) == BROKEN_MESSAGE
     assert "not installed" not in str(exc_info.value)
+
 
 # ---------------------------------------------------------------------------
 # Working install
