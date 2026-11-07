@@ -147,6 +147,88 @@ class TestModelFromLinkedModelConservationChecks:
         assert bem.area_delta_pct is not None
 
 
+class TestSimplifyToleranceValidation:
+    """Both BEM factories enforce the same max-tolerance rule (#1340).
+
+    ``model_from_takeoff`` (bem/bem_geometry.py) and
+    ``model_from_linked_model`` (run_pipeline.py) share one validation
+    helper, so a >3% simplification is rejected on both paths.
+    """
+
+    def test_model_from_linked_model_rejects_simplify_tolerance_over_3_percent(self):
+        """model_from_linked_model rejects a >3% simplification (linked path).
+
+        Regression for issue #1340: the linked-model path stored the
+        tolerance without any max check, so a >3% simplification was
+        silently accepted there while the takeoff path rejected it.
+        """
+        _bldg, model, _report = _linked(101)
+        sres = simplify_ring(
+            footprint_from_regions([sp.polygon_m for sp in model.spaces.values()]),
+            tol=0.02,
+            wall_height=model.levels[0].wall_height_m,
+        )
+        with pytest.raises(ValueError, match="exceeds maximum threshold 3%"):
+            model_from_linked_model(
+                model=model,
+                simplified_ring=sres.ring,
+                wall_height_m=model.levels[0].wall_height_m,
+                simplify_tolerance=3.5,  # percent — over the 3% threshold
+            )
+
+    def test_model_from_linked_model_accepts_simplify_tolerance_at_threshold(self):
+        """A simplification exactly at the 3% threshold is still accepted."""
+        _bldg, model, _report = _linked(101)
+        sres = simplify_ring(
+            footprint_from_regions([sp.polygon_m for sp in model.spaces.values()]),
+            tol=0.02,
+            wall_height=model.levels[0].wall_height_m,
+        )
+        bem = model_from_linked_model(
+            model=model,
+            simplified_ring=sres.ring,
+            wall_height_m=model.levels[0].wall_height_m,
+            simplify_tolerance=3.0,
+        )
+        assert bem.simplify_tolerance == 3.0
+
+    def test_model_from_takeoff_rejects_simplify_tolerance_over_3_percent(self):
+        """model_from_takeoff still rejects a >3% simplification."""
+        from bem.bem_export import model_from_takeoff
+        from datasets_adapter import DrawingScale, TakeoffResult
+        from room_labels import LabeledSpace, LabeledTakeoff
+
+        takeoff = TakeoffResult(
+            drawing_type="floor_plan", scale=DrawingScale(m_per_px=0.001, note="1:100")
+        )
+        labeled = LabeledTakeoff(
+            spaces=[
+                LabeledSpace(
+                    polygon_px=[[0, 0], [100, 0], [100, 100], [0, 100]],
+                    name="Office",
+                    number="101",
+                    label_confidence=1.0,
+                )
+            ],
+            labels=[],
+            unmatched_labels=[],
+            n_labeled=1,
+            n_total=1,
+        )
+        sres = SimplifyResult(
+            ring=[[0, 0], [100, 0], [100, 100], [0, 100]],
+            original_count=4,
+            simplified_count=4,
+            original_area=10000.0,
+            simplified_area=10000.0,
+            area_delta_pct=0.0,
+            tol=0.04,  # 4% — over the 3% threshold
+            valid=True,
+        )
+        with pytest.raises(ValueError, match="exceeds maximum threshold 3%"):
+            model_from_takeoff(takeoff, labeled, sres, wall_height_m=3.0)
+
+
 class TestModelFromTakeoffSimplifyTolValidation:
     """Verify model_from_takeoff validates simplify_tolerance."""
 
