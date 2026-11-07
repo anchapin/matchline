@@ -48,6 +48,7 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
+from geometry.geometry_kernel import _shoelace
 from ifc.ifc_errors import IfcImportError
 from ifc.wall_pset import (
     PSET_EXTERNAL_MARK,
@@ -1113,16 +1114,6 @@ def _local_extents(el, scale):
     ys = [verts[i + 1] * scale for i in range(0, len(verts), 3)]
     zs = [verts[i + 2] * scale for i in range(0, len(verts), 3)]
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
-
-
-def _shoelace(poly):
-    s = 0.0
-    n = len(poly)
-    for i in range(n):
-        x0, y0 = poly[i]
-        x1, y1 = poly[(i + 1) % n]
-        s += x0 * y1 - x1 * y0
-    return 0.5 * s
 
 
 def _point_in_polygon(pt, poly):
