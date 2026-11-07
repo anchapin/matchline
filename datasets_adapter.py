@@ -191,6 +191,15 @@ class TakeoffLine:
     width_m: float | None
     height_m: float | None
     area_m2: float | None  # count * width * height (None if dims unknown)
+    # Stated sill height in metres above the host wall base (RELATIVE, not
+    # the absolute sill_z_m of #650). None when the source states no sill,
+    # in which case the BEM export falls back to the category default
+    # (window 0.9 m / door 0.0 m) and flags the synthesis for review.
+    sill_m: float | None = None
+    # Stated along-wall centre position in metres from the wall start
+    # (#1341). None when the source states no position, in which case the
+    # BEM export lays openings out sequentially along the wall.
+    s_center_m: float | None = None
 
 
 def polygon_area_px2(poly) -> float:
