@@ -1,0 +1,671 @@
+{
+  "config": {
+    "dataset_root": "$MATCHLINE_DATASETS/detector_yolo/floorplancad",
+    "weights": "$MATCHLINE_DATASETS/yolo11n.pt",
+    "split": "eval",
+    "n_images": 100,
+    "subset_rule": "first N image stems in sorted order of the eval split",
+    "iou": 0.5,
+    "variants": [
+      "clean",
+      "scale_0.8",
+      "scale_1.25",
+      "rot_p15",
+      "rot_m15"
+    ],
+    "subsets": {
+      "clean": [
+        "clean"
+      ],
+      "scale_rot": [
+        "scale_0.8",
+        "scale_1.25",
+        "rot_p15",
+        "rot_m15"
+      ]
+    },
+    "predictions_source": "regenerated",
+    "inference": {
+      "conf": 0.25,
+      "tile": 1024,
+      "overlap": 0.2,
+      "imgsz": 1024,
+      "device": "cpu",
+      "sahi_infer": "detector/sahi_infer.py:infer_sheet",
+      "nms": "detector/sahi_infer.py:nms (iou 0.5, contain 0.8)"
+    },
+    "transform_spec": {
+      "scale_0.8": "resize image to round(W*0.8) x round(H*0.8); GT boxes scaled by 0.8",
+      "scale_1.25": "resize image to round(W*1.25) x round(H*1.25); GT boxes scaled by 1.25",
+      "rot_p15": "PIL rotate +15 deg CCW about the image centre, expand=True, white fill; GT box corners rotated about the centre, axis-aligned bounds kept",
+      "rot_m15": "PIL rotate -15 deg CCW about the image centre, expand=True, white fill; GT box corners rotated about the centre, axis-aligned bounds kept"
+    },
+    "matching": "detector/eval_robustness.py:match_predictions (greedy IoU, same algorithm as eval_zero_shot.py)"
+  },
+  "variants": {
+    "clean": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 0
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 50,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 50
+      },
+      "38": {
+        "name": "cls38",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 2,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 2
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 53,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 53
+      }
+    },
+    "scale_0.8": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 0
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 43,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 43
+      },
+      "38": {
+        "name": "cls38",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 44,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 44
+      }
+    },
+    "scale_1.25": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 1
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 133,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 133
+      },
+      "11": {
+        "name": "cls11",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 2,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 2
+      },
+      "33": {
+        "name": "cls33",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "38": {
+        "name": "cls38",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 3
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 5,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 5
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 145,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 145
+      }
+    },
+    "rot_p15": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 0
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 10,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 10
+      },
+      "25": {
+        "name": "cls25",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 3
+      },
+      "30": {
+        "name": "cls30",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "33": {
+        "name": "cls33",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 27,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 27
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 41,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 41
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 82,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 82
+      }
+    },
+    "rot_m15": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 0
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 16,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 16
+      },
+      "25": {
+        "name": "cls25",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "33": {
+        "name": "cls33",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 75,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 75
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 16,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 16
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 108,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 108
+      }
+    }
+  },
+  "subsets": {
+    "clean": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 341,
+        "n_gt": 341,
+        "n_pred": 0
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 25,
+        "n_gt": 25,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 50,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 50
+      },
+      "38": {
+        "name": "cls38",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 2,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 2
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 53,
+        "fn": 366,
+        "n_gt": 366,
+        "n_pred": 53
+      }
+    },
+    "scale_rot": {
+      "0": {
+        "name": "door",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 1364,
+        "n_gt": 1364,
+        "n_pred": 1
+      },
+      "1": {
+        "name": "window",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 100,
+        "n_gt": 100,
+        "n_pred": 0
+      },
+      "9": {
+        "name": "cls9",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 202,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 202
+      },
+      "11": {
+        "name": "cls11",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 2,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 2
+      },
+      "25": {
+        "name": "cls25",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 4,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 4
+      },
+      "30": {
+        "name": "cls30",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 1
+      },
+      "33": {
+        "name": "cls33",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 103,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 103
+      },
+      "38": {
+        "name": "cls38",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 4,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 4
+      },
+      "74": {
+        "name": "cls74",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 62,
+        "fn": 0,
+        "n_gt": 0,
+        "n_pred": 62
+      },
+      "overall": {
+        "name": "overall",
+        "p": 0.0,
+        "r": 0.0,
+        "tp": 0,
+        "fp": 379,
+        "fn": 1464,
+        "n_gt": 1464,
+        "n_pred": 379
+      }
+    }
+  },
+  "timing": {
+    "n_inferences": 500,
+    "total_seconds": 557.6,
+    "mean_seconds": 1.115,
+    "max_seconds": 9.954
+  },
+  "stems": [
+    "690a547c0420c654cb79d521",
+    "690a547c0420c654cb79d525",
+    "690a547c0420c654cb79d529",
+    "690a547c0420c654cb79d52b",
+    "690a547c0420c654cb79d52e",
+    "690a547c0420c654cb79d559",
+    "690a547c0420c654cb79d58b",
+    "690a547c0420c654cb79d5ab",
+    "690a547c0420c654cb79d5d1",
+    "690a547c0420c654cb79d5ec",
+    "690a547c0420c654cb79d627",
+    "690a547d0420c654cb79d64b",
+    "690a547d0420c654cb79d651",
+    "690a547d0420c654cb79d657",
+    "690a547d0420c654cb79d65b",
+    "690a547d0420c654cb79d66b",
+    "690a547d0420c654cb79d670",
+    "690a547d0420c654cb79d67c",
+    "690a547d0420c654cb79d686",
+    "690a547d0420c654cb79d690",
+    "690a547d0420c654cb79d693",
+    "690a547d0420c654cb79d69d",
+    "690a547d0420c654cb79d6a4",
+    "690a547d0420c654cb79d6b3",
+    "690a547d0420c654cb79d6b8",
+    "690a547d0420c654cb79d6be",
+    "690a547d0420c654cb79d6c4",
+    "690a547d0420c654cb79d6c6",
+    "690a547d0420c654cb79d6c8",
+    "690a547d0420c654cb79d6cd",
+    "690a547d0420c654cb79d6d7",
+    "690a547d0420c654cb79d6dc",
+    "690a547d0420c654cb79d6e5",
+    "690a547d0420c654cb79d6f0",
+    "690a547d0420c654cb79d6f9",
+    "690a547d0420c654cb79d705",
+    "690a547d0420c654cb79d70f",
+    "690a547d0420c654cb79d726",
+    "690a547d0420c654cb79d737",
+    "690a547d0420c654cb79d748",
+    "690a547d0420c654cb79d751",
+    "690a547d0420c654cb79d75c",
+    "690a547d0420c654cb79d776",
+    "690a547d0420c654cb79d787",
+    "690a547d0420c654cb79d78a",
+    "690a547d0420c654cb79d78c",
+    "690a547d0420c654cb79d795",
+    "690a547d0420c654cb79d7a2",
+    "690a547d0420c654cb79d7ab",
+    "690a547d0420c654cb79d7b4",
+    "690a547d0420c654cb79d7d3",
+    "690a547d0420c654cb79d7df",
+    "690a547d0420c654cb79d7ee",
+    "690a547d0420c654cb79d7fb",
+    "690a547d0420c654cb79d7fd",
+    "690a547d0420c654cb79d80b",
+    "690a547d0420c654cb79d810",
+    "690a547d0420c654cb79d81b",
+    "690a547d0420c654cb79d820",
+    "690a547d0420c654cb79d825",
+    "690a547d0420c654cb79d828",
+    "690a547d0420c654cb79d82b",
+    "690a547d0420c654cb79d840",
+    "690a547d0420c654cb79d846",
+    "690a547d0420c654cb79d896",
+    "690a547d0420c654cb79d89d",
+    "690a547d0420c654cb79d8a0",
+    "690a547d0420c654cb79d8a2",
+    "690a547d0420c654cb79d8a6",
+    "690a547d0420c654cb79d8c0",
+    "690a547d0420c654cb79d8ea",
+    "690a547e0420c654cb79d923",
+    "690a547e0420c654cb79d959",
+    "690a547e0420c654cb79d967",
+    "690a547e0420c654cb79d97c",
+    "690a547e0420c654cb79d981",
+    "690a547e0420c654cb79d985",
+    "690a547e0420c654cb79d999",
+    "690a547e0420c654cb79d9ad",
+    "690a547e0420c654cb79d9c7",
+    "690a547e0420c654cb79d9e2",
+    "690a547e0420c654cb79d9ec",
+    "690a547e0420c654cb79d9f0",
+    "690a547e0420c654cb79d9fb",
+    "690a547e0420c654cb79da05",
+    "690a547e0420c654cb79da18",
+    "690a547e0420c654cb79da26",
+    "690a547e0420c654cb79da31",
+    "690a547e0420c654cb79da55",
+    "690a547e0420c654cb79daaf",
+    "690a547e0420c654cb79dad4",
+    "690a547e0420c654cb79dad6",
+    "690a547e0420c654cb79dae4",
+    "690a547e0420c654cb79daee",
+    "690a547e0420c654cb79daf7",
+    "690a547e0420c654cb79db00",
+    "690a547e0420c654cb79db0a",
+    "690a547e0420c654cb79db12",
+    "690a547e0420c654cb79db32",
+    "690a547e0420c654cb79db41"
+  ]
+}
