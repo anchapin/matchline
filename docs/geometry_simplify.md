@@ -17,10 +17,13 @@ segment; deleting it changes simulation cost but must not change results.
 
 ## Algorithm
 
-1. **Envelope construction** (`footprint_from_regions`): union the
-   floor-area polygons (rooms, balconies, …) with shapely and take the
-   exterior ring. Each ring edge is one wall surface. Interior holes are
-   dropped; disjoint wings keep the largest part.
+1. **Envelope construction** (`footprint_parts_from_regions`, per-part since
+   #970): union the floor-area polygons (rooms, balconies, …) with shapely and
+   keep **every connected part** — each wing's exterior ring *plus* each
+   interior ring (courtyard holes). Each ring edge is one wall surface. The
+   legacy single-ring helper `footprint_from_regions` is kept for
+   compatibility only: it returns the exterior ring of the largest part and
+   drops interior holes.
 
 2. **Area-budgeted greedy vertex removal** (`simplify_ring`): a min-heap
    ordered by the triangle area each vertex's removal would cost. Collinear
@@ -31,7 +34,14 @@ segment; deleting it changes simulation cost but must not change results.
      bites even when the total budget would allow them, so real corners and
      wings are never silently deleted;
    - the cumulative budget `tol` (default 2%).
-   
+
+   `simplify_footprint` (#970) drives `simplify_ring` over every exterior
+   ring and every courtyard hole of every part; the budget is **shared** —
+   each ring's own delta is capped at `tol` times its envelope-area share of
+   the total, so the combined delta across all rings stays within `tol`
+   (leftover budget from a ring that found nothing to simplify is not
+   re-pooled to the other rings).
+
    Rejected removals are logged in `skipped` with the reason. A per-removal
    segment-intersection test guards topology (no self-intersecting rings),
    and the final ring is re-validated with shapely.
@@ -87,7 +97,7 @@ each with happy-path, invariant, and defect-injection tests:
 |---|---|---|
 | Oblique / shallow-angle boundary | A dense, bowed slant has many near-free vertices; DP at a moderate `eps` flattens the bow | DP pass is refused and **logged** when its candidate breaches `tol`; the budget, not DP, decides |
 | Circulation continuity (pinch, dogleg) | A neck is narrow and high-vertex-count: expensive by surface count, load-bearing geometrically | Protected by the **per-step cap and the reflex guard**, so relaxing `tol` does not open it |
-| Oblique boundary + internal partitions | The union → exterior-ring step must drop interior walls without disturbing the outer edge | Only the exterior ring reaches the budget; interior partitions are not envelope surfaces |
+| Oblique boundary + internal partitions | The union → exterior-ring step must ignore interior walls without disturbing the outer edge | Only the envelope rings (exteriors + courtyards) reach the budget; interior partitions are not envelope surfaces |
 
 ### Why the area budget is the governing constraint
 
@@ -115,8 +125,24 @@ convention.
 
 ## Gaps / v2
 
-- Input is a single exterior ring. Courtyard buildings (holes) and
-  multi-wing campuses need per-part simplification with a shared budget.
+- The single-ring **compatibility view** still collapses the envelope to one
+  ring: `footprint_from_regions` returns the exterior ring of the largest
+  part with interior holes dropped, and `FootprintSimplifyResult.ring` is
+  the largest part's simplified ring. Consumers still on that view see one
+  wing and no courtyards; new consumers should use
+  `footprint_parts_from_regions` + `simplify_footprint` and read the
+  per-part `parts` / `holes` results.
+- Exporting all rings end to end is **landed for gbXML** (#984): the pipeline
+  (`run_pipeline._stage_3_simplify` → `model_from_linked_model`) hands the
+  per-part result to the export as `rings_m` (one entry per wing, with the
+  courtyard holes wound the other way) and `bem/bem_export.py` writes every
+  ring — see `tests/test_bem_multiring.py`. Still single-ring: the **IFC4**
+  writer (`bem/bem_ifc4.py`) consumes only `model.ring_m`, i.e. the largest
+  part's ring, and the multi-storey gbXML writer (`bem/bem_multistorey.py`,
+  rings from `bem/bem_levels.py`) does not consume the per-part result at
+  all — it derives its level rings from the room outlines. The standalone
+  demo script `run_bem_export.py` still drives the legacy
+  `footprint_from_regions` + `simplify_ring` path.
 - Wall heights are uniform (`wall_height` scalar); varying story heights
   need per-edge heights.
 - No window/door area reallocation: punched openings are handled by the
@@ -129,7 +155,7 @@ convention.
 
 ## Limitations
 
-- **Per-part (handled, #970)**: `footprint_parts_from_regions` keeps every connected wing and each wing's interior rings (courtyards); `simplify_footprint` simplifies all rings under one shared area budget, so no ring can spend more than its area share of the total budget. The single-ring `simplify_ring` remains the per-ring primitive. The BEM export still consumes the largest part's ring (`FootprintSimplifyResult.ring`); exporting all rings end to end is future work.
+- **Per-part (handled, #970)**: `footprint_parts_from_regions` keeps every connected wing and each wing's interior rings (courtyards); `simplify_footprint` simplifies all rings under one shared area budget, so no ring can spend more than its area share of the total budget. The single-ring `simplify_ring` remains the per-ring primitive. The gbXML export writes every ring: the pipeline passes the per-part result through as `rings_m` and `bem/bem_export.py` exports all wings and courtyard holes (#984, `tests/test_bem_multiring.py`). `FootprintSimplifyResult.ring` remains only the largest-part compatibility view, and the IFC4 writer still consumes that single ring.
 - **Uniform wall height**: All walls are assigned a single `wall_height` scalar; buildings with varying story heights will have incorrect envelope area.
 - **No opening reconciliation**: Window and door punched openings are handled separately by `datasets_adapter.rollup_takeoff`, not by this module. The two area streams must be manually reconciled before BEM export to avoid double-counting.
 - **Douglas-Peucker is not topology-preserving**: Simplified edges may cause tiny self-intersections or near-degenerate slivers that are cleaned by shapely but can affect downstream thin-polygon operations.

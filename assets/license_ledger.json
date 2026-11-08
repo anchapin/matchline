@@ -58,6 +58,13 @@
    "source": "https://floorplancad.github.io/"
   },
   {
+   "id": "floorplancad_templates",
+   "name": "FloorPlanCAD door/window template bank (derived)",
+   "license": "CC BY-NC 4.0",
+   "class": "noncommercial",
+   "source": "Derived from FloorPlanCAD (tilak1114/FloorPlanCAD), test split, by scripts/tempfit_baseline.py templates; see assets/templates/floorplancad/manifest.json"
+  },
+  {
    "id": "bsi_clinic",
    "name": "buildingSMART Clinic sample model (IFC2X3)",
    "license": "CC BY 4.0",
@@ -275,6 +282,15 @@
    ],
    "committed": false,
    "produced_by": "gh workflow detector-train.yml (tiled from-scratch training on matchline synthetic sheets only; scratch-tile640v3-38442234997, scratch-tile640v4-38503747552, scratch-tile640v5-38515813872, scratch-tile640v6ms-38530008572)"
+  },
+  {
+   "path": "assets/templates/floorplancad/*.png",
+   "kind": "templates",
+   "datasets": [
+    "floorplancad_templates"
+   ],
+   "committed": true,
+   "produced_by": "python scripts/tempfit_baseline.py templates"
   }
  ]
 }
