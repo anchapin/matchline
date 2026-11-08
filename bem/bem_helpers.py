@@ -7,16 +7,16 @@ import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Shared geometry kernel (#1338): the shared number formatter lives with the
+# shoelace/CCW helpers; re-exported here because bem_export / bem_layers /
+# bem_loads import it from this module.
+from geometry.geometry_kernel import _fmt
 from room_labels import point_in_polygon as _pip
 
 GBXML_NS = "http://www.gbxml.org/schema"
 
 WINDOW_SILL_M = 0.9
 DOOR_SILL_M = 0.0
-
-
-def _fmt(v: float) -> str:
-    return f"{v:.4f}"
 
 
 def _el(parent, tag, text=None, **attrib):
