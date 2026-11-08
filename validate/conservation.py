@@ -81,8 +81,56 @@ def _check_space_area_matches_polygon(ctx: _Ctx) -> CheckResult:
     )
 
 
+def _unassigned_spaces(spaces) -> list:
+    """Spaces whose class was lost, so they cannot tile the floor plate.
+
+    ``poly_type`` comes from geometry/polygon_classify.py: a polygon is
+    classified "room" only when it carries a room number.  A space that lost
+    its room number (poly_type "unassigned", or still labelled "room" but
+    without a number, see _lost_room_number) is not a room: its area may not
+    be counted as a tiling room, otherwise the conservation law stays blind
+    to the defect (the area is then counted on both sides of the comparison).
+
+    Shafts, closets and elevator cores keep their area: they do tile the
+    plate, they are simply not rooms.
+    """
+    out = []
+    for sp in spaces:
+        poly_type = getattr(sp, "poly_type", "room") or "room"
+        if poly_type == "unassigned":
+            out.append(sp)
+            continue
+        if poly_type == "room" and _lost_room_number(sp):
+            out.append(sp)
+    return out
+
+
+def _lost_room_number(sp) -> bool:
+    """True when a space says it is a room but its room number is gone.
+
+    A space that never had a number is not a defect: the link and IFC
+    pipelines name those ids "{level}-UNLABELED-{k}" and the classifier
+    decides their type on other evidence (adjacency, doors, area).  A space
+    whose id still carries a room number while the number field is empty
+    lost that number, so its class is lost with it (#1307).
+    """
+    number = getattr(sp, "number", "")
+    if number is not None and str(number).strip():
+        return False
+    sid = str(getattr(sp, "id", ""))
+    tag = sid.rsplit("-", 1)[-1] if "-" in sid else sid
+    if "UNLABELED" in sid:
+        return False
+    return any(ch.isdigit() for ch in tag)
+
+
 def _check_area_conservation(ctx: _Ctx) -> CheckResult:
-    """SUM(space areas) per level ~= footprint area. The 20x30 -> 600 check."""
+    """SUM(space areas) per level ~= footprint area. The 20x30 -> 600 check.
+
+    Unassigned spaces (a lost classification) do not count as tiling rooms;
+    their area is part of the footprint, so the level no longer tiles and the
+    law fires. #1307.
+    """
     if not _HAS_SIMPLIFY:
         return CheckResult(
             "area_conservation",
@@ -91,12 +139,36 @@ def _check_area_conservation(ctx: _Ctx) -> CheckResult:
             "geometry_simplify unavailable; cannot union footprint",
         )
     worst = []
+    unassigned_levels = []
     for lid, spaces in ctx.level_of.items():
         fp = ctx.footprint_area.get(lid, 0.0)
-        total = sum(sp.area_m2 or 0.0 for sp in spaces)
+        lost = _unassigned_spaces(spaces)
+        lost_keys = {sp.id for sp in lost}
+        tiling = [sp for sp in spaces if sp.id not in lost_keys]
+        total = sum(sp.area_m2 or 0.0 for sp in tiling)
         err = _rel_err(total, fp)
+        if lost:
+            unassigned_levels.append((lid, lost, total, fp, err))
         if err > ctx.tol_area:
             worst.append((lid, total, fp, err))
+    if unassigned_levels:
+        lid, lost, total, fp, err = unassigned_levels[0]
+        lost_area = sum(sp.area_m2 or 0.0 for sp in lost)
+        names = ", ".join(
+            f"{sp.id} ({sp.area_m2 or 0.0:.2f} m^2)" for sp in sorted(lost, key=lambda s: s.id)
+        )
+        return CheckResult(
+            "area_conservation",
+            "Area conservation (sum rooms ~= footprint)",
+            "error",
+            f"level {lid}: {len(lost)} space(s) are unassigned and are not counted "
+            f"as tiling rooms: {names}. The tiling spaces sum to {total:.2f} m^2 vs "
+            f"footprint {fp:.2f} m^2 (rel err {err:.1%}, tol {ctx.tol_area:.0%}); "
+            f"{lost_area:.2f} m^2 of the plate has no room classification.",
+            entities=[sp.id for sp in sorted(lost, key=lambda s: s.id)] + [lid],
+            expected=fp,
+            actual=total,
+        )
     if worst:
         lid, total, fp, err = worst[0]
         return CheckResult(
@@ -1203,10 +1275,10 @@ def _check_roof_solar_aperture(ctx: _Ctx) -> CheckResult:
     Roadmap item 2. Compares ``solar_aperture`` of ``model.roof_planes``
     against ``model.source_roof_planes`` (kept by
     ``roof_simplify.apply_roof_simplification``) at the site latitude, total
-    and per orientation. Warn-only, like the ASHRAE checks, until the export
-    writes sloped roofs (#618/#619).
+    and per orientation. Error-level since the export writes sloped roofs
+    (#618/#619).
 
-    warn  -- total aperture moved more than ROOF_APERTURE_TOL; the
+    error -- total aperture moved more than ROOF_APERTURE_TOL; the
              orientations that moved past it are named.
     pass  -- within tolerance; message gives area and aperture deltas.
     skip  -- roof never simplified (no source planes), no roof planes, or no
@@ -1254,7 +1326,7 @@ def _check_roof_solar_aperture(ctx: _Ctx) -> CheckResult:
         return CheckResult(
             cid_,
             name,
-            "warn",
+            "error",
             f"{head}; past the {ROOF_APERTURE_TOL:.0%} tolerance"
             + (f", moved on {', '.join(moved)}" if moved else ""),
             entities=moved,

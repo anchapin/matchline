@@ -144,25 +144,25 @@ def test_aperture_passes_after_in_budget_simplification():
     assert r.actual["aperture_delta_pct"] == pytest.approx(res.aperture_delta_pct, abs=1e-4)
 
 
-def test_aperture_warns_and_names_the_side_that_lost_a_facet():
+def test_aperture_errors_and_names_the_side_that_lost_a_facet():
     m = make_clean_model()
     m.site_latitude_deg = 40.0
     m.source_roof_planes = _hip_with_dormer(_top(m))
     m.roof_planes = [copy.deepcopy(p) for p in m.source_roof_planes if p.id not in ("S", "D")]
     r = _check_roof_solar_aperture(_Ctx(m))
-    assert r.severity == "warn"
+    assert r.severity == "error"
     assert "S" in r.entities and "N" not in r.entities
     assert r.actual["planes_before"] == 5 and r.actual["planes_after"] == 3
 
 
-def test_aperture_check_is_warn_only_so_export_is_not_blocked():
+def test_aperture_check_is_error_level_so_the_export_is_guarded():
     m = make_clean_model()
     m.site_latitude_deg = 40.0
     m.source_roof_planes = _hip_with_dormer(_top(m))
     m.roof_planes = [copy.deepcopy(p) for p in m.source_roof_planes if p.id != "S"]
     rep = run_checks(m)
     r = next(x for x in rep.results if x.check_id == "roof_solar_aperture")
-    assert r.severity == "warn"
+    assert r.severity == "error"
 
 
 def test_repeat_simplification_keeps_the_true_source():
