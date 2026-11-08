@@ -253,18 +253,7 @@ def test_no_docs_reference_removed_validate_module():
         (break_gbxml_opening_refs, "gbxml_opening_refs", "error"),
         (break_gbxml_wall_areas, "gbxml_wall_areas", "error"),
         (break_ifc_counts, "ifc_entity_counts", "error"),
-        pytest.param(
-            break_room_number,
-            "area_conservation",
-            "error",
-            marks=pytest.mark.xfail(
-                reason="area_conservation sums ALL spaces' areas on each level "
-                "(poly_type is not filtered). break_room_number removes the room "
-                "number making poly_type='unassigned', but the space area is still "
-                "counted in the level sum. The conservation law never fires for "
-                "room-number defects. See issue #201."
-            ),
-        ),
+        (break_room_number, "area_conservation", "error"),
     ],
 )
 def test_defect_fires_expected_check(breaker, check_id, severity):
@@ -277,6 +266,27 @@ def test_defect_fires_expected_check(breaker, check_id, severity):
     )
     if severity == "error":
         assert not export_gate(report), f"{breaker.__name__}: error should close the export gate"
+
+
+def test_unassigned_space_names_the_space_not_just_a_number():
+    """#1307: an unassigned space does not tile the plate, so the conservation
+    law fires and says which space lost its classification."""
+    m = make_clean_model()
+    break_room_number(m)
+    got = _by_id(run_checks(m), "area_conservation")
+    assert got.severity == "error"
+    assert "L1-101" in got.entities, f"the unassigned space must be named: {got.entities}"
+    assert "L1-101" in got.message, f"the message must name the unassigned space: {got.message}"
+
+
+@pytest.mark.parametrize("poly_type", ["shaft", "closet", "elevator_core"])
+def test_non_room_poly_types_still_tile_the_plate(poly_type):
+    """Shafts, closets and elevator cores do tile the plate: no false positive."""
+    m = make_clean_model()
+    for sp in m.spaces.values():
+        sp.poly_type = poly_type
+    got = _by_id(run_checks(m), "area_conservation")
+    assert got.severity == "pass", f"{poly_type} spaces must still tile: {got.message}"
 
 
 @pytest.mark.parametrize(
