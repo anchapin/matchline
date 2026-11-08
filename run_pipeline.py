@@ -49,6 +49,7 @@ from datasets_adapter import (
     parse_schedule_csv,
     rollup_takeoff,
 )
+from geometry.geometry_kernel import _ensure_ccw
 from geometry.geometry_simplify import (  # noqa: F401  (footprint_from_regions reused below)
     footprint_from_regions,
     footprint_parts_from_regions,
@@ -73,17 +74,6 @@ def write_json(p: Path, data: Any) -> None:
     from atomic_io import write_text_atomic
 
     write_text_atomic(p, json.dumps(data, indent=2, default=str))
-
-
-def _ensure_ccw(ring: list) -> list:
-    """Ensure ring is counter-clockwise (for shoelace area > 0)."""
-    s = 0.0
-    n = len(ring)
-    for i in range(n):
-        x0, y0 = ring[i]
-        x1, y1 = ring[(i + 1) % n]
-        s += x0 * y1 - x1 * y0
-    return list(reversed(ring)) if s < 0 else list(ring)
 
 
 def _run_auto_triage(model) -> None:

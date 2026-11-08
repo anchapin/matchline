@@ -39,8 +39,6 @@ from bem.bem_geometry import (
     BEMModel,
     BEMOpeningUnit,  # noqa: F401
     BEMSpace,  # noqa: F401
-    _ensure_ccw,  # noqa: F401
-    _shoelace,  # noqa: F401
     model_from_takeoff,  # noqa: F401
 )
 from bem.bem_helpers import (
@@ -66,6 +64,13 @@ from bem.bem_layers import write_layered, write_partition
 from bem.bem_loads import write_schedules, write_space_loads
 from bem.bem_roof import is_sloped, roof_pieces, shell_volume, space_shell, wall_top
 from bem.bem_space_split import covers_footprint, keep_openings_whole, shared_walls, split_edge
+
+# Shared geometry kernel (#1338): re-exported for existing callers that
+# import the shoelace/CCW helpers from this module.
+from geometry.geometry_kernel import (
+    _ensure_ccw,  # noqa: F401
+    _shoelace,  # noqa: F401
+)
 from room_labels import point_in_polygon as _pip
 from safe_xml import safe_xml_parse, safe_xml_parser
 

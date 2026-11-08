@@ -19,6 +19,7 @@ from bem.bem_helpers import (
 )
 from bem.bem_loads import ifc_load_psets
 from bem.bem_roof import is_sloped, place_skylights_on_pieces, plane_frame, roof_pieces
+from pipeline_exceptions import ensure_ifcopenshell
 
 ROOF_SLAB_THICKNESS_M = 0.2  # matches the wall default; drawings carry no roof build-up
 GROUND_SLAB_THICKNESS_M = 0.15  # nominal; geometry only, the U-value is what matters
@@ -49,20 +50,13 @@ def _shade_frame(verts):
 
 
 def _ensure_ifc():
-    """Import IfcOpenShell via importlib.util.find_spec probe."""
-    import importlib.util
+    """Import IfcOpenShell; raises PipelineDependencyError if it is unusable.
 
-    if importlib.util.find_spec("ifcopenshell") is None:
-        raise PipelineDependencyError(
-            "IfcOpenShell is not installed; install with `pip install ifcopenshell`"
-        )
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (broken binary or missing "
-            "system library). Reinstall with: pip install ifcopenshell --force-reinstall"
-        ) from e
+    The probe itself lives in pipeline_exceptions.ensure_ifcopenshell (#1339);
+    this module used to raise a PipelineDependencyError it never imported,
+    which turned the "not installed" case into a NameError.
+    """
+    ensure_ifcopenshell()
 
 
 IDENTITY_PSET = "Matchline_Identity"  # #588; "Pset_" is reserved for buildingSMART sets

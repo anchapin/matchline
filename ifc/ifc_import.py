@@ -48,38 +48,23 @@ from building_model import (
     SpaceOpening,
     Zone,
 )
+from geometry.geometry_kernel import _shoelace
 from ifc.ifc_errors import IfcImportError
 from ifc.wall_pset import (
     PSET_EXTERNAL_MARK,
     _wall_marked_interior,
     _wall_pset_external,
 )
-from pipeline_exceptions import PipelineDependencyError
+from pipeline_exceptions import ensure_ifcopenshell
 
 
 def _ensure_ifc():
+    """Import IfcOpenShell; raises PipelineDependencyError if it is unusable.
 
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
-    try:
-        import ifcopenshell  # noqa: F401
-    except OSError as e:
-        raise PipelineDependencyError(
-            "ifcopenshell is installed but failed to import (likely a broken binary or "
-            "missing system library). Install with: pip install ifcopenshell --force-reinstall"
-        ) from e
+    The probe itself lives in pipeline_exceptions.ensure_ifcopenshell (#1339);
+    this block used to be pasted three times.
+    """
+    ensure_ifcopenshell()
 
 
 # ---------------------------------------------------------------------------
@@ -1113,16 +1098,6 @@ def _local_extents(el, scale):
     ys = [verts[i + 1] * scale for i in range(0, len(verts), 3)]
     zs = [verts[i + 2] * scale for i in range(0, len(verts), 3)]
     return (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
-
-
-def _shoelace(poly):
-    s = 0.0
-    n = len(poly)
-    for i in range(n):
-        x0, y0 = poly[i]
-        x1, y1 = poly[(i + 1) % n]
-        s += x0 * y1 - x1 * y0
-    return 0.5 * s
 
 
 def _point_in_polygon(pt, poly):
