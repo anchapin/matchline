@@ -141,12 +141,13 @@ are consistent with each other but implausible for a real building).
   overlapping plane ids are named), and when the top level has no roof
   planes while other levels do. Eaves past the footprint are not counted.
   Skips with no roof planes (the flat roof at wall height).
-- `roof_solar_aperture` — **roadmap item 2, sloped roofs (#617). Warn-only**
-  until the export writes sloped roofs. Compares the solar aperture
-  (`solar_aperture.py`) of `roof_planes` against `source_roof_planes`, which
+- `roof_solar_aperture` — **roadmap item 2, sloped roofs (#617).** Error-level
+  since the export writes sloped roofs (#618/#619). Compares the solar
+  aperture (`solar_aperture.py`) of `roof_planes` against
+  `source_roof_planes`, which
   `roof_simplify.apply_roof_simplification` keeps (the first source, so
   repeated runs still compare against the true original), at
-  `site_latitude_deg`. Warns when the total moves more than 2% and names the
+  `site_latitude_deg`. Errors when the total moves more than 2% and names the
   orientations (flat/N/E/S/W) that moved past it; the payload carries area
   and aperture deltas and both per-orientation breakdowns. Skips when the
   roof was never simplified or no latitude is known (none is assumed).

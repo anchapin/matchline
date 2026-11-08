@@ -29,6 +29,7 @@ graph LR
     daylight_skylights
     geometry_atria
     geometry_below_grade
+    geometry_geometry_kernel
     geometry_geometry_simplify
     geometry_grade
     geometry_interstory
@@ -159,9 +160,12 @@ graph LR
   bem_bem_export --> bem_bem_multistorey
   bem_bem_export --> bem_bem_roof
   bem_bem_export --> bem_bem_space_split
+  bem_bem_export --> geometry_geometry_kernel
   bem_bem_export --> geometry_grade
   bem_bem_export --> room_labels
   bem_bem_export --> safe_xml
+  bem_bem_geometry --> geometry_geometry_kernel
+  bem_bem_helpers --> geometry_geometry_kernel
   bem_bem_helpers --> room_labels
   bem_bem_ifc4 --> bem_bem_geometry
   bem_bem_ifc4 --> bem_bem_helpers
@@ -169,6 +173,7 @@ graph LR
   bem_bem_ifc4 --> bem_bem_multistorey
   bem_bem_ifc4 --> bem_bem_roof
   bem_bem_ifc4 --> geometry_grade
+  bem_bem_ifc4 --> pipeline_exceptions
   bem_bem_layers --> bem_bem_helpers
   bem_bem_levels --> bem_bem_geometry
   bem_bem_levels --> geometry_below_grade
@@ -268,6 +273,7 @@ graph LR
   ifc_ifc_import --> constructions
   ifc_ifc_import --> daylight_skylights
   ifc_ifc_import --> geometry_atria
+  ifc_ifc_import --> geometry_geometry_kernel
   ifc_ifc_import --> ifc_ifc_errors
   ifc_ifc_import --> ifc_ifc_roof_planes
   ifc_ifc_import --> ifc_ifc_space_borders
@@ -373,6 +379,7 @@ graph LR
   run_pipeline --> datasets_adapter
   run_pipeline --> detection_provider
   run_pipeline --> export_package
+  run_pipeline --> geometry_geometry_kernel
   run_pipeline --> geometry_geometry_simplify
   run_pipeline --> geometry_roof_simplify
   run_pipeline --> ifc_ifc_export

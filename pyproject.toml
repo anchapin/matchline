@@ -110,6 +110,7 @@ known_first_party = [
     "matchline",
     "ap50", "classes", "degrade", "degrade_scans", "eca", "pdf_fixtures",
     "report_ab_stats", "sahi_infer", "train_scratch",
+    "eval_robustness", "floorplancad_yolo_baseline",
 ]
 
 # cv2 and yaml resolve to their distribution names statically; without this
