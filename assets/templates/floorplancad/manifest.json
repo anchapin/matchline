@@ -1,0 +1,162 @@
+{
+  "id": "floorplancad_door_window_templates",
+  "description": "One canonical door/window template per FloorPlanCAD variant, cut from the local FloorPlanCAD parquet (the test-split export Matchline already holds).",
+  "dataset": "FloorPlanCAD (tilak1114/FloorPlanCAD), test split, local parquet export",
+  "license": "CC BY-NC 4.0",
+  "license_class": "noncommercial",
+  "ledger_entry": "assets/license_ledger.json (id: floorplancad_templates)",
+  "generated_by": "scripts/tempfit_baseline.py templates",
+  "selection_rule": "over the first --scan parquet images, the instance of each variant whose box size is closest to the centre of that variant's modal box-size bucket (sizes rounded to 10 px); ties break on (image_id, object position)",
+  "templates": [
+    {
+      "name": "bay_window",
+      "class": "window",
+      "file": "bay_window.png",
+      "source_image_id": "690a54860420c654cb79efad",
+      "source_parquet_row": 500,
+      "bbox_1000_x_y_w_h": [
+        47.09,
+        31.385,
+        25.98,
+        60.0
+      ],
+      "crop_px": [
+        47,
+        31,
+        73,
+        91
+      ],
+      "size_px": [
+        26,
+        60
+      ],
+      "ink_fraction": 0.08333,
+      "sha256": "5d838835d6f0772dce20aa089ac0ce27dfda7ca1671f423b04953f1480993d29"
+    },
+    {
+      "name": "blind_window",
+      "class": "window",
+      "file": "blind_window.png",
+      "source_image_id": "690a54a90420c654cb7a42d2",
+      "source_parquet_row": 2591,
+      "bbox_1000_x_y_w_h": [
+        131.0,
+        510.69,
+        263.0,
+        135.0
+      ],
+      "crop_px": [
+        131,
+        511,
+        394,
+        646
+      ],
+      "size_px": [
+        263,
+        135
+      ],
+      "ink_fraction": 0.16665,
+      "sha256": "01d798f729c314cb5af70c5b4066130a2047d16624c571af5e5d1908f79b7849"
+    },
+    {
+      "name": "double_door",
+      "class": "door",
+      "file": "double_door.png",
+      "source_image_id": "690a547c0420c654cb79d559",
+      "source_parquet_row": 5,
+      "bbox_1000_x_y_w_h": [
+        658.184,
+        854.99,
+        100.0,
+        97.5
+      ],
+      "crop_px": [
+        658,
+        855,
+        758,
+        952
+      ],
+      "size_px": [
+        100,
+        97
+      ],
+      "ink_fraction": 0.00093,
+      "sha256": "c950c23c4a2d615a123fe7c71ab6cc1bfa5b3e501a34d8942fd48e9eb19e7fb4"
+    },
+    {
+      "name": "single_door",
+      "class": "door",
+      "file": "single_door.png",
+      "source_image_id": "690a54b40420c654cb7a608c",
+      "source_parquet_row": 3412,
+      "bbox_1000_x_y_w_h": [
+        988.891,
+        0.0,
+        11.109,
+        153.013
+      ],
+      "crop_px": [
+        989,
+        0,
+        1000,
+        153
+      ],
+      "size_px": [
+        11,
+        153
+      ],
+      "ink_fraction": 0.01188,
+      "sha256": "fdecea4e1c8dd1d072e58e20a5db7a598eb71635079466d601e98d2c7eaa16c7"
+    },
+    {
+      "name": "sliding_door",
+      "class": "door",
+      "file": "sliding_door.png",
+      "source_image_id": "690a54860420c654cb79ef87",
+      "source_parquet_row": 495,
+      "bbox_1000_x_y_w_h": [
+        10.55,
+        940.0,
+        120.0,
+        60.0
+      ],
+      "crop_px": [
+        11,
+        940,
+        131,
+        1000
+      ],
+      "size_px": [
+        120,
+        60
+      ],
+      "ink_fraction": 0.00458,
+      "sha256": "1fe28db712f9d4e8806448a33a800489b351ede243d2787f396f45c7e3cb3f67"
+    },
+    {
+      "name": "window",
+      "class": "window",
+      "file": "window.png",
+      "source_image_id": "690a548c0420c654cb79ffa6",
+      "source_parquet_row": 931,
+      "bbox_1000_x_y_w_h": [
+        604.845,
+        410.61,
+        10.0,
+        150.0
+      ],
+      "crop_px": [
+        605,
+        411,
+        615,
+        561
+      ],
+      "size_px": [
+        10,
+        150
+      ],
+      "ink_fraction": 0.10933,
+      "sha256": "a1926c6b0b00d4c386ea67e26ecd86d937727b4ec5b69ceda81713c65b942a0a"
+    }
+  ]
+}

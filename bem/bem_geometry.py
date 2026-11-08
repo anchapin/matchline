@@ -7,6 +7,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+# Shared geometry kernel (#1338): one definition of the shoelace area, the
+# CCW normalisation rule and the shared number formatter. Re-exported here
+# because bem_export / bem_levels import them from this module.
+from geometry.geometry_kernel import _ensure_ccw as _ensure_ccw  # noqa: F401
+from geometry.geometry_kernel import _fmt as _fmt  # noqa: F401
+from geometry.geometry_kernel import _shoelace as _shoelace  # noqa: F401
+
 
 @dataclass
 class BEMSpace:
@@ -214,24 +221,6 @@ class BEMModel:
     terrain: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
-
-
-def _shoelace(poly) -> float:
-    s = 0.0
-    n = len(poly)
-    for i in range(n):
-        x0, y0 = poly[i]
-        x1, y1 = poly[(i + 1) % n]
-        s += x0 * y1 - x1 * y0
-    return 0.5 * s
-
-
-def _ensure_ccw(ring):
-    return list(reversed(ring)) if _shoelace(ring) < 0 else list(ring)
-
-
-def _fmt(v: float) -> str:
-    return f"{v:.4f}"
 
 
 # ---------------------------------------------------------------------------
