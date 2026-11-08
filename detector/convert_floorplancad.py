@@ -2,8 +2,13 @@
 """Convert FloorPlanCAD parquet (test split) to YOLO format.
 
 The parquet has columns: image {bytes, path}, image_id, objects {id, bbox,
-category, mask}. Images are 1000x1000 PNGs; bboxes are [x0,y0,x1,y1] in 0-1000
-coordinates, so normalization is a straight /1000.
+category, mask}. Images are 1000x1000 PNGs; bboxes are COCO-style
+[x, y, w, h] in 0-1000 coordinates (top-left corner plus size), so the
+YOLO box is cx=(x+w/2)/1000, cy=(y+h/2)/1000, w=w/1000, h=h/1000.
+
+NOTE: the bboxes are *not* corners. Sorting the four numbers (as an
+[x0,y0,x1,y1] reading would) silently produces wrong centres and wrong
+sizes whenever w < x or h < y.
 
 This is the *test* split only (5,308 samples) -- it serves as a second
 zero-shot / cross-dataset eval set, not training data.
@@ -22,6 +27,20 @@ try:  # package import: python -m detector.convert_floorplancad, pytest
     from detector.classes import CLASS_IDS, FLOORPLANCAD_MAP
 except ImportError:  # direct script execution from inside detector/
     from classes import CLASS_IDS, FLOORPLANCAD_MAP
+
+
+def coco_bbox_to_yolo(bb):
+    """Convert a FloorPlanCAD COCO bbox to a normalized YOLO box.
+
+    FloorPlanCAD bboxes are COCO-style ``[x, y, w, h]`` (top-left corner
+    plus width/height) in 0-1000 coordinates. Returns ``(cx, cy, w, h)``
+    with all four values normalized to 0-1, or ``None`` when the box has a
+    non-positive size (caller skips it).
+    """
+    x, y, w, h = bb
+    if w <= 0 or h <= 0:
+        return None
+    return (x + w / 2) / 1000, (y + h / 2) / 1000, w / 1000, h / 1000
 
 
 def main():
@@ -55,12 +74,10 @@ def main():
             if uni is None:
                 stats['skipped_' + cat] += 1
                 continue
-            x0, y0, x1, y1 = bb
-            x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1))
-            cx, cy = ((x0 + x1) / 2) / 1000, ((y0 + y1) / 2) / 1000
-            w, h = (x1 - x0) / 1000, (y1 - y0) / 1000
-            if w <= 0 or h <= 0:
+            yolo = coco_bbox_to_yolo(bb)
+            if yolo is None:
                 continue
+            cx, cy, w, h = yolo
             lines.append(f"{CLASS_IDS[uni]} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
             stats['box_' + uni] += 1
         with open(os.path.join(lbl_dir, iid + '.txt'), 'w') as f:
