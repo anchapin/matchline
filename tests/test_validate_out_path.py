@@ -49,8 +49,7 @@ def _simple_bem_model() -> BEMModel:
 class TestSingleDefinition:
     def test_bem_export_reexports_the_helpers_version(self):
         """``bem.bem_export`` must expose the *same* function object."""
-        from bem import bem_export
-        from bem import bem_helpers
+        from bem import bem_export, bem_helpers
 
         assert bem_export._validate_out_path is bem_helpers._validate_out_path
 
@@ -61,8 +60,8 @@ class TestSingleDefinition:
         assert ifc_export._validate_out_path is bem_helpers._validate_out_path
 
     def test_run_pipeline_uses_the_shared_version(self):
-        from bem import bem_helpers
         import run_pipeline
+        from bem import bem_helpers
 
         assert run_pipeline._validate_out_path is bem_helpers._validate_out_path
 
