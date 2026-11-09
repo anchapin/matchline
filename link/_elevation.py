@@ -27,6 +27,12 @@ OPENING_DEDUP_TOL_M = 0.15  # center-distance tolerance for same-tag dedup
 
 _FACE_TOL_M = 1e-3
 
+# A detection whose sill sits at grade is a door, not a window. The rule is
+# the one ``elevation_windows.py`` uses to derive its ``category_hint``
+# (``sill < 0.15`` -> "door"), applied here to the sill the link layer
+# already computes.
+DOOR_SILL_MAX_M = 0.15
+
 
 def facade_from_meta(meta: dict, D: float, W: float) -> Facade:
     """Facade for an elevation sheet; meta keys override per-facade defaults.
@@ -182,8 +188,17 @@ def _link_elevation(
         s1, _ = reg.to_facade(wdet["u1_px"], 0)
         s0, s1 = min(s0, s1), max(s0, s1)  # mirrored sheets run right to left
         _, sill = reg.to_facade(0, wdet["v_sill_px"])
+        _, head = reg.to_facade(0, wdet["v_head_px"])
+        # A detection at grade is a door: the same sill rule the elevation
+        # pipeline uses for its category_hint (elevation_windows.py).
+        category = "door" if sill < DOOR_SILL_MAX_M else "window"
         seg, frac, ambiguous = match_interval_to_segments(s0, s1, segments)
         entry = win_sched.get(wdet["tag"])
+        # A schedule row whose category disagrees with the sill-derived one
+        # does not describe this element: the link is kept (sill wins) but the
+        # mismatch is recorded, never swallowed.
+        sched_category = getattr(entry, "category", None) if entry else None
+        mismatch = entry is not None and sched_category != category
         conf = reg.confidence * (0.5 + 0.5 * frac)
         confs.append((reg.method, conf))
         prov = Provenance(
@@ -198,11 +213,19 @@ def _link_elevation(
                 f"(overlap {frac:.0%})" + (" AMBIGUOUS" if ambiguous else "")
             ),
         )
+        if mismatch:
+            prov.note += (
+                f"; CATEGORY MISMATCH: sill {sill:.2f} m -> {category}, "
+                f"schedule row '{wdet['tag']}' is a {sched_category}"
+            )
         if seg is None:
-            report.windows_unlinked += 1
+            if category == "door":
+                report.doors_unlinked += 1
+            else:
+                report.windows_unlinked += 1
             model.flag_for_review(
                 "window_room_link",
-                f"window {wdet['id']} at [{s0:.2f}, {s1:.2f}] m matches no wall segment",
+                f"{category} {wdet['id']} at [{s0:.2f}, {s1:.2f}] m matches no wall segment",
                 conf,
                 prov,
                 target={"kind": "window_detection", "id": wdet["id"]},
@@ -211,7 +234,7 @@ def _link_elevation(
                 SymbolLinkage(
                     symbol_id=wdet["id"],
                     symbol_tag=wdet["tag"],
-                    category="window",
+                    category=category,
                     schedule_entry=entry,
                     confidence=conf,
                     provenance=prov,
@@ -219,15 +242,26 @@ def _link_elevation(
             )
             continue
         sp = space_of_num[seg["room_number"]]
-        width_m = entry.width_m if entry else (s1 - s0)
-        height_m = entry.height_m if entry else None
+        if category == "door":
+            # A door joins a door schedule row. A row of another category does
+            # not describe it: the measured dimensions are used instead and
+            # the mismatch is flagged for review below.
+            if entry is not None and sched_category == "door":
+                width_m = entry.width_m
+                height_m = entry.height_m
+            else:
+                width_m = round(s1 - s0, 3)
+                height_m = round(max(head, sill) - min(head, sill), 3)
+        else:
+            width_m = entry.width_m if entry else (s1 - s0)
+            height_m = entry.height_m if entry else None
         area = width_m * height_m if width_m and height_m else None
-        needs_review = ambiguous or conf < REVIEW_CONFIDENCE
+        needs_review = ambiguous or conf < REVIEW_CONFIDENCE or mismatch
         sp.openings.append(
             SpaceOpening(
                 id=f"{facade.name}-{wdet['id']}",
                 tag=wdet["tag"],
-                category="window",
+                category=category,
                 width_m=width_m,
                 height_m=height_m,
                 sill_m=round(sill, 3),
@@ -243,17 +277,37 @@ def _link_elevation(
             SymbolLinkage(
                 symbol_id=wdet["id"],
                 symbol_tag=wdet["tag"],
-                category="window",
+                category=category,
                 schedule_entry=entry,
                 confidence=conf,
                 provenance=prov,
             )
         )
-        report.windows_linked += 1
+        if category == "door":
+            report.doors_linked += 1
+        else:
+            report.windows_linked += 1
+        if mismatch:
+            # The flag must survive the review-confidence gate, so the
+            # confidence handed over is capped below it (the mismatch itself
+            # is what needs a human).
+            model.flag_for_review(
+                "window_room_link",
+                f"{category} {wdet['id']} -> room {sp.number}: schedule row "
+                f"'{wdet['tag']}' is a {sched_category}, sill {sill:.2f} m says "
+                f"{category}",
+                min(conf, REVIEW_CONFIDENCE - 0.01),
+                prov,
+                target={
+                    "kind": "opening",
+                    "id": f"{facade.name}-{wdet['id']}",
+                    "field": "space_id",
+                },
+            )
         if needs_review:
             model.flag_for_review(
                 "window_room_link",
-                f"window {wdet['id']} -> room {sp.number}: "
+                f"{category} {wdet['id']} -> room {sp.number}: "
                 f"{'ambiguous span' if ambiguous else 'low confidence'} "
                 f"({conf:.2f})",
                 conf,
@@ -268,7 +322,7 @@ def _link_elevation(
         meta["sheet_id"],
         meta["revision"],
         "ingest",
-        f"{report.windows_linked} windows linked via {path} path",
+        f"{report.windows_linked} windows and {report.doors_linked} doors linked via {path} path",
     )
     report.mean_confidence_by_method[reg.method] = sum(c for _, c in confs) / max(1, len(confs))
     return path
