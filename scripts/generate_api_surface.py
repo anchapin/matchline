@@ -46,6 +46,7 @@ PUBLIC_MODULES = [
     "facade_takeoff",
     "geometry.geometry_simplify",
     "grid_detect",
+    "hvac_sizing",
     "hvac_trace",
     "ifc.ifc_export",
     "ifc.ifc_import",
