@@ -47,6 +47,7 @@ disclosed, not hidden.
 ## HVAC
 
 | `hvac_trace.md` | Duct tracing → terminal units → zone graphs |
+| `hvac_sizing.md` | HVAC sizing inputs from the recorded zone-load values (#1292) |
 | `mech_schedule.md` | Mechanical schedule parsing and system-type classification (#974) |
 
 ## BEM and export
