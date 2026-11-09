@@ -249,6 +249,22 @@
         "plan_grid_m": "gs: GridSet, orient: str, m_per_pt: float, origin_pt: float=0.0, flip: bool=False"
       }
     },
+    "hvac_sizing": {
+      "classes": {
+        "SizingIssue": "",
+        "SizingResult": "",
+        "SizingSummary": "",
+        "SlotTotal": "",
+        "ZoneLoadInput": "",
+        "ZoneLoadInputs": "",
+        "ZoneLoadInputsNotSet": ""
+      },
+      "functions": {
+        "collect_zone_load_inputs": "result: Any",
+        "size_from_zone_loads": "inputs: ZoneLoadInputs",
+        "zone_load_slots": ""
+      }
+    },
     "hvac_trace": {
       "classes": {},
       "functions": {
