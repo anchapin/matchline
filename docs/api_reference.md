@@ -228,6 +228,19 @@ module's guide under `docs/`.
 - class `GridLine`
 - class `GridSet`
 
+## `hvac_sizing`
+
+- `collect_zone_load_inputs(result: Any)`
+- `size_from_zone_loads(inputs: ZoneLoadInputs)`
+- `zone_load_slots()`
+- class `SizingIssue`
+- class `SizingResult`
+- class `SizingSummary`
+- class `SlotTotal`
+- class `ZoneLoadInput`
+- class `ZoneLoadInputs`
+- class `ZoneLoadInputsNotSet`
+
 ## `hvac_trace`
 
 - `detect_components(gray: np.ndarray, templates: dict, clf: WisardClassifier)`
@@ -334,7 +347,7 @@ module's guide under `docs/`.
 
 ## `mech_schedule`
 
-- `classify(tag: str, type_name: str, type_description: str, component_description: str='')`
+- `classify(tag: str, type_name: str, type_description: str, component_description: str='', category: str='')`
 - `link_to_model(systems: List[MechSystem], model: Any)`
 - `parse_capacity(text: str)`
 - `parse_cobie_workbook(path: 'str | Path')`
@@ -407,6 +420,7 @@ module's guide under `docs/`.
 - `summarize(summary: dict)`
 - `template(model, model_sha: str)`
 - `worst_first(items)`
+- `write_decisions(out_path: Path, doc: dict)`
 - `write_review(out_dir: Path, model)`
 
 ## `review.review_viewer`
