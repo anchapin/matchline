@@ -42,6 +42,41 @@ none given every open item matches. Zero matches exits 1 without changing
 the model. Bulk flags take no `--confirm`/`--reject` and none of the
 correction-history flags.
 
+## Batch triage by filter (#1294)
+
+Review items pile up per kind and per sheet (`air_loop`,
+`mech_schedule_value`, ...). The batch triage flags decide a whole class of
+items in one run, through the same decision path the single-item
+`--confirm`/`--reject` flags use (same state, same revision log entry, same
+correction history), and record what they decided in a decisions file in the
+report's format (`matchline.review_decisions/1`):
+
+```bash
+matchline review model.json --confirm-kind air_loop
+matchline review model.json --reject-kind mech_schedule_value
+matchline review model.json --confirm-kind air_loop --confirm-sheet A101
+matchline review model.json --reject-sheet M201
+```
+
+Every **open** item matching the filter is decided; the kind and the sheet
+filter combine. The decisions are written to `review_decisions.json` beside
+the model (or to `--decisions-out PATH`), in the same format the HTML review
+page exports, so the batch can be replayed:
+
+```bash
+matchline review model.json --apply review_decisions.json
+```
+
+The file records the queue as it was before the batch (automatic states and
+the model's SHA-256) plus the decisions taken. A batch that matches nothing
+exits 0, changes nothing and writes no decisions file. The batch flags need
+at least one filter and take no `--confirm`/`--reject`, no
+`--bulk-confirm`/`--bulk-reject` and none of the correction-history flags.
+
+> The flags live on the `run_review.py` CLI (`python3 run_review.py --help`).
+> The `matchline review` sub-command in `cli.py` has its own argument parser
+> and does not expose them yet.
+
 ## Usage
 
 ```bash
@@ -55,6 +90,8 @@ matchline review model.json --revert-to-auto opening:S-W1:width_m  # back to aut
 matchline review model.json --corrections          # print the correction history (#997)
 matchline review model.json --reject RVW-002       # reject an item, re-run validation
 matchline review model.json --reject RVW-002 --auto-triage  # enable auto-triage on load
+matchline review model.json --confirm-kind air_loop  # confirm every open item of a kind (#1294)
+matchline review model.json --reject-kind mech_schedule_value  # reject every open item of a kind (#1294)
 ```
 
 `model`
