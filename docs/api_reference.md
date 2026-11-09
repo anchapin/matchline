@@ -199,14 +199,18 @@ module's guide under `docs/`.
 
 - `envelope_area(ring, wall_height: float | None=None)`
 - `footprint_from_regions(polygons: list[list])`
+- `footprint_multipart_from_regions(polygons: list[list])`
 - `footprint_parts_from_regions(polygons: list[list])`
+- `multipart_report(res: MultipartFootprintResult)`
 - `ring_edges(ring)`
 - `ring_perimeter(ring)`
 - `simplify_footprint(parts: list[FootprintPart], tol: float=0.02, wall_height: float | None=None, **kwargs)`
+- `simplify_multipart_footprint(parts: list[FootprintPart], tol: float=0.02, wall_height: float | None=None, **kwargs)`
 - `simplify_report(res: SimplifyResult)`
 - `simplify_ring(ring, tol: float=0.02, min_feature: float | None=None, wall_height: float | None=None, dp_eps: float | None=None, max_single_step: float=0.0025)`
 - class `FootprintPart`
 - class `FootprintSimplifyResult`
+- class `MultipartFootprintResult`
 - class `SimplifyResult`
 
 ## `geometry.polygon_classify`
