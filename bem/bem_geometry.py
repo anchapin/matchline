@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from bem.bem_helpers import DOOR_SILL_M, WINDOW_SILL_M
+
 # Shared geometry kernel (#1338): one definition of the shoelace area, the
 # CCW normalisation rule and the shared number formatter. Re-exported here
 # because bem_export / bem_levels import them from this module.
@@ -82,6 +84,15 @@ class BEMOpeningUnit:
     identity: Optional[dict] = None
     # the opening's construction (#747), a key into BEMModel.opening_constructions
     construction_id: str = ""
+    # Stated sill height in metres above the host wall base — RELATIVE to the
+    # wall base, unlike the absolute ``sill_z_m`` above (#650). None when the
+    # source states no sill; the placement then falls back to the category
+    # default sill and the takeoff path flags the synthesis for review (#1341).
+    sill_m: Optional[float] = None
+    # Stated along-wall centre position in metres from the wall start
+    # (#1341). None when the source states no position; the placement then
+    # lays the opening out sequentially along the wall.
+    s_center_m: Optional[float] = None
 
 
 @dataclass
@@ -340,7 +351,15 @@ def model_from_takeoff(
             )
             continue
         openings.extend(
-            BEMOpeningUnit(cat, line.tag, line.width_m, line.height_m) for _ in range(line.count)
+            BEMOpeningUnit(
+                cat,
+                line.tag,
+                line.width_m,
+                line.height_m,
+                sill_m=line.sill_m,
+                s_center_m=line.s_center_m,
+            )
+            for _ in range(line.count)
         )
     # deterministic order: windows then doors, sorted by tag
     openings.sort(key=lambda o: (o.category, o.tag))
@@ -349,6 +368,18 @@ def model_from_takeoff(
         f"{len(takeoff.lines)} schedule lines; "
         f"{len(skipped)} tags skipped (see skipped_openings)."
     )
+    # #1341: openings whose source states no sill and no along-wall position
+    # are placed with the category-default sill and a synthesized sequential
+    # layout. Say so in the notes instead of passing it off as measured.
+    unstated = [o for o in openings if o.sill_m is None and o.s_center_m is None]
+    if unstated:
+        notes.append(
+            f"{len(unstated)} of {len(openings)} takeoff opening(s) state no "
+            f"sill and no position: they were placed with category-default sills "
+            f"(window {WINDOW_SILL_M} m / door {DOOR_SILL_M} m) and a synthesized "
+            f"sequential along-wall layout. Known takeoff-path limitation — "
+            f"review these openings against the source drawing."
+        )
 
     # fraction -> percent in one shared place, then one shared max-tolerance
     # rule (#1340)
