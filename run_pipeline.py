@@ -40,6 +40,10 @@ from bem.bem_export import (
     write_gbxml,
     write_ifc4,
 )
+from bem.bem_geometry import (
+    simplify_tolerance_pct,
+    validate_simplify_tolerance,
+)
 from bem.bem_helpers import _edge_facades
 from construction_library import apply_construction_library
 from datasets_adapter import (
@@ -109,7 +113,12 @@ def model_from_linked_model(
     This adapter extracts the data needed for BEM export from the
     linked BuildingModel, converting to the BEMModel contract expected
     by write_gbxml and write_ifc4.
+
+    ``simplify_tolerance`` is in PERCENT (the same unit as
+    ``BEMModel.simplify_tolerance``) and is checked against the shared
+    max-tolerance rule (#1340), exactly like the takeoff path.
     """
+    validate_simplify_tolerance(simplify_tolerance)
     # --- spaces -----------------------------------------------------------
     from ifc.ifc_export import _use_fields
     from space_use_defaults import lighting_watts
@@ -793,7 +802,7 @@ def _stage_3_simplify(
         "simplified_count": sres.simplified_count,
         "simplified_ring": sres.ring,
         "area_delta_pct": sres.area_delta_pct,
-        "tolerance_pct": sres.tol * 100.0,
+        "tolerance_pct": simplify_tolerance_pct(sres.tol),
     }
     if hasattr(sres, "parts"):
         # #970: per-part simplification (courtyards + wings); record every
@@ -891,11 +900,25 @@ def _stage_6_conservation_gate(bem_model: BEMModel) -> None:
 
 def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
     """Stage 6: Export BEM model to gbXML and IFC4 formats."""
+    # fraction -> percent, via the one shared conversion helper (#1340)
+    simplify_tolerance = simplify_tolerance_pct(simplify_tol)
+    try:
+        # the shared max-tolerance rule (#1340) rejects a >3% simplification
+        # here too, with the same message as the takeoff path
+        validate_simplify_tolerance(simplify_tolerance)
+    except ValueError as e:
+        raise StageError(
+            "Stage 6: BEM_export",
+            6,
+            str(e),
+            hint="Lower --simplify-tol (default 0.02 = 2%); the maximum "
+            "geometry-simplification tolerance for BEM export is 3%.",
+        ) from e
     bem_model = model_from_linked_model(
         model=model,
         simplified_ring=sres,
         wall_height_m=wall_height,
-        simplify_tolerance=simplify_tol * 100.0,
+        simplify_tolerance=simplify_tolerance,
     )
     if len(model.levels) > 1:
         # several storeys (#639): levels, floors, ceilings and roofs

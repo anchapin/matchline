@@ -75,6 +75,47 @@ def footprint_from_regions(polygons: list[list]) -> list:
     return [tuple(v) for v in ring]
 
 
+def footprint_multipart_from_regions(polygons: list[list]) -> list:
+    """Union a set of floor polygons -> EVERY part of the envelope (#1311).
+
+    Multi-part sibling of ``footprint_from_regions``. That function keeps
+    only the largest part of a MultiPolygon union, so the other wings'
+    envelope area vanishes from every downstream takeoff with no record.
+    This one drops nothing: a MultiPolygon union yields one ``FootprintPart``
+    per connected wing, and each part keeps its interior rings (courtyards).
+
+    Simplify the result with ``simplify_multipart_footprint``, which spends
+    ONE shared area budget across all wings.
+    """
+    polys = []
+    for p in polygons:
+        p = np.asarray(p, dtype=np.float64)
+        if len(p) >= 3:
+            polys.append(Polygon(p))
+    if not polys:
+        return []
+    merged = unary_union(polys)
+    geoms = list(merged.geoms) if merged.geom_type == "MultiPolygon" else [merged]
+    parts = []
+    for g in geoms:
+        if g.is_empty or g.area <= 0:
+            continue
+        ext = np.asarray(g.exterior.coords, dtype=np.float64)
+        if len(ext) > 1 and np.allclose(ext[0], ext[-1]):
+            ext = ext[:-1]
+        holes = []
+        for h in g.interiors:
+            hc = np.asarray(h.coords, dtype=np.float64)
+            if len(hc) > 1 and np.allclose(hc[0], hc[-1]):
+                hc = hc[:-1]
+            if len(hc) >= 3:
+                holes.append([tuple(v) for v in hc])
+        parts.append(
+            FootprintPart(ring=[tuple(v) for v in ext], holes=holes, footprint_area=float(g.area))
+        )
+    return parts
+
+
 def ring_edges(ring) -> list[tuple[tuple, tuple]]:
     """Ordered wall segments of a ring: edge i runs ring[i] -> ring[i+1]."""
     n = len(ring)
@@ -497,34 +538,11 @@ def footprint_parts_from_regions(polygons: list[list]) -> list[FootprintPart]:
     Like ``footprint_from_regions``, but keeps all connected parts (multi-wing
     campuses) and each part's interior rings (courtyards) instead of taking
     the largest exterior and dropping holes. Returns [] for no usable input.
+
+    Thin alias of ``footprint_multipart_from_regions`` (#1311), kept for
+    backward compatibility.
     """
-    polys = []
-    for p in polygons:
-        p = np.asarray(p, dtype=np.float64)
-        if len(p) >= 3:
-            polys.append(Polygon(p))
-    if not polys:
-        return []
-    merged = unary_union(polys)
-    geoms = list(merged.geoms) if merged.geom_type == "MultiPolygon" else [merged]
-    parts = []
-    for g in geoms:
-        if g.is_empty or g.area <= 0:
-            continue
-        ext = np.asarray(g.exterior.coords, dtype=np.float64)
-        if len(ext) > 1 and np.allclose(ext[0], ext[-1]):
-            ext = ext[:-1]
-        holes = []
-        for h in g.interiors:
-            hc = np.asarray(h.coords, dtype=np.float64)
-            if len(hc) > 1 and np.allclose(hc[0], hc[-1]):
-                hc = hc[:-1]
-            if len(hc) >= 3:
-                holes.append([tuple(v) for v in hc])
-        parts.append(
-            FootprintPart(ring=[tuple(v) for v in ext], holes=holes, footprint_area=float(g.area))
-        )
-    return parts
+    return footprint_multipart_from_regions(polygons)
 
 
 @dataclass
@@ -616,3 +634,231 @@ def simplify_footprint(
         tol=tol,
         valid=abs(combined) <= tol * 100.0 + 1e-9,
     )
+
+
+# ---------------------------------------------------------------------------
+# Multi-part footprints with ONE shared area budget (#1311)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MultipartFootprintResult:
+    """Shared-budget simplification of a multi-wing footprint (#1311).
+
+    ``parts`` holds one ``SimplifyResult`` per exterior ring (one per
+    connected wing); ``holes[i]`` the simplified interior rings of
+    ``parts[i]``.
+
+    The area budget is genuinely shared: the total envelope area of all
+    rings may move by at most ``tol`` times the combined original area.
+    Each wing's own allowance is its area share of that budget
+    (``tol`` x its own envelope area), so a greedy wing can never consume
+    another wing's allowance; whatever a wing does not spend is re-pooled
+    for the wings simplified afterwards. ``budget_area`` is the shared
+    budget, ``spent_area`` how much of it was used, and
+    ``part_budget`` / ``part_spent`` the per-wing figures.
+    """
+
+    parts: list  # list[SimplifyResult], one per exterior ring
+    holes: list  # list[list[SimplifyResult]] parallel to parts
+    total_original_area: float
+    total_simplified_area: float
+    area_delta_pct: float  # combined across all rings
+    tol: float = 0.02
+    wall_height: float | None = None
+    budget_area: float = 0.0  # the shared budget, in area units
+    spent_area: float = 0.0  # how much of it was used
+    part_budget: list = field(default_factory=list)  # granted per ring
+    part_spent: list = field(default_factory=list)  # used per ring
+    method: str = "multipart_shared_budget"
+    valid: bool = True
+
+    @property
+    def ring(self) -> list:
+        """Largest part's simplified ring (single-ring view of the result)."""
+        return max(self.parts, key=lambda r: r.original_area).ring
+
+    @property
+    def rings(self) -> list:
+        return [r.ring for r in self.parts]
+
+    @property
+    def original_count(self) -> int:
+        """Total original edge count across every part and hole."""
+        return sum(r.original_count for r in self.parts) + sum(
+            h.original_count for hs in self.holes for h in hs
+        )
+
+    @property
+    def simplified_count(self) -> int:
+        """Total simplified edge count across every part and hole."""
+        return sum(r.simplified_count for r in self.parts) + sum(
+            h.simplified_count for hs in self.holes for h in hs
+        )
+
+    @property
+    def per_surface_mapping(self) -> dict:
+        """Provenance per ring: {"part_0": [...], "part_0_hole_0": [...], ...}.
+
+        Each entry is the ``provenance`` list of that ring's
+        ``SimplifyResult``: every output surface lists the original edge
+        indices it replaced, partitioning that ring's original edges
+        exactly once.
+        """
+        mapping: dict = {}
+        for i, res in enumerate(self.parts):
+            mapping[f"part_{i}"] = res.provenance
+            for j, hres in enumerate(self.holes[i]):
+                mapping[f"part_{i}_hole_{j}"] = hres.provenance
+        return mapping
+
+
+def _simplify_ring_within(
+    ring,
+    allowance: float,
+    area: float,
+    wall_height: float | None,
+    **kwargs,
+) -> tuple[SimplifyResult, float]:
+    """Simplify ``ring`` so its envelope-area change stays within ``allowance``.
+
+    ``simplify_ring`` spends its budget in footprint-triangle units while
+    the envelope area (with a wall height) also carries the perimeter term,
+    so a ring asked for a given ``tol`` can move more envelope area than
+    the caller allowed. This helper therefore checks the envelope-area
+    change and tightens the request until it fits; if even a zero-budget
+    pass does not fit (it cannot: a zero budget only merges collinear
+    vertices, which change neither area nor perimeter), the ring is kept
+    unsimplified and the refusal is logged -- nothing is dropped silently.
+
+    Returns ``(result, area_used)``.
+    """
+    if area <= 0:
+        res = simplify_ring(ring, tol=0.0, wall_height=wall_height, **kwargs)
+        return res, 0.0
+    rel = max(0.0, allowance / area)
+    res = simplify_ring(ring, tol=rel, wall_height=wall_height, **kwargs)
+    used = abs(res.simplified_area - res.original_area)
+    for _ in range(8):
+        if used <= allowance:
+            break
+        # tighten proportionally (with a safety margin) and try again
+        rel = max(0.0, rel * (allowance / used) * 0.95)
+        res = simplify_ring(ring, tol=rel, wall_height=wall_height, **kwargs)
+        used = abs(res.simplified_area - res.original_area)
+    if used > allowance:
+        # refuse: keep the ring as it is (only free collinear merges), and
+        # record the refusal so the budget shows up in the audit trail.
+        res = simplify_ring(ring, tol=0.0, wall_height=wall_height, **kwargs)
+        used = abs(res.simplified_area - res.original_area)
+        res.skipped.append(
+            {
+                "op": "shared_budget",
+                "reason": f"envelope area change {used:.4g} exceeds the shared "
+                f"budget allowance {allowance:.4g}; ring left unsimplified",
+            }
+        )
+    return res, used
+
+
+def simplify_multipart_footprint(
+    parts: list[FootprintPart],
+    tol: float = 0.02,
+    wall_height: float | None = None,
+    **kwargs,
+) -> MultipartFootprintResult:
+    """Simplify every wing of a footprint under ONE shared area budget (#1311).
+
+    Parameters
+    ----------
+    parts : list[FootprintPart], e.g. from ``footprint_multipart_from_regions``.
+    tol : the shared budget: the combined envelope area of all wings may
+        move by at most ``tol`` (default 2%) of the combined original area.
+    wall_height : if given, the budget applies to the full envelope area
+        (walls + roof + floor) of each wing, else to footprint area.
+
+    How the budget is shared: the pool starts at ``tol`` x the combined
+    original envelope area. Each ring is simplified with an allowance of
+    its own area share of the pool (``tol`` x that ring's envelope area),
+    so no wing can spend another wing's share; whatever a ring leaves
+    unspent is re-pooled for the rings simplified after it. The combined
+    area delta therefore stays within ``tol`` of the combined original, and
+    every wing keeps a non-zero allowance of its own.
+    """
+    if not parts:
+        raise ValueError("no footprint parts to simplify")
+    entries: list[tuple[str, int, int | None, list]] = []
+    for i, part in enumerate(parts):
+        entries.append(("part", i, None, part.ring))
+        for j, hole in enumerate(part.holes):
+            entries.append(("hole", i, j, hole))
+    areas = [envelope_area(ring, wall_height) for _, _, _, ring in entries]
+    total_orig = sum(areas)
+    if total_orig <= 0:
+        raise ValueError("degenerate footprint: non-positive envelope area")
+
+    budget = tol * total_orig
+    remaining = budget  # still available in the shared pool
+    released = 0.0  # allowance no ring needed, re-pooled for later rings
+    results: list[SimplifyResult] = []
+    granted: list[float] = []
+    spent: list[float] = []
+    for k, (_, _, _, ring) in enumerate(entries):
+        area = areas[k]
+        fair = tol * area  # this ring's own share of the shared budget
+        allowance = min(fair + released, remaining)
+        borrowed = max(0.0, allowance - fair)
+        released -= borrowed
+        res, used = _simplify_ring_within(ring, allowance, area, wall_height, **kwargs)
+        results.append(res)
+        granted.append(allowance)
+        spent.append(used)
+        remaining -= used
+        released += max(0.0, fair - used)
+
+    total_simp = sum(r.simplified_area for r in results)
+    combined = (total_simp - total_orig) / total_orig * 100.0
+    part_results: list[SimplifyResult] = []
+    hole_results: list[list[SimplifyResult]] = [[] for _ in parts]
+    for (kind, i, j, _), res in zip(entries, results):
+        if kind == "part":
+            part_results.append(res)
+        else:
+            hole_results[i].append(res)
+    return MultipartFootprintResult(
+        parts=part_results,
+        holes=hole_results,
+        total_original_area=total_orig,
+        total_simplified_area=total_simp,
+        area_delta_pct=combined,
+        tol=tol,
+        wall_height=wall_height,
+        budget_area=budget,
+        spent_area=sum(spent),
+        part_budget=granted,
+        part_spent=spent,
+        valid=abs(combined) <= tol * 100.0 + 1e-9 and remaining >= -1e-9,
+    )
+
+
+def multipart_report(res: MultipartFootprintResult) -> dict:
+    """Plain-dict audit report for a ``MultipartFootprintResult``."""
+    return {
+        "original_surface_count": res.original_count,
+        "simplified_surface_count": res.simplified_count,
+        "reduction_pct": (100.0 * (res.original_count - res.simplified_count) / res.original_count)
+        if res.original_count
+        else 0.0,
+        "original_area": res.total_original_area,
+        "simplified_area": res.total_simplified_area,
+        "area_delta_pct": res.area_delta_pct,
+        "tolerance_pct": res.tol * 100.0,
+        "within_tolerance": abs(res.area_delta_pct) <= res.tol * 100.0 + 1e-9,
+        "method": res.method,
+        "budget_area": res.budget_area,
+        "spent_area": res.spent_area,
+        "part_budget": res.part_budget,
+        "part_spent": res.part_spent,
+        "per_surface_mapping": res.per_surface_mapping,
+        "valid": res.valid,
+    }
