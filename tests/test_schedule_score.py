@@ -157,3 +157,55 @@ def test_equipment_row_mapping_scores_clean_truth():
     s = score_schedule_rows([d], truth_rows(), fields=("system_type", "capacity"))
     ac1 = [r for r in truth_rows() if r["tag"] == "AC-1"][0]
     assert d["fields"] == ac1["fields"] and s.grouped >= 1 / 5
+
+
+# --- Confidence calibration (#1295) ---------------------------------------
+
+
+def test_calibration_table_buckets_by_confidence_and_kind():
+    from scripts.schedule_score import calibration_table
+
+    claims = [
+        {"confidence": 0.9, "kind": "schedule_value_airflow", "correct": True},
+        {"confidence": 0.9, "kind": "schedule_value_airflow", "correct": True},
+        {"confidence": 0.8, "kind": "schedule_row_tag", "correct": True},
+        {"confidence": 0.8, "kind": "schedule_row_tag", "correct": False},
+    ]
+    buckets = calibration_table(claims)
+    assert [(b.confidence, b.kind) for b in buckets] == [
+        (0.9, "schedule_value_airflow"),
+        (0.8, "schedule_row_tag"),
+    ]
+    assert buckets[0].measured_correctness == 1.0
+    assert buckets[1].claims == 2 and buckets[1].correct == 1
+    assert buckets[1].measured_correctness == 0.5
+
+
+def test_calibration_table_counts_abstentions_and_unverifiable_apart():
+    from scripts.schedule_score import calibration_table
+
+    claims = [
+        {"confidence": 0.8, "kind": "schedule_row_capacity", "correct": True},
+        {"confidence": 0.8, "kind": "schedule_row_capacity", "abstained": True},
+        {"confidence": 0.8, "kind": "schedule_row_capacity", "abstained": True},
+        {"confidence": 0.8, "kind": "schedule_row_capacity", "unverifiable": True},
+    ]
+    (bucket,) = calibration_table(claims)
+    # An abstention asserted nothing, so it must not dilute correctness.
+    assert bucket.claims == 1 and bucket.correct == 1
+    assert bucket.abstained == 2 and bucket.unverifiable == 1
+    assert bucket.measured_correctness == 1.0
+
+
+def test_calibration_by_confidence_merges_kinds():
+    from scripts.schedule_score import calibration_by_confidence, calibration_table
+
+    claims = [
+        {"confidence": 0.8, "kind": "schedule_row_tag", "correct": True},
+        {"confidence": 0.8, "kind": "schedule_row_service_area", "correct": False},
+        {"confidence": 0.9, "kind": "schedule_value_airflow", "correct": True},
+    ]
+    rows = calibration_by_confidence(calibration_table(claims))
+    assert [r["confidence"] for r in rows] == [0.9, 0.8]
+    assert rows[1]["claims"] == 2 and rows[1]["correct"] == 1
+    assert rows[1]["measured_correctness"] == 0.5
