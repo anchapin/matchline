@@ -35,6 +35,9 @@ SCHEMA_DIR = Path(__file__).resolve().parent.parent / "assets" / "schemas"
 UDF_PREFIX = "matchline:"
 
 SCHEMATRON_DIR = Path(__file__).resolve().parent.parent / "assets" / "schematron"
+# matchline's own policy ruleset (#1293); the upstream ASHRAE 211 use case
+# (L000) lives next to it and is never edited. See assets/schematron/README.md.
+POLICY_SCHEMATRON_PATH = SCHEMATRON_DIR / "matchline_policy-1.0.0.sch"
 
 _NCNAME_BAD = re.compile(r"[^A-Za-z0-9_.-]")
 
@@ -445,10 +448,34 @@ def validate_buildingsync_use_case(
     schematron_path = (
         Path(schematron_path) if schematron_path else SCHEMATRON_DIR / "L000_Audit-1.0.0.sch"
     )
+    return _run_schematron(path, schematron_path)
+
+
+def validate_buildingsync_policy(
+    path: str | Path, schematron_path: str | Path | None = None
+) -> tuple[bool, list]:
+    """Validate a BuildingSync file against matchline's own policy rules (#1293).
+
+    Defaults to the committed repo-policy ruleset in assets/schematron
+    (matchline_policy-1.0.0.sch): zone-load inputs before and traceable to
+    HVAC sizing, and envelope thermal values traceable to drawing data or
+    ASHRAE 90.1-2019 Table 5.5. Returns (ok, failed-assert texts); each text
+    names the rule id (ML-POL-*) and what is missing.
+    """
+    schematron_path = Path(schematron_path) if schematron_path else POLICY_SCHEMATRON_PATH
+    return _run_schematron(path, schematron_path)
+
+
+def _run_schematron(path: str | Path, schematron_path: str | Path) -> tuple[bool, list]:
+    """Run a Schematron ruleset over a BuildingSync file; (ok, failed texts).
+
+    One runner for every ruleset so the upstream use case and the repo
+    policy gate report failures in the same shape.
+    """
     try:
         from lxml import etree, isoschematron
     except ImportError:
-        return False, ["lxml not installed; cannot run use-case validation"]
+        return False, ["lxml not installed; cannot run schematron validation"]
     if not Path(schematron_path).exists():
         return False, [f"schematron not found at {schematron_path}"]
     try:
