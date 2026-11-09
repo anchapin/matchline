@@ -58,6 +58,7 @@ graph LR
   end
   subgraph HVAC
     hvac_legend
+    hvac_sizing
     hvac_trace
     legend_learning
     mech_schedule
@@ -163,6 +164,7 @@ graph LR
   bem_bem_export --> geometry_grade
   bem_bem_export --> room_labels
   bem_bem_export --> safe_xml
+  bem_bem_geometry --> bem_bem_helpers
   bem_bem_geometry --> geometry_geometry_kernel
   bem_bem_helpers --> geometry_geometry_kernel
   bem_bem_helpers --> room_labels
@@ -252,6 +254,7 @@ graph LR
   geometry_roof_simplify --> geometry_roof_geometry
   geometry_roof_simplify --> solar_aperture
   geometry_semi_exterior --> bem_bem_space_split
+  hvac_sizing --> mech_schedule
   hvac_trace --> building_model
   hvac_trace --> jesse
   hvac_trace --> synth_mech
@@ -368,6 +371,7 @@ graph LR
   run_pipeline --> air_loops
   run_pipeline --> atomic_io
   run_pipeline --> bem_bem_export
+  run_pipeline --> bem_bem_geometry
   run_pipeline --> bem_bem_helpers
   run_pipeline --> bem_bem_levels
   run_pipeline --> bem_bem_shading

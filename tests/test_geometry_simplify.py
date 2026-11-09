@@ -682,3 +682,191 @@ def test_multi_part_result_carries_total_edge_counts():
     assert res.original_count == sum(r.original_count for r in res.parts)
     assert res.simplified_count == sum(r.simplified_count for r in res.parts)
     assert res.simplified_count <= res.original_count
+
+
+# ---------------------------------------------------------------------------
+# #1311: multi-part footprints (multi-wing) with ONE shared area budget
+# ---------------------------------------------------------------------------
+
+
+def _over_segmented_rect(x0, y0, w, h, per_edge=4):
+    """A rectangle whose edges carry collinear vertices (CAD over-segmentation)."""
+    pts = []
+    corners = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)]
+    for i in range(4):
+        p, q = corners[i], corners[(i + 1) % 4]
+        for k in range(per_edge):
+            pts.append((p[0] + (q[0] - p[0]) * k / per_edge, p[1] + (q[1] - p[1]) * k / per_edge))
+    return pts
+
+
+def _bumpy_rect(x0, y0, w, h, step=2.0, bump=1.5, n=20):
+    """A rectangle with ``n`` convex kinks along its top edge.
+
+    Each kink is a convex vertex, so removing it shrinks the envelope; a
+    wing full of kinks is therefore a *greedy* consumer of area budget.
+    """
+    pts = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h)]
+    for i in range(n):
+        xr = x0 + w - i * step
+        pts.append((xr - step / 2.0, y0 + h + bump))
+        pts.append((xr - step, y0 + h))
+    return pts
+
+
+class TestFootprintMultipartFromRegions:
+    """The multi-part sibling of ``footprint_from_regions`` drops no wing."""
+
+    def test_two_disjoint_wings_are_both_kept(self):
+        rooms = [
+            _over_segmented_rect(0, 0, 10, 10),
+            _over_segmented_rect(30, 0, 20, 8),
+        ]
+        parts = gs.footprint_multipart_from_regions(rooms)
+        assert len(parts) == 2
+        assert all(len(p.ring) >= 3 for p in parts)
+        assert all(not p.holes for p in parts)
+
+    def test_single_ring_api_still_keeps_only_the_largest_wing(self):
+        """The pre-#1311 single-ring behavior is unchanged for its callers."""
+        rooms = [
+            _over_segmented_rect(0, 0, 10, 10),
+            _over_segmented_rect(30, 0, 20, 8),
+        ]
+        single = footprint_from_regions(rooms)
+        assert Polygon(single).area == pytest.approx(160.0)  # the larger wing only
+        parts = gs.footprint_multipart_from_regions(rooms)
+        assert sum(p.footprint_area for p in parts) == pytest.approx(100.0 + 160.0)
+
+    def test_courtyard_hole_is_kept(self):
+        parts = gs.footprint_multipart_from_regions(_courtyard_rooms())
+        assert len(parts) == 1
+        assert len(parts[0].holes) == 1
+
+    def test_empty_input(self):
+        assert gs.footprint_multipart_from_regions([]) == []
+
+    def test_matches_the_970_alias(self):
+        rooms = [_over_segmented_rect(0, 0, 10, 10), _over_segmented_rect(30, 0, 20, 8)]
+        a = gs.footprint_multipart_from_regions(rooms)
+        b = gs.footprint_parts_from_regions(rooms)
+        assert [p.ring for p in a] == [p.ring for p in b]
+        assert [p.holes for p in a] == [p.holes for p in b]
+
+
+class TestSimplifyMultipartFootprint:
+    def _two_wing_footprint(self):
+        rooms = [
+            _over_segmented_rect(0, 0, 10, 10),  # wing A: over-segmented
+            _over_segmented_rect(30, 0, 20, 8),  # wing B: over-segmented
+        ]
+        return gs.footprint_multipart_from_regions(rooms)
+
+    def test_both_wings_yield_a_simplified_ring(self):
+        parts = self._two_wing_footprint()
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=3.0)
+        assert len(res.parts) == 2
+        for r in res.parts:
+            assert len(r.ring) >= 3
+            assert Polygon(r.ring).is_valid
+            assert r.simplified_count <= r.original_count
+        # the over-segmented wings actually lost vertices
+        assert res.parts[0].simplified_count < res.parts[0].original_count
+        assert res.parts[1].simplified_count < res.parts[1].original_count
+
+    def test_combined_envelope_area_stays_within_tol(self):
+        """The caller's tol applies to the COMBINED envelope area."""
+        parts = self._two_wing_footprint()
+        h = 3.0
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=h)
+        combined_original = sum(envelope_area(p.ring, h) for p in parts)
+        combined_simplified = sum(envelope_area(r.ring, h) for r in res.parts)
+        assert combined_original == pytest.approx(res.total_original_area)
+        assert combined_simplified == pytest.approx(res.total_simplified_area)
+        assert abs(combined_simplified - combined_original) <= 0.02 * combined_original + 1e-9
+        assert abs(res.area_delta_pct) <= 2.0 + 1e-9
+        assert res.valid
+
+    def test_per_surface_mapping_partitions_each_part_edges_once(self):
+        parts = self._two_wing_footprint()
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=3.0)
+        mapping = res.per_surface_mapping
+        assert set(mapping) == {"part_0", "part_1"}
+        for i, r in enumerate(res.parts):
+            src = []
+            for entry in mapping[f"part_{i}"]:
+                src.extend(entry["from"])
+            # every original edge of THIS part is claimed exactly once
+            assert sorted(src) == list(range(r.original_count))
+
+    def test_greedy_wing_cannot_consume_the_whole_budget(self):
+        """Wing A alone wants more than the whole shared budget."""
+        parts = [
+            gs.FootprintPart(
+                ring=[tuple(p) for p in _bumpy_rect(0, 0, 40, 40)], holes=[], footprint_area=1600.0
+            ),
+            gs.FootprintPart(
+                ring=[tuple(p) for p in _bumpy_rect(60, 0, 12, 12, step=2.0, bump=0.4, n=6)],
+                holes=[],
+                footprint_area=144.0,
+            ),
+        ]
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=3.0)
+        # what wing A would spend if it had the shared budget to itself
+        greedy = simplify_ring(parts[0].ring, tol=0.05, wall_height=3.0)
+        demand = abs(greedy.simplified_area - greedy.original_area)
+        assert demand > res.budget_area  # A alone could eat the whole budget
+        # ... but under the shared budget it only gets its own share
+        fair_share = 0.02 * res.parts[0].original_area
+        assert res.part_spent[0] <= fair_share + 1e-6
+
+    def test_greedy_wing_leaves_the_other_wing_within_tolerance(self):
+        parts = [
+            gs.FootprintPart(
+                ring=[tuple(p) for p in _bumpy_rect(0, 0, 40, 40)], holes=[], footprint_area=1600.0
+            ),
+            gs.FootprintPart(
+                ring=[tuple(p) for p in _bumpy_rect(60, 0, 12, 12, step=2.0, bump=0.4, n=6)],
+                holes=[],
+                footprint_area=144.0,
+            ),
+        ]
+        h = 3.0
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=h)
+        combined_original = sum(envelope_area(p.ring, h) for p in parts)
+        combined_simplified = sum(envelope_area(r.ring, h) for r in res.parts)
+        # the combined error stays inside the caller's tolerance ...
+        assert abs(combined_simplified - combined_original) <= 0.02 * combined_original + 1e-9
+        # ... and wing B is neither starved nor over-simplified
+        assert res.parts[1].simplified_count < res.parts[1].original_count
+        wing_b_error = abs(envelope_area(res.parts[1].ring, h) - envelope_area(parts[1].ring, h))
+        assert wing_b_error <= 0.02 * combined_original + 1e-9
+        # wing B spends no more than the allowance it was granted
+        assert res.part_spent[1] <= res.part_budget[1] + 1e-6
+        # ... and its own relative error stays inside the caller's tol
+        assert abs(res.parts[1].area_delta_pct) <= 2.0 + 1e-9
+
+    def test_single_part_matches_the_single_ring_primitive(self):
+        parts = gs.footprint_multipart_from_regions([SQUARE])
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=3.0)
+        assert len(res.parts) == 1
+        direct = simplify_ring(SQUARE, tol=0.02, wall_height=3.0)
+        assert res.parts[0].ring == direct.ring
+        assert res.total_original_area == pytest.approx(direct.original_area)
+        assert res.total_simplified_area == pytest.approx(direct.simplified_area)
+
+    def test_empty_parts_raises(self):
+        with pytest.raises(ValueError):
+            gs.simplify_multipart_footprint([])
+
+    def test_report_is_auditable(self):
+        parts = self._two_wing_footprint()
+        res = gs.simplify_multipart_footprint(parts, tol=0.02, wall_height=3.0)
+        report = gs.multipart_report(res)
+        assert report["original_surface_count"] == res.original_count
+        assert report["simplified_surface_count"] == res.simplified_count
+        assert report["within_tolerance"] is True
+        assert report["valid"] is True
+        assert report["budget_area"] == pytest.approx(0.02 * res.total_original_area)
+        assert report["spent_area"] <= report["budget_area"] + 1e-9
+        assert set(report["per_surface_mapping"]) == {"part_0", "part_1"}

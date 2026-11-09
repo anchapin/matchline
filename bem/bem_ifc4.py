@@ -127,9 +127,12 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
 
     Contents: IfcProject/Site/Building/BuildingStorey hierarchy, one IfcWall
     per simplified envelope edge (real SweptSolid geometry, 0.2 m thick),
-    one IfcSpace per room (placement at centroid; no solid geometry in v1),
+    one IfcSpace per room (placement at centroid; a Body/SweptSolid solid
+    extruded from the room's footprint polygon over the storey height, plus
+    the 2-D FootPrint curve set),
     and per opening an IfcOpeningElement hosted in its wall
-    (IfcRelVoidsElement) filled by an IfcWindow/IfcDoor (IfcRelFillsElement).
+    (IfcRelVoidsElement) filled by an IfcWindow/IfcDoor (IfcRelFillsElement)
+    carrying OverallWidth/OverallHeight.
     Shading surfaces (model.shades) become IfcShadingDevice plates.
 
     Opening placement reuses _place_openings_on_wall, so IFC and gbXML agree
@@ -170,6 +173,34 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         ax = f.create_entity("IfcAxis2Placement3D", **kw)
         return f.create_entity("IfcLocalPlacement", PlacementRelTo=parent, RelativePlacement=ax)
 
+    storey_heights = {}  # IfcBuildingStorey id -> gross height (m), #1332
+
+    def _write_storey_height(st, height_m):
+        """Storey gross height as an IFC4 quantity (#1332).
+
+        A reader that knows only the storey elevation needs the storey's
+        height to place the rooms it recovers; GrossHeight in
+        Qto_BuildingStoreyBaseQuantities is the standard quantity for it
+        (IFC4 ADD2). Best effort: a storey whose height the model does not
+        know carries no quantity at all -- never a default.
+        """
+        if height_m is None:
+            return
+        try:
+            h_m = float(height_m)
+        except (TypeError, ValueError):
+            return
+        if h_m <= 0:
+            return
+        try:
+            import ifcopenshell.api.pset as _Ps
+
+            qto = _Ps.add_qto(f, product=st, name="Qto_BuildingStoreyBaseQuantities")
+            _Ps.edit_qto(f, qto=qto, properties={"GrossHeight": h_m})
+        except (AttributeError, TypeError, ValueError, RuntimeError):
+            return  # quantities are enrichment, not core validity
+        storey_heights[st.id()] = h_m
+
     site = _R.create_entity(f, ifc_class="IfcSite", name="Site")
     bldg = _R.create_entity(f, ifc_class="IfcBuilding", name=model.building_name)
     levels = sorted(getattr(model, "levels", None) or [], key=lambda lv: (lv.elevation_m, lv.id))
@@ -207,6 +238,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                     RelatingPropertyDefinition=ps,
                 )
             storey_of[lv.id] = (st, st_pl)
+            _write_storey_height(st, lv.height_m)
         base = next((lv for lv in levels if lv.wall_type == "ExteriorWall"), levels[0])
         storey, storey_pl = storey_of[base.id]
     else:
@@ -217,6 +249,9 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         _Ag.assign_object(f, products=[storey], relating_object=bldg)
         storey_pl = placement((0.0, 0.0, 0.0))
         storey.ObjectPlacement = storey_pl
+        # single storey: the model's wall height is the storey's gross height
+        # (the storey is the band between the floor and the roof/wall top)
+        _write_storey_height(storey, model.wall_height_m)
     space_level = {}
     if multi:
         from bem.bem_multistorey import level_walls, space_levels
@@ -226,6 +261,32 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     def storey_for(sid):
         lv = space_level.get(sid)
         return storey_of[lv.id] if lv is not None else (storey, storey_pl)
+
+    def _space_height_m(sp, sp_storey):
+        """(height_m, source) to extrude a space's solid over (#1332).
+
+        The space's own stated height first, then its storey's gross height,
+        then the model's wall height: every one of them a height the model
+        knows. A space with none of them gets no solid rather than a guess.
+        """
+        candidates = (
+            (getattr(sp, "height_m", None), "space height"),
+            (
+                storey_heights.get(sp_storey.id()) if sp_storey is not None else None,
+                "storey height",
+            ),
+            (getattr(model, "wall_height_m", None), "wall height"),
+        )
+        for val, src in candidates:
+            if val is None:
+                continue
+            try:
+                h_m = float(val)
+            except (TypeError, ValueError):
+                continue
+            if h_m > 0:
+                return h_m, src
+        return None, ""
 
     # --- walls ------------------------------------------------------------
     walls = []
@@ -357,6 +418,11 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                     ifc_class=fill_class,
                     name=f"{u.tag} ({u.category} {u.width_m:.2f}x{u.height_m:.2f} m)",
                 )
+                # the fill's size as attributes, not only in its name (#1332):
+                # a reader that does not parse the name string still gets the
+                # opening's width/height (the skylight fill path already does)
+                fill.OverallWidth = float(u.width_m)
+                fill.OverallHeight = float(u.height_m)
                 fill.ObjectPlacement = placement((0.0, 0.0, 0.0), parent=opening.ObjectPlacement)
                 f.create_entity(
                     "IfcRelFillsElement",
@@ -661,6 +727,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     # --- spaces -----------------------------------------------------------
     ifc_space_by_sid = {}  # sid -> IfcSpace entity for zone assignment
     space_xy = {}  # sid -> space placement origin in its storey (#649)
+    space_h_fallback = 0  # spaces extruded over the model wall height (#1332)
     for sp in model.spaces:
         n = len(sp.polygon_m)
         cx = sum(p[0] for p in sp.polygon_m) / n
@@ -686,7 +753,7 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         except (AttributeError, TypeError, ValueError, RuntimeError):
             pass  # quantities are enrichment, not core validity
         # footprint geometry: IfcGeometricCurveSet so the space polygon survives
-        # round-trip (IfcSpace has no solid body in v1; this is the 2D footprint).
+        # round-trip (the 2-D footprint a reader can walk without any solid).
         # The polyline's points are SPACE-LOCAL per IFC (ObjectPlacement composes
         # on top), so they are written relative to the space's own placement
         # origin (cx, cy), matching what a conformant reader does on re-import
@@ -707,9 +774,51 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                     RepresentationType="GeometricCurveSet",
                     Items=[curve_set],
                 )
+                reps = [footprint_shape]
+                # solid body (#1332): the footprint polygon extruded over the
+                # space height, so a reader that does not know our footprint
+                # convention recovers the room (and its volume) from geometry.
+                space_h, h_src = _space_height_m(sp, sp_storey)
+                if space_h:
+                    if h_src == "wall height":
+                        space_h_fallback += 1
+                    ring = [
+                        f.create_entity(
+                            "IfcCartesianPoint", Coordinates=(float(x - cx), float(y - cy))
+                        )
+                        for x, y in sp.polygon_m
+                    ]
+                    prof = f.create_entity(
+                        "IfcArbitraryClosedProfileDef",
+                        ProfileType="AREA",
+                        OuterCurve=f.create_entity("IfcPolyline", Points=ring + [ring[0]]),
+                    )
+                    solid = f.create_entity(
+                        "IfcExtrudedAreaSolid",
+                        SweptArea=prof,
+                        Position=f.create_entity(
+                            "IfcAxis2Placement3D",
+                            Location=f.create_entity(
+                                "IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)
+                            ),
+                        ),
+                        ExtrudedDirection=f.create_entity(
+                            "IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)
+                        ),
+                        Depth=float(space_h),
+                    )
+                    reps.append(
+                        f.create_entity(
+                            "IfcShapeRepresentation",
+                            ContextOfItems=body,
+                            RepresentationIdentifier="Body",
+                            RepresentationType="SweptSolid",
+                            Items=[solid],
+                        )
+                    )
                 pds = f.create_entity(
                     "IfcProductDefinitionShape",
-                    Representations=[footprint_shape],
+                    Representations=reps,
                 )
                 space.Representation = pds
             except (AttributeError, TypeError, ValueError, RuntimeError):
@@ -816,6 +925,11 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
         )
     if air_written:
         model.notes.append(f"IFC4: {air_written} air walls as IfcVirtualElement (#638).")
+    if space_h_fallback:
+        model.notes.append(
+            f"IFC4: {space_h_fallback} space(s) extruded over the model wall height "
+            "(no stated space or storey height) (#1332)."
+        )
     model.notes.append(
         f"IFC4: {len(walls)} walls, {len(model.spaces)} "
         f"spaces, {len(model.openings) - len(sky_units)} wall openings hosted, "
@@ -1086,6 +1200,13 @@ def validate_ifc4(path: str | Path) -> tuple[bool, list]:
     for sp in spaces:
         if sp.id() not in aggregated:
             errors.append(f"space '{sp.Name}' not aggregated under a storey")
+        reps = sp.Representation.Representations if sp.Representation else []
+        # a space with a footprint must carry a solid body too (#1332): a
+        # reader that does not know our footprint convention needs the solid
+        if any(r.RepresentationIdentifier == "FootPrint" for r in reps) and not any(
+            r.RepresentationIdentifier == "Body" for r in reps
+        ):
+            errors.append(f"space '{sp.Name}' has a footprint but no solid body")
 
     voided = {
         r.RelatedOpeningElement.id(): r.RelatingBuildingElement.id()

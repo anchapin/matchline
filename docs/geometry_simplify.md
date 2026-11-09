@@ -132,6 +132,10 @@ convention.
   wing and no courtyards; new consumers should use
   `footprint_parts_from_regions` + `simplify_footprint` and read the
   per-part `parts` / `holes` results.
+- Multi-part input is handled per-part: `footprint_multipart_from_regions`
+  keeps every wing, and `simplify_multipart_footprint` (#1311) simplifies
+  all parts under one shared envelope-area budget (each wing capped at its
+  area share, unspent allowance re-pooled; see Limitations).
 - Exporting all rings end to end is **landed for gbXML** (#984): the pipeline
   (`run_pipeline._stage_3_simplify` → `model_from_linked_model`) hands the
   per-part result to the export as `rings_m` (one entry per wing, with the

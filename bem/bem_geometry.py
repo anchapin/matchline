@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from bem.bem_helpers import DOOR_SILL_M, WINDOW_SILL_M
+
 # Shared geometry kernel (#1338): one definition of the shoelace area, the
 # CCW normalisation rule and the shared number formatter. Re-exported here
 # because bem_export / bem_levels import them from this module.
@@ -82,6 +84,15 @@ class BEMOpeningUnit:
     identity: Optional[dict] = None
     # the opening's construction (#747), a key into BEMModel.opening_constructions
     construction_id: str = ""
+    # Stated sill height in metres above the host wall base — RELATIVE to the
+    # wall base, unlike the absolute ``sill_z_m`` above (#650). None when the
+    # source states no sill; the placement then falls back to the category
+    # default sill and the takeoff path flags the synthesis for review (#1341).
+    sill_m: Optional[float] = None
+    # Stated along-wall centre position in metres from the wall start
+    # (#1341). None when the source states no position; the placement then
+    # lays the opening out sequentially along the wall.
+    s_center_m: Optional[float] = None
 
 
 @dataclass
@@ -223,6 +234,42 @@ class BEMModel:
     history: List["Provenance"] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Shared geometry-simplification tolerance rule (#1340)
+# ---------------------------------------------------------------------------
+# One rule, one unit, one place. Both BEM model factories
+# (``model_from_takeoff`` here and ``model_from_linked_model`` in
+# run_pipeline.py) go through the helpers below, so a simplification that is
+# too coarse is rejected on every path instead of only on the takeoff path.
+
+# Maximum geometry-simplification tolerance accepted for BEM export, in PERCENT.
+MAX_SIMPLIFY_TOL = 3.0
+
+
+def simplify_tolerance_pct(tol_fraction: float) -> float:
+    """Convert a simplification tolerance FRACTION (0.02) to PERCENT (2.0).
+
+    The single fraction-to-percent conversion used by every BEM factory.
+    ``BEMModel.simplify_tolerance`` is stored in PERCENT.
+    """
+    return tol_fraction * 100.0
+
+
+def validate_simplify_tolerance(simplify_tolerance: float) -> float:
+    """Validate a PERCENT simplification tolerance against MAX_SIMPLIFY_TOL.
+
+    Returns the tolerance unchanged when it is within the threshold, raises
+    ValueError otherwise. Shared by every BEM model factory (#1340).
+    """
+    if simplify_tolerance > MAX_SIMPLIFY_TOL:
+        raise ValueError(
+            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
+            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
+            f"introduced too much distortion for reliable BEM export"
+        )
+    return simplify_tolerance
+
+
 def model_from_takeoff(
     takeoff, labeled, sres, wall_height_m: float = 3.0, building_name: str = "Jesse Building"
 ) -> BEMModel:
@@ -304,7 +351,15 @@ def model_from_takeoff(
             )
             continue
         openings.extend(
-            BEMOpeningUnit(cat, line.tag, line.width_m, line.height_m) for _ in range(line.count)
+            BEMOpeningUnit(
+                cat,
+                line.tag,
+                line.width_m,
+                line.height_m,
+                sill_m=line.sill_m,
+                s_center_m=line.s_center_m,
+            )
+            for _ in range(line.count)
         )
     # deterministic order: windows then doors, sorted by tag
     openings.sort(key=lambda o: (o.category, o.tag))
@@ -313,16 +368,23 @@ def model_from_takeoff(
         f"{len(takeoff.lines)} schedule lines; "
         f"{len(skipped)} tags skipped (see skipped_openings)."
     )
-
-    simplify_tolerance = sres.tol * 100.0
-    # Validate simplify_tolerance against maximum threshold (same as tol_area = 3%)
-    MAX_SIMPLIFY_TOL = 3.0
-    if simplify_tolerance > MAX_SIMPLIFY_TOL:
-        raise ValueError(
-            f"simplify_tolerance={simplify_tolerance:.2f}% exceeds maximum "
-            f"threshold {MAX_SIMPLIFY_TOL:.0f}% — geometry simplification "
-            f"introduced too much distortion for reliable BEM export"
+    # #1341: openings whose source states no sill and no along-wall position
+    # are placed with the category-default sill and a synthesized sequential
+    # layout. Say so in the notes instead of passing it off as measured.
+    unstated = [o for o in openings if o.sill_m is None and o.s_center_m is None]
+    if unstated:
+        notes.append(
+            f"{len(unstated)} of {len(openings)} takeoff opening(s) state no "
+            f"sill and no position: they were placed with category-default sills "
+            f"(window {WINDOW_SILL_M} m / door {DOOR_SILL_M} m) and a synthesized "
+            f"sequential along-wall layout. Known takeoff-path limitation — "
+            f"review these openings against the source drawing."
         )
+
+    # fraction -> percent in one shared place, then one shared max-tolerance
+    # rule (#1340)
+    simplify_tolerance = simplify_tolerance_pct(sres.tol)
+    validate_simplify_tolerance(simplify_tolerance)
 
     return BEMModel(
         building_name=building_name,

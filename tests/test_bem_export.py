@@ -3,6 +3,8 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from bem.bem_export import BEMModel, BEMOpeningUnit, BEMSpace, validate_gbxml, write_gbxml
 from building_model import Provenance, Space, SpaceOpening
 from datasets_adapter import (
@@ -404,3 +406,145 @@ def test_place_openings_on_wall_returns_early_for_empty_units_on_short_wall():
     placements, notes = _place_openings_on_wall([], 0.05, 3.0)
     assert placements == []
     assert notes == []
+
+
+# -- #1341: stated sill / position win over the synthesized defaults -----------
+
+
+def _takeoff_model(lines):
+    """Build a takeoff BEMModel from TakeoffLines (via model_from_takeoff)."""
+    from bem.bem_geometry import model_from_takeoff
+    from geometry.geometry_simplify import SimplifyResult
+    from room_labels import LabeledSpace, LabeledTakeoff
+
+    takeoff = TakeoffResult(drawing_type="floor_plan", scale=_make_scale(), lines=list(lines))
+    labeled = LabeledTakeoff(
+        spaces=[
+            LabeledSpace(
+                polygon_px=[(0, 0), (1000, 0), (1000, 1000), (0, 1000)],
+                name="Office",
+                number="101",
+                label_confidence=0.9,
+            )
+        ],
+        labels=[],
+        unmatched_labels=[],
+        n_labeled=1,
+        n_total=1,
+    )
+    sres = SimplifyResult(
+        ring=[(0, 0), (1000, 0), (1000, 1000), (0, 1000)],
+        original_count=4,
+        simplified_count=4,
+        original_area=1_000_000.0,
+        simplified_area=1_000_000.0,
+        area_delta_pct=0.0,
+        tol=0.02,
+    )
+    return model_from_takeoff(takeoff, labeled, sres)
+
+
+def test_place_openings_on_wall_uses_stated_sill_instead_of_category_default():
+    # #1341: a source-stated sill must not be silently replaced by the
+    # window category default of 0.9 m.
+    from bem.bem_helpers import _place_openings_on_wall
+
+    stated = BEMOpeningUnit(category="window", tag="A", width_m=1.2, height_m=1.5, sill_m=0.45)
+    placements, _ = _place_openings_on_wall([stated], 6.0, 3.0)
+    assert len(placements) == 1
+    assert placements[0]["sill"] == 0.45
+    assert placements[0]["sill"] != 0.9
+
+    # a unit that states no sill keeps the category default
+    default = BEMOpeningUnit(category="window", tag="A", width_m=1.2, height_m=1.5)
+    placements, _ = _place_openings_on_wall([default], 6.0, 3.0)
+    assert placements[0]["sill"] == 0.9
+
+
+def test_place_openings_on_wall_centres_openings_with_stated_position():
+    # #1341: a stated along-wall centre places the opening centred there.
+    from bem.bem_helpers import _place_openings_on_wall
+
+    unit = BEMOpeningUnit(category="window", tag="A", width_m=1.2, height_m=1.5, s_center_m=3.0)
+    placements, notes = _place_openings_on_wall([unit], 6.0, 3.0)
+    assert len(placements) == 1
+    assert placements[0]["s0"] == pytest.approx(2.4)
+    assert placements[0]["s1"] == pytest.approx(3.6)
+    assert not any("clamped" in n for n in notes)
+
+
+def test_place_openings_on_wall_clamps_stated_position_into_the_wall():
+    # #1341: a stated centre outside the wall run is clamped into it, with
+    # a note saying so.
+    from bem.bem_helpers import _place_openings_on_wall
+
+    unit = BEMOpeningUnit(category="window", tag="A", width_m=1.2, height_m=1.5, s_center_m=0.0)
+    placements, notes = _place_openings_on_wall([unit], 6.0, 3.0)
+    assert placements[0]["s0"] == pytest.approx(0.05)
+    assert placements[0]["s1"] == pytest.approx(1.25)
+    assert any("clamped" in n for n in notes)
+
+
+def test_centred_opening_does_not_advance_the_sequential_cursor():
+    # #1341: an opening with a stated position does not push the openings
+    # that state no position along the wall.
+    from bem.bem_helpers import _place_openings_on_wall
+
+    centred = BEMOpeningUnit(category="window", tag="A", width_m=1.2, height_m=1.5, s_center_m=3.0)
+    unstated = BEMOpeningUnit(category="window", tag="B", width_m=1.2, height_m=1.5)
+    placements, _ = _place_openings_on_wall([centred, unstated], 6.0, 3.0)
+    assert placements[0]["s0"] == 2.4
+    assert placements[1]["s0"] == 0.05
+
+
+def test_takeoff_line_stated_sill_reaches_the_placement():
+    # #1341: the stated sill travels from the takeoff line into the placed
+    # opening instead of being replaced by the 0.9 m window default.
+    from bem.bem_helpers import _place_openings_on_wall
+
+    line = TakeoffLine(
+        tag="A",
+        category="window",
+        count=1,
+        width_m=1.2,
+        height_m=1.5,
+        area_m2=1.8,
+        sill_m=0.45,
+    )
+    model = _takeoff_model([line])
+    assert model.openings[0].sill_m == 0.45
+    placements, _ = _place_openings_on_wall(model.openings, 6.0, 3.0)
+    assert placements[0]["sill"] == 0.45
+
+
+def test_takeoff_model_notes_flag_synthesized_sill_and_position():
+    # #1341: openings with no stated sill/position get category-default
+    # sills and a synthesized layout — that has to be flagged for review.
+    line = TakeoffLine(
+        tag="A",
+        category="window",
+        count=1,
+        width_m=1.2,
+        height_m=1.5,
+        area_m2=1.8,
+    )
+    model = _takeoff_model([line])
+    flags = [n for n in model.notes if "category-default" in n and "review" in n]
+    assert len(flags) == 1, model.notes
+
+
+def test_takeoff_model_notes_do_not_flag_fully_stated_openings():
+    # #1341: openings that state their sill/position are not synthesized,
+    # so there is nothing to flag.
+    line = TakeoffLine(
+        tag="A",
+        category="window",
+        count=1,
+        width_m=1.2,
+        height_m=1.5,
+        area_m2=1.8,
+        sill_m=0.45,
+        s_center_m=3.0,
+    )
+    model = _takeoff_model([line])
+    assert not [n for n in model.notes if "category-default" in n and "review" in n]

@@ -199,14 +199,18 @@ module's guide under `docs/`.
 
 - `envelope_area(ring, wall_height: float | None=None)`
 - `footprint_from_regions(polygons: list[list])`
+- `footprint_multipart_from_regions(polygons: list[list])`
 - `footprint_parts_from_regions(polygons: list[list])`
+- `multipart_report(res: MultipartFootprintResult)`
 - `ring_edges(ring)`
 - `ring_perimeter(ring)`
 - `simplify_footprint(parts: list[FootprintPart], tol: float=0.02, wall_height: float | None=None, **kwargs)`
+- `simplify_multipart_footprint(parts: list[FootprintPart], tol: float=0.02, wall_height: float | None=None, **kwargs)`
 - `simplify_report(res: SimplifyResult)`
 - `simplify_ring(ring, tol: float=0.02, min_feature: float | None=None, wall_height: float | None=None, dp_eps: float | None=None, max_single_step: float=0.0025)`
 - class `FootprintPart`
 - class `FootprintSimplifyResult`
+- class `MultipartFootprintResult`
 - class `SimplifyResult`
 
 ## `geometry.polygon_classify`
@@ -223,6 +227,19 @@ module's guide under `docs/`.
 - class `Bubble`
 - class `GridLine`
 - class `GridSet`
+
+## `hvac_sizing`
+
+- `collect_zone_load_inputs(result: Any)`
+- `size_from_zone_loads(inputs: ZoneLoadInputs)`
+- `zone_load_slots()`
+- class `SizingIssue`
+- class `SizingResult`
+- class `SizingSummary`
+- class `SlotTotal`
+- class `ZoneLoadInput`
+- class `ZoneLoadInputs`
+- class `ZoneLoadInputsNotSet`
 
 ## `hvac_trace`
 
@@ -330,7 +347,7 @@ module's guide under `docs/`.
 
 ## `mech_schedule`
 
-- `classify(tag: str, type_name: str, type_description: str, component_description: str='')`
+- `classify(tag: str, type_name: str, type_description: str, component_description: str='', category: str='')`
 - `link_to_model(systems: List[MechSystem], model: Any)`
 - `parse_capacity(text: str)`
 - `parse_cobie_workbook(path: 'str | Path')`
@@ -403,6 +420,7 @@ module's guide under `docs/`.
 - `summarize(summary: dict)`
 - `template(model, model_sha: str)`
 - `worst_first(items)`
+- `write_decisions(out_path: Path, doc: dict)`
 - `write_review(out_dir: Path, model)`
 
 ## `review.review_viewer`

@@ -347,7 +347,13 @@ def _place_openings_on_wall(units, L: float, h: float):
 
     pos = 0.05
     for j, u in enumerate(units):
-        sill = WINDOW_SILL_M if u.category == "window" else DOOR_SILL_M
+        # #1341: a source-stated sill (relative to the host wall base) wins
+        # over the category default. Units without one keep today's default.
+        stated_sill = getattr(u, "sill_m", None)
+        if stated_sill is None:
+            sill = WINDOW_SILL_M if u.category == "window" else DOOR_SILL_M
+        else:
+            sill = float(stated_sill)
         oh = u.height_m
         if sill >= h:
             notes.append(f"{u.tag}: skipped – sill {sill:.2f} m ≥ wall height {h:.2f} m")
@@ -358,9 +364,31 @@ def _place_openings_on_wall(units, L: float, h: float):
         oh = max(0, oh)
 
         scaled_w = u.width_m * scale
-        s0 = pos
-        s1 = pos + scaled_w
-        pos = s1 + 0.1
+        # #1341: a source-stated along-wall centre wins over the sequential
+        # layout; a centred opening does not advance the cursor for the
+        # openings that state no position.
+        stated_center = getattr(u, "s_center_m", None)
+        if stated_center is None:
+            s0 = pos
+            s1 = pos + scaled_w
+            pos = s1 + 0.1
+        else:
+            center = float(stated_center)
+            raw_s0 = center - scaled_w / 2.0
+            raw_s1 = raw_s0 + scaled_w
+            if scaled_w <= usable:
+                # shift the opening so it fits, keeping its width
+                s0 = min(max(raw_s0, 0.05), L - 0.05 - scaled_w)
+                s1 = s0 + scaled_w
+            else:
+                # wider than the usable run: keep it inside the wall
+                s0 = 0.05
+                s1 = min(0.05 + scaled_w, L - 0.05)
+            if abs(s0 - raw_s0) > 1e-9 or abs(s1 - raw_s1) > 1e-9:
+                notes.append(
+                    f"{u.tag}: position clamped to {s0:.2f}-{s1:.2f} m "
+                    f"(stated centre {center:.2f} m, wall {L:.2f} m)"
+                )
 
         if s1 - s0 < scaled_w * 0.5:
             notes.append(

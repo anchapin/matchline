@@ -820,6 +820,10 @@ def generate_building(
                 "facade": "north",
                 "facade_ref_corner_m": [0.0, 0.0],
                 "facade_length_m": W,
+                # Drawn as seen from the north: the facade reference corner
+                # sits at the RIGHT end of the drawn wall, so s runs right to
+                # left (#702, #1310).
+                "elevation_mirrored": True,
             },
             "data": ns["data"],
         }

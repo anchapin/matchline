@@ -56,6 +56,7 @@ from bem.bem_helpers import (
     _opening_type,
     _place_openings_on_wall,
     _place_skylights_on_roof,
+    _validate_out_path,
     _wall_edges,
     glazing_exportable,
 )
@@ -88,20 +89,6 @@ __all__ = [
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[1] / "assets" / "schemas" / "GreenBuildingXML_Ver8.01.xsd"
 )
-
-
-def _validate_out_path(path: str | Path) -> Path:
-    """Validate output path is safe: reject traversal beyond cwd.
-
-    Allows absolute paths (user-intended destinations).
-    For relative paths: resolves symlinks and rejects if the result escapes cwd.
-    """
-    path = Path(path)
-    if not path.is_absolute():
-        resolved = path.resolve()
-        if not str(resolved).startswith(str(Path.cwd())):
-            raise ValueError(f"Path escapes working directory: {path}")
-    return path
 
 
 # ---- gbXML helpers ----

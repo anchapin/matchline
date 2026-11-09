@@ -175,6 +175,10 @@ geometry that matters for space boundaries is:
 | 8 | **Thermal attributes** | per-space wall U-value (`BEMSpace.wall_u_value_w_m2k`, `bem/bem_geometry.py:22`), constructions, opening U/SHGC (`bem/bem_geometry.py:182-186`) |
 | 9 | **Loads / lighting / zones / HVAC** | `BEMSpace.people_per_m2` etc., `BEMModel.zones`, `BEMModel.zone_terminals` — not geometry |
 
+Takeoff openings that state no sill and no along-wall position are placed with the
+category-default sills (window 0.9 m / door 0.0 m) and a synthesized sequential
+layout; the export writes a note flagging that for review (#1341).
+
 At the canonical-model level the same picture holds: `building_model.Space`
 carries `polygon_m` (canonical y-down metres) and `openings`
 (`building_model.py:324-336`); `SpaceOpening` carries `host_facade`,
