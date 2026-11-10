@@ -6,13 +6,23 @@ item 7). The drawing pipeline and the IFC pipeline converge on the same
 `BuildingModel`; everything downstream (simplify → validate → export) is
 shared.
 
+**Supported schemas (#1351):** IFC4 (native), IFC4X3 including IFC4X3_ADD2
+(native read — the Tier-0 reader's entity/attribute usage is a safe subset
+of 4X3, so no translation is applied and no entity can be dropped by a
+schema mapping; the model records `source_schema = "IFC4X3"`), and IFC2X3
+(upgraded in memory to IFC4 first, #929). The installed IfcOpenShell
+registers only the `IFC4X3_ADD2` identifier, so a file declaring plain
+`IFC4X3` is opened from a temporary copy whose header identifier alone is
+relabeled to `IFC4X3_ADD2` — entity data untouched — and the model records
+`source_schema = "IFC4X3 (opened as IFC4X3_ADD2)"`.
+
 ## What Tier 0 recovers
 
 | IFC source | Recovered as | Notes |
 |---|---|---|
 | `IfcProject`→`IfcSite`→`IfcBuilding`→`IfcBuildingStorey` via `IfcRelAggregates` | `Level` per storey (id `L1..Ln` by elevation) | model name from `IfcBuilding`/`IfcProject` |
 | `IfcSpace` + own solid geometry | `Space` + footprint polygon, area, volume | polygon from `IfcExtrudedAreaSolid`/`IfcArbitraryClosedProfileDef`; room number parsed from trailing token of `Name` (`"OPEN OFFICE 101"` → name/number) |
-| `IfcSpace` without geometry | `Space` with area from `Qto_SpaceBaseQuantities.GrossFloorArea` | confidence 0.6 + `space_no_geometry` review item |
+| `IfcSpace` without geometry | `Space` with area from `Qto_SpaceBaseQuantities` quantities | quantity fallback order: solid → curve set → face set → Gross quantities (`GrossFloorArea`/`GrossVolume`, confidence 0.6, method `...:quantity`) → Net quantities (`NetFloorArea`/`NetVolume`, confidence 0.5, method `...:quantity_net` — net excludes walls/partitions, so it is kept distinguishable from Gross) + `space_no_geometry` review item either way |
 | `IfcWall` (+StandardCase) | `BimElement` **and** `EnvelopeWall` (centerline segment) | dims from rectangle profile, else local extents via geometry kernel |
 | `IfcSlab` / `IfcRoof` / `IfcColumn` / `IfcBeam` / `IfcCurtainWall` / `IfcDuctSegment` | `BimElement` inventory | placement-only elements recorded with confidence 0.5 |
 | `IfcOpeningElement` + `IfcRelVoidsElement` + `IfcRelFillsElement` | `BimOpening` on the host wall's `BimElement` | width/height/sill/`s_center` from the opening solid mapped into the wall frame; category from fill class; tag parsed from fill `Name` |
@@ -75,7 +85,7 @@ documented handedness choice, recorded in provenance.
 | Spatial hierarchy / containment | 1.0 | explicit relationships, no inference |
 | Space identity from solid | 0.95 | authored geometry |
 | Space number from `Name` parse | 0.85 | convention-dependent heuristic |
-| Space area from quantity fallback | 0.6 + review | no geometry; quantity may be stale |
+| Space area from quantity fallback | 0.6 (Gross) / 0.5 (Net) + review | no geometry; quantity may be stale; Net figures exclude walls/partitions, hence the lower step |
 | Element dims (profile or kernel) | 0.95 | measured from the solid |
 | Element placement-only | 0.5 | inventory, no dims |
 | Material layers | 0.95 | authored; thickness is exact |
