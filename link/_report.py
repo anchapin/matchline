@@ -20,6 +20,8 @@ class LinkReport:
     diffusers_assigned: int = 0
     windows_linked: int = 0
     windows_unlinked: int = 0
+    doors_linked: int = 0
+    doors_unlinked: int = 0
     review_items: int = 0
     mean_confidence_by_method: dict = field(default_factory=dict)
 
