@@ -199,7 +199,11 @@ jobs:
         # GHSA-4558-3h8r-v8xp) and PYSEC-2026-4332 (CVE-2026-112403,
         # GHSA-8g5g-8vmr-9782), same package (pillow 12.3.0), same fix
         # version (13.0.0), same gradio cap; ignored with the same reason.
-        # Ignore count 37 -> 39.
+        # Ignore count 37 -> 39. Sixth rotation 2026-11-11 (PR #1352 CI
+        # run 43032125281): 1 more pillow advisory, PYSEC-2026-4363
+        # (CVE-2026-112902, GHSA-xvh5-g6gv-559v, libtiff encoder), same
+        # package (pillow 12.3.0), same fix version (13.0.0), same gradio
+        # cap; ignored with the same reason. Ignore count 39 -> 40.
         run: >-
           uv pip uninstall matchline && uv run --no-sync pip-audit --strict
           --ignore-vuln CVE-2026-112390
@@ -241,6 +245,7 @@ jobs:
           --ignore-vuln CVE-2026-114501
           --ignore-vuln PYSEC-2026-4327
           --ignore-vuln PYSEC-2026-4332
+          --ignore-vuln PYSEC-2026-4363
 
   deptry:
     # #1190: the #1070 bug class - a shipped module imports a package that is
