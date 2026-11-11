@@ -1156,8 +1156,63 @@ def _material_layers(el, scale):
 # ---------------------------------------------------------------------------
 
 
+def _project_unit_scale(f, unit_type, exponent):
+    """Scale to SI for the project's declared unit of ``unit_type``.
+
+    Returns None when the file declares no such unit, so the caller can
+    fall back to the length-scale power (the historical behaviour for
+    files that declare only a length unit). A per-quantity ``Unit``
+    attribute, when present, wins over the project unit — handled by the
+    caller, which can see the quantity.
+    """
+    if f is None:
+        return None
+    try:
+        ua = f.by_type("IfcUnitAssignment")[0]
+    except Exception:
+        return None
+    for u in ua.Units or []:
+        if getattr(u, "UnitType", None) != unit_type:
+            continue
+        if u.is_a("IfcSIUnit"):
+            return _SI_PREFIX.get((u.Prefix or ""), 1.0) ** exponent
+        if u.is_a("IfcConversionBasedUnit"):
+            try:
+                cf = u.ConversionFactor
+                return (
+                    float(cf.ValueComponent)
+                    * _SI_PREFIX.get((cf.UnitComponent.Prefix or ""), 1.0) ** exponent
+                )
+            except Exception:
+                return None
+    return None
+
+
 def _quantities(el, qset_name, scale):
-    """{quantity_name: value} in meters/m^2/m^3 for an IfcElementQuantity."""
+    """{quantity_name: value} in meters/m^2/m^3 for an IfcElementQuantity.
+
+    Area/volume quantities are scaled by the project's declared AREAUNIT
+    / VOLUMEUNIT when it has one (#1351): exporters such as MutinyBIM
+    declare millimetre geometry with square/cubic-metre quantities, and
+    scaling those by the length unit's square/cube silently shrank every
+    quantity-sourced area by 1e6. Files declaring only a length unit keep
+    the length-power fallback. A quantity carrying its own ``Unit``
+    overrides the project unit for that quantity.
+    """
+    f = getattr(el, "file", None)
+    area_scale = _project_unit_scale(f, "AREAUNIT", 2)
+    if area_scale is None:
+        area_scale = scale**2
+    volume_scale = _project_unit_scale(f, "VOLUMEUNIT", 3)
+    if volume_scale is None:
+        volume_scale = scale**3
+
+    def _quantity_scale(q, exponent, fallback):
+        unit = getattr(q, "Unit", None)
+        if unit is not None and unit.is_a("IfcSIUnit"):
+            return _SI_PREFIX.get((unit.Prefix or ""), 1.0) ** exponent
+        return fallback
+
     out = {}
     for rel in getattr(el, "IsDefinedBy", None) or []:
         if not rel.is_a("IfcRelDefinesByProperties"):
@@ -1169,9 +1224,9 @@ def _quantities(el, qset_name, scale):
             continue
         for q in psd.Quantities or []:
             if q.is_a("IfcQuantityArea"):
-                out[q.Name] = float(q.AreaValue) * scale**2
+                out[q.Name] = float(q.AreaValue) * _quantity_scale(q, 2, area_scale)
             elif q.is_a("IfcQuantityVolume"):
-                out[q.Name] = float(q.VolumeValue) * scale**3
+                out[q.Name] = float(q.VolumeValue) * _quantity_scale(q, 3, volume_scale)
             elif q.is_a("IfcQuantityLength"):
                 out[q.Name] = float(q.LengthValue) * scale
     return out
@@ -1486,6 +1541,18 @@ def _extract_space_geometry(sp, scale, sid, sp_name, prov_fn, model):
                     volume = q.get("GrossVolume")
                     conf, method = 0.6, "ifc_import:tier0:space:quantity"
                     note = "no solid geometry; area from GrossFloorArea"
+                elif "NetFloorArea" in q:
+                    # #1351: net-quantity fallback. Only when the Gross
+                    # quantities are absent, so a space that carries both
+                    # keeps the Gross value (higher confidence). Net figures
+                    # exclude walls/partitions, so they land one step lower
+                    # on the confidence scale than the Gross fallback (0.6)
+                    # and carry their own provenance method so downstream
+                    # consumers can tell the two apart.
+                    area = q["NetFloorArea"]
+                    volume = q.get("NetVolume")
+                    conf, method = 0.5, "ifc_import:tier0:space:quantity_net"
+                    note = "no solid geometry; area from NetFloorArea (net quantity)"
                 model.flag_for_review(
                     "space_no_geometry",
                     f"space {sid} ({sp_name}) has no solid geometry",
@@ -3786,6 +3853,71 @@ def _upgrade_ifc2x3_to_ifc4(f):
     return new_file, skipped
 
 
+_FILE_SCHEMA_RE = re.compile(r"FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'\s*\)\s*\)")
+
+
+def _declared_step_schema(path):
+    """Return the schema identifier declared in the STEP header, or None.
+
+    Reads only the header region; the FILE_SCHEMA line sits inside the
+    HEADER section, well within the first 64 KB of any real export.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(65536).decode("latin-1")
+    except OSError:
+        return None
+    m = _FILE_SCHEMA_RE.search(head)
+    return m.group(1) if m else None
+
+
+def _open_ifc(path):
+    """Open an IFC file, returning ``(file, relabeled)``.
+
+    Native read is the IFC4X3 route (#1351): the Tier-0 reader's entity /
+    attribute usage is a safe subset of IFC4X3 (verified by a full schema
+    attribute diff at implementation time), so a 4X3 file is read directly
+    with no translation and no entity loss — unlike a Migrator downgrade
+    to IFC4, whose class map cannot carry 4X3-only classes.
+
+    One library caveat: the installed ifcopenshell registers only the
+    ``IFC4X3_ADD2`` schema identifier, so a file declaring plain
+    ``IFC4X3`` (or another 4X3 variant) fails to open with "Unsupported
+    schema". For those, the header identifier alone is relabeled to
+    ``IFC4X3_ADD2`` in a temporary copy (entity data untouched) and the
+    caller records the relabel on the model's ``source_schema`` — the
+    substitution is visible, never silent. Any other open failure
+    re-raises unchanged so the caller's error mapping still applies.
+    """
+    import tempfile
+
+    import ifcopenshell
+
+    try:
+        return ifcopenshell.open(str(path)), False
+    except Exception as exc:
+        if "Unsupported schema" not in str(exc):
+            raise
+        declared = _declared_step_schema(path)
+        if not declared or not declared.upper().startswith("IFC4X3"):
+            raise
+        if declared.upper() == "IFC4X3_ADD2":
+            raise
+        data = Path(path).read_bytes()
+        relabeled, n = _FILE_SCHEMA_RE.subn(
+            "FILE_SCHEMA(('IFC4X3_ADD2'))", data.decode("latin-1"), count=1
+        )
+        if n == 0:
+            raise
+        with tempfile.NamedTemporaryFile("w", suffix=".ifc", delete=False) as tmp:
+            tmp.write(relabeled)
+            tmp_path = tmp.name
+        try:
+            return ifcopenshell.open(tmp_path), True
+        finally:
+            os.unlink(tmp_path)
+
+
 def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     """Import an IFC file (Tier 0) into the canonical BuildingModel.
 
@@ -3795,7 +3927,6 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     walls (unattached to spaces -- Tier 1), and opportunistic zones.
     """
     _ensure_ifc()
-    import ifcopenshell
 
     path = Path(path)
     if not path.is_absolute():
@@ -3859,8 +3990,9 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             "or re-download it. A partial IFC would import as a silently "
             "partial building.",
         )
+    schema_relabeled = False
     try:
-        f = ifcopenshell.open(str(path))
+        f, schema_relabeled = _open_ifc(path)
     except OSError as exc:
         raise IfcImportError(
             "ifc.unreadable_file",
@@ -3871,7 +4003,7 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         raw = str(exc)
         if "Unsupported schema" in raw:
             code = "ifc.unsupported_schema"
-            remediation = "Re-export as IFC4 or IFC2X3; other schema variants are not read."
+            remediation = "Re-export as IFC4, IFC4X3 or IFC2X3; other schema variants are not read."
         elif "SPF header" in raw:
             code = "ifc.invalid_header"
             remediation = (
@@ -3898,12 +4030,19 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
             f"{max_elements} if the machine has the memory for it.",
         )
     upgrade_skipped = None  # (entity, error) pairs, only when we upgraded
-    if f.schema != "IFC4":
+    source_schema = None  # set for non-IFC4 inputs, IFC2X3-pattern
+    if f.schema == "IFC4X3" or getattr(f, "schema_identifier", "").startswith("IFC4X3"):
+        # Native read (#1351): the Tier-0 pipeline runs unchanged on the
+        # 4X3 file — no translation, so no entity can be dropped by a
+        # schema mapping. A plain-IFC4X3 file that ifcopenshell could only
+        # open under the ADD2 identifier says so on the model.
+        source_schema = "IFC4X3 (opened as IFC4X3_ADD2)" if schema_relabeled else "IFC4X3"
+    elif f.schema != "IFC4":
         if f.schema != "IFC2X3":
             raise IfcImportError(
                 "ifc.unsupported_schema",
-                f"expected IFC4 or IFC2X3 schema, got {f.schema}",
-                "Re-export as IFC4 or IFC2X3; other schema variants are not read.",
+                f"expected IFC4, IFC4X3 or IFC2X3 schema, got {f.schema}",
+                "Re-export as IFC4, IFC4X3 or IFC2X3; other schema variants are not read.",
             )
         # Translation-first (#929): upgrade IFC2X3 to IFC4 in memory via the
         # vendored ifcopenshell schema Migrator, then run the unchanged IFC4
@@ -3939,6 +4078,8 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
         model.source_schema = "IFC2X3"
         if upgrade_skipped:
             model.source_schema = f"IFC2X3 ({len(upgrade_skipped)} entities skipped in upgrade)"
+    if source_schema is not None:
+        model.source_schema = source_schema
     if project is not None:
         from solar_aperture import compound_angle_deg
 

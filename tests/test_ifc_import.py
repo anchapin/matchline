@@ -1097,3 +1097,179 @@ def test_ifc4_model_has_no_source_schema_marker(tmp_path):
     make_ifc_fixture(path)
     model = import_ifc(path)
     assert not hasattr(model, "source_schema")
+
+
+# --- #1351: IFC4X3 native read + Net space-quantity fallback ---------------
+
+
+def _write_ifc4x3_fixture(path, net_only_closet=False):
+    """Build the IFC4 fixture, then schema-upgrade it to IFC4X3_ADD2.
+
+    Mirrors the #929 test strategy in reverse: the repo's own Migrator
+    upgrades IFC4 -> IFC4X3_ADD2 in test code (the importer itself reads
+    4X3 natively and never migrates). With ``net_only_closet``, the
+    geometry-less CLOSET's Gross quantities are swapped for Net ones, the
+    shape Mutiny-class exporters produce.
+    """
+    import contextlib
+    import io
+
+    from ifcopenshell.util.schema import Migrator
+
+    make_ifc_fixture(path)
+    f = ifcopenshell.open(str(path))
+    if net_only_closet:
+        closet = next(sp for sp in f.by_type("IfcSpace") if sp.Name == "CLOSET")
+        qto = next(
+            rel.RelatingPropertyDefinition
+            for rel in closet.IsDefinedBy
+            if rel.is_a("IfcRelDefinesByProperties")
+            and rel.RelatingPropertyDefinition is not None
+            and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+            and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
+        )
+        renamed = []
+        for qq in qto.Quantities:
+            if qq.is_a("IfcQuantityArea") and qq.Name == "GrossFloorArea":
+                qq.Name = "NetFloorArea"
+                qq.AreaValue = 5.5
+                renamed.append(qq)
+            elif qq.is_a("IfcQuantityVolume") and qq.Name == "GrossVolume":
+                qq.Name = "NetVolume"
+        assert renamed, "fixture closet GrossFloorArea not found"
+        qto.Quantities = tuple(qto.Quantities) + (
+            f.create_entity("IfcQuantityVolume", Name="NetVolume", VolumeValue=16.5),
+        )
+    new_file = ifcopenshell.file(schema_identifier="IFC4X3_ADD2")
+    migrator = Migrator()
+    skipped = []
+    sink = io.StringIO()
+    with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        for element in f:
+            try:
+                migrator.migrate(element, new_file)
+            except Exception as exc:  # noqa: BLE001 - surfaced by the assert below
+                skipped.append((element, exc))
+    assert not skipped, f"test-side IFC4->IFC4X3 upgrade dropped entities: {skipped[:3]}"
+    new_file.write(str(path))
+    return path
+
+
+def test_ifc4x3_add2_file_imports_natively(tmp_path):
+    path = _write_ifc4x3_fixture(tmp_path / "ifc4x3.ifc")
+    opened = ifcopenshell.open(str(path))
+    assert opened.schema == "IFC4X3"
+    assert opened.schema_identifier == "IFC4X3_ADD2"
+
+    model = import_ifc(path)
+
+    assert model.source_schema == "IFC4X3"
+    assert len(model.spaces) == 4  # 3 solid + 1 quantity-fallback, as IFC4
+    walls = [e for e in model.bim_elements if e.ifc_class == "IfcWall"]
+    assert len(walls) == 4
+    openings = [o for e in model.bim_elements for o in e.openings]
+    assert len(openings) == 6  # same fills as the IFC4 fixture: 4 windows, 2 doors
+    # the Gross quantity fallback is unchanged on the 4X3 path
+    closet = model.spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 == pytest.approx(6.0)
+    assert closet.core_provenance.confidence == pytest.approx(0.6)
+    assert closet.core_provenance.method == "ifc_import:tier0:space:quantity"
+
+
+def test_ifc4x3_net_quantity_fallback(tmp_path):
+    path = _write_ifc4x3_fixture(tmp_path / "ifc4x3_net.ifc", net_only_closet=True)
+
+    model = import_ifc(path)
+
+    closet = model.spaces["L1-UNLABELED-1"]
+    assert closet.name == "CLOSET"
+    assert closet.polygon_m == []
+    assert closet.area_m2 == pytest.approx(5.5)
+    assert closet.volume_m3 == pytest.approx(16.5)
+    assert closet.core_provenance.confidence == pytest.approx(0.5)
+    assert closet.core_provenance.method == "ifc_import:tier0:space:quantity_net"
+    assert "NetFloorArea" in closet.core_provenance.note
+    kinds = [i.kind for i in model.review_queue]
+    assert "space_no_geometry" in kinds
+
+
+def test_plain_ifc4x3_header_is_relabeled_and_imported(tmp_path):
+    """A file declaring plain IFC4X3 (no ADD2) — ifcopenshell registers only
+    IFC4X3_ADD2, so the importer relabels the header identifier and records
+    that on source_schema; entity data is untouched."""
+    path = _write_ifc4x3_fixture(tmp_path / "ifc4x3_plain.ifc")
+    text = path.read_text()
+    assert "IFC4X3_ADD2" in text
+    path.write_text(text.replace("IFC4X3_ADD2", "IFC4X3", 1))
+
+    model = import_ifc(path)
+
+    assert model.source_schema == "IFC4X3 (opened as IFC4X3_ADD2)"
+    assert len(model.spaces) == 4
+
+
+def _fixture_with_closet_quantities(tmp_path, quantities):
+    """Full fixture whose geometry-less CLOSET carries exactly ``quantities``.
+
+    ``quantities`` is a list of (entity_type, name, value) triples written
+    into the closet's Qto_SpaceBaseQuantities. Integration-level on
+    purpose: the three fallback cases are exercised through import_ifc,
+    the production path.
+    """
+    path = make_ifc_fixture(tmp_path / "qty_fixture.ifc")
+    f = ifcopenshell.open(str(path))
+    closet = next(sp for sp in f.by_type("IfcSpace") if sp.Name == "CLOSET")
+    qto = next(
+        rel.RelatingPropertyDefinition
+        for rel in closet.IsDefinedBy
+        if rel.is_a("IfcRelDefinesByProperties")
+        and rel.RelatingPropertyDefinition is not None
+        and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+        and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
+    )
+    value_kwarg = {"IfcQuantityArea": "AreaValue", "IfcQuantityVolume": "VolumeValue"}
+    qto.Quantities = tuple(
+        f.create_entity(etype, Name=name, **{value_kwarg[etype]: value})
+        for etype, name, value in quantities
+    )
+    f.write(str(path))
+    return path
+
+
+def test_quantity_fallback_gross_wins_over_net(tmp_path):
+    path = _fixture_with_closet_quantities(
+        tmp_path,
+        [
+            ("IfcQuantityArea", "GrossFloorArea", 10.0),
+            ("IfcQuantityArea", "NetFloorArea", 8.0),
+        ],
+    )
+    closet = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 == pytest.approx(10.0)
+    assert closet.core_provenance.confidence == pytest.approx(0.6)
+    assert closet.core_provenance.method == "ifc_import:tier0:space:quantity"
+
+
+def test_quantity_fallback_neither_gross_nor_net(tmp_path):
+    path = _fixture_with_closet_quantities(tmp_path, [])
+    model = import_ifc(path)
+    closet = model.spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 is None
+    assert any(i.kind == "space_no_geometry" for i in model.review_queue)
+
+
+def test_quantity_fallback_respects_project_area_unit(tmp_path):
+    """Millimetre geometry + square-metre quantities (the Mutiny shape):
+    the closet's GrossFloorArea is already in m^2 and must NOT be scaled
+    by the length unit's square (#1351 regression)."""
+    path = make_ifc_fixture(tmp_path / "mm_units.ifc")
+    f = ifcopenshell.open(str(path))
+    ua = f.by_type("IfcUnitAssignment")[0]
+    for u in ua.Units or []:
+        if getattr(u, "UnitType", None) == "LENGTHUNIT" and u.is_a("IfcSIUnit"):
+            u.Prefix = "MILLI"
+    f.write(str(path))
+
+    closet = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 == pytest.approx(6.0)
+    assert closet.core_provenance.method == "ifc_import:tier0:space:quantity"
