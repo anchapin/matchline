@@ -1273,3 +1273,73 @@ def test_quantity_fallback_respects_project_area_unit(tmp_path):
     closet = import_ifc(path).spaces["L1-UNLABELED-1"]
     assert closet.area_m2 == pytest.approx(6.0)
     assert closet.core_provenance.method == "ifc_import:tier0:space:quantity"
+
+
+# ---------------------------------------------------------------------------
+# #1360: wall Qto length quantities are unit-aware
+# ---------------------------------------------------------------------------
+
+
+def _wall_with_qto_length(tmp_path, length_value, quantity_unit=None, length_units="m"):
+    """A one-wall file whose Qto_WallBaseQuantities.Length is ``length_value``.
+
+    ``quantity_unit`` is the SI prefix of the quantity's own ``Unit``
+    attribute (None = the quantity carries no unit, the historical case).
+    ``length_units`` is the project's length unit ("m" or "mm").
+    """
+    from tests.ifc_builder import IfcBuilder
+
+    b = IfcBuilder(length_units=length_units)
+    wall = b.wall("W1", (0.0, 0.0), (10.0, 0.0))
+    q_kwargs = {}
+    if quantity_unit is not None:
+        q_kwargs["Unit"] = b.f.create_entity(
+            "IfcSIUnit", UnitType="LENGTHUNIT", Prefix=quantity_unit, Name="METRE"
+        )
+    qto = b.f.create_entity(
+        "IfcElementQuantity",
+        GlobalId=_guid.new(),
+        Name="Qto_WallBaseQuantities",
+        Quantities=(
+            b.f.create_entity(
+                "IfcQuantityLength",
+                Name="Length",
+                LengthValue=float(length_value),
+                **q_kwargs,
+            ),
+        ),
+    )
+    b.f.create_entity(
+        "IfcRelDefinesByProperties",
+        GlobalId=_guid.new(),
+        RelatedObjects=(wall,),
+        RelatingPropertyDefinition=qto,
+    )
+    path = tmp_path / f"qto_wall_{quantity_unit}_{length_units}.ifc"
+    b.f.write(str(path))
+    return path
+
+
+def _wall_length_m(path):
+    model = import_ifc(path)
+    walls = [e for e in model.bim_elements if e.ifc_class == "IfcWall"]
+    assert len(walls) == 1
+    return walls[0].length_m
+
+
+def test_wall_qto_length_honours_its_own_unit(tmp_path):
+    """A Length quantity that declares its own Unit is converted by that
+    unit (#1360): 2500 mm of declared length is 2.5 m even though the
+    file's geometry is in metres."""
+    path = _wall_with_qto_length(tmp_path, 2500.0, quantity_unit="MILLI")
+    assert _wall_length_m(path) == pytest.approx(2.5)
+
+
+def test_wall_qto_length_without_unit_keeps_geometry_scale(tmp_path):
+    """No quantity unit: the raw value times the file's length scale, the
+    historical behaviour, unchanged (#1360)."""
+    path = _wall_with_qto_length(tmp_path, 25.0)
+    assert _wall_length_m(path) == pytest.approx(25.0)
+
+    mm_path = _wall_with_qto_length(tmp_path, 25000.0, length_units="mm")
+    assert _wall_length_m(mm_path) == pytest.approx(25.0)

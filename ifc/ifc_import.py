@@ -1188,6 +1188,68 @@ def _project_unit_scale(f, unit_type, exponent):
     return None
 
 
+def _quantity_unit_scale(q):
+    """Scale of a quantity's own ``Unit``, or None when it carries none.
+
+    A quantity that declares its own unit is expressed in that unit and
+    overrides the project unit for that quantity (#1351, #1360).
+    """
+    unit = getattr(q, "Unit", None)
+    if unit is not None and unit.is_a("IfcSIUnit"):
+        return _SI_PREFIX.get((unit.Prefix or ""), 1.0)
+    return None
+
+
+def _quantity_scale(q, exponent, fallback):
+    """Scale for one quantity value, honouring the quantity's own unit.
+
+    A quantity carrying its own ``Unit`` overrides the project unit for
+    that quantity (#1351, #1360); without one, ``fallback`` (the
+    project-derived scale) applies. ``exponent`` is the power the unit
+    is raised to: 1 for lengths, 2 for areas, 3 for volumes.
+    """
+    unit_scale = _quantity_unit_scale(q)
+    if unit_scale is None:
+        return fallback
+    return unit_scale**exponent
+
+
+def _length_quantity(el, qset_name, q_name="Length"):
+    """The IfcQuantityLength named ``q_name`` in ``qset_name`` on ``el``.
+
+    Element-level quantity sets win over the ones inherited from the
+    element's type -- the same precedence get_psets applies. None when
+    the element carries no such quantity.
+    """
+
+    def _find(definitions):
+        for psd in definitions or []:
+            if psd is None or not psd.is_a("IfcElementQuantity"):
+                continue
+            if psd.Name != qset_name:
+                continue
+            for q in psd.Quantities or []:
+                if q.is_a("IfcQuantityLength") and q.Name == q_name:
+                    return q
+        return None
+
+    for rel in getattr(el, "IsDefinedBy", None) or []:
+        if not rel.is_a("IfcRelDefinesByProperties"):
+            continue
+        q = _find([rel.RelatingPropertyDefinition])
+        if q is not None:
+            return q
+    try:
+        import ifcopenshell.util.element as _El
+
+        el_type = _El.get_type(el)
+    except (ImportError, AttributeError, RuntimeError):
+        el_type = None
+    if el_type is not None:
+        return _find(getattr(el_type, "HasPropertySets", None))
+    return None
+
+
 def _quantities(el, qset_name, scale):
     """{quantity_name: value} in meters/m^2/m^3 for an IfcElementQuantity.
 
@@ -1197,7 +1259,9 @@ def _quantities(el, qset_name, scale):
     scaling those by the length unit's square/cube silently shrank every
     quantity-sourced area by 1e6. Files declaring only a length unit keep
     the length-power fallback. A quantity carrying its own ``Unit``
-    overrides the project unit for that quantity.
+    overrides the project unit for that quantity -- lengths included
+    (#1360), so a wall whose Qto length is declared in millimetres is
+    read in millimetres, not in the file's length unit.
     """
     f = getattr(el, "file", None)
     area_scale = _project_unit_scale(f, "AREAUNIT", 2)
@@ -1206,12 +1270,6 @@ def _quantities(el, qset_name, scale):
     volume_scale = _project_unit_scale(f, "VOLUMEUNIT", 3)
     if volume_scale is None:
         volume_scale = scale**3
-
-    def _quantity_scale(q, exponent, fallback):
-        unit = getattr(q, "Unit", None)
-        if unit is not None and unit.is_a("IfcSIUnit"):
-            return _SI_PREFIX.get((unit.Prefix or ""), 1.0) ** exponent
-        return fallback
 
     out = {}
     for rel in getattr(el, "IsDefinedBy", None) or []:
@@ -1228,7 +1286,7 @@ def _quantities(el, qset_name, scale):
             elif q.is_a("IfcQuantityVolume"):
                 out[q.Name] = float(q.VolumeValue) * _quantity_scale(q, 3, volume_scale)
             elif q.is_a("IfcQuantityLength"):
-                out[q.Name] = float(q.LengthValue) * scale
+                out[q.Name] = float(q.LengthValue) * _quantity_scale(q, 1, scale)
     return out
 
 
@@ -2464,7 +2522,21 @@ def _wall_axis_polyline(el):
 
 
 def _wall_qto_length(el, scale):
-    """Qto_WallBaseQuantities.Length in meters (file units * scale), or None."""
+    """Qto_WallBaseQuantities.Length in meters, or None.
+
+    Unit-aware (#1360): the quantity is read through the same resolution
+    the space path uses for quantities, so a Length quantity carrying its
+    own ``Unit`` is converted by that unit instead of the file's length
+    scale. A quantity without its own unit keeps the historical
+    behaviour byte-for-byte: the raw value times the file's length
+    scale.
+    """
+    quantity = _length_quantity(el, "Qto_WallBaseQuantities", "Length")
+    if quantity is not None:
+        v = float(quantity.LengthValue)
+        if v > 0:
+            return v * _quantity_scale(quantity, 1, scale)
+    # No (usable) quantity: fall back to the property-set reading.
     try:
         import ifcopenshell.util.element as _El
 
