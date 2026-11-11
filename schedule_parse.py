@@ -235,12 +235,19 @@ def _cell_provenance(
 def _build_row_cells(
     raw_row: Any,
     ri: int,
+    row_index: int,
     sheet_id: str,
     revision: str,
     method: str,
     base_confidence: float,
 ) -> tuple[list[ScheduleCell], list[str]]:
-    """Turn one raw row into cells, degrading malformed rows instead of raising."""
+    """Turn one raw row into cells, degrading malformed rows instead of raising.
+
+    ``ri`` is the index of the row inside its source and is used for defect
+    notes; ``row_index`` is the absolute row coordinate the cells carry so
+    that cell coordinates stay unique and consistent with the row they belong
+    to once several sources are combined into one table.
+    """
     defects: list[str] = []
     if isinstance(raw_row, (list, tuple)):
         values: list[Any] = list(raw_row)
@@ -263,7 +270,7 @@ def _build_row_cells(
         cells.append(
             ScheduleCell(
                 value=str(cell_value),
-                row=ri,
+                row=row_index,
                 col=ci,
                 provenance=prov,
             )
@@ -313,9 +320,11 @@ def build_schedule_table(
 
         base_confidence = getattr(getattr(entity, "provenance", None), "confidence", 0.70)
         for ri, raw_row in enumerate(raw_rows):
+            row_index = len(rows)
             cells, row_defects = _build_row_cells(
                 raw_row,
                 ri,
+                row_index,
                 sheet_id,
                 revision,
                 "dwg_table_entity",
@@ -328,7 +337,7 @@ def build_schedule_table(
                 min(base_confidence, _DEFECT_CONFIDENCE) if row_defects else base_confidence,
                 _defect_note(row_defects),
             )
-            rows.append(ScheduleRow(cells=cells, row_index=ri, provenance=row_prov))
+            rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
             defects.extend(row_defects)
         defects.extend(entity_defects)
 
@@ -347,6 +356,7 @@ def build_schedule_table(
                 defects.append(block_note)
 
             cells = []
+            row_index = len(rows)
             for ci, val in enumerate(attribute_values):
                 prov = _cell_provenance(
                     sheet_id,
@@ -358,7 +368,7 @@ def build_schedule_table(
                 cells.append(
                     ScheduleCell(
                         value=val,
-                        row=0,
+                        row=row_index,
                         col=ci,
                         provenance=prov,
                     )
@@ -370,7 +380,7 @@ def build_schedule_table(
                 block_confidence,
                 block_note,
             )
-            rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
+            rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
 
     for ole in ole_schedules:
         if ole is None:
@@ -389,9 +399,11 @@ def build_schedule_table(
 
             base_confidence = getattr(getattr(ole, "provenance", None), "confidence", 0.60)
             for ri, raw_row in enumerate(raw_rows):
+                row_index = len(rows)
                 cells, row_defects = _build_row_cells(
                     raw_row,
                     ri,
+                    row_index,
                     sheet_id,
                     revision,
                     "ole_spreadsheet",
@@ -404,7 +416,7 @@ def build_schedule_table(
                     min(base_confidence, _DEFECT_CONFIDENCE) if row_defects else base_confidence,
                     _defect_note(row_defects),
                 )
-                rows.append(ScheduleRow(cells=cells, row_index=len(rows), provenance=row_prov))
+                rows.append(ScheduleRow(cells=cells, row_index=row_index, provenance=row_prov))
                 defects.extend(row_defects)
 
     table_name = ""
@@ -437,11 +449,32 @@ def build_schedule_table(
     )
 
 
+def _owner_handle(raw: Any) -> str:
+    """Return the handle of the table entity a block/OLE source belongs to."""
+    if not isinstance(raw, dict):
+        return ""
+    for key in ("owner_handle", "owner", "table_handle"):
+        value = raw.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 def parse_schedules(
     drawing: dict[str, Any],
     sheet_id: str,
     revision: str,
 ) -> list[ScheduleTable]:
+    """Parse a drawing into schedule tables — one table per TABLE entity.
+
+    Each TABLE entity yields its own :class:`ScheduleTable` carrying its own
+    name, headers and rows; tables are never merged across entities. Blocks
+    and OLE sources that name their owning entity (block ``owner_handle`` /
+    OLE ``source_entity``) are combined into that entity's table; sources
+    without an owner are combined into the first TABLE entity's table, so a
+    single logical table (one entity plus its own attribute blocks/OLE parts)
+    still yields exactly one combined table.
+    """
     if not isinstance(drawing, dict):
         return []
 
@@ -462,6 +495,7 @@ def parse_schedules(
     defs = block_defs if isinstance(block_defs, dict) else {}
 
     blocks = []
+    block_owners: list[str] = []
     for b in blocks_data:
         block_name = b.get("block_name", "") if isinstance(b, dict) else ""
         if not isinstance(block_name, str):
@@ -469,14 +503,44 @@ def parse_schedules(
         block_def = defs.get(block_name, {})
         extra_defects = ["block definitions unavailable"] if defs_missing else []
         blocks.append(parse_block_schedule(b, block_def, extra_defects))
+        block_owners.append(_owner_handle(b))
 
     ole_schedules = [parse_ole_schedule(o) for o in ole_data]
 
     tables: list[ScheduleTable] = []
 
     table_entities = [e for e in entities if e.entity_type == "TABLE"]
-    if table_entities or blocks or ole_schedules:
-        table = build_schedule_table(table_entities, blocks, ole_schedules, sheet_id, revision)
+    if table_entities:
+        index_by_handle = {
+            entity.handle: idx for idx, entity in enumerate(table_entities) if entity.handle
+        }
+        entity_blocks: dict[int, list[BlockSchedule]] = {
+            idx: [] for idx in range(len(table_entities))
+        }
+        entity_ole: dict[int, list[OleSchedule | None]] = {
+            idx: [] for idx in range(len(table_entities))
+        }
+
+        for block, owner in zip(blocks, block_owners):
+            target = index_by_handle.get(owner)
+            entity_blocks[0 if target is None else target].append(block)
+
+        for ole in ole_schedules:
+            owner = getattr(ole, "source_entity", None) if ole is not None else None
+            target = index_by_handle.get(owner) if isinstance(owner, str) else None
+            entity_ole[0 if target is None else target].append(ole)
+
+        for idx, entity in enumerate(table_entities):
+            table = build_schedule_table(
+                [entity],
+                entity_blocks[idx],
+                entity_ole[idx],
+                sheet_id,
+                revision,
+            )
+            tables.append(table)
+    elif blocks or ole_schedules:
+        table = build_schedule_table([], blocks, ole_schedules, sheet_id, revision)
         tables.append(table)
 
     for entity in entities:
