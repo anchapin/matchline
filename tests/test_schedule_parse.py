@@ -240,6 +240,198 @@ def test_parse_schedules_integration():
     assert tables[0].provenance.sheet_id == "sheet_001"
 
 
+# --- Per-TABLE-entity schedules (#1308) --------------------------------------
+# A drawing may carry several TABLE entities (e.g. a window schedule and a
+# door schedule). Each entity is its own logical table and must not be merged
+# into a single table, and cell coordinates must stay unique and consistent
+# with the row they belong to.
+
+
+def _two_table_drawing():
+    return {
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "WINDOW SCHEDULE",
+                    "headers": ["Mark", "Width"],
+                    "rows": [["W1", "1200"]],
+                },
+            },
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL002",
+                "type": "TABLE",
+                "owner_handle": "",
+                "data": {
+                    "name": "DOOR SCHEDULE",
+                    "headers": ["Tag", "Type"],
+                    "rows": [["D1", "Single"], ["D2", "Double"]],
+                },
+            },
+        ],
+        "block_refs": [],
+        "block_defs": {},
+        "ole_entities": [],
+    }
+
+
+def test_parse_schedules_one_table_per_table_entity():
+    tables = parse_schedules(_two_table_drawing(), "sheet_1", "r1")
+
+    assert len(tables) == 2
+
+    window = next(t for t in tables if t.name == "WINDOW SCHEDULE")
+    door = next(t for t in tables if t.name == "DOOR SCHEDULE")
+
+    assert window.headers == ["Mark", "Width"]
+    assert len(window.rows) == 1
+    assert [c.value for c in window.rows[0].cells] == ["W1", "1200"]
+
+    assert door.headers == ["Tag", "Type"]
+    assert len(door.rows) == 2
+    assert [row.cells[0].value for row in door.rows] == ["D1", "D2"]
+
+    window_values = [c.value for row in window.rows for c in row.cells]
+    assert "D1" not in window_values
+    assert "D2" not in window_values
+
+
+def test_parse_schedules_table_entities_are_not_merged():
+    tables = parse_schedules(_two_table_drawing(), "sheet_1", "r1")
+
+    names = [t.name for t in tables]
+    assert names == ["WINDOW SCHEDULE", "DOOR SCHEDULE"]
+    assert len(set(names)) == len(names)
+
+    row_counts = sorted(len(t.rows) for t in tables)
+    assert row_counts == [1, 2]
+
+
+def test_parse_schedules_cell_coordinates_unique_per_table():
+    tables = parse_schedules(_two_table_drawing(), "sheet_1", "r1")
+
+    for table in tables:
+        seen: set[tuple[int, int]] = set()
+        for row in table.rows:
+            for cell in row.cells:
+                assert cell.row == row.row_index
+                assert (cell.row, cell.col) not in seen
+                seen.add((cell.row, cell.col))
+
+
+def test_build_schedule_table_block_row_coordinates_follow_row_index():
+    entity = parse_table_entity(
+        {
+            "layer": "A_SCHEDS",
+            "handle": "TBL001",
+            "type": "TABLE",
+            "data": {"name": "T", "headers": ["A"], "rows": [["Val1"]]},
+        }
+    )
+    block = parse_block_schedule(
+        {
+            "handle": "SCH001",
+            "name": "ROOM_SCHEDULE",
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "attributes": [{"tag": "Room", "value": "101"}],
+        },
+        {"name": "ROOM_SCHEDULE"},
+    )
+
+    table = build_schedule_table([entity], [block], [], "S1", "R1")
+
+    assert [row.row_index for row in table.rows] == [0, 1]
+    assert table.rows[0].cells[0].row == 0
+    assert table.rows[1].cells[0].row == 1
+    assert table.rows[1].cells[0].value == "101"
+
+
+def test_parse_schedules_block_rows_keep_their_own_coordinates():
+    drawing = _two_table_drawing()
+    drawing["block_refs"] = [
+        {
+            "block_name": "ROOM_SCHEDULE",
+            "handle": "SCH001",
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "attributes": [{"tag": "Room", "value": "101"}],
+        }
+    ]
+    drawing["block_defs"] = {"ROOM_SCHEDULE": {"name": "ROOM_SCHEDULE"}}
+
+    tables = parse_schedules(drawing, "sheet_1", "r1")
+
+    assert len(tables) == 2
+    for table in tables:
+        seen: set[tuple[int, int]] = set()
+        for row in table.rows:
+            for cell in row.cells:
+                assert cell.row == row.row_index
+                assert (cell.row, cell.col) not in seen
+                seen.add((cell.row, cell.col))
+
+    block_rows = [
+        row for table in tables for row in table.rows if row.cells and row.cells[0].value == "101"
+    ]
+    assert len(block_rows) == 1
+    assert block_rows[0].row_index == 1
+    assert block_rows[0].cells[0].row == 1
+
+
+def test_parse_schedules_single_table_keeps_combined_sources():
+    drawing = {
+        "table_entities": [
+            {
+                "layer": "A_SCHEDS",
+                "handle": "TBL001",
+                "type": "TABLE",
+                "data": {
+                    "name": "Combined",
+                    "headers": ["Col1"],
+                    "rows": [["Val1"]],
+                },
+            }
+        ],
+        "block_refs": [
+            {
+                "block_name": "SCHEDULE",
+                "handle": "SCH001",
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0,
+                "attributes": [{"tag": "Tag1", "value": "V1"}],
+            }
+        ],
+        "block_defs": {"SCHEDULE": {"name": "SCHEDULE"}},
+        "ole_entities": [
+            {
+                "type": "Excel",
+                "data": {"headers": ["Name"], "rows": [["Item1"]]},
+                "source_entity": None,
+            }
+        ],
+    }
+
+    tables = parse_schedules(drawing, "sheet_1", "r1")
+
+    assert len(tables) == 1
+    table = tables[0]
+    assert table.name == "Combined"
+    assert len(table.rows) == 3
+    assert [row.cells[0].value for row in table.rows] == ["Val1", "V1", "Item1"]
+    assert [row.row_index for row in table.rows] == [0, 1, 2]
+    for row in table.rows:
+        for cell in row.cells:
+            assert cell.row == row.row_index
+
+
 def test_provenance_attached_to_all_facts():
     entity_data = {
         "layer": "A_SCHEDS",
