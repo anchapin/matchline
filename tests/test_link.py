@@ -397,3 +397,284 @@ class TestNorthFacadeElevation:
         assert got == gt
         assert report.elevation_path == "grid"
         assert report.windows_unlinked == 0
+
+
+# ---------------------------------------------------------------------------
+# #1324: doors on elevations
+# ---------------------------------------------------------------------------
+
+DOOR_TAG = "D1"
+WINDOW_TAG = "A"
+
+# The building used by the door fixtures: 12 x 8 m, two rooms per facade.
+DOOR_BLDG_W = 12.0
+DOOR_BLDG_D = 8.0
+DOOR_BLDG_H = 3.0
+ELEV_PX_PER_M = 40.0
+ELEV_U0_PX = 60.0
+ELEV_V_GROUND_PX = 400.0
+
+# Per facade: the two rooms (x0, y0, x1, y1), the plan grid along the
+# facade, whether the sheet is drawn mirrored (seen from outside) and the
+# facade metres the door and the window sit at.
+DOOR_FACADES = {
+    "south": {
+        "rooms": [(0.0, 4.0, 6.0, 8.0), (6.0, 4.0, 12.0, 8.0)],
+        "ref_corner": (0.0, 8.0),
+        "grid_axis": "grids_v",
+        "grid": {"1": 0.0, "2": 6.0, "3": 12.0},
+        "mirrored": False,
+        "door_s": (1.0, 1.9),
+        "window_s": (7.0, 8.2),
+    },
+    "north": {
+        "rooms": [(0.0, 0.0, 6.0, 4.0), (6.0, 0.0, 12.0, 4.0)],
+        "ref_corner": (0.0, 0.0),
+        "grid_axis": "grids_v",
+        "grid": {"1": 0.0, "2": 6.0, "3": 12.0},
+        "mirrored": True,
+        "door_s": (1.0, 1.9),
+        "window_s": (7.0, 8.2),
+    },
+    "east": {
+        "rooms": [(8.0, 0.0, 12.0, 4.0), (8.0, 4.0, 12.0, 8.0)],
+        "ref_corner": (12.0, 0.0),
+        "grid_axis": "grids_h",
+        "grid": {"A": 0.0, "B": 4.0, "C": 8.0},
+        "mirrored": True,
+        "door_s": (1.0, 1.9),
+        "window_s": (5.0, 6.2),
+    },
+    "west": {
+        "rooms": [(0.0, 0.0, 4.0, 4.0), (0.0, 4.0, 4.0, 8.0)],
+        "ref_corner": (0.0, 0.0),
+        "grid_axis": "grids_h",
+        "grid": {"A": 0.0, "B": 4.0, "C": 8.0},
+        "mirrored": False,
+        "door_s": (1.0, 1.9),
+        "window_s": (5.0, 6.2),
+    },
+}
+
+
+def _elevation_u(facade: str, s_m: float) -> float:
+    """Sheet pixels for a facade distance, following the drawing convention.
+
+    A sheet seen from outside (north, east) runs right to left, so the
+    reference corner sits at the right end of the drawn wall.
+    """
+    spec = DOOR_FACADES[facade]
+    length = DOOR_BLDG_W if spec["grid_axis"] == "grids_v" else DOOR_BLDG_D
+    if spec["mirrored"]:
+        return ELEV_U0_PX + (length - s_m) * ELEV_PX_PER_M
+    return ELEV_U0_PX + s_m * ELEV_PX_PER_M
+
+
+def _detection(det_id: str, tag: str, facade: str, s0: float, s1: float, sill_m: float, h_m: float):
+    """One elevation detection in sheet pixels."""
+    return {
+        "id": det_id,
+        "tag": tag,
+        "u0_px": _elevation_u(facade, s0),
+        "u1_px": _elevation_u(facade, s1),
+        "v_sill_px": ELEV_V_GROUND_PX - sill_m * ELEV_PX_PER_M,
+        "v_head_px": ELEV_V_GROUND_PX - (sill_m + h_m) * ELEV_PX_PER_M,
+    }
+
+
+def _door_building(facade: str = "south", door_tag: str = DOOR_TAG, extra_door: bool = False):
+    """A hand-built building with one elevation sheet carrying a door.
+
+    The schedule holds a door row (category "door") next to the window row,
+    and the sheet's window list carries a ground-level detection tagged with
+    the door tag plus an ordinary window above the sill.
+    """
+    spec = DOOR_FACADES[facade]
+    rooms = []
+    for i, (x0, y0, x1, y1) in enumerate(spec["rooms"]):
+        number = f"10{i + 1}"
+        rooms.append(
+            {
+                "number": number,
+                "name": f"Room {number}",
+                "rect_m": [x0, y0, x1, y1],
+                "polygon_m": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
+                "area_m2": round((x1 - x0) * (y1 - y0), 3),
+                "zone": "Z1",
+            }
+        )
+    d0, d1 = spec["door_s"]
+    w0, w1 = spec["window_s"]
+    length = DOOR_BLDG_W if spec["grid_axis"] == "grids_v" else DOOR_BLDG_D
+    dets = [
+        _detection("D1", door_tag, facade, d0, d1, 0.0, 2.1),
+        _detection("W1", WINDOW_TAG, facade, w0, w1, 0.9, 1.5),
+    ]
+    if extra_door:
+        # beyond the facade: no wall segment can match it
+        dets.append(_detection("D2", door_tag, facade, length + 1.0, length + 1.9, 0.0, 2.1))
+    bubbles = [
+        {"label": label, "u_px": _elevation_u(facade, s)} for label, s in spec["grid"].items()
+    ]
+
+    def sheet_meta(sheet_id, discipline):
+        return {
+            "sheet_id": sheet_id,
+            "discipline": discipline,
+            "revision": 1,
+            "px_per_m": ELEV_PX_PER_M,
+            "origin_px": [0, 0],
+        }
+
+    grids_v = spec["grid"] if spec["grid_axis"] == "grids_v" else {}
+    grids_h = spec["grid"] if spec["grid_axis"] == "grids_h" else {}
+    return {
+        "building_id": f"bldg_door_{facade}",
+        "level_id": "L1",
+        "wall_height_m": DOOR_BLDG_H,
+        "W_m": DOOR_BLDG_W,
+        "D_m": DOOR_BLDG_D,
+        "rooms": rooms,
+        "grids_v": grids_v,
+        "grids_h": grids_h,
+        "fixtures": [],
+        "components": [],
+        "zones": [],
+        "window_schedule": [
+            {"tag": WINDOW_TAG, "category": "window", "width_m": 1.2, "height_m": 1.5},
+            {"tag": DOOR_TAG, "category": "door", "width_m": 0.9, "height_m": 2.1},
+        ],
+        "lighting_schedule": [],
+        "sheets": {
+            "arch": {"meta": sheet_meta("arch_A101", "arch_plan")},
+            "lighting": {"meta": sheet_meta("light_E101", "lighting_plan")},
+            "mech": {"meta": sheet_meta("mech_M101", "mech_plan")},
+            "elev_grid": {
+                "meta": {
+                    **sheet_meta("elev_A201", "elevation"),
+                    "facade": facade,
+                    "facade_ref_corner_m": list(spec["ref_corner"]),
+                    "facade_length_m": length,
+                    "elevation_mirrored": spec["mirrored"],
+                },
+                "data": {
+                    "windows": dets,
+                    "bubbles": bubbles,
+                    "wall_u0_px": ELEV_U0_PX,
+                    "v_ground_px": ELEV_V_GROUND_PX,
+                    "px_per_m": ELEV_PX_PER_M,
+                },
+            },
+            "elev_nogrid": {
+                "meta": {
+                    **sheet_meta("elev_A202", "elevation"),
+                    "facade": facade,
+                    "facade_ref_corner_m": list(spec["ref_corner"]),
+                    "facade_length_m": length,
+                    "elevation_mirrored": spec["mirrored"],
+                },
+                "data": {
+                    "windows": dets,
+                    "bubbles": [],
+                    "wall_u0_px": ELEV_U0_PX,
+                    "v_ground_px": ELEV_V_GROUND_PX,
+                    "px_per_m": ELEV_PX_PER_M,
+                },
+            },
+        },
+    }
+
+
+def _openings(model, category):
+    return [op for sp in model.spaces.values() for op in sp.openings if op.category == category]
+
+
+class TestElevationDoors:
+    """#1324: a sill-at-grade elevation detection links as a door opening."""
+
+    @pytest.mark.parametrize("facade", ["south", "north", "east", "west"])
+    @pytest.mark.parametrize("key", ["elev_grid", "elev_nogrid"])
+    def test_door_links_to_room_with_schedule_mark(self, facade, key):
+        bldg = _door_building(facade)
+        model, report = build_model(bldg, elevation_key=key, building_name="door-test")
+        doors = _openings(model, "door")
+        assert len(doors) == 1, f"expected one door opening, got {doors}"
+        door = doors[0]
+        assert door.tag == DOOR_TAG
+        assert door.sill_m == pytest.approx(0.0, abs=0.01)
+        assert door.head_m == pytest.approx(2.1, abs=0.01)
+        assert door.width_m == pytest.approx(0.9, abs=0.01)
+        assert door.height_m == pytest.approx(2.1, abs=0.01)
+        assert door.host_facade == facade
+        assert door.provenance is not None
+        assert door.provenance.sheet_id == ("elev_A201" if key == "elev_grid" else "elev_A202")
+        # linked to the room whose wall it sits on (room 101)
+        host = next(sp for sp in model.spaces.values() if door in sp.openings)
+        assert host.number == "101"
+        assert report.doors_linked == 1
+        assert report.doors_unlinked == 0
+        assert report.windows_linked == 1
+
+    @pytest.mark.parametrize("facade", ["south", "north", "east", "west"])
+    def test_door_symbol_linkage_is_a_door(self, facade):
+        bldg = _door_building(facade)
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name="door-test")
+        door_links = [lnk for lnk in model.symbol_linkages if lnk.category == "door"]
+        assert len(door_links) == 1
+        assert door_links[0].symbol_tag == DOOR_TAG
+        assert door_links[0].schedule_entry is not None
+        assert door_links[0].schedule_entry.category == "door"
+
+    @pytest.mark.parametrize("facade", ["south", "north", "east", "west"])
+    def test_window_behaviour_is_unchanged(self, facade):
+        bldg = _door_building(facade)
+        model, report = build_model(bldg, elevation_key="elev_grid", building_name="door-test")
+        windows = _openings(model, "window")
+        assert len(windows) == 1
+        win = windows[0]
+        assert win.tag == WINDOW_TAG
+        assert win.sill_m == pytest.approx(0.9, abs=0.01)
+        assert win.head_m == pytest.approx(2.4, abs=0.01)
+        assert win.width_m == pytest.approx(1.2, abs=0.01)
+        assert win.height_m == pytest.approx(1.5, abs=0.01)
+        host = next(sp for sp in model.spaces.values() if win in sp.openings)
+        assert host.number == "102"
+        assert report.windows_linked == 1
+        assert report.windows_unlinked == 0
+
+    def test_door_joined_to_a_window_row_is_flagged(self):
+        # The detection is at grade (a door) but its tag names a window row:
+        # the link stands, the mismatch is recorded for a human.
+        bldg = _door_building("south", door_tag=WINDOW_TAG)
+        model, report = build_model(bldg, elevation_key="elev_grid", building_name="door-test")
+        doors = _openings(model, "door")
+        assert len(doors) == 1
+        assert doors[0].tag == WINDOW_TAG
+        assert "MISMATCH" in doors[0].provenance.note
+        assert doors[0].needs_review
+        mismatches = [item for item in model.review_queue if "schedule row" in item.description]
+        assert mismatches, "a category mismatch must reach the review queue"
+        assert report.doors_linked == 1
+
+    def test_unlinked_door_is_counted_and_visible(self):
+        bldg = _door_building("south", extra_door=True)
+        model, report = build_model(bldg, elevation_key="elev_grid", building_name="door-test")
+        assert report.doors_unlinked == 1
+        assert report.doors_linked == 1
+        door_links = [lnk for lnk in model.symbol_linkages if lnk.category == "door"]
+        assert len(door_links) == 2
+        assert {lnk.symbol_id for lnk in door_links} == {"D1", "D2"}
+        assert any(
+            "D2" in item.description or "D2" in str(item.target) for item in model.review_queue
+        )
+
+    def test_doors_count_in_the_facade_opening_closure(self):
+        from validate import run_checks
+
+        bldg = _door_building("south")
+        model, _ = build_model(bldg, elevation_key="elev_grid", building_name="door-test")
+        res = {r.check_id: r for r in run_checks(model).results}
+        closure = res["facade_opening_closure"]
+        assert closure.severity == "pass", closure.message
+        door_area = sum(op.area_m2 or 0.0 for op in _openings(model, "door"))
+        assert door_area == pytest.approx(0.9 * 2.1, abs=1e-6)

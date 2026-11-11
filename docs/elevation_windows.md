@@ -172,9 +172,17 @@ without; multiple windows per room; near-corner windows):
    elevations are drawn as seen from outside, so `s` runs right to left: the
    grid fit absorbs that, and the no-grid fallback mirrors by default for
    north/east (sheet meta `elevation_mirrored` overrides, #702).
-2. **No door detection on elevations** (hint only); curtain walls /
-   ribbon windows (one wide glazed band) will detect as a single
-   instance — acceptable for area + daylighting, wrong for counts.
+2. **Doors are linked, not detected** (#1324): the link layer derives the
+   category from the sill it already computes (`sill < 0.15 m` -> door, the
+   rule behind `category_hint`) and links a ground-level detection to a
+   **door** schedule row, emitting a `door` opening with sill/head and
+   provenance intact. No door *detection* happens here — the elevation
+   raster pipeline still only finds window instances, and
+   `elevation_windows.attach_merged_windows` still places windows only.
+   A sill-derived door joined to a row of another category is still linked
+   (the sill wins) but the mismatch is flagged for review. Curtain walls /
+   ribbon windows (one wide glazed band) will detect as a single instance —
+   acceptable for area + daylighting, wrong for counts.
 3. **Convex-room assumption** in the polygon clip.
 4. **Interior partitions** not modeled → daylit zones may extend past
    full-height partitions (optimistic).
