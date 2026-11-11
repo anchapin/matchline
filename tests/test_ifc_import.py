@@ -1208,7 +1208,6 @@ def test_plain_ifc4x3_header_is_relabeled_and_imported(tmp_path):
     assert len(model.spaces) == 4
 
 
-
 def _fixture_with_closet_quantities(tmp_path, quantities):
     """Full fixture whose geometry-less CLOSET carries exactly ``quantities``.
 

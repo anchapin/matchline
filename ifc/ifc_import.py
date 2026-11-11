@@ -1179,9 +1179,10 @@ def _project_unit_scale(f, unit_type, exponent):
         if u.is_a("IfcConversionBasedUnit"):
             try:
                 cf = u.ConversionFactor
-                return float(cf.ValueComponent) * _SI_PREFIX.get(
-                    (cf.UnitComponent.Prefix or ""), 1.0
-                ) ** exponent
+                return (
+                    float(cf.ValueComponent)
+                    * _SI_PREFIX.get((cf.UnitComponent.Prefix or ""), 1.0) ** exponent
+                )
             except Exception:
                 return None
     return None
@@ -1211,6 +1212,7 @@ def _quantities(el, qset_name, scale):
         if unit is not None and unit.is_a("IfcSIUnit"):
             return _SI_PREFIX.get((unit.Prefix or ""), 1.0) ** exponent
         return fallback
+
     out = {}
     for rel in getattr(el, "IsDefinedBy", None) or []:
         if not rel.is_a("IfcRelDefinesByProperties"):
@@ -3925,7 +3927,6 @@ def import_ifc(path, sheet_id=None, revision=1) -> BuildingModel:
     walls (unattached to spaces -- Tier 1), and opportunistic zones.
     """
     _ensure_ifc()
-    import ifcopenshell
 
     path = Path(path)
     if not path.is_absolute():
