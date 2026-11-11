@@ -22,6 +22,10 @@ Parsing rules carried from the ledger decisions:
   unit), never converted or guessed; a range such as ``633-703 kW`` keeps
   the raw string with ``value=None`` because the schedule states an
   interval, not a number;
+- a slot stated twice is a conflict only when the two statements are
+  genuinely different (#1354): the comparison is unit-blind where a
+  conversion is known, so ``10 kW`` and ``10000 watts`` are one fact
+  while ``10 kW`` and ``10050 watts`` are two;
 - classification is multi-signal. The workbook's OmniClass category column
   is unreliable (``Duplex Receptacle`` sits under a ``23-`` HVAC
   category), so a row's system type comes from agreement between the tag
@@ -51,6 +55,7 @@ Typical use::
 
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -234,6 +239,33 @@ _WATER_FLOW_UNITS = {"gpm": "GPM"}
 # Watt-family spellings normalize to the canonical token, #1290.
 _POWER_UNITS = {"kw": "kW", "w": "W", "watt": "W", "watts": "W"}
 _HEAD_UNITS = {"ft": "ft", "m": "m", "kpa": "kPa", "psi": "psi"}
+
+# Comparison-only unit scales (#1354). Stored values are never converted
+# (the provenance convention above holds), but two statements of one
+# quantity at different scales must not read as a conflict: ``10 kW`` on
+# the Type sheet and ``10000 watts`` on the Component sheet are the same
+# fact, not two different facts.
+#
+# Each entry maps a unit token to ``(family, scale)``: the family is the
+# physical dimension the unit measures and the scale is the factor to
+# that family's base unit. Two statements are compared in a common unit
+# only when both tokens belong to the same family, so a family with no
+# known scale (airflow, ton, MBH, BTU, head, ...) keeps today's raw
+# magnitude comparison and is never guessed at. Only exact decimal
+# families are tabulated: the watt family (W = 1 W, kW = 1000 W) and the
+# joule family (J = 1 J, kJ = 1000 J, MJ = 1000000 J).
+_UNIT_FAMILY_SCALES = {
+    "W": ("watt", 1.0),
+    "kW": ("watt", 1000.0),
+    "J": ("joule", 1.0),
+    "kJ": ("joule", 1000.0),
+    "MJ": ("joule", 1_000_000.0),
+}
+
+# Relative tolerance for the scaled comparison: tight enough that
+# 10000 W and 10050 W stay different facts, wide enough to absorb the
+# float noise of a scaled value (0.1 kW -> 100.00000000000001 W).
+_UNIT_SCALE_REL_TOL = 1e-9
 
 # Bare thermal units (no cooling/heating qualifier) map through family
 # defaults, at medium confidence. kW and W are deliberately absent: on a
@@ -532,6 +564,31 @@ def _attribute_candidates(
     return out
 
 
+def _same_quantity(value_a: float, unit_a: str, value_b: float, unit_b: str) -> bool:
+    """Whether two stated values state the same quantity (#1354).
+
+    Two statements of one slot are the same fact when their magnitudes
+    agree in a common unit. The comparison is unit-blind only where a
+    conversion is known (``_UNIT_FAMILY_SCALES``): a ``kW`` and a ``W``
+    statement of the same family are compared in watts, so ``10 kW`` and
+    ``10000 watts`` are one fact, while ``10 kW`` and ``10050 watts`` are
+    two. Units of different families (or of a family with no known
+    scale) compare on their raw magnitudes, exactly as before: nothing
+    is guessed and no value is ever converted.
+    """
+
+    scale_a = _UNIT_FAMILY_SCALES.get(unit_a)
+    scale_b = _UNIT_FAMILY_SCALES.get(unit_b)
+    if scale_a is not None and scale_b is not None and scale_a[0] == scale_b[0]:
+        return math.isclose(
+            value_a * scale_a[1],
+            value_b * scale_b[1],
+            rel_tol=_UNIT_SCALE_REL_TOL,
+            abs_tol=_UNIT_SCALE_REL_TOL,
+        )
+    return value_a == value_b
+
+
 def _row_values(
     tag: str,
     family: Optional[str],
@@ -547,11 +604,13 @@ def _row_values(
 
     Both the Type description and the Component description are scanned,
     and any stated ``Attribute``-sheet requirement candidates join them,
-    so a slot stated twice with different numbers across sources is one
+    so a slot stated twice with different values across sources is one
     conflict: every value for that slot is nulled (``value=None``,
-    confidence ``low``) and one review item names both raw strings. A
-    stated value that maps to no slot gets no value and one review item.
-    Nothing is ever fabricated.
+    confidence ``low``) and one review item names both raw strings. Two
+    statements of one slot that agree in a common unit are one fact, not
+    a conflict (``10 kW`` and ``10000 watts``; see ``_same_quantity``).
+    A stated value that maps to no slot gets no value and one review
+    item. Nothing is ever fabricated.
     """
 
     fam = family or "unclassified"
@@ -601,8 +660,12 @@ def _row_values(
     values: List[MechValue] = []
     for slot in sorted(by_slot):
         group = by_slot[slot]
-        numeric = {c[1] for c in group if c[1] is not None}
-        conflicting = len(numeric) > 1
+        numeric = [c for c in group if c[1] is not None]
+        conflicting = any(
+            not _same_quantity(numeric[i][1], numeric[i][2], numeric[j][1], numeric[j][2])
+            for i in range(len(numeric))
+            for j in range(i + 1, len(numeric))
+        )
         if conflicting:
             first, last = group[0], group[-1]
             item_id = f"mechval:{tag}:{first[7]}"

@@ -15,6 +15,7 @@ from mech_schedule import (
     MechValue,
     _map_value_slot,
     _row_values,
+    _same_quantity,
     link_to_model,
     parse_capacity,
     parse_cobie_workbook,
@@ -973,3 +974,158 @@ def test_watt_family_power_slot_accepts_stated_watt_and_stays_ambiguous_on_therm
     slot, unit, conf, reason = _map_value_slot("chiller", "watt", "Watt", None)
     assert slot is None and unit is None and conf is None
     assert "ambiguous between power" in reason
+
+
+# ---------------------------------------------------------------------------
+# #1354: the same-slot conflict detector is unit-blind
+# ---------------------------------------------------------------------------
+
+# The Type descriptions state the power in kW, the Component descriptions
+# state the same power in watts: the same fact at two scales must not
+# read as a conflict. The other two rows state genuinely different
+# powers and must still conflict.
+_SCALE_TYPE_ROWS = [
+    ("Pump Scale kW", "23 21 13: Pump", "Motor 10 kW"),
+    ("Pump Scale kW Other", "23 21 13: Pump", "Motor 12 kW"),
+    ("Pump Scale W", "23 21 13: Pump", "Motor 10050 W"),
+    ("Pump Scale kW Two", "23 21 13: Pump", "Motor 10 kW"),
+    ("Chiller Scale kW", "23 21 23: Chiller", "Cooling 10 kW"),
+    ("Chiller Scale kW Other", "23 21 23: Chiller", "Cooling 12 kW"),
+]
+_SCALE_COMP_ROWS = [
+    ("Pump PS-1", "Pump Scale kW", "1A01", "10000 watts"),
+    ("Pump PS-2", "Pump Scale kW Other", "1A01", "10000 watts"),
+    ("Pump PS-3", "Pump Scale W", "1A01", "Motor 10 kW"),
+    ("Pump PS-4", "Pump Scale kW Two", "1A01", "Motor 12 kW"),
+    ("Chiller CS-1", "Chiller Scale kW", "1A01", "Cooling 10000 watts"),
+    ("Chiller CS-2", "Chiller Scale kW Other", "1A01", "Cooling 10000 watts"),
+]
+
+
+def _write_scale_workbook(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    t = wb.active
+    t.title = "Type"
+    t.append(["Name", "CreatedBy", "CreatedOn", "Category", "Description", "ExtObject"])
+    for name, cat, desc in _SCALE_TYPE_ROWS:
+        t.append([name, "tester@example.com", "2013-10-09", cat, desc, "IfcTypeProduct"])
+    c = wb.create_sheet("Component")
+    c.append(_COMP_HEADER)
+    for name, type_name, space, desc in _SCALE_COMP_ROWS:
+        c.append(
+            [
+                name,
+                "tester@example.com",
+                "2013-10-09",
+                type_name,
+                space,
+                desc,
+                "n/a",
+                "IfcEnergyConversionDevice",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+                "n/a",
+            ]
+        )
+    s = wb.create_sheet("Space")
+    s.append(["Name", "CreatedBy", "CreatedOn", "Category", "FloorName", "Description"])
+    s.append(["1A01", "tester@example.com", "2013-10-09", "Space", "F1", "n/a"])
+    path = tmp_path / "scale-schedules.xlsx"
+    wb.save(path)
+    return path
+
+
+def _scale_row(res: MechScheduleResult, tag: str):
+    matches = [r for r in res.rows if r.tag == tag]
+    assert len(matches) == 1, f"expected one row tagged {tag}, got {matches}"
+    return matches[0]
+
+
+def _scale_conflicts(res: MechScheduleResult, tag: str):
+    return [
+        i
+        for i in res.review_items
+        if i.kind == "mech_schedule_value" and "conflict" in i.description and tag in i.id
+    ]
+
+
+def test_same_fact_at_two_scales_is_not_a_conflict(tmp_path):
+    """``10 kW`` on the Type sheet and ``10000 watts`` on the Component
+    sheet are one statement of one quantity (#1354).
+
+    The stored values keep their stated magnitude and unit (values are
+    never converted), but the conflict detector compares them in a
+    common unit, so nothing is nulled and no conflict review item is
+    raised.
+    """
+    res = parse_cobie_workbook(_write_scale_workbook(tmp_path))
+    row = _scale_row(res, "PS-1")
+    power = [v for v in row.values if v.field == "power"]
+    assert len(power) == 2
+    assert {v.raw for v in power} == {"10 kW", "10000 watts"}
+    for value in power:
+        assert value.value is not None
+        assert value.confidence in ("high", "medium")
+    # the stated magnitudes and tokens are kept as stated
+    stated = {v.raw: (v.value, v.unit) for v in power}
+    assert stated["10 kW"] == (10.0, "kW")
+    assert stated["10000 watts"] == (10000.0, "W")
+    assert _scale_conflicts(res, "PS-1") == []
+    assert not [i for i in res.review_items if i.kind == "mech_schedule_value" and "PS-1" in i.id]
+    # the same rule on a capacity slot: ``10 kW`` and ``10000 watts``
+    # stated as the cooling capacity are one fact too
+    chiller = _scale_row(res, "CS-1")
+    cooling = [v for v in chiller.values if v.field == "cooling_capacity"]
+    assert len(cooling) == 2
+    assert {v.raw for v in cooling} == {"10 kW", "10000 watts"}
+    for value in cooling:
+        assert value.value is not None
+        assert value.confidence == "high"
+    assert _scale_conflicts(res, "CS-1") == []
+
+
+def test_genuinely_different_powers_still_conflict(tmp_path):
+    """``12 kW`` against ``10000 watts``, ``10050 W`` against ``10 kW``
+    and ``10 kW`` against ``12 kW`` are two different facts (#1354): the
+    unit-blind comparison must not relax the conflict rule.
+
+    Every value for the slot is nulled at ``low`` confidence and exactly
+    one review item names both raw strings, as before.
+    """
+    res = parse_cobie_workbook(_write_scale_workbook(tmp_path))
+    for tag in ("PS-2", "PS-3", "PS-4"):
+        row = _scale_row(res, tag)
+        power = [v for v in row.values if v.field == "power"]
+        assert len(power) == 2
+        for value in power:
+            assert value.value is None
+            assert value.confidence == "low"
+        conflicts = _scale_conflicts(res, tag)
+        assert len(conflicts) == 1
+        assert conflicts[0].kind == "mech_schedule_value"
+    # and on a capacity slot: ``12 kW`` against ``10000 watts``
+    chiller = _scale_row(res, "CS-2")
+    cooling = [v for v in chiller.values if v.field == "cooling_capacity"]
+    assert len(cooling) == 2
+    for value in cooling:
+        assert value.value is None
+        assert value.confidence == "low"
+    assert len(_scale_conflicts(res, "CS-2")) == 1
+
+
+def test_same_quantity_comparison_is_unit_blind_only_where_known():
+    """The comparison converts only between units of the same family and
+    only where the scale is known; every other pair compares on its raw
+    magnitude, so nothing is guessed (#1354)."""
+    assert _same_quantity(10.0, "kW", 10000.0, "W") is True
+    assert _same_quantity(10.0, "kW", 10050.0, "W") is False
+    assert _same_quantity(10.0, "kW", 12.0, "kW") is False
+    assert _same_quantity(100.0, "kJ", 100000.0, "J") is True
+    # different families (and unknown scales) keep the raw comparison
+    assert _same_quantity(10.0, "kW", 10.0, "ton") is True
+    assert _same_quantity(1200.0, "CFM", 1200.0, "L/s") is True
+    assert _same_quantity(1200.0, "CFM", 1201.0, "L/s") is False
