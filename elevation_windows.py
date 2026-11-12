@@ -55,6 +55,11 @@ from registration import (
     register_elevation_grid,
 )
 
+# A detection whose sill sits at grade is a door, not a window. Same rule the
+# link layer uses (link/_elevation.py DOOR_SILL_MAX_M); both modules must
+# agree or a door is labelled a window in one pass and a door in the other.
+DOOR_SILL_MAX_M = 0.15
+
 # ---------------------------------------------------------------------------
 # Detection: sheet-px observations
 # ---------------------------------------------------------------------------
@@ -345,7 +350,7 @@ def observations_to_facade(obs_list: list, reg: FacadeRegistration, facade: str)
                 sill_m=sill,
                 head_m=head,
                 height_m=head - sill,
-                category_hint="door" if sill < 0.15 else "window",
+                category_hint="door" if sill < DOOR_SILL_MAX_M else "window",
                 confidence=reg.confidence * o.confidence,
                 provenance=prov,
             )
@@ -626,24 +631,79 @@ class ElevationLinkReport:
     n_unlinked: int = 0
     n_reconcile_flags: int = 0
     review_items: int = 0
+    # Doors are counted apart from windows (mirroring link/_elevation.py's
+    # doors_linked / doors_unlinked): a grade-level opening is a door, not a
+    # window, and the two must never be lumped together in a report.
+    n_doors_attached: int = 0
+    n_doors_unlinked: int = 0
+    n_windows_attached: int = 0
+    n_windows_unlinked: int = 0
 
 
 _facade_from_meta = facade_from_meta  # backwards-compat alias
 
 
+def _schedule_category(entry) -> str:
+    """Category of one schedule row ("window" | "door" | "" when unknown)."""
+    return (getattr(entry, "category", "") or "").strip().lower()
+
+
+def _rows_for_category(win_sched: dict, category: str) -> dict:
+    """Schedule rows that can describe an element of ``category``.
+
+    A door draws only on door rows and a window only on window rows: a row
+    of the other category describes a different object, so it must not
+    supply the tag or the dimensions. Rows whose category is unknown are
+    kept for windows (they carry no door claim) but never for doors.
+    """
+    if category == "door":
+        return {t: e for t, e in win_sched.items() if _schedule_category(e) == "door"}
+    return {t: e for t, e in win_sched.items() if _schedule_category(e) in ("window", "")}
+
+
+def _element_category(m) -> str:
+    """Category ("door" | "window") of one merged elevation element.
+
+    The hint comes from the sill rule applied at detection time; it wins
+    over a re-derivation so a merged door keeps its label. A missing or
+    unknown hint falls back to the sill.
+    """
+    hint = (getattr(m, "category_hint", "") or "").strip().lower()
+    if hint in ("door", "window"):
+        return hint
+    return "door" if (m.sill_m or 0.0) < DOOR_SILL_MAX_M else "window"
+
+
 def attach_merged_windows(
     model: BuildingModel, spaces: list, bldg: dict, merged: list, win_sched: dict, facade: str
 ) -> tuple:
-    """Attach merged windows to rooms; exact placement on every opening.
+    """Attach merged windows and doors to rooms; exact placement on every opening.
 
-    Returns (attached, unlinked). Unlinked windows are flagged for
+    The element's category comes from its sill-derived hint: a grade-level
+    opening is a door. Doors and windows never borrow each other's schedule
+    rows, and a sill/schedule category disagreement is recorded in the
+    provenance and flagged for review (never silently resolved), mirroring
+    link/_elevation.py.
+
+    Returns (attached, unlinked). Unlinked openings are flagged for
     review, never dropped.
     """
     segments = wall_segments(bldg, facade_from_meta({"facade": facade}, bldg["D_m"], bldg["W_m"]))
     space_of_num = {s.number: s for s in spaces}
     attached, unlinked = [], []
     for m in merged:
-        m.tag = assign_window_tag(m.width_m, m.height_m, win_sched)
+        category = _element_category(m)
+        # Tag lookup sees only the rows of this element's own category.
+        m.tag = assign_window_tag(m.width_m, m.height_m, _rows_for_category(win_sched, category))
+        # The nearest row of ANY category: when it is of the other category
+        # the sill and the schedule disagree about what this element is.
+        # The link is kept (the sill wins) and the mismatch is recorded.
+        nearest_any = adjudicate_tag(
+            assign_window_tag_candidates(m.width_m, m.height_m, win_sched), prefer="nearest"
+        )
+        near_entry = win_sched.get(nearest_any) if nearest_any else None
+        near_category = _schedule_category(near_entry) if near_entry is not None else ""
+        mismatch = near_category not in ("", category)
         seg, frac, ambiguous = match_interval_to_segments(m.s0_m, m.s1_m, segments)
         conf = m.confidence * (0.5 + 0.5 * frac)
         if m.tag is None:
@@ -664,11 +724,16 @@ def attach_merged_windows(
                 + (" SINGLE-SOURCE" if m.single_source else "")
             ),
         )
+        if mismatch:
+            prov.note += (
+                f"; CATEGORY MISMATCH: sill {m.sill_m:.2f} m -> {category}, "
+                f"schedule row '{nearest_any}' is a {near_category}"
+            )
         if seg is None:
             unlinked.append(m)
             model.flag_for_review(
                 "window_room_link",
-                f"window {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m matches no wall segment",
+                f"{category} {m.id} at [{m.s0_m:.2f}, {m.s1_m:.2f}] m matches no wall segment",
                 conf,
                 prov,
                 target={"kind": "window_detection", "id": m.id},
@@ -678,12 +743,12 @@ def attach_merged_windows(
         entry = win_sched.get(m.tag) if m.tag else None
         width_m = entry.width_m if entry else round(m.width_m, 3)
         height_m = entry.height_m if entry else round(m.height_m, 3)
-        needs_review = ambiguous or conf < REVIEW_CONFIDENCE or m.tag is None
+        needs_review = ambiguous or conf < REVIEW_CONFIDENCE or m.tag is None or mismatch
         sp.openings.append(
             SpaceOpening(
                 id=f"{facade}-{m.id}",
                 tag=m.tag or "",
-                category="window",
+                category=category,
                 width_m=width_m,
                 height_m=height_m,
                 sill_m=round(m.sill_m, 3),
@@ -697,10 +762,23 @@ def attach_merged_windows(
             )
         )
         attached.append((m, sp.number))
+        if mismatch:
+            # The flag must survive the review-confidence gate, so the
+            # confidence handed over is capped below it (the mismatch itself
+            # is what needs a human).
+            model.flag_for_review(
+                "window_room_link",
+                f"{category} {m.id} -> room {sp.number}: schedule row "
+                f"'{nearest_any}' is a {near_category}, sill {m.sill_m:.2f} m "
+                f"says {category}",
+                min(conf, REVIEW_CONFIDENCE - 0.01),
+                prov,
+                target={"kind": "opening", "id": f"{facade}-{m.id}", "field": "space_id"},
+            )
         if needs_review:
             model.flag_for_review(
                 "window_room_link",
-                f"window {m.id} -> room {sp.number}: "
+                f"{category} {m.id} -> room {sp.number}: "
                 f"{'ambiguous span; ' if ambiguous else ''}"
                 f"{'untagged; ' if m.tag is None else ''}"
                 f"confidence {conf:.2f}",
@@ -883,7 +961,7 @@ def compute_daylit_zones(space, W: float, D: float, params: DaylightParams = Non
             confidence=min(
                 [o.provenance.confidence for o in space.openings if o.provenance] or [1.0]
             ),
-            note=f"{len(space.openings)} window(s)",
+            note=f"{sum(1 for o in space.openings if o.category == 'window')} window(s)",
         ),
     )
     poly = [list(p) for p in space.polygon_m]
@@ -891,6 +969,8 @@ def compute_daylit_zones(space, W: float, D: float, params: DaylightParams = Non
         space.daylight = dl
         return
     for o in space.openings:
+        # Only windows are fenestration: a door (category "door") never
+        # feeds the daylight pass (#1373).
         if o.category != "window" or not o.host_interval_m:
             continue
         H = (o.head_m - o.sill_m) if (o.head_m and o.sill_m) else None
@@ -1043,6 +1123,16 @@ def link_elevations(
     attached, unlinked = attach_merged_windows(model, spaces, bldg, merged, win_sched, facade_name)
     report.n_attached = len(attached)
     report.n_unlinked = len(unlinked)
+    for m, _room in attached:
+        if _element_category(m) == "door":
+            report.n_doors_attached += 1
+        else:
+            report.n_windows_attached += 1
+    for m in unlinked:
+        if _element_category(m) == "door":
+            report.n_doors_unlinked += 1
+        else:
+            report.n_windows_unlinked += 1
 
     plan_counts = Counter(w["tag"] for w in bldg.get("south_windows", []))
     flags = reconcile_window_counts(
@@ -1058,7 +1148,8 @@ def link_elevations(
         1,
         "relink",
         f"{len(merged)} merged windows -> "
-        f"{len(attached)} attached, {len(unlinked)} "
+        f"{len(attached)} attached ({report.n_doors_attached} door(s)), "
+        f"{len(unlinked)} "
         f"unlinked, {len(conflicts)} conflicts, "
         f"{len(flags)} reconciliation flags",
     )
