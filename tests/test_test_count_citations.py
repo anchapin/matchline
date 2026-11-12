@@ -139,8 +139,7 @@ def test_per_file_collected_counts_match_collection():
             "a deleted citation is drift"
         )
         assert test_relpath in cited, (
-            f"{relpath} cites per-file counts {sorted(cited)}, "
-            f"expected one for {test_relpath}"
+            f"{relpath} cites per-file counts {sorted(cited)}, expected one for {test_relpath}"
         )
         actual = _collected_count(test_relpath)
         assert cited[test_relpath] == actual, (
@@ -162,8 +161,7 @@ def test_guard_invariants():
         "a deleted citation is drift"
     )
     assert stated == [expected], (
-        f"docs/ci.md Behaviour section says {stated}, "
-        f"EXPECTED_TEST_COUNT in ci.yml is {expected}"
+        f"docs/ci.md Behaviour section says {stated}, EXPECTED_TEST_COUNT in ci.yml is {expected}"
     )
     # CONTRACT.md quotes a stale figure on purpose (dated draft history),
     # CHANGELOG.md records past counts and QUALITY-SCORE.md is a dated
