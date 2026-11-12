@@ -1402,9 +1402,7 @@ def test_space_area_honours_conversion_based_area_unit(tmp_path):
         ConversionFactor=factor,
     )
     qto.Quantities = (
-        f.create_entity(
-            "IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0, Unit=sqft_unit
-        ),
+        f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0, Unit=sqft_unit),
     )
     f.write(str(path))
 
@@ -1436,9 +1434,7 @@ def _fixture_with_space_type_quantities(tmp_path, *, keep_element_quantities):
         "IfcElementQuantity",
         GlobalId=_guid.new(),
         Name="Qto_SpaceBaseQuantities",
-        Quantities=(
-            f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=7.5),
-        ),
+        Quantities=(f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=7.5),),
     )
     space_type = f.create_entity(
         "IfcSpaceType",
@@ -1460,9 +1456,7 @@ def test_space_quantity_fallback_reads_space_type(tmp_path):
     """A geometry-less space whose Qto lives only on its IfcSpaceType
     still gets the quantity fallback (#1365): area 7.5 at the 0.6
     quantity confidence instead of area None + space_no_geometry only."""
-    path = _fixture_with_space_type_quantities(
-        tmp_path, keep_element_quantities=False
-    )
+    path = _fixture_with_space_type_quantities(tmp_path, keep_element_quantities=False)
     closet = import_ifc(path).spaces["L1-UNLABELED-1"]
     assert closet.area_m2 == pytest.approx(7.5)
     assert closet.core_provenance.confidence == pytest.approx(0.6)

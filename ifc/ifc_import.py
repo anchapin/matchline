@@ -1218,9 +1218,7 @@ def _quantity_unit_scale(q):
             # sibling _length_scale/_project_unit_scale readers still
             # float() it directly; that latent gap is theirs to fix.)
             value = cf.ValueComponent
-            return float(getattr(value, "wrappedValue", value)) * _si_scale(
-                cf.UnitComponent
-            )
+            return float(getattr(value, "wrappedValue", value)) * _si_scale(cf.UnitComponent)
         except Exception:
             return None
     return None
@@ -1322,9 +1320,7 @@ def _quantities(el, qset_name, scale):
                 if q.is_a("IfcQuantityArea"):
                     out[q.Name] = float(q.AreaValue) * _quantity_scale(q, 2, area_scale)
                 elif q.is_a("IfcQuantityVolume"):
-                    out[q.Name] = float(q.VolumeValue) * _quantity_scale(
-                        q, 3, volume_scale
-                    )
+                    out[q.Name] = float(q.VolumeValue) * _quantity_scale(q, 3, volume_scale)
                 elif q.is_a("IfcQuantityLength"):
                     out[q.Name] = float(q.LengthValue) * _quantity_scale(q, 1, scale)
 
