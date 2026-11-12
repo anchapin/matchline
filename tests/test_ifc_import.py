@@ -25,6 +25,7 @@ from ifc.ifc_import import (
     _attach_openings_to_spaces,
     _ensure_ifc,
     _length_scale,
+    _project_unit_scale,
     _wall_direction_from_envelope,
     import_ifc,
 )
@@ -1469,3 +1470,199 @@ def test_space_quantity_element_set_wins_over_type(tmp_path):
     path = _fixture_with_space_type_quantities(tmp_path, keep_element_quantities=True)
     closet = import_ifc(path).spaces["L1-UNLABELED-1"]
     assert closet.area_m2 == pytest.approx(6.0)
+
+
+# ---------------------------------------------------------------------------
+# #1371: project-level conversion-based units (foot/inch-authored files)
+# ---------------------------------------------------------------------------
+
+
+def _conversion_unit(
+    f,
+    unit_type,
+    name,
+    factor_value,
+    factor_measure,
+    component_type,
+    component_name,
+    component_prefix=None,
+):
+    """An IfcConversionBasedUnit whose ConversionFactor is ``factor_value``.
+
+    The factor's value is a measure entity (as ifcopenshell surfaces it),
+    the unit component the SI unit the factor is expressed in.
+    """
+    component = f.create_entity(
+        "IfcSIUnit", UnitType=component_type, Prefix=component_prefix, Name=component_name
+    )
+    factor = f.create_entity(
+        "IfcMeasureWithUnit",
+        ValueComponent=f.create_entity(factor_measure, factor_value),
+        UnitComponent=component,
+    )
+    return f.create_entity(
+        "IfcConversionBasedUnit",
+        UnitType=unit_type,
+        Name=name,
+        ConversionFactor=factor,
+    )
+
+
+def _swap_project_unit(f, unit_type, new_unit):
+    """Replace the project's unit of ``unit_type`` with ``new_unit``."""
+    ua = f.by_type("IfcUnitAssignment")[0]
+    ua.Units = tuple(
+        new_unit if getattr(u, "UnitType", None) == unit_type else u for u in (ua.Units or [])
+    )
+
+
+def test_length_scale_reads_conversion_based_foot_unit(tmp_path):
+    """A project LENGTHUNIT of FOOT (304.8 mm per foot) reads as 0.3048 m
+    per foot (#1371): the conversion factor is a measure entity, so its
+    number has to be unwrapped before it can be multiplied in."""
+    path = make_ifc_fixture(tmp_path / "foot.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "LENGTHUNIT",
+        _conversion_unit(
+            f,
+            "LENGTHUNIT",
+            "FOOT",
+            304.8,
+            "IfcLengthMeasure",
+            "LENGTHUNIT",
+            "METRE",
+            "MILLI",
+        ),
+    )
+    f.write(str(path))
+
+    assert _length_scale(ifcopenshell.open(str(path))) == pytest.approx(0.3048)
+
+
+def test_length_scale_reads_conversion_based_inch_unit(tmp_path):
+    """The same for INCH (25.4 mm per inch): 0.0254 m per inch (#1371)."""
+    path = make_ifc_fixture(tmp_path / "inch.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "LENGTHUNIT",
+        _conversion_unit(
+            f,
+            "LENGTHUNIT",
+            "INCH",
+            25.4,
+            "IfcLengthMeasure",
+            "LENGTHUNIT",
+            "METRE",
+            "MILLI",
+        ),
+    )
+    f.write(str(path))
+
+    assert _length_scale(ifcopenshell.open(str(path))) == pytest.approx(0.0254)
+
+
+def test_import_ifc_accepts_conversion_based_length_unit(tmp_path):
+    """A foot-authored file imports (#1371): the project length unit is
+    read through its conversion factor instead of raising
+    ``ifc.broken_length_unit``, and the geometry is scaled by it."""
+    path = make_ifc_fixture(tmp_path / "foot.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "LENGTHUNIT",
+        _conversion_unit(
+            f,
+            "LENGTHUNIT",
+            "FOOT",
+            304.8,
+            "IfcLengthMeasure",
+            "LENGTHUNIT",
+            "METRE",
+            "MILLI",
+        ),
+    )
+    f.write(str(path))
+
+    model = import_ifc(path)
+    # The fixture's 10 x 8 space is authored in feet now: 80 ft^2.
+    assert model.spaces["L1-101"].area_m2 == pytest.approx(80.0 * 0.3048**2, rel=1e-4)
+
+
+def test_project_unit_scale_reads_conversion_based_area_unit(tmp_path):
+    """A project AREAUNIT of SQUARE FOOT reads as 0.09290304 m^2 per
+    square foot (#1371): the factor is a measure entity, so the reader
+    used to fail silently and fall back to the length-scale power."""
+    path = make_ifc_fixture(tmp_path / "sqft.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "AREAUNIT",
+        _conversion_unit(
+            f, "AREAUNIT", "SQUARE FOOT", 0.09290304, "IfcAreaMeasure", "AREAUNIT", "SQUARE_METRE"
+        ),
+    )
+    f.write(str(path))
+
+    assert _project_unit_scale(ifcopenshell.open(str(path)), "AREAUNIT", 2) == pytest.approx(
+        0.09290304
+    )
+
+
+def test_project_unit_scale_reads_conversion_based_volume_unit(tmp_path):
+    """The same for a cubic-foot VOLUMEUNIT: 0.028316846592 m^3 per
+    cubic foot (#1371)."""
+    path = make_ifc_fixture(tmp_path / "cuft.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "VOLUMEUNIT",
+        _conversion_unit(
+            f,
+            "VOLUMEUNIT",
+            "CUBIC FOOT",
+            0.028316846592,
+            "IfcVolumeMeasure",
+            "VOLUMEUNIT",
+            "CUBIC_METRE",
+        ),
+    )
+    f.write(str(path))
+
+    assert _project_unit_scale(ifcopenshell.open(str(path)), "VOLUMEUNIT", 3) == pytest.approx(
+        0.028316846592
+    )
+
+
+def test_space_gross_area_uses_conversion_based_project_area_unit(tmp_path):
+    """A space whose Gross quantity relies on the project area unit is
+    read in m^2 (#1371): 100 square feet is 9.290304 m^2, not the 100
+    the length-scale fallback would give."""
+    path = make_ifc_fixture(tmp_path / "sqft_area.ifc")
+    f = ifcopenshell.open(str(path))
+    _swap_project_unit(
+        f,
+        "AREAUNIT",
+        _conversion_unit(
+            f, "AREAUNIT", "SQUARE FOOT", 0.09290304, "IfcAreaMeasure", "AREAUNIT", "SQUARE_METRE"
+        ),
+    )
+    closet = next(sp for sp in f.by_type("IfcSpace") if sp.Name == "CLOSET")
+    qto = next(
+        rel.RelatingPropertyDefinition
+        for rel in closet.IsDefinedBy
+        if rel.is_a("IfcRelDefinesByProperties")
+        and rel.RelatingPropertyDefinition is not None
+        and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+        and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
+    )
+    qto.Quantities = (
+        f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0),
+    )
+    f.write(str(path))
+
+    closet_model = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet_model.area_m2 == pytest.approx(9.290304)
+    assert closet_model.core_provenance.method == "ifc_import:tier0:space:quantity"

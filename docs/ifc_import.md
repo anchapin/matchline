@@ -230,10 +230,14 @@ Two checks were planned here and dropped in #681. `adjacency_review_acknowledged
   by callers.
 - `assign_representation` takes the `IfcShapeRepresentation` (it wraps the
   `IfcProductDefinitionShape` itself).
+- `IfcConversionBasedUnit` (foot, inch -- the US-imperial shape) is read
+  through its `ConversionFactor`: the factor's `ValueComponent` is a measure
+  entity, so its number is unwrapped from `wrappedValue` before it is scaled
+  by the factor's own SI unit (#1371).
 
 ## Tests
 
-`tests/test_ifc_import.py` (55 collected; `pytest tests/test_ifc_import.py --collect-only`): the fixture is our own
+`tests/test_ifc_import.py` (61 collected; `pytest tests/test_ifc_import.py --collect-only`): the fixture is our own
 `bem_export.write_ifc4` output enriched in test code (space solids, material
 layer sets, opening/fill solids, an `IfcZone`, a placement-only duct, one
 geometry-less space). Round-trip fidelity: space areas/volumes exact to

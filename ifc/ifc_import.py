@@ -103,6 +103,18 @@ def _si_scale(unit) -> float:
     return 1.0
 
 
+def _measure_float(value) -> float:
+    """The number carried by an IfcMeasureValue select.
+
+    ``IfcMeasureWithUnit.ValueComponent`` is a measure entity (e.g.
+    ``IfcLengthMeasure``, ``IfcAreaMeasure``); ifcopenshell surfaces it as
+    an ``entity_instance`` whose numeric payload lives in ``wrappedValue``.
+    ``float()`` on the entity itself raises TypeError, so unwrap first.
+    A plain number (some exporters) is passed through unchanged.
+    """
+    return float(getattr(value, "wrappedValue", value))
+
+
 def _length_scale(f) -> float:
     """File length unit -> meters."""
     try:
@@ -123,7 +135,7 @@ def _length_scale(f) -> float:
         if u.is_a("IfcConversionBasedUnit"):
             cf = u.ConversionFactor
             try:
-                return float(cf.ValueComponent) * _si_scale(cf.UnitComponent)
+                return _measure_float(cf.ValueComponent) * _si_scale(cf.UnitComponent)
             except Exception as exc:
                 raise IfcImportError(
                     "ifc.broken_length_unit",
@@ -1180,7 +1192,7 @@ def _project_unit_scale(f, unit_type, exponent):
             try:
                 cf = u.ConversionFactor
                 return (
-                    float(cf.ValueComponent)
+                    _measure_float(cf.ValueComponent)
                     * _SI_PREFIX.get((cf.UnitComponent.Prefix or ""), 1.0) ** exponent
                 )
             except Exception:
@@ -1214,11 +1226,8 @@ def _quantity_unit_scale(q):
             # ValueComponent is an IfcMeasureValue select: ifcopenshell
             # surfaces it as a measure entity (e.g. IfcLengthMeasure)
             # whose numeric payload is ``wrappedValue`` — float() on the
-            # entity itself raises TypeError, so unwrap first. (The
-            # sibling _length_scale/_project_unit_scale readers still
-            # float() it directly; that latent gap is theirs to fix.)
-            value = cf.ValueComponent
-            return float(getattr(value, "wrappedValue", value)) * _si_scale(cf.UnitComponent)
+            # entity itself raises TypeError, so unwrap first.
+            return _measure_float(cf.ValueComponent) * _si_scale(cf.UnitComponent)
         except Exception:
             return None
     return None
