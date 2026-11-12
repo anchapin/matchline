@@ -111,6 +111,9 @@ BEM export.
 - **ComponentRef** — One detected equipment instance (diffuser,
   fixture, terminal) in canonical meters, awaiting or holding a link
   to a space.
+- **FixtureInstance / SpaceLighting** — One detected light fixture
+  assigned to a space is a **FixtureInstance**; a space's fixtures
+  aggregate as `SpaceLighting` (installed watts → per-space LPD).
 
 ## Detection context
 
@@ -118,7 +121,7 @@ BEM export.
   symbols on sheets: region in, label/tag out. The production path is
   the fine-tuned **YOLO detector** in `detector/` (its own venv).
 - **WiSARD / jesse.py** — The deterministic, explainable WiSARD
-  classifier paper reproduction. A **research asset, not production
+  classifier paper reproduction (`WisardClassifier`). A **research asset, not production
   symbol spotting**, not imported by any pipeline module. Never brief
   it as "the detector."
 - **Detection** — One stage-1 output record: label, schedule tag,
@@ -140,7 +143,7 @@ BEM export.
   canonical record. **Stage rule (resolved 2026-11-11):** in briefs,
   "schedule entry" means `ScheduleEntry` — the Stage-2,
   post-normalization record the schedule join consumes. A
-  `ScheduleRow` (with its `ScheduleCell`s, in a `ScheduleTable`) is
+  **ScheduleRow** (with its `ScheduleCell`s, in a **ScheduleTable**) is
   the *pre-normalization* parse record in `schedule_parse.py`; both
   mean "one row," at different stages, and the stage qualifier is
   how they are kept apart — they are not renamed. Source-format raw
@@ -154,8 +157,8 @@ BEM export.
 
 - **Takeoff / quantity takeoff** — The area rollup:
   **count × scheduled dimensions**, summed per category into
-  `TakeoffLine` (tag, category, count, w, h, area_m2) and
-  `TakeoffResult`. Every m² traces to a tag × a schedule row. This —
+  **TakeoffLine** (tag, category, count, w, h, area_m2) and
+  **TakeoffResult**. Every m² traces to a tag × a schedule row. This —
   not pixel measurement — is the product's core measurement method,
   and the deliverable is a **rough** takeoff by design. **Scope rule
   (resolved 2026-11-11):** "rough quantity takeoff" is the *outward*
@@ -174,7 +177,7 @@ BEM export.
 ## Geometry context
 
 - **Registration** — Aligning another sheet into the arch-plan
-  canonical frame (`registration.py`, `Affine2D`): grid-based or
+  canonical frame (`registration.py`, **Affine2D**): grid-based or
   gridless (geometric). After registration, coordinates are canonical.
 - **Canonical frame / coordinate conventions** — Canonical model:
   meters, **y growing DOWNWARD** (drawing frame). BEM export: meters,
@@ -233,13 +236,14 @@ BEM export.
 - **Confidence** — The extraction score on a fact/link. Links below
   `REVIEW_CONFIDENCE = 0.80` are not accepted silently (next term).
 - **Review queue / ReviewItem** — Low-confidence links flagged for a
-  human to confirm/reject (`matchline review`). The queue is part of
+  human to confirm/reject (`matchline review`). Each flagged link
+  is a **ReviewItem**. The queue is part of
   the model output, not an error log. Design stance (Alex,
   2026-09-19): a local, calibrated queue — human review stays in the
   loop; nothing low-confidence is auto-accepted.
 - **Supersede** — What a newer revision does to an older fact: the
   old fact is kept in `history` / the revision log
-  (`RevisionEvent`), never silently overwritten.
+  (**RevisionEvent**), never silently overwritten.
 - **Synthetic fixture** — A generated building/sheet set from `synth/`
   (`bldg_3room`, `bldg_open_office`, `bldg_8room`). Synthetic-first is
   the validation rule: a path that fails on synthetic data is not run
@@ -283,3 +287,48 @@ above; this is the decision record:
 
 No open questions at this revision. New untraced terms go here as
 questions, not into the glossary as invented definitions.
+
+---
+
+## Core terms (machine-checked)
+
+The curated core of this glossary — the terms a brief may rely on
+without re-defining them. Checked by plan-coder's
+`bin/glossary_check.py` (run in the weekly harness-tune pass,
+report-only): each row's **Symbol** must still exist at its
+**Source**, and each **Term** must still have a glossary entry
+above. This is a ratchet on a curated set, *not* a coverage target —
+the repo has hundreds of classes that are implementation detail,
+not domain language, and they do not belong here.
+
+Adding a core term = adding a row here plus its entry above.
+Renaming or deleting a core symbol = updating its row in the same
+PR, per the rename rule in *How to use it*.
+
+| Term | Symbol | Source |
+|---|---|---|
+| BuildingModel | BuildingModel | building_model.py |
+| BEMModel | BEMModel | bem |
+| Space | Space | building_model.py |
+| Zone | Zone | building_model.py |
+| Level | Level | building_model.py |
+| Envelope | EnvelopeWall | building_model.py |
+| Opening | SpaceOpening | building_model.py |
+| BimOpening | BimOpening | building_model.py |
+| BimElement | BimElement | building_model.py |
+| Provenance | Provenance | building_model.py |
+| ReviewItem | ReviewItem | building_model.py |
+| RevisionEvent | RevisionEvent | building_model.py |
+| ComponentRef | ComponentRef | building_model.py |
+| FixtureInstance | FixtureInstance | building_model.py |
+| DaylitZone | DaylitZone | building_model.py |
+| ScheduleEntry | ScheduleEntry | datasets_adapter.py |
+| ScheduleRow | ScheduleRow | schedule_parse.py |
+| ScheduleTable | ScheduleTable | schedule_parse.py |
+| Detection | Detection | datasets_adapter.py |
+| SymbolLinkage | SymbolLinkage | building_model.py |
+| TakeoffLine | TakeoffLine | datasets_adapter.py |
+| TakeoffResult | TakeoffResult | datasets_adapter.py |
+| DrawingScale | DrawingScale | datasets_adapter.py |
+| Affine2D | Affine2D | registration.py |
+| WiSARD | WisardClassifier | jesse.py |
