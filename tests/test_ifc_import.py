@@ -1292,7 +1292,23 @@ def _wall_with_qto_length(tmp_path, length_value, quantity_unit=None, length_uni
     b = IfcBuilder(length_units=length_units)
     wall = b.wall("W1", (0.0, 0.0), (10.0, 0.0))
     q_kwargs = {}
-    if quantity_unit is not None:
+    if quantity_unit == "INCH":
+        # An IfcConversionBasedUnit: 1 inch = 25.4 mm exactly (#1364).
+        mm_unit = b.f.create_entity(
+            "IfcSIUnit", UnitType="LENGTHUNIT", Prefix="MILLI", Name="METRE"
+        )
+        factor = b.f.create_entity(
+            "IfcMeasureWithUnit",
+            ValueComponent=b.f.create_entity("IfcLengthMeasure", 25.4),
+            UnitComponent=mm_unit,
+        )
+        q_kwargs["Unit"] = b.f.create_entity(
+            "IfcConversionBasedUnit",
+            UnitType="LENGTHUNIT",
+            Name="INCH",
+            ConversionFactor=factor,
+        )
+    elif quantity_unit is not None:
         q_kwargs["Unit"] = b.f.create_entity(
             "IfcSIUnit", UnitType="LENGTHUNIT", Prefix=quantity_unit, Name="METRE"
         )
@@ -1343,3 +1359,119 @@ def test_wall_qto_length_without_unit_keeps_geometry_scale(tmp_path):
 
     mm_path = _wall_with_qto_length(tmp_path, 25000.0, length_units="mm")
     assert _wall_length_m(mm_path) == pytest.approx(25.0)
+
+
+# ---------------------------------------------------------------------------
+# #1364: conversion-based quantity units; #1365: type-inherited Qto sets
+# ---------------------------------------------------------------------------
+
+
+def test_wall_qto_length_honours_conversion_based_unit(tmp_path):
+    """A Length quantity denominated in inches via an
+    IfcConversionBasedUnit is read in metres (#1364): 100 in = 2.54 m,
+    not 100 x the file's metre scale."""
+    path = _wall_with_qto_length(tmp_path, 100.0, quantity_unit="INCH")
+    assert _wall_length_m(path) == pytest.approx(2.54)
+
+
+def test_space_area_honours_conversion_based_area_unit(tmp_path):
+    """A GrossFloorArea quantity denominated in square feet via an
+    IfcConversionBasedUnit is read in m^2 (#1364): 100 ft^2 = 9.290304 m^2,
+    not the raw 100.0 the project-unit fallback would give."""
+    path = make_ifc_fixture(tmp_path / "sqft_fixture.ifc")
+    f = ifcopenshell.open(str(path))
+    closet = next(sp for sp in f.by_type("IfcSpace") if sp.Name == "CLOSET")
+    qto = next(
+        rel.RelatingPropertyDefinition
+        for rel in closet.IsDefinedBy
+        if rel.is_a("IfcRelDefinesByProperties")
+        and rel.RelatingPropertyDefinition is not None
+        and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+        and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
+    )
+    m2_unit = f.create_entity("IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE")
+    factor = f.create_entity(
+        "IfcMeasureWithUnit",
+        ValueComponent=f.create_entity("IfcAreaMeasure", 0.09290304),
+        UnitComponent=m2_unit,
+    )
+    sqft_unit = f.create_entity(
+        "IfcConversionBasedUnit",
+        UnitType="AREAUNIT",
+        Name="SQUARE FOOT",
+        ConversionFactor=factor,
+    )
+    qto.Quantities = (
+        f.create_entity(
+            "IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0, Unit=sqft_unit
+        ),
+    )
+    f.write(str(path))
+
+    closet_model = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet_model.area_m2 == pytest.approx(9.290304)
+    assert closet_model.core_provenance.method == "ifc_import:tier0:space:quantity"
+
+
+def _fixture_with_space_type_quantities(tmp_path, *, keep_element_quantities):
+    """Full fixture whose CLOSET's Qto lives on its IfcSpaceType.
+
+    The type carries GrossFloorArea 7.5; the element keeps its own 6.0
+    set only when ``keep_element_quantities`` is true.
+    """
+    path = make_ifc_fixture(tmp_path / "type_qty_fixture.ifc")
+    f = ifcopenshell.open(str(path))
+    closet = next(sp for sp in f.by_type("IfcSpace") if sp.Name == "CLOSET")
+    if not keep_element_quantities:
+        qto = next(
+            rel.RelatingPropertyDefinition
+            for rel in closet.IsDefinedBy
+            if rel.is_a("IfcRelDefinesByProperties")
+            and rel.RelatingPropertyDefinition is not None
+            and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
+            and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
+        )
+        qto.Quantities = ()
+    type_qto = f.create_entity(
+        "IfcElementQuantity",
+        GlobalId=_guid.new(),
+        Name="Qto_SpaceBaseQuantities",
+        Quantities=(
+            f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=7.5),
+        ),
+    )
+    space_type = f.create_entity(
+        "IfcSpaceType",
+        GlobalId=_guid.new(),
+        Name="CLOSET TYPE",
+        HasPropertySets=(type_qto,),
+    )
+    f.create_entity(
+        "IfcRelDefinesByType",
+        GlobalId=_guid.new(),
+        RelatingType=space_type,
+        RelatedObjects=(closet,),
+    )
+    f.write(str(path))
+    return path
+
+
+def test_space_quantity_fallback_reads_space_type(tmp_path):
+    """A geometry-less space whose Qto lives only on its IfcSpaceType
+    still gets the quantity fallback (#1365): area 7.5 at the 0.6
+    quantity confidence instead of area None + space_no_geometry only."""
+    path = _fixture_with_space_type_quantities(
+        tmp_path, keep_element_quantities=False
+    )
+    closet = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 == pytest.approx(7.5)
+    assert closet.core_provenance.confidence == pytest.approx(0.6)
+    assert closet.core_provenance.method == "ifc_import:tier0:space:quantity"
+
+
+def test_space_quantity_element_set_wins_over_type(tmp_path):
+    """Element-level quantities win over type-inherited ones (#1365):
+    the closet's own 6.0 stands, the type's 7.5 is not double-counted."""
+    path = _fixture_with_space_type_quantities(tmp_path, keep_element_quantities=True)
+    closet = import_ifc(path).spaces["L1-UNLABELED-1"]
+    assert closet.area_m2 == pytest.approx(6.0)
