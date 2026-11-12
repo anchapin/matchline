@@ -56,6 +56,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from bem.bem_geometry import simplify_tolerance_pct  # noqa: E402
 from bem.buildingsync_export import validate_buildingsync, write_buildingsync  # noqa: E402
 from mech_schedule import ZONE_LOAD_SLOTS, parse_cobie_workbook  # noqa: E402
 from scripts.schedule_score import (  # noqa: E402
@@ -576,7 +577,12 @@ def export_validity(name: str, arch_ifc: Path | None, out_dir: Path) -> dict:
         if ring and len(ring) >= 3:
             sres = simplify_ring(ring, tol=0.02, wall_height=wall_h)
         bem = model_from_linked_model(
-            model=model, simplified_ring=sres, wall_height_m=wall_h, simplify_tolerance=0.02
+            model=model,
+            simplified_ring=sres,
+            wall_height_m=wall_h,
+            # #1374: the factory takes PERCENT; 0.02 is the FRACTION the
+            # simplifier uses, so convert it with the shared helper.
+            simplify_tolerance=simplify_tolerance_pct(0.02),
         )
         out = out_dir / f"{name}-buildingsync" / "model.buildingsync.xml"
         out.parent.mkdir(parents=True, exist_ok=True)

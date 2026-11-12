@@ -56,6 +56,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from bem.bem_geometry import simplify_tolerance_pct  # noqa: E402
 from building_model import BuildingModel  # noqa: E402
 from geometry.geometry_simplify import footprint_from_regions, simplify_ring  # noqa: E402
 from ifc.ifc_import import import_ifc  # noqa: E402
@@ -481,11 +482,15 @@ def _write_gbxml(
         # #972: the export exercises the real stage-3 simplification (the
         # caller's already-imported model, no second IFC read); the old
         # hardcoded simplified_ring=None / tolerance=0.1 bypassed it.
+        # #1374: the factory takes the tolerance in PERCENT; ``simplify_tol``
+        # is the FRACTION the CLI takes, so convert it with the shared
+        # helper -- passing the fraction recorded 0.02% and the >3% guard
+        # could never trip from this script.
         bem = model_from_linked_model(
             model=model,
             simplified_ring=sres,
             wall_height_m=wall_height,
-            simplify_tolerance=simplify_tol,
+            simplify_tolerance=simplify_tolerance_pct(simplify_tol),
         )
         out = out_dir / f"{b.name}-gbxml" / "model.gbxml"
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -590,7 +595,10 @@ def main(argv=None) -> int:
         dest="simplify_tol",
         type=float,
         default=0.02,
-        help="envelope simplification area budget, fraction (default 0.02, matches run_pipeline)",
+        help=(
+            "envelope simplification area budget, fraction (default 0.02, matches "
+            "run_pipeline); recorded on the BEM model in percent"
+        ),
     )
     args = ap.parse_args(argv)
 
