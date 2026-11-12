@@ -233,7 +233,7 @@ Two checks were planned here and dropped in #681. `adjacency_review_acknowledged
 
 ## Tests
 
-`tests/test_ifc_import.py` (11 tests): the fixture is our own
+`tests/test_ifc_import.py` (55 collected; `pytest tests/test_ifc_import.py --collect-only`): the fixture is our own
 `bem_export.write_ifc4` output enriched in test code (space solids, material
 layer sets, opening/fill solids, an `IfcZone`, a placement-only duct, one
 geometry-less space). Round-trip fidelity: space areas/volumes exact to
