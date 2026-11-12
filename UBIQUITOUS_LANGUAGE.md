@@ -8,9 +8,9 @@ Definitions are traced to the code and docs on `develop`
 `building_model.py`, `docs/design-docs/core-beliefs.md`,
 `docs/measurement_layer.md`, `docs/pipeline.md`,
 `docs/geometry_simplify.md`, `docs/validation.md`). Terms that could
-not be traced to a source are in **Open questions**, not in the
+not be traced to a source go in **Open questions**, not in the
 glossary — resolve them there rather than inventing a definition
-in a brief.
+in a brief. (None open at this revision; see Resolved questions.)
 
 **How to use it:** One name per concept, used the same way in briefs,
 issues, code, tests, and docs. Matchline's whole job is a translation —
@@ -71,6 +71,13 @@ BEM export.
 
 ## Canonical model context
 
+- **Linking / entity resolution (usage rule)** — The same work at
+  two altitudes (resolved 2026-11-11): **cross-sheet entity
+  resolution** is the outward product claim (it is the README's
+  first line) — what Matchline does for a user. **Linking** is the
+  mechanism and pipeline stage (`link/`, `link.build_model`,
+  cross-discipline linking) — what briefs and code talk about.
+  Outward docs say resolution; briefs and code say linking.
 - **BuildingModel** — The canonical, cross-discipline-linked building
   (`building_model.py`): levels, spaces, zones, envelope, BIM
   elements, schedules, review queue, revision log. Everything joins
@@ -130,7 +137,15 @@ BEM export.
   glyph — the known v2 gap is tag extraction by OCR next to the bbox.
 - **ScheduleEntry / ScheduleRow** — One parsed row of a schedule:
   tag → category + dimensions. `ScheduleEntry` is the adapter's
-  canonical record.
+  canonical record. **Stage rule (resolved 2026-11-11):** in briefs,
+  "schedule entry" means `ScheduleEntry` — the Stage-2,
+  post-normalization record the schedule join consumes. A
+  `ScheduleRow` (with its `ScheduleCell`s, in a `ScheduleTable`) is
+  the *pre-normalization* parse record in `schedule_parse.py`; both
+  mean "one row," at different stages, and the stage qualifier is
+  how they are kept apart — they are not renamed. Source-format raw
+  records (`BlockSchedule` = CAD block attributes, `OleSchedule` =
+  OLE objects) are source evidence with provenance, not rows.
 - **Schedule join** — The step that joins detections to schedule rows
   by tag, enabling the takeoff. An **unmatched** detection (tag with
   no schedule entry) is reported, never silently dropped.
@@ -142,7 +157,13 @@ BEM export.
   `TakeoffLine` (tag, category, count, w, h, area_m2) and
   `TakeoffResult`. Every m² traces to a tag × a schedule row. This —
   not pixel measurement — is the product's core measurement method,
-  and the deliverable is a **rough** takeoff by design.
+  and the deliverable is a **rough** takeoff by design. **Scope rule
+  (resolved 2026-11-11):** "rough quantity takeoff" is the *outward*
+  product term — it sets expectations against measurement-grade QTO.
+  Inside briefs and code the term is just "takeoff," and precision
+  is always specified by its governing mechanism (area budget,
+  takeoff closure, confidence threshold) — never by the word rough,
+  which must not read as permission to be sloppy about the budget.
 - **Facade takeoff** — The elevation-side sibling (`facade_takeoff.py`):
   wall / glazing / door *fractions* of a facade (CMP Facade dataset),
   as opposed to per-tag areas from a schedule join.
@@ -240,16 +261,25 @@ BEM export.
 | dropped / ignored (low confidence) | queued for review | Nothing is silently dropped — detections or links |
 | floor / story | Level | Code and keys use Level (`L1`) |
 | window (any opening) | SpaceOpening / BimOpening / window tag | Three different stages claim "window" |
+| schedule row (unqualified, in a brief) | ScheduleEntry (join) / ScheduleRow (parse stage) | Both mean "one row" at different pipeline stages |
+| rough takeoff (internal brief) | takeoff + its budget/closure/confidence terms | "Rough" is the outward scope word, not an internal precision word |
+| linking (as the product claim) | cross-sheet entity resolution | Linking is the stage/mechanism; resolution is the outward claim |
 
-## Open questions for Alex
+## Resolved questions (2026-11-11, operator's verdict)
 
-1. **ScheduleEntry vs. ScheduleRow vs. BlockSchedule / OleSchedule** —
-   code carries several schedule-record names from different parsers.
-   One canonical name for briefs, or are parser-specific names fine
-   as long as *ScheduleEntry* is the join output?
-2. **Linking vs. resolution** — README calls the product "cross-sheet
-   entity resolution," code calls it *linking* (`link/`,
-   cross-discipline linking). Pick one for outward language?
-3. **Takeoff scope word** — you scope the deliverable as *rough*
-   quantity takeoffs. Should "rough" be part of the term everywhere
-   (to set expectations), or only in product/outward docs?
+The first draft's open questions, resolved on Alex's word after
+research against develop — the full rules live in the sections
+above; this is the decision record:
+
+1. **Schedule-record names** — parser-specific names stay (they
+   encode stage and source format); `ScheduleEntry` is the
+   canonical brief term, with the stage rule in the Schedule
+   context. No renames.
+2. **Linking vs. resolution** — both stay, at different altitudes:
+   entity resolution outward, linking in briefs and code.
+3. **"Rough" takeoff** — outward scope word only; internally the
+   term is "takeoff" and precision is stated by its governing
+   mechanism, never by the word rough.
+
+No open questions at this revision. New untraced terms go here as
+questions, not into the glossary as invented definitions.
