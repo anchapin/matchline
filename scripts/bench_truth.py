@@ -23,6 +23,12 @@ IFC reader (``ifc.ifc_import``); ``tests/test_bench_truth.py`` pins that.
   tessellated body from ``ifcopenshell.geom`` (the same geometry policy the
   room areas use). A file with no wall flagged external has no exterior wall
   truth (``null`` plus a reason), never 0.
+- units: quantities are stated in the file's units, so they are scaled to
+  metres / square metres before they are read as truth: a length by the
+  file's length scale and a quantity that declares its own ``Unit``, an
+  area by the project's ``AREAUNIT`` (falling back to the length scale
+  squared). A millimetre file's 10 m wall reads as 10 m, not 10000 m
+  (#1363).
 - windows / doors: raw ``by_type`` counts; window area is the product of
   the two largest extents of the window's tessellated body from
   ``ifcopenshell.geom`` (the same geometry policy the room areas use),
@@ -82,6 +88,151 @@ def _length_scale(f) -> float:
         return float(uu.calculate_unit_scale(f))
     except Exception:
         return 1.0
+
+
+# ---------------------------------------------------------------------------
+# Units: quantities are stated in the file's units, not in metres (#1363)
+# ---------------------------------------------------------------------------
+
+# Metres per SI prefix (the prefix alone; the exponent is applied by the
+# caller, so a MILLI area unit is (1e-3) ** 2).
+_SI_PREFIX = {
+    "": 1.0,
+    "YOTTA": 1e24,
+    "ZETTA": 1e21,
+    "EXA": 1e18,
+    "PETA": 1e15,
+    "TERA": 1e12,
+    "GIGA": 1e9,
+    "MEGA": 1e6,
+    "KILO": 1e3,
+    "HECTO": 1e2,
+    "DECA": 1e1,
+    "DECI": 1e-1,
+    "CENTI": 1e-2,
+    "MILLI": 1e-3,
+    "MICRO": 1e-6,
+    "NANO": 1e-9,
+    "PICO": 1e-12,
+    "FEMTO": 1e-15,
+    "ATTO": 1e-18,
+    "ZEPTO": 1e-21,
+    "YOCTO": 1e-24,
+}
+
+
+def _project_unit_scale(f, unit_type: str, exponent: int) -> float | None:
+    """Scale to SI for the project's declared unit of ``unit_type``.
+
+    None when the file declares no such unit, so the caller can fall back
+    to the length scale raised to ``exponent`` (the historical behaviour
+    for files that declare only a length unit).
+    """
+    if f is None:
+        return None
+    try:
+        ua = f.by_type("IfcUnitAssignment")[0]
+    except Exception:
+        return None
+    for u in ua.Units or []:
+        if getattr(u, "UnitType", None) != unit_type:
+            continue
+        if u.is_a("IfcSIUnit"):
+            return _SI_PREFIX.get((u.Prefix or ""), 1.0) ** exponent
+        if u.is_a("IfcConversionBasedUnit"):
+            try:
+                cf = u.ConversionFactor
+                return (
+                    float(cf.ValueComponent)
+                    * _SI_PREFIX.get((cf.UnitComponent.Prefix or ""), 1.0) ** exponent
+                )
+            except Exception:
+                return None
+    return None
+
+
+def _quantity_unit_scale(q) -> float | None:
+    """Scale of a quantity's own ``Unit``, or None when it carries none.
+
+    A quantity that declares its own unit is stated in that unit and
+    overrides the project unit for that quantity (#1351, #1360).
+    """
+    unit = getattr(q, "Unit", None)
+    if unit is not None and unit.is_a("IfcSIUnit"):
+        return _SI_PREFIX.get((unit.Prefix or ""), 1.0)
+    return None
+
+
+def _qto_quantity(el, qset: str, names: tuple[str, ...]):
+    """The IfcQuantity entity named one of ``names`` in ``qset`` on ``el``.
+
+    The element's own quantity sets win over the ones inherited from its
+    type -- the same precedence ``get_psets`` applies. None when the
+    element carries no such quantity.
+    """
+
+    def _find(definitions):
+        for psd in definitions or []:
+            if psd is None or not psd.is_a("IfcElementQuantity"):
+                continue
+            if psd.Name != qset:
+                continue
+            for q in psd.Quantities or []:
+                if q.Name in names:
+                    return q
+        return None
+
+    for rel in getattr(el, "IsDefinedBy", None) or []:
+        if not rel.is_a("IfcRelDefinesByProperties"):
+            continue
+        q = _find([rel.RelatingPropertyDefinition])
+        if q is not None:
+            return q
+    try:
+        import ifcopenshell.util.element as ue
+
+        el_type = ue.get_type(el)
+    except Exception:
+        el_type = None
+    if el_type is not None:
+        return _find(getattr(el_type, "HasPropertySets", None))
+    return None
+
+
+def _quantity_value(q) -> float | None:
+    """The numeric value of a quantity entity."""
+    for attr in ("LengthValue", "AreaValue", "VolumeValue", "CountValue", "WeightValue"):
+        v = getattr(q, attr, None)
+        if isinstance(v, (int, float)):
+            return float(v)
+    return None
+
+
+def _qto_measure(
+    el,
+    psets: dict,
+    qset: str,
+    names: tuple[str, ...],
+    exponent: int,
+    fallback_scale: float,
+) -> float | None:
+    """A Qto quantity read in SI (metres / square metres).
+
+    The raw quantity is stated in the file's units, so it is scaled before
+    it can be compared with a model in metres: a wall length of 10000 in a
+    millimetre file is 10 m, not 10000 m (#1363). ``fallback_scale`` is the
+    file-level scale for that kind of quantity (the length scale for
+    lengths, the project's AREAUNIT for areas), and a quantity carrying its
+    own ``Unit`` overrides it.
+    """
+    q = _qto_quantity(el, qset, names)
+    raw = _quantity_value(q) if q is not None else None
+    unit_scale = _quantity_unit_scale(q) if q is not None else None
+    if raw is None or raw <= 0:
+        raw = _qto_value(psets, qset, names)
+    if raw is None:
+        return None
+    return raw * (unit_scale**exponent if unit_scale is not None else fallback_scale)
 
 
 def _geom_floor_area(el) -> float | None:
@@ -281,11 +432,23 @@ def build_truth(path: Path) -> dict:
     path = Path(path)
     f = ifcopenshell.open(str(path))
     scale = _length_scale(f)
+    # areas are stated in the project's AREAUNIT when it declares one, and
+    # in the file's length units squared when it does not (#1351, #1363)
+    area_scale = _project_unit_scale(f, "AREAUNIT", 2)
+    if area_scale is None:
+        area_scale = scale * scale
 
     rooms = {}
     for sp in sorted(f.by_type("IfcSpace"), key=lambda e: e.GlobalId):
         ps = _psets(sp)
-        area = _qto_value(ps, "Qto_SpaceBaseQuantities", ("NetFloorArea", "GrossFloorArea"))
+        area = _qto_measure(
+            sp,
+            ps,
+            "Qto_SpaceBaseQuantities",
+            ("NetFloorArea", "GrossFloorArea"),
+            2,
+            area_scale,
+        )
         source = "qto" if area is not None else None
         if area is None:
             geom = _geom_floor_area(sp)
@@ -312,7 +475,7 @@ def build_truth(path: Path) -> dict:
         ps = _psets(w)
         if _is_external(ps) is not True:
             continue
-        length = _qto_value(ps, "Qto_WallBaseQuantities", ("Length",))
+        length = _qto_measure(w, ps, "Qto_WallBaseQuantities", ("Length",), 1, scale)
         if length is None:
             length = _axis_length(w, scale)
         source = "measured"

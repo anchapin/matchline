@@ -83,6 +83,96 @@ def test_no_external_flag_means_no_wall_truth_not_zero(tmp_path: Path) -> None:
     assert "IsExternal" in t["exterior_wall_reason"]
 
 
+_NO_AREA_UNIT = object()
+
+
+def _unit_ifc(
+    path: Path,
+    length_prefix: str | None = "MILLI",
+    area_prefix=_NO_AREA_UNIT,
+    area_value: float = 20.0,
+    wall_length: float = 10000.0,
+    wall_qto_prefix: str | None = None,
+) -> Path:
+    """One space and one external wall, with the file's units declared.
+
+    The quantities are stated in the file's units, as an exporter writes
+    them: a millimetre file states a 10 m wall as ``Length=10000`` and a
+    20 m2 room as ``NetFloorArea=20`` when its AREAUNIT is m2.
+    """
+    import ifcopenshell
+    import ifcopenshell.api.pset
+    import ifcopenshell.api.root
+    import ifcopenshell.api.unit
+
+    f = ifcopenshell.file(schema="IFC4")
+    ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="p")
+    units = [ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT", prefix=length_prefix)]
+    if area_prefix is not _NO_AREA_UNIT:
+        units.append(ifcopenshell.api.unit.add_si_unit(f, unit_type="AREAUNIT", prefix=area_prefix))
+    ifcopenshell.api.unit.assign_unit(f, units=units)
+
+    sp = ifcopenshell.api.root.create_entity(f, ifc_class="IfcSpace", name="space-a")
+    sp.GlobalId = "space-a"
+    q = ifcopenshell.api.pset.add_qto(f, product=sp, name="Qto_SpaceBaseQuantities")
+    ifcopenshell.api.pset.edit_qto(f, qto=q, properties={"NetFloorArea": area_value})
+
+    w = ifcopenshell.api.root.create_entity(f, ifc_class="IfcWall", name="wall-ext")
+    w.GlobalId = "wall-ext"
+    ps = ifcopenshell.api.pset.add_pset(f, product=w, name="Pset_WallCommon")
+    ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"IsExternal": True})
+    q = ifcopenshell.api.pset.add_qto(f, product=w, name="Qto_WallBaseQuantities")
+    ifcopenshell.api.pset.edit_qto(f, qto=q, properties={"Length": wall_length})
+    if wall_qto_prefix is not None:
+        unit = ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT", prefix=wall_qto_prefix)
+        for rel in w.IsDefinedBy:
+            psd = rel.RelatingPropertyDefinition
+            if not psd.is_a("IfcElementQuantity"):
+                continue
+            for qq in psd.Quantities:
+                if qq.Name == "Length":
+                    qq.Unit = unit
+    f.write(str(path))
+    return path
+
+
+def test_qto_lengths_are_read_in_metres_not_in_file_units(tmp_path: Path) -> None:
+    """#1363: a millimetre file states a 10 m wall as ``Length=10000``; read
+    raw, the truth said 10000 m and the benchmark scored the importer
+    against a number 1000x off."""
+    t = build_truth(_unit_ifc(tmp_path / "arch.ifc", area_prefix=None))
+    assert t["exterior_wall_length_m"] == pytest.approx(10.0)
+    assert t["exterior_walls_measured"] == 1
+
+
+def test_qto_areas_follow_the_project_area_unit(tmp_path: Path) -> None:
+    """The project's AREAUNIT decides the area scale: m2 stays m2, mm2
+    (20 000 000 mm2) is 20 m2."""
+    m2 = build_truth(_unit_ifc(tmp_path / "m2.ifc", area_prefix=None))
+    assert m2["rooms"]["space-a"]["area_m2"] == pytest.approx(20.0)
+    assert m2["rooms"]["space-a"]["area_source"] == "qto"
+    mm2 = build_truth(_unit_ifc(tmp_path / "mm2.ifc", area_prefix="MILLI", area_value=20_000_000.0))
+    assert mm2["rooms"]["space-a"]["area_m2"] == pytest.approx(20.0)
+    # no AREAUNIT declared: the area falls back to the length scale squared
+    fallback = build_truth(_unit_ifc(tmp_path / "fallback.ifc", area_value=20_000_000.0))
+    assert fallback["rooms"]["space-a"]["area_m2"] == pytest.approx(20.0)
+
+
+def test_qto_quantity_with_its_own_unit_overrides_the_file_unit(tmp_path: Path) -> None:
+    """A quantity that declares its own unit is stated in that unit, even
+    when the file is in metres (#1351, #1360)."""
+    t = build_truth(
+        _unit_ifc(
+            tmp_path / "arch.ifc",
+            length_prefix=None,
+            area_prefix=None,
+            wall_length=10000.0,
+            wall_qto_prefix="MILLI",
+        )
+    )
+    assert t["exterior_wall_length_m"] == pytest.approx(10.0)
+
+
 def test_truth_is_frozen_then_reused_and_pinned_to_the_ifc(tmp_path: Path) -> None:
     ifc = _tiny_ifc(tmp_path / "arch.ifc")
     truth, how = load_or_freeze_truth(ifc)
