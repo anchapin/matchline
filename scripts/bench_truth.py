@@ -28,7 +28,10 @@ IFC reader (``ifc.ifc_import``); ``tests/test_bench_truth.py`` pins that.
   file's length scale and a quantity that declares its own ``Unit``, an
   area by the project's ``AREAUNIT`` (falling back to the length scale
   squared). A millimetre file's 10 m wall reads as 10 m, not 10000 m
-  (#1363).
+  (#1363). Conversion-based units (inch, foot, square foot) are read
+  through their conversion factor and keep their own dimension: an areal
+  factor is used as it stands, a length factor is squared for an area
+  (#1372).
 - windows / doors: raw ``by_type`` counts; window area is the product of
   the two largest extents of the window's tessellated body from
   ``ifcopenshell.geom`` (the same geometry policy the room areas use),
@@ -121,6 +124,61 @@ _SI_PREFIX = {
 }
 
 
+# The dimension of an IFC unit type, as the power its scale is raised to.
+_UNIT_DIMENSION = {"LENGTHUNIT": 1, "AREAUNIT": 2, "VOLUMEUNIT": 3}
+
+
+def _measure_value(value) -> float | None:
+    """The numeric payload of an ``IfcMeasureValue``.
+
+    A conversion factor's ``ValueComponent`` is an IfcMeasureValue
+    select: ifcopenshell surfaces it as a measure entity (e.g.
+    ``IfcLengthMeasure``) whose numeric payload is ``wrappedValue``, so
+    float() on the entity itself raises TypeError and the whole factor
+    used to be swallowed to None (#1372). A plain number is accepted too.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    wrapped = getattr(value, "wrappedValue", None)
+    if isinstance(wrapped, (int, float)) and not isinstance(wrapped, bool):
+        return float(wrapped)
+    return None
+
+
+def _si_component_scale(unit) -> float:
+    """The scale of the SI unit a conversion factor is stated in.
+
+    Only a length component carries a prefix scale (25.4 with a
+    millimetre component is 0.0254 m, one inch); an area or volume
+    component is already stated in its own dimension and counts as 1.0.
+    """
+    if (
+        unit is not None
+        and unit.is_a("IfcSIUnit")
+        and getattr(unit, "UnitType", None) == "LENGTHUNIT"
+    ):
+        return _SI_PREFIX.get((unit.Prefix or ""), 1.0)
+    return 1.0
+
+
+def _conversion_factor_scale(unit) -> float | None:
+    """The scale of an ``IfcConversionBasedUnit``'s conversion factor.
+
+    The factor states how much one of this unit is worth in the
+    component's unit: 25.4 with a millimetre component is 0.0254 m for
+    an inch, and 0.09290304 with a square-metre component is
+    0.09290304 m^2 for a square foot (#1372). None when the factor
+    cannot be read.
+    """
+    cf = getattr(unit, "ConversionFactor", None)
+    if cf is None:
+        return None
+    value = _measure_value(getattr(cf, "ValueComponent", None))
+    if value is None:
+        return None
+    return value * _si_component_scale(getattr(cf, "UnitComponent", None))
+
+
 def _project_unit_scale(f, unit_type: str, exponent: int) -> float | None:
     """Scale to SI for the project's declared unit of ``unit_type``.
 
@@ -140,14 +198,15 @@ def _project_unit_scale(f, unit_type: str, exponent: int) -> float | None:
         if u.is_a("IfcSIUnit"):
             return _SI_PREFIX.get((u.Prefix or ""), 1.0) ** exponent
         if u.is_a("IfcConversionBasedUnit"):
-            try:
-                cf = u.ConversionFactor
-                return (
-                    float(cf.ValueComponent)
-                    * _SI_PREFIX.get((cf.UnitComponent.Prefix or ""), 1.0) ** exponent
-                )
-            except Exception:
+            factor = _conversion_factor_scale(u)
+            if factor is None:
                 return None
+            if _UNIT_DIMENSION.get(getattr(u, "UnitType", None), 1) == 1:
+                # a length factor: the caller's exponent applies to it
+                return factor**exponent
+            # an area or volume factor already carries its own dimension,
+            # so it is used as it stands (#1372)
+            return factor
     return None
 
 
@@ -156,11 +215,45 @@ def _quantity_unit_scale(q) -> float | None:
 
     A quantity that declares its own unit is stated in that unit and
     overrides the project unit for that quantity (#1351, #1360).
+
+    An ``IfcConversionBasedUnit`` (inch, foot, square foot -- the common
+    US-imperial shape) is resolved through its ``ConversionFactor``:
+    the factor's value times the scale of the factor's own unit
+    component (#1372).
     """
     unit = getattr(q, "Unit", None)
-    if unit is not None and unit.is_a("IfcSIUnit"):
+    if unit is None:
+        return None
+    if unit.is_a("IfcSIUnit"):
         return _SI_PREFIX.get((unit.Prefix or ""), 1.0)
+    if unit.is_a("IfcConversionBasedUnit"):
+        return _conversion_factor_scale(unit)
     return None
+
+
+def _quantity_scale(q, exponent: int, fallback: float) -> float:
+    """Scale for one quantity value, honouring the quantity's own unit.
+
+    A quantity carrying its own ``Unit`` overrides the project unit for
+    that quantity (#1351, #1360); without one, ``fallback`` (the
+    project-derived scale) applies. ``exponent`` is the power the unit
+    is raised to: 1 for lengths, 2 for areas, 3 for volumes.
+
+    A conversion-based unit (#1364) already carries its own dimension:
+    its factor reads metres per inch, or m^2 per square foot. Such a
+    factor is therefore used as it stands for an area/volume quantity
+    and only squared/cubed when it is a *length* factor (a foot used
+    for an area quantity is a square foot) (#1372).
+    """
+    unit = getattr(q, "Unit", None)
+    unit_scale = _quantity_unit_scale(q)
+    if unit_scale is None:
+        return fallback
+    if unit is not None and unit.is_a("IfcConversionBasedUnit"):
+        if _UNIT_DIMENSION.get(getattr(unit, "UnitType", None), 1) == 1:
+            return unit_scale**exponent
+        return unit_scale
+    return unit_scale**exponent
 
 
 def _qto_quantity(el, qset: str, names: tuple[str, ...]):
@@ -223,16 +316,19 @@ def _qto_measure(
     millimetre file is 10 m, not 10000 m (#1363). ``fallback_scale`` is the
     file-level scale for that kind of quantity (the length scale for
     lengths, the project's AREAUNIT for areas), and a quantity carrying its
-    own ``Unit`` overrides it.
+    own ``Unit`` overrides it. A conversion-based unit keeps its own
+    dimension: an areal factor is used as it stands, a length factor is
+    raised to ``exponent`` (#1372).
     """
     q = _qto_quantity(el, qset, names)
     raw = _quantity_value(q) if q is not None else None
-    unit_scale = _quantity_unit_scale(q) if q is not None else None
     if raw is None or raw <= 0:
         raw = _qto_value(psets, qset, names)
     if raw is None:
         return None
-    return raw * (unit_scale**exponent if unit_scale is not None else fallback_scale)
+    if q is None:
+        return raw * fallback_scale
+    return raw * _quantity_scale(q, exponent, fallback_scale)
 
 
 def _geom_floor_area(el) -> float | None:
