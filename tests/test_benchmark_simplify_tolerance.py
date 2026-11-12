@@ -69,9 +69,7 @@ def test_benchmark_simplify_ring_still_gets_the_fraction() -> None:
     assert seen == [0.02]
 
 
-def test_benchmark_write_gbxml_refuses_a_five_percent_tolerance(
-    tmp_path: Path, capsys
-) -> None:
+def test_benchmark_write_gbxml_refuses_a_five_percent_tolerance(tmp_path: Path, capsys) -> None:
     """The gbXML export path refuses 5% and writes nothing (#1374)."""
     model = make_clean_model()
     sres = _simplified(model)
