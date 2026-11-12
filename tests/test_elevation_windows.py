@@ -147,7 +147,9 @@ def test_door_hint_attaches_as_door_and_window_hint_as_window():
     door = _merged(1, 1.0, 1.9, 0.0, 2.1, "door", width=0.9, height=2.1)
     win = _merged(2, 3.0, 4.2, 0.9, 2.4, "window", width=1.2, height=1.5)
 
-    attached, unlinked = attach_merged_windows(model, [sp], _bldg(), [door, win], win_sched, "south")
+    attached, unlinked = attach_merged_windows(
+        model, [sp], _bldg(), [door, win], win_sched, "south"
+    )
 
     assert len(attached) == 2
     assert unlinked == []
@@ -192,7 +194,11 @@ def test_sill_vs_schedule_category_mismatch_is_surfaced():
     assert op.tag == ""  # no door row describes it: measured dims only
     assert "CATEGORY MISMATCH" in op.provenance.note
     assert "schedule row 'W1' is a window" in op.provenance.note
-    flags = [i for i in model.review_queue if "CATEGORY MISMATCH" in i.description or "is a window" in i.description]
+    flags = [
+        i
+        for i in model.review_queue
+        if "CATEGORY MISMATCH" in i.description or "is a window" in i.description
+    ]
     assert flags, "the category mismatch must reach the review queue"
 
 
