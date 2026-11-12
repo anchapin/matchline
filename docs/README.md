@@ -109,9 +109,11 @@ Working from the repo (a plain PyPI install is covered on the
 
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
-python -m pytest tests/ -q      # (2) smoke test — 3,500+ tests, a few minutes
+python -m pytest tests/ -q      # (2) smoke test — (4163 collected in CI; expected per `ci.yml`)
 matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
 ```
+
+The smoke test takes a few minutes.
 
 See the [repo front page](../README.md), browse the groups above, or open
 `repo-map.md` for the generated module graph. Start with `ROADMAP.md` (repo

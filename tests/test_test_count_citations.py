@@ -11,7 +11,10 @@ printed both numbers side by side.
 `README.md` joined the guarded set in #1366, which also fixed the last
 unguarded figures: the README's "~3,500 tests" quickstart note became a guarded
 citation, and the per-file count in `docs/ifc_import.md` is now pinned to the
-count pytest actually collects from `tests/test_ifc_import.py`.
+count pytest actually collects from `tests/test_ifc_import.py`. `docs/README.md`
+carried the same stale "3,500+ tests" quickstart note and joined the guarded
+set in #1375; it is checked from an existing test function rather than from the
+parametrized list, so the collected count of this file does not move.
 `QUALITY-SCORE.md` is a dated snapshot (Analysis Date: 2026-10-07), so its
 "1,744 tests" line is history rather than a live figure -- see
 `_HISTORICAL_DOCS`.
@@ -53,6 +56,15 @@ _CITATION_DOCS = (
 _PER_FILE_CITATIONS = {
     "docs/ifc_import.md": "tests/test_ifc_import.py",
 }
+
+# Extra docs that cite the suite's collected count but cannot join the
+# parametrized `_CITATION_DOCS` list: every added parameter is one more
+# collected test, and the CI count gate pins the number of tests collected
+# from this file too (see the module docstring). These are checked inside an
+# existing test function instead, so the collected count does not move.
+_EXTRA_CITATION_DOCS = (
+    "docs/README.md",  # #1375: the quickstart used to advertise "3,500+ tests"
+)
 
 # Historical documents that may quote an outdated figure on purpose. The guard
 # must never read them -- CONTRACT.md's stale mention is dated draft history,
@@ -163,6 +175,17 @@ def test_guard_invariants():
     assert stated == [expected], (
         f"docs/ci.md Behaviour section says {stated}, EXPECTED_TEST_COUNT in ci.yml is {expected}"
     )
+    # docs/README.md's quickstart used to advertise "3,500+ tests" -- a bare
+    # floor that nobody checked. It now carries the same guarded citation as
+    # the repo front page (#1375).
+    for relpath in _EXTRA_CITATION_DOCS:
+        cited = _cited_counts(relpath)
+        assert cited, (
+            f"{relpath} no longer cites a collected-test count; a deleted citation is drift"
+        )
+        assert cited == [expected], (
+            f"{relpath} cites {cited}, EXPECTED_TEST_COUNT in ci.yml is {expected}"
+        )
     # CONTRACT.md quotes a stale figure on purpose (dated draft history),
     # CHANGELOG.md records past counts and QUALITY-SCORE.md is a dated
     # snapshot; flagging them would be a false positive.

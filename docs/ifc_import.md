@@ -216,7 +216,7 @@ Tier 1 is blocked from shipping if any of these fire at error severity:
 | `space_opening_attachment` (#666, **warn** only) | per level, IFC wall openings that no space holds; the message carries the `opening_attachment_summary` breakdown. Warn, not error: an unattached opening is still in the takeoff, it just has no room yet |
 | `review_queue_acknowledged` (existing, **error**) | any unacknowledged `needs_review` item, which includes `facade_unclear` and `adjacency_ambiguous` |
 
-Two checks were planned here and dropped in #681. `adjacency_review_acknowledged` would duplicate `review_queue_acknowledged`, which already blocks export on every unacknowledged review item of any kind. `facade_classification_complete` (no empty facade) does not fit the data: exterior walls always get a facade, and the only empty ones are walls with no room on either side, which are not known to be exterior at all. Those are reported in the import summary's "unclassified" count. `N_CHECKS` stays 48. `facade_opening_closure` and `takeoff_counts_reconcile` act as regression guards on the attached openings.
+Two checks were planned here and dropped in #681. `adjacency_review_acknowledged` would duplicate `review_queue_acknowledged`, which already blocks export on every unacknowledged review item of any kind. `facade_classification_complete` (no empty facade) does not fit the data: exterior walls always get a facade, and the only empty ones are walls with no room on either side, which are not known to be exterior at all. Those are reported in the import summary's "unclassified" count. `N_CHECKS` stays 49 (the live count; see `docs/validation.md`, #1375). `facade_opening_closure` and `takeoff_counts_reconcile` act as regression guards on the attached openings.
 
 ## IfcOpenShell notes (0.8.5, vendored)
 
@@ -230,10 +230,14 @@ Two checks were planned here and dropped in #681. `adjacency_review_acknowledged
   by callers.
 - `assign_representation` takes the `IfcShapeRepresentation` (it wraps the
   `IfcProductDefinitionShape` itself).
+- `IfcConversionBasedUnit` (foot, inch -- the US-imperial shape) is read
+  through its `ConversionFactor`: the factor's `ValueComponent` is a measure
+  entity, so its number is unwrapped from `wrappedValue` before it is scaled
+  by the factor's own SI unit (#1371).
 
 ## Tests
 
-`tests/test_ifc_import.py` (55 collected; `pytest tests/test_ifc_import.py --collect-only`): the fixture is our own
+`tests/test_ifc_import.py` (61 collected; `pytest tests/test_ifc_import.py --collect-only`): the fixture is our own
 `bem_export.write_ifc4` output enriched in test code (space solids, material
 layer sets, opening/fill solids, an `IfcZone`, a placement-only duct, one
 geometry-less space). Round-trip fidelity: space areas/volumes exact to

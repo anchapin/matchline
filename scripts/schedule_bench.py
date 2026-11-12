@@ -66,6 +66,11 @@ from scripts.schedule_score import (  # noqa: E402
 )
 from scripts.schedule_truth import TruthMismatch, load_or_freeze_truth  # noqa: E402
 
+# Geometry-simplification tolerance used for the export validity check, as a
+# FRACTION (0.02 = 2% of the original area). The BEM factory wants PERCENT;
+# convert with ``bem.bem_geometry.simplify_tolerance_pct`` (#1374).
+SIMPLIFY_TOL_FRACTION = 0.02
+
 # Units that name airflow (the slots the value-slot reader fills, #1236) or
 # that name a stated requirement on the Attribute sheet.
 _AIRFLOW_UNITS = {"l/s", "lps", "cfm", "m3/s", "m3/h", "l/min"}
@@ -555,6 +560,26 @@ def _norm_pair(cap):
     return (value, unit)
 
 
+def _bem_model_for_export(model, sres, wall_height: float | None):
+    """The BEM model the export-validity check writes, tolerance in PERCENT.
+
+    ``SIMPLIFY_TOL_FRACTION`` is the harness's FRACTION (0.02 = 2% of the
+    original area, the value ``simplify_ring`` takes);
+    ``BEMModel.simplify_tolerance`` and ``model_from_linked_model`` both work
+    in PERCENT, so the conversion goes through the one shared helper (#1374),
+    never a local ``* 100``.
+    """
+    from bem.bem_geometry import simplify_tolerance_pct
+    from run_pipeline import model_from_linked_model
+
+    return model_from_linked_model(
+        model=model,
+        simplified_ring=sres,
+        wall_height_m=wall_height,
+        simplify_tolerance=simplify_tolerance_pct(SIMPLIFY_TOL_FRACTION),
+    )
+
+
 def export_validity(name: str, arch_ifc: Path | None, out_dir: Path) -> dict:
     """BuildingSync export validity for one building's model, measured."""
 
@@ -562,7 +587,6 @@ def export_validity(name: str, arch_ifc: Path | None, out_dir: Path) -> dict:
         return {"status": "missing", "detail": "arch IFC not on disk"}
     from geometry.geometry_simplify import footprint_from_regions, simplify_ring
     from ifc.ifc_import import import_ifc
-    from run_pipeline import model_from_linked_model
 
     try:
         model = import_ifc(str(arch_ifc))
@@ -574,10 +598,8 @@ def export_validity(name: str, arch_ifc: Path | None, out_dir: Path) -> dict:
         ring = footprint_from_regions(polys)
         sres = None
         if ring and len(ring) >= 3:
-            sres = simplify_ring(ring, tol=0.02, wall_height=wall_h)
-        bem = model_from_linked_model(
-            model=model, simplified_ring=sres, wall_height_m=wall_h, simplify_tolerance=0.02
-        )
+            sres = simplify_ring(ring, tol=SIMPLIFY_TOL_FRACTION, wall_height=wall_h)
+        bem = _bem_model_for_export(model, sres, wall_h)
         out = out_dir / f"{name}-buildingsync" / "model.buildingsync.xml"
         out.parent.mkdir(parents=True, exist_ok=True)
         write_buildingsync(bem, out)
