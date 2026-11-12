@@ -173,6 +173,123 @@ def test_qto_quantity_with_its_own_unit_overrides_the_file_unit(tmp_path: Path) 
     assert t["exterior_wall_length_m"] == pytest.approx(10.0)
 
 
+def _conversion_unit_ifc(
+    path: Path,
+    *,
+    quantity_unit: str | None = None,
+    project_area_unit: str | None = None,
+    wall_length: float = 100.0,
+    area_value: float = 100.0,
+) -> Path:
+    """One space and one external wall, in metres, with conversion units.
+
+    ``quantity_unit`` names the unit the quantity itself declares ("INCH"
+    for the wall length, "SQUARE FOOT" for the room area);
+    ``project_area_unit`` names a conversion-based AREAUNIT the project
+    declares ("SQUARE FOOT"). The conversion factors are the ones the
+    importer's #1364 fixtures use: an inch is 25.4 mm and a square foot is
+    0.09290304 m^2.
+    """
+    import ifcopenshell
+    import ifcopenshell.api.pset
+    import ifcopenshell.api.root
+    import ifcopenshell.api.unit
+
+    f = ifcopenshell.file(schema="IFC4")
+    ifcopenshell.api.root.create_entity(f, ifc_class="IfcProject", name="p")
+    units = [ifcopenshell.api.unit.add_si_unit(f, unit_type="LENGTHUNIT", prefix=None)]
+    if project_area_unit == "SQUARE FOOT":
+        units.append(
+            f.create_entity(
+                "IfcConversionBasedUnit",
+                UnitType="AREAUNIT",
+                Name="SQUARE FOOT",
+                ConversionFactor=f.create_entity(
+                    "IfcMeasureWithUnit",
+                    ValueComponent=f.create_entity("IfcAreaMeasure", 0.09290304),
+                    UnitComponent=f.create_entity(
+                        "IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE"
+                    ),
+                ),
+            )
+        )
+    ifcopenshell.api.unit.assign_unit(f, units=units)
+
+    sp = ifcopenshell.api.root.create_entity(f, ifc_class="IfcSpace", name="space-a")
+    sp.GlobalId = "space-a"
+    q = ifcopenshell.api.pset.add_qto(f, product=sp, name="Qto_SpaceBaseQuantities")
+    ifcopenshell.api.pset.edit_qto(f, qto=q, properties={"NetFloorArea": area_value})
+    if quantity_unit == "SQUARE FOOT":
+        for qq in q.Quantities:
+            if qq.Name == "NetFloorArea":
+                qq.Unit = f.create_entity(
+                    "IfcConversionBasedUnit",
+                    UnitType="AREAUNIT",
+                    Name="SQUARE FOOT",
+                    ConversionFactor=f.create_entity(
+                        "IfcMeasureWithUnit",
+                        ValueComponent=f.create_entity("IfcAreaMeasure", 0.09290304),
+                        UnitComponent=f.create_entity(
+                            "IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE"
+                        ),
+                    ),
+                )
+
+    w = ifcopenshell.api.root.create_entity(f, ifc_class="IfcWall", name="wall-ext")
+    w.GlobalId = "wall-ext"
+    ps = ifcopenshell.api.pset.add_pset(f, product=w, name="Pset_WallCommon")
+    ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"IsExternal": True})
+    q = ifcopenshell.api.pset.add_qto(f, product=w, name="Qto_WallBaseQuantities")
+    ifcopenshell.api.pset.edit_qto(f, qto=q, properties={"Length": wall_length})
+    if quantity_unit == "INCH":
+        for qq in q.Quantities:
+            if qq.Name == "Length":
+                qq.Unit = f.create_entity(
+                    "IfcConversionBasedUnit",
+                    UnitType="LENGTHUNIT",
+                    Name="INCH",
+                    ConversionFactor=f.create_entity(
+                        "IfcMeasureWithUnit",
+                        ValueComponent=f.create_entity("IfcLengthMeasure", 25.4),
+                        UnitComponent=f.create_entity(
+                            "IfcSIUnit", UnitType="LENGTHUNIT", Prefix="MILLI", Name="METRE"
+                        ),
+                    ),
+                )
+    f.write(str(path))
+    return path
+
+
+def test_qto_length_honours_a_conversion_based_quantity_unit(tmp_path: Path) -> None:
+    """A Length quantity denominated in inches via an
+    IfcConversionBasedUnit is read in metres (#1364, #1372): 100 in = 2.54 m,
+    not the raw 100.0 the project-unit fallback would give."""
+    t = build_truth(_conversion_unit_ifc(tmp_path / "inch.ifc", quantity_unit="INCH"))
+    assert t["exterior_wall_length_m"] == pytest.approx(2.54)
+    assert t["exterior_walls_measured"] == 1
+
+
+def test_qto_area_honours_a_conversion_based_quantity_unit(tmp_path: Path) -> None:
+    """A NetFloorArea quantity denominated in square feet via an
+    IfcConversionBasedUnit is read in m^2 (#1364, #1372): 100 ft^2 =
+    9.290304 m^2, not the raw 100.0 -- and not 100 x the areal factor
+    squared."""
+    t = build_truth(_conversion_unit_ifc(tmp_path / "sqft.ifc", quantity_unit="SQUARE FOOT"))
+    assert t["rooms"]["space-a"]["area_m2"] == pytest.approx(9.290304)
+    assert t["rooms"]["space-a"]["area_source"] == "qto"
+
+
+def test_project_area_unit_honours_a_conversion_based_unit(tmp_path: Path) -> None:
+    """A project whose AREAUNIT is a conversion-based SQUARE FOOT scales
+    the areas by the areal factor itself: 100 ft^2 = 9.290304 m^2
+    (#1372)."""
+    t = build_truth(
+        _conversion_unit_ifc(tmp_path / "proj_sqft.ifc", project_area_unit="SQUARE FOOT")
+    )
+    assert t["rooms"]["space-a"]["area_m2"] == pytest.approx(9.290304)
+    assert t["rooms"]["space-a"]["area_source"] == "qto"
+
+
 def test_truth_is_frozen_then_reused_and_pinned_to_the_ifc(tmp_path: Path) -> None:
     ifc = _tiny_ifc(tmp_path / "arch.ifc")
     truth, how = load_or_freeze_truth(ifc)
