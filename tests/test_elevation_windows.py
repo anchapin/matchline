@@ -271,11 +271,21 @@ def test_link_elevations_counts_doors_apart_from_windows():
     # and a window at s=[3.0, 4.2] m with sill 0.9 m.
     obs = [
         ElevationWindowObs(
-            id="D1", u0_px=100.0, u1_px=190.0, v_head_px=290.0, v_sill_px=500.0, confidence=0.9,
+            id="D1",
+            u0_px=100.0,
+            u1_px=190.0,
+            v_head_px=290.0,
+            v_sill_px=500.0,
+            confidence=0.9,
             method="stub",
         ),
         ElevationWindowObs(
-            id="W1", u0_px=300.0, u1_px=420.0, v_head_px=260.0, v_sill_px=410.0, confidence=0.9,
+            id="W1",
+            u0_px=300.0,
+            u1_px=420.0,
+            v_head_px=260.0,
+            v_sill_px=410.0,
+            confidence=0.9,
             method="stub",
         ),
     ]
@@ -285,9 +295,7 @@ def test_link_elevations_counts_doors_apart_from_windows():
         "W1": _sched("W1", "window", 1.2, 1.5),
     }
 
-    report = link_elevations(
-        model, bldg, [sp], ("elev",), win_sched, detector_backend="stub_1373"
-    )
+    report = link_elevations(model, bldg, [sp], ("elev",), win_sched, detector_backend="stub_1373")
 
     assert report.n_doors_attached == 1
     assert report.n_windows_attached == 1
