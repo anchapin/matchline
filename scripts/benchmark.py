@@ -466,6 +466,25 @@ def _openstudio_check(b: Building, out_dir: Path, gbxml: Path | None) -> str:
     return "pass" if proc.returncode == 0 else "fail"
 
 
+def _bem_model(model: BuildingModel, sres, wall_height: float | None, simplify_tol: float):
+    """The BEM model the benchmark exports, with the tolerance in PERCENT.
+
+    ``simplify_tol`` is the harness's FRACTION (0.02 = 2% of the original
+    area, the same value ``simplify_ring`` takes); ``BEMModel.simplify_tolerance``
+    and ``model_from_linked_model`` both work in PERCENT, so the conversion
+    goes through the one shared helper (#1374), never a local ``* 100``.
+    """
+    from bem.bem_geometry import simplify_tolerance_pct
+    from run_pipeline import model_from_linked_model
+
+    return model_from_linked_model(
+        model=model,
+        simplified_ring=sres,
+        wall_height_m=wall_height,
+        simplify_tolerance=simplify_tolerance_pct(simplify_tol),
+    )
+
+
 def _write_gbxml(
     b: Building,
     out_dir: Path,
@@ -476,17 +495,11 @@ def _write_gbxml(
 ) -> Path | None:
     try:
         from bem.bem_export import write_gbxml
-        from run_pipeline import model_from_linked_model
 
         # #972: the export exercises the real stage-3 simplification (the
         # caller's already-imported model, no second IFC read); the old
         # hardcoded simplified_ring=None / tolerance=0.1 bypassed it.
-        bem = model_from_linked_model(
-            model=model,
-            simplified_ring=sres,
-            wall_height_m=wall_height,
-            simplify_tolerance=simplify_tol,
-        )
+        bem = _bem_model(model, sres, wall_height, simplify_tol)
         out = out_dir / f"{b.name}-gbxml" / "model.gbxml"
         out.parent.mkdir(parents=True, exist_ok=True)
         write_gbxml(bem, out)
