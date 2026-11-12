@@ -143,7 +143,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run ruff check on detector/
-        run: uvx ruff@0.17.2 check detector/
+        run: uvx ruff@0.17.5 check detector/
 
   pip-audit:
     # #1139: scan the resolved runtime dependency set for known CVEs.
