@@ -1193,11 +1193,39 @@ def _quantity_unit_scale(q):
 
     A quantity that declares its own unit is expressed in that unit and
     overrides the project unit for that quantity (#1351, #1360).
+
+    An ``IfcConversionBasedUnit`` (inch, foot -- the common US-imperial
+    shape) is resolved through its ``ConversionFactor``: the factor's
+    value times the scale of the factor's own unit component, the same
+    formula :func:`_length_scale` uses for the file's length unit
+    (#1364). Without this branch a conversion-based quantity fell back
+    to the project scale and was read in the wrong unit.
     """
     unit = getattr(q, "Unit", None)
-    if unit is not None and unit.is_a("IfcSIUnit"):
+    if unit is None:
+        return None
+    if unit.is_a("IfcSIUnit"):
         return _SI_PREFIX.get((unit.Prefix or ""), 1.0)
+    if unit.is_a("IfcConversionBasedUnit"):
+        cf = getattr(unit, "ConversionFactor", None)
+        if cf is None:
+            return None
+        try:
+            # ValueComponent is an IfcMeasureValue select: ifcopenshell
+            # surfaces it as a measure entity (e.g. IfcLengthMeasure)
+            # whose numeric payload is ``wrappedValue`` — float() on the
+            # entity itself raises TypeError, so unwrap first. (The
+            # sibling _length_scale/_project_unit_scale readers still
+            # float() it directly; that latent gap is theirs to fix.)
+            value = cf.ValueComponent
+            return float(getattr(value, "wrappedValue", value)) * _si_scale(cf.UnitComponent)
+        except Exception:
+            return None
     return None
+
+
+# The dimension of an IFC unit type, as the power its scale is raised to.
+_UNIT_DIMENSION = {"LENGTHUNIT": 1, "AREAUNIT": 2, "VOLUMEUNIT": 3}
 
 
 def _quantity_scale(q, exponent, fallback):
@@ -1207,10 +1235,21 @@ def _quantity_scale(q, exponent, fallback):
     that quantity (#1351, #1360); without one, ``fallback`` (the
     project-derived scale) applies. ``exponent`` is the power the unit
     is raised to: 1 for lengths, 2 for areas, 3 for volumes.
+
+    A conversion-based unit (#1364) already carries its own dimension:
+    its factor reads metres per inch, or m^2 per square foot. Such a
+    factor is therefore used as it stands for an area/volume quantity
+    and only squared/cubed when it is a *length* factor (a foot used
+    for an area quantity is a square foot).
     """
+    unit = getattr(q, "Unit", None)
     unit_scale = _quantity_unit_scale(q)
     if unit_scale is None:
         return fallback
+    if unit is not None and unit.is_a("IfcConversionBasedUnit"):
+        if _UNIT_DIMENSION.get(getattr(unit, "UnitType", None), 1) == 1:
+            return unit_scale**exponent
+        return unit_scale
     return unit_scale**exponent
 
 
@@ -1271,22 +1310,39 @@ def _quantities(el, qset_name, scale):
     if volume_scale is None:
         volume_scale = scale**3
 
+    def _collect(definitions):
+        for psd in definitions or []:
+            if psd is None or not psd.is_a("IfcElementQuantity"):
+                continue
+            if psd.Name != qset_name:
+                continue
+            for q in psd.Quantities or []:
+                if q.is_a("IfcQuantityArea"):
+                    out[q.Name] = float(q.AreaValue) * _quantity_scale(q, 2, area_scale)
+                elif q.is_a("IfcQuantityVolume"):
+                    out[q.Name] = float(q.VolumeValue) * _quantity_scale(q, 3, volume_scale)
+                elif q.is_a("IfcQuantityLength"):
+                    out[q.Name] = float(q.LengthValue) * _quantity_scale(q, 1, scale)
+
     out = {}
-    for rel in getattr(el, "IsDefinedBy", None) or []:
-        if not rel.is_a("IfcRelDefinesByProperties"):
-            continue
-        psd = rel.RelatingPropertyDefinition
-        if psd is None or not psd.is_a("IfcElementQuantity"):
-            continue
-        if psd.Name != qset_name:
-            continue
-        for q in psd.Quantities or []:
-            if q.is_a("IfcQuantityArea"):
-                out[q.Name] = float(q.AreaValue) * _quantity_scale(q, 2, area_scale)
-            elif q.is_a("IfcQuantityVolume"):
-                out[q.Name] = float(q.VolumeValue) * _quantity_scale(q, 3, volume_scale)
-            elif q.is_a("IfcQuantityLength"):
-                out[q.Name] = float(q.LengthValue) * _quantity_scale(q, 1, scale)
+    _collect(
+        rel.RelatingPropertyDefinition
+        for rel in getattr(el, "IsDefinedBy", None) or []
+        if rel.is_a("IfcRelDefinesByProperties")
+    )
+    if not out:
+        # Element-level quantity sets win over the ones inherited from
+        # the element's type — the same precedence _length_quantity
+        # applies (#1365). Only when the element carries no such set
+        # does the type's set apply, so nothing is double-counted.
+        try:
+            import ifcopenshell.util.element as _El
+
+            el_type = _El.get_type(el)
+        except (ImportError, AttributeError, RuntimeError):
+            el_type = None
+        if el_type is not None:
+            _collect(getattr(el_type, "HasPropertySets", None))
     return out
 
 
