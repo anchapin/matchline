@@ -131,6 +131,40 @@ _PACKAGE_DOCS = (
 # A new one has to be reviewed and added here, not silently tolerated.
 _NON_CHECK_TOKENS = frozenset({"area_m2", "volume_m3", "lpd_w_ft2", "lpd_w_m2", "roof_u_factor"})
 
+# "`N_CHECKS` stays 49" / "`N_CHECKS` = 45 + 4 = 49" -- a figure pinned to the
+# live constant. The `_COUNT_DOCS` patterns above only see the
+# "N-check invariant battery" phrasing, so a doc that mentions the constant
+# any other way escaped the guard: docs/ifc_import.md kept saying "48" while
+# the battery had 49 (#1375). Every mention of the constant in docs/ is now
+# parsed out and asserted against the live count.
+_N_CHECKS_MENTION_RE = re.compile(r"`N_CHECKS`[^.\n]{0,60}")
+
+# "`N_CHECKS` stays 49" -- a direct claim. The trailing lookahead keeps the
+# arithmetic form ("`N_CHECKS` = 45 + 4 = 49") out: there the number next to
+# the constant is a component of the total, not the total.
+_N_CHECKS_CLAIM_RE = re.compile(r"`N_CHECKS`\s*(?:stays|is|remains|=)\s*(\d+)\b(?!\s*[+\-])")
+
+_INT_RE = re.compile(r"\d+")
+
+
+def _n_checks_mentions() -> list[tuple[str, str]]:
+    """Every docs/ sentence fragment that pins a number to `N_CHECKS`.
+
+    `docs/history/` is skipped: it is dated handoff history that quotes old
+    counts on purpose, the same way `_HISTORICAL_DOCS` works in
+    `tests/test_test_count_citations.py`.
+    """
+    docs_root = _REPO / "docs"
+    mentions: list[tuple[str, str]] = []
+    for path in sorted(docs_root.rglob("*.md")):
+        rel = path.relative_to(_REPO)
+        if "history" in rel.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for match in _N_CHECKS_MENTION_RE.finditer(text):
+            mentions.append((rel.as_posix(), match.group(0)))
+    return mentions
+
 
 def _emitted_check_ids() -> set[str]:
     """Check ids the battery actually produces, from a real run.
@@ -160,6 +194,33 @@ def test_battery_size_documented():
     assert int(stated.group(1)) == N_CHECKS, (
         f"docs/validation.md says {stated.group(1)} checks, battery has {N_CHECKS}"
     )
+    # #1375: docs/ifc_import.md said "`N_CHECKS` stays 48" while the battery
+    # had 49 checks, and nothing failed: the sentence names the constant
+    # instead of repeating the guarded "N-check invariant battery" phrasing,
+    # so it escaped the `_COUNT_DOCS` patterns. Every number pinned to
+    # `N_CHECKS` in docs/ is now parsed out and asserted against the live
+    # count. The check lives inside this existing test function so the
+    # collected-test count (pinned in ci.yml) does not move.
+    mentions = _n_checks_mentions()
+    assert mentions, "no doc mentions `N_CHECKS` any more; confirm the prose still agrees"
+    pinned = 0
+    for relpath, segment in mentions:
+        numbers = [int(n) for n in _INT_RE.findall(segment)]
+        if not numbers:
+            # A mention that pins no number ("`N_CHECKS` updates itself") is
+            # not a count claim, so there is nothing to check.
+            continue
+        pinned += 1
+        claim = _N_CHECKS_CLAIM_RE.search(segment)
+        if claim:
+            assert int(claim.group(1)) == N_CHECKS, (
+                f"{relpath} says {segment!r}, battery has {N_CHECKS} checks"
+            )
+        else:
+            # An arithmetic form ("`N_CHECKS` = 45 + 4 = 49"): the total has
+            # to be among the numbers the sentence states.
+            assert N_CHECKS in numbers, f"{relpath} says {segment!r}, battery has {N_CHECKS} checks"
+    assert pinned, "no doc pins a number to `N_CHECKS` any more; confirm the prose"
 
 
 def test_every_check_is_documented():
