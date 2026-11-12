@@ -219,9 +219,7 @@ def test_battery_size_documented():
         else:
             # An arithmetic form ("`N_CHECKS` = 45 + 4 = 49"): the total has
             # to be among the numbers the sentence states.
-            assert N_CHECKS in numbers, (
-                f"{relpath} says {segment!r}, battery has {N_CHECKS} checks"
-            )
+            assert N_CHECKS in numbers, f"{relpath} says {segment!r}, battery has {N_CHECKS} checks"
     assert pinned, "no doc pins a number to `N_CHECKS` any more; confirm the prose"
 
 
