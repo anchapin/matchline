@@ -1658,9 +1658,7 @@ def test_space_gross_area_uses_conversion_based_project_area_unit(tmp_path):
         and rel.RelatingPropertyDefinition.is_a("IfcElementQuantity")
         and rel.RelatingPropertyDefinition.Name == "Qto_SpaceBaseQuantities"
     )
-    qto.Quantities = (
-        f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0),
-    )
+    qto.Quantities = (f.create_entity("IfcQuantityArea", Name="GrossFloorArea", AreaValue=100.0),)
     f.write(str(path))
 
     closet_model = import_ifc(path).spaces["L1-UNLABELED-1"]
