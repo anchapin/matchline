@@ -734,7 +734,10 @@ def _size(s: str) -> Tuple[Optional[float], Optional[float]]:
 
 
 U_IP_TO_SI = 5.678263  # Btu/(h ft2 F) -> W/(m2 K)
-_SI_UNITS = re.compile(r"W\s*/\s*M|\bSI\b")
+# Unit tokens are read from the U column header, so the same column name
+# states its unit in a PDF table ("U-FACTOR (BTU/HR-SF-F)") and in a CSV
+# header ("u_factor_btu", "u_value_w_m2k").
+_SI_UNITS = re.compile(r"W\s*[/_-]?\s*M|\bSI\b")
 _IP_UNITS = re.compile(r"BTU|\bIP\b")
 _FT_IN = re.compile(r"\d\s*['\"]")
 
@@ -744,28 +747,54 @@ def _ratio(s: str) -> Optional[float]:
     return v if v is not None and 0.0 < v <= 1.0 else None
 
 
-def _thermal(sched: PdfSchedule, vals: List[str], sizes_ft_in: bool) -> dict:
-    """Stated U, SHGC and VT of one door/window row (#746).
+def _canon_header(h: str) -> str:
+    """Header text in the PDF table conventions: upper case, '_' read as '-'.
 
-    U units come from the column header (``BTU``/``IP`` or ``W/M2K``/``SI``).
-    A header that states none is read as IP only when the same schedule gives
-    its sizes in feet and inches, at lower confidence; otherwise the U is not
-    used and the row says why. SHGC and VT must lie in (0, 1].
+    A PDF header row and a CSV header row are then read by the same rules, so
+    ``u_factor``/``U-FACTOR``/``U FACTOR`` is one column to the thermal
+    reader, and a unit token in the header (``btu``, ``ip``, ``w/m2k``,
+    ``si``) is read the same way in both.
     """
-    H = sched.headers
-    uc = _col(H, r"U[-\s]?(FACTOR|VALUE)", r"^U$", r"^U\b")
-    sc = _col(H, r"\bSHGC\b", r"SOLAR\s*HEAT")
-    vc = _col(H, r"\bVT\b", r"\bVLT\b", r"VISIBLE")
+    return (h or "").strip().upper().replace("_", "-")
+
+
+def sizes_in_feet_inches(rows) -> bool:
+    """True when any cell of *rows* gives a size in feet and inches.
+
+    The IP signal of a schedule: a U column that states no units is read as
+    Btu/h-ft2-F only when the same schedule sizes its openings in feet and
+    inches (#746). Shared by the PDF-table path and the CSV schedule path.
+    """
+    return any(_FT_IN.search(v) for vals in rows for v in vals)
+
+
+def thermal_fields(
+    headers: List[str], values: List[str], sizes_ft_in: bool = False
+) -> dict:
+    """Stated U, SHGC and VT of one schedule row (#746, #1383).
+
+    Header names are matched case-insensitively with ``_`` read as ``-``, so
+    the PDF-table path and the CSV schedule path share one set of column
+    conventions. U units come from the U column header (``BTU``/``IP`` or
+    ``W/M2K``/``SI``). A header that states none is read as IP only when the
+    same schedule gives its sizes in feet and inches, at lower confidence;
+    otherwise the U is not used and the row says why. SHGC and VT must lie in
+    (0, 1].
+    """
+    canon = [_canon_header(h) for h in headers]
+    uc = _col(canon, r"U[-\s]?(FACTOR|VALUE)", r"^U$", r"^U\b")
+    sc = _col(canon, r"\bSHGC\b", r"SOLAR\s*HEAT")
+    vc = _col(canon, r"\bVT\b", r"\bVLT\b", r"VISIBLE")
     out: dict = {}
     notes = []
     if uc is not None:
-        raw = _number(vals[uc])
+        raw = _number(values[uc])
         if raw is not None and raw > 0:
-            head = H[uc]
-            if _SI_UNITS.search(head):
+            head = headers[uc]
+            if _SI_UNITS.search(canon[uc]):
                 out["u_value_w_m2k"], conf = round(raw, 4), 0.9
                 notes.append(f"U {raw:g} W/m2K from '{head}'")
-            elif _IP_UNITS.search(head):
+            elif _IP_UNITS.search(canon[uc]):
                 out["u_value_w_m2k"], conf = round(raw * U_IP_TO_SI, 4), 0.9
                 notes.append(f"U {raw:g} Btu/h-ft2-F from '{head}'")
             elif sizes_ft_in:
@@ -779,23 +808,34 @@ def _thermal(sched: PdfSchedule, vals: List[str], sizes_ft_in: bool) -> dict:
                 notes.append(f"U {raw:g} not used: '{head}' states no units")
             if conf is not None:
                 out["thermal_confidence"] = conf
-        elif vals[uc].strip():
-            notes.append(f"U '{vals[uc]}' not read")
+        elif values[uc].strip():
+            notes.append(f"U '{values[uc]}' not read")
     if sc is not None:
-        v = _ratio(vals[sc])
+        v = _ratio(values[sc])
         if v is not None:
             out["shgc"] = v
-        elif vals[sc].strip():
-            notes.append(f"SHGC '{vals[sc]}' not read")
+        elif values[sc].strip():
+            notes.append(f"SHGC '{values[sc]}' not read")
     if vc is not None:
-        v = _ratio(vals[vc])
+        v = _ratio(values[vc])
         if v is not None:
             out["vt"] = v
-        elif vals[vc].strip():
-            notes.append(f"VT '{vals[vc]}' not read")
+        elif values[vc].strip():
+            notes.append(f"VT '{values[vc]}' not read")
     if notes:
         out["thermal_note"] = "; ".join(notes)
     return out
+
+
+def _thermal(sched: PdfSchedule, vals: List[str], sizes_ft_in: bool) -> dict:
+    """Stated U, SHGC and VT of one door/window row (#746).
+
+    U units come from the column header (``BTU``/``IP`` or ``W/M2K``/``SI``).
+    A header that states none is read as IP only when the same schedule gives
+    its sizes in feet and inches, at lower confidence; otherwise the U is not
+    used and the row says why. SHGC and VT must lie in (0, 1].
+    """
+    return thermal_fields(sched.headers, vals, sizes_ft_in)
 
 
 def _records(sched: PdfSchedule, tagc: int) -> None:
