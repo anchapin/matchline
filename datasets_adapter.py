@@ -214,13 +214,76 @@ def box_to_polygon(xtl, ytl, xbr, ybr):
     return [(xtl, ytl), (xbr, ytl), (xbr, ybr), (xtl, ybr)]
 
 
+def _union_area_px2(polys) -> float:
+    """Area (px^2) of the UNION of the given polygon rings (#1382).
+
+    Overlapping same-category polygons are measured once: the union is
+    taken before summation, so two 10x10 squares offset by 5 px measure
+    150 px^2, not 200 px^2.
+
+    Rings shapely cannot build (degenerate: fewer than 3 points, or
+    self-intersecting) are not unioned -- they keep their own shoelace
+    area, so the measurement stays best-effort and never raises. When the
+    union does not actually merge anything, the shoelace sum is returned
+    verbatim, so disjoint / single-polygon categories keep their exact
+    previous values.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    geoms = []
+    shapely_sum = 0.0  # shapely's own area of each ring (overlap check)
+    fallback_sum = 0.0  # rings shapely refused: best-effort shoelace area
+    order_sum = 0.0  # pre-#1382 per-region shoelace sum, in region order
+    for poly in polys:
+        a = polygon_area_px2(poly)
+        order_sum += a
+        try:
+            pts = [(float(x), float(y)) for x, y in poly]
+        except (TypeError, ValueError):
+            fallback_sum += a
+            continue
+        if len(pts) < 3:
+            # Degenerate ring: no area, nothing to union (#1382).
+            fallback_sum += a
+            continue
+        try:
+            g = Polygon(pts)
+            if not g.is_valid or g.is_empty:
+                raise ValueError("invalid polygon")
+        except Exception:  # noqa: BLE001 - best-effort measurement, never raise
+            fallback_sum += a
+            continue
+        geoms.append(g)
+        shapely_sum += float(g.area)
+
+    if not geoms:
+        return order_sum
+    try:
+        union_area = float(unary_union(geoms).area)
+    except Exception:  # noqa: BLE001 - GEOS failure: fall back to the sum
+        union_area = shapely_sum
+    if abs(union_area - shapely_sum) <= 1e-9 * max(1.0, abs(shapely_sum)):
+        # Nothing overlapped (disjoint / single polygon): keep the exact
+        # pre-#1382 value so untouched categories are unchanged.
+        return order_sum
+    return union_area + fallback_sum
+
+
 def measure_takeoff(regions: list[Region], drawing_type: str, scale: DrawingScale) -> TakeoffResult:
-    """Sum region polygon areas per takeoff category."""
+    """Sum region polygon areas per takeoff category.
+
+    Overlapping polygons of the same category are unioned before
+    summation (#1382), so a region covered twice is measured once. Counts
+    stay one per region, and categories never overlap each other.
+    """
     res = TakeoffResult(drawing_type=drawing_type, scale=scale, regions=list(regions))
+    by_category: dict[str, list] = {}
     for r in regions:
-        a = polygon_area_px2(r.polygon_px)
-        res.area_px2[r.category] = res.area_px2.get(r.category, 0.0) + a
+        by_category.setdefault(r.category, []).append(r)
         res.counts[r.category] = res.counts.get(r.category, 0) + 1
+    for category, cat_regions in by_category.items():
+        res.area_px2[category] = _union_area_px2([r.polygon_px for r in cat_regions])
     if scale.m_per_px:
         k = scale.m_per_px**2
         for cat, a in res.area_px2.items():

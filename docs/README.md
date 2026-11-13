@@ -109,7 +109,7 @@ Working from the repo (a plain PyPI install is covered on the
 
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
-python -m pytest tests/ -q      # (2) smoke test — (4184 collected in CI; expected per `ci.yml`)
+python -m pytest tests/ -q      # (2) smoke test — (4200 collected in CI; expected per `ci.yml`)
 matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
 ```
 
