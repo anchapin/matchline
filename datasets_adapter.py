@@ -433,10 +433,25 @@ def detections_from_regions(regions: list[Region], score: float = 1.0) -> list[D
 def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
     """Stage 2 (v1): parse a window/door schedule from CSV.
 
-    Columns: tag, category, width_m, height_m[, note]. This is the interchange
-    format: whatever the table parser (stage 2 full version) extracts gets
-    normalized into this before rollup.
+    Columns: tag, category, width_m, height_m[, note], plus the stated
+    thermal columns of the PDF-table path (#746): a U-factor / U-value column
+    (``u``, ``u_factor``, ``u_value`` -- the PDF header spellings such as
+    ``U-FACTOR (BTU/HR-SF-F)`` work too), ``shgc`` and ``vt``. This is the
+    interchange format: whatever the table parser (stage 2 full version)
+    extracts gets normalized into this before rollup.
+
+    The thermal columns are read with the same conventions as the PDF path
+    (``ingest.pdf_schedules.thermal_fields``): the column name states the
+    unit -- ``btu``/``ip`` for IP (converted to W/m2K), ``w/m2k``/``si`` for
+    SI -- and a U column that states no unit is not used, with a note, just
+    as a metric schedule is on the PDF path. ``shgc``/``vt`` must lie in
+    (0, 1]; a value outside that range is left unset and noted.
     """
+    # Imported here, not at module level: ingest.pdf_schedules imports this
+    # module (ScheduleEntry, normalize_tag), so a module-level import here
+    # would be circular.
+    from ingest.pdf_schedules import thermal_fields
+
     if isinstance(path_or_rows, (str, Path)):
         f = open(path_or_rows, newline="")
         close = True
@@ -444,14 +459,20 @@ def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
         f, close = path_or_rows, False
     sched: dict[str, ScheduleEntry] = {}
     try:
-        for row in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        headers = list(reader.fieldnames or [])
+        for row in reader:
             tag = normalize_tag(row["tag"])
+            category = row.get("category", "").strip().lower() or "window"
+            values = [(row.get(h) or "") for h in headers]
+            thermal = thermal_fields(headers, values) if category != "lighting" else {}
             sched[tag] = ScheduleEntry(
                 tag=tag,
-                category=row.get("category", "").strip().lower() or "window",
+                category=category,
                 width_m=float(row["width_m"]) if row.get("width_m") else None,
                 height_m=float(row["height_m"]) if row.get("height_m") else None,
                 note=row.get("note", "").strip(),
+                **thermal,
             )
     finally:
         if close:
