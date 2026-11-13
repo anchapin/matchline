@@ -59,7 +59,7 @@ from schedule_parse import parse_schedules
 _JSON_SCALARS = st.one_of(
     st.none(),
     st.booleans(),
-    st.integers(min_value=-10**6, max_value=10**6),
+    st.integers(min_value=-(10**6), max_value=10**6),
     st.floats(allow_nan=False, allow_infinity=False, width=32),
     st.text(max_size=12),
 )
@@ -108,9 +108,7 @@ _MASKS = st.lists(
 _CAPACITY_TEXTS = st.one_of(
     st.text(max_size=30),
     st.integers(min_value=0, max_value=100_000).map(lambda n: f"{n} kW"),
-    st.tuples(st.integers(0, 100_000), st.integers(0, 100_000)).map(
-        lambda p: f"{p[0]}-{p[1]} kW"
-    ),
+    st.tuples(st.integers(0, 100_000), st.integers(0, 100_000)).map(lambda p: f"{p[0]}-{p[1]} kW"),
     st.sampled_from(
         [
             "63300000 J",

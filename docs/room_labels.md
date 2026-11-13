@@ -20,7 +20,24 @@ number printed on the drawing (e.g. "OPEN OFFICE 201").
    `LOBBY` (name-only). A digit-adjacent `O`→`0` fix handles the classic
    drawing-OCR confusion (`2O5A` → `205A`); plain words (`ROOM`) are untouched.
    Unparseable text falls back to `(text, "", 0.5)` — never an exception.
-4. **Association** — `assign_labels()`:
+4. **Line grouping** — `_group_stacked_labels()` / `_room_label_from_group()`
+   (in `room_labels.py`) regroup vertically stacked OCR boxes that belong to
+   one multi-line label, before association:
+   - a line joins the group of the line above it when the vertical gap is at
+     most one line height (`GROUP_MAX_GAP_FACTOR = 1.25` × the larger line
+     height) **and** the boxes are horizontally aligned/overlapping in x;
+   - when room polygons are known, a line strictly inside a *different*
+     polygon than the group is never merged (lines of one label share a room);
+     a line inside no polygon (doorway, hallway) never blocks a merge;
+   - the merged label's text is the lines joined top-to-bottom with spaces
+     (`"OPEN" / "OFFICE" / "201"` → `"OPEN OFFICE 201"` → name `OPEN OFFICE`,
+     number `201`);
+   - the merged bbox is the union of the member boxes;
+   - the merged OCR confidence is the **minimum** member confidence (a merged
+     label is only as trustworthy as its least certain line);
+   - single-line labels are untouched, and side-by-side text on one line is
+     never grouped.
+5. **Association** — `assign_labels()`:
    - text centroid strictly inside a polygon → `enclosed`
      (smallest area wins on nesting), confidence = ocr × parse;
    - else nearest polygon edge within `max_nearest_px` (default 150 px) →
@@ -77,15 +94,19 @@ still unvalidated — Alex's unredacted drawings (Monday) are the right corpus.
   future work.
 - `W12X72`-style tags are rejected as dimensions; a structural plan that
   legitimately needs them would need an allowlist.
-- Multi-line labels ("OPEN\nOFFICE\n201" stacked) are read as separate boxes
-  and not merged — needs a line-grouping pass.
+- Multi-line labels ("OPEN\nOFFICE\n201" stacked) are now merged by the
+  line-grouping pass (see step 4) — a stack of lines with a gap of about one
+  line height and overlapping x-ranges becomes one `RoomLabel`. Remaining
+  gap: the pass is geometric only, so a stack whose lines sit more than one
+  line height apart, or whose x-ranges do not overlap, is still read as
+  separate labels.
 - Schedule-table parsing (`parse_schedule_table`) is still a stub; room
   labels are independent of it.
 
 ## Limitations
 
 - **OCR accuracy degrades with poor scan quality**: Low-resolution PDFs, skewed scans, and architectural fonts with ligatures will produce OCR errors that propagate to incorrect room label assignments.
-- **Multi-line labels are not merged**: Labels split across vertical stacked boxes (e.g., "OPEN", "OFFICE", "201") are read as separate text boxes and not merged into a single room label.
+- **Multi-line labels are merged only when geometrically stacked**: A label split across vertically stacked boxes (e.g., "OPEN", "OFFICE", "201") is merged when the lines are roughly one line height apart and horizontally aligned. Boxes that are side by side, or stacked with a large gap, stay separate labels.
 - **No spatial disambiguation**: When two rooms share the same label (e.g., identical apartment units), the module assigns the same label to both without disambiguation. Downstream modules may need tie-breaking by polygon area or sheet location.
 - **Non-standard room labels are not caught**: The module maps known label types from the label vocabulary; non-standard or informal room names (e.g., "Jeff's office") are silently dropped unless they match known suffixes.
 - **Schedule table parsing is a stub**: `parse_schedule_table` does not yet extract room data from native drawing schedule tables; CSV input is required for v1.

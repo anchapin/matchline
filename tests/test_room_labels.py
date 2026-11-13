@@ -6,6 +6,7 @@ from room_labels import (
     RoomLabel,
     TextBox,
     attach_room_labels,
+    label_spaces_from_sheet,
     looks_like_dimension,
     parse_room_label,
     point_in_polygon,
@@ -171,6 +172,93 @@ class TestLabeledTakeoff:
         unlabeled = lt.unlabeled_spaces
         assert len(unlabeled) == 1
         assert unlabeled[0].name == ""
+
+
+class TestLineGrouping:
+    """Multi-line room labels: stacked boxes merge into one RoomLabel (#1384)."""
+
+    @staticmethod
+    def _room(x, y, w=200, h=200):
+        return LabeledSpace(polygon_px=[(x, y), (x + w, y), (x + w, y + h), (x, y + h)])
+
+    def test_stacked_triple_merges_into_one_label(self):
+        """'OPEN' / 'OFFICE' / '201' stacked parse to name 'OPEN OFFICE', no. '201'."""
+        boxes = [
+            TextBox(text="OPEN", bbox=(100, 100, 200, 120), confidence=0.95),
+            TextBox(text="OFFICE", bbox=(95, 125, 210, 145), confidence=0.90),
+            TextBox(text="201", bbox=(130, 150, 170, 170), confidence=0.88),
+        ]
+        spaces = [self._room(50, 50)]
+        out = label_spaces_from_sheet(None, spaces, pre_detected=boxes)
+        assert len(out.labels) == 1
+        lab = out.labels[0]
+        assert lab.name == "OPEN OFFICE"
+        assert lab.number == "201"
+        assert lab.raw_text == "OPEN OFFICE 201"
+        # merged bbox is the union of the member boxes
+        assert lab.bbox == (95, 100, 210, 170)
+        # confidence rule: minimum member confidence
+        assert lab.ocr_confidence == 0.88
+        # assigned as one label to the room
+        assert out.spaces[0].name == "OPEN OFFICE"
+        assert out.spaces[0].number == "201"
+        assert out.n_labeled == 1
+
+    def test_two_stacked_pairs_in_different_locations_stay_separate(self):
+        """Stacked pairs in different rooms must not merge across locations."""
+        boxes = [
+            TextBox(text="OPEN", bbox=(100, 100, 200, 120), confidence=0.95),
+            TextBox(text="OFFICE", bbox=(100, 125, 200, 145), confidence=0.95),
+            TextBox(text="101", bbox=(130, 150, 170, 170), confidence=0.95),
+            TextBox(text="CONF", bbox=(600, 100, 700, 120), confidence=0.95),
+            TextBox(text="102", bbox=(620, 125, 680, 145), confidence=0.95),
+        ]
+        spaces = [self._room(50, 50), self._room(550, 50)]
+        out = label_spaces_from_sheet(None, spaces, pre_detected=boxes)
+        assert len(out.labels) == 2
+        by_text = sorted(lab.raw_text for lab in out.labels)
+        assert by_text == ["CONF 102", "OPEN OFFICE 101"]
+        assert out.spaces[0].name == "OPEN OFFICE"
+        assert out.spaces[0].number == "101"
+        assert out.spaces[1].name == "CONF"
+        assert out.spaces[1].number == "102"
+
+    def test_name_only_stack_merges_to_name_only_label(self):
+        """A stack without a number merges into a name-only label."""
+        boxes = [
+            TextBox(text="OPEN", bbox=(100, 100, 200, 120), confidence=0.95),
+            TextBox(text="OFFICE", bbox=(100, 125, 200, 145), confidence=0.95),
+        ]
+        spaces = [self._room(50, 50)]
+        out = label_spaces_from_sheet(None, spaces, pre_detected=boxes)
+        assert len(out.labels) == 1
+        assert out.labels[0].name == "OPEN OFFICE"
+        assert out.labels[0].number == ""
+        assert out.spaces[0].name == "OPEN OFFICE"
+        assert out.spaces[0].number == ""
+
+    def test_single_line_label_unchanged(self):
+        """A one-line label behaves exactly as before the grouping pass."""
+        boxes = [TextBox(text="LOBBY 100", bbox=(100, 100, 220, 125), confidence=0.93)]
+        spaces = [self._room(50, 50)]
+        out = label_spaces_from_sheet(None, spaces, pre_detected=boxes)
+        assert len(out.labels) == 1
+        assert out.labels[0].name == "LOBBY"
+        assert out.labels[0].number == "100"
+        assert out.labels[0].raw_text == "LOBBY 100"
+        assert out.labels[0].bbox == (100, 100, 220, 125)
+        assert out.labels[0].ocr_confidence == 0.93
+
+    def test_side_by_side_boxes_are_not_merged(self):
+        """Text side by side on one line is never treated as a stack."""
+        boxes = [
+            TextBox(text="OPEN", bbox=(100, 100, 180, 120), confidence=0.95),
+            TextBox(text="OFFICE", bbox=(200, 100, 290, 120), confidence=0.95),
+        ]
+        spaces = [self._room(50, 50)]
+        out = label_spaces_from_sheet(None, spaces, pre_detected=boxes)
+        assert len(out.labels) == 2
+        assert sorted(lab.raw_text for lab in out.labels) == ["OFFICE", "OPEN"]
 
 
 class TestAttachRoomLabelsProvenance:

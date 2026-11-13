@@ -79,8 +79,11 @@ def build_model(
     report.n_spaces = len(spaces)
     _build_envelope(bldg, model, level_id, bldg["wall_height_m"])
     win_sched, light_sched = _schedules(bldg)
-    for tag, e in {**win_sched, **light_sched}.items():
-        model.schedules[tag] = asdict(e)
+    # The model's schedule map is keyed by the RAW tag (the tag a reader sees
+    # on the drawing); the normalised tag is the join key of the link layer
+    # only, so the map keeps speaking the tag the openings carry.
+    for e in [*win_sched.values(), *light_sched.values()]:
+        model.schedules[e.tag] = asdict(e)
 
     _link_lighting(bldg, model, spaces, light_sched, report)
     _link_mech(bldg, model, spaces, report)
