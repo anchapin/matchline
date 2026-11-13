@@ -294,6 +294,8 @@ module's guide under `docs/`.
 
 - `extract_schedules(sheet: dict, sheet_id: Optional[str]=None)`
 - `schedules_for_sheets(sheets_dir, sheet_ids: Optional[Dict[str, str]]=None)`
+- `sizes_in_feet_inches(rows)`
+- `thermal_fields(headers: List[str], values: List[str], sizes_ft_in: bool=False)`
 - class `PdfSchedule`
 
 ## `ingest.sheet_index`

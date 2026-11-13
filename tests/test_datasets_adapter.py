@@ -100,6 +100,36 @@ class TestParseScheduleCSV:
         assert "W2UP" in result
         assert "W3WITHSPACE" in result
 
+    def test_csv_thermal_columns_ip(self, tmp_path):
+        # #1383: a CSV carrying the PDF path's thermal columns (#746) reads
+        # them with the PDF conventions -- IP U converted to W/m2K.
+        csv = tmp_path / "thermal.csv"
+        csv.write_text(
+            "tag,category,width_m,height_m,u_factor_btu,shgc,vt\n"
+            "W1,window,1.2,1.5,0.30,0.40,0.60\n",
+            encoding="utf-8",
+        )
+        result = parse_schedule_csv(csv)
+        entry = result["W1"]
+        assert entry.u_value_w_m2k == 1.7035  # 0.30 Btu/h-ft2-F in W/m2K
+        assert entry.shgc == 0.40
+        assert entry.vt == 0.60
+        assert entry.thermal_confidence == 0.9
+
+    def test_csv_thermal_shgc_out_of_range(self, tmp_path):
+        # #1383: an out-of-range SHGC is left unset, with a note, exactly as
+        # the PDF-table path leaves it.
+        csv = tmp_path / "thermal_bad.csv"
+        csv.write_text(
+            "tag,category,width_m,height_m,shgc\nW1,window,1.0,1.0,1.40\n",
+            encoding="utf-8",
+        )
+        result = parse_schedule_csv(csv)
+        entry = result["W1"]
+        assert entry.shgc is None
+        assert entry.thermal_note is not None
+        assert "SHGC" in entry.thermal_note
+
 
 # --- parse_schedule_table ----------------------------------------------------
 
