@@ -252,6 +252,184 @@ def to_room_label(tb: TextBox) -> RoomLabel:
 
 
 # ---------------------------------------------------------------------------
+# Line grouping: multi-line room labels ("OPEN" / "OFFICE" / "201")
+#
+# Drawings print a room label as several stacked text lines. OCR detects each
+# line as its own box, so the label has to be regrouped geometrically before
+# parsing/assignment. The pass is purely geometric (no OCR changes, no room
+# polygons involved): a line joins the group of the line above it when
+#
+#   * the vertical gap between the two boxes is at most one line height
+#     (GROUP_MAX_GAP_FACTOR * max(line heights)) — lines of one label sit
+#     right under each other, lines of different labels do not; and
+#   * the boxes are horizontally aligned/overlapping in x (their x-ranges
+#     overlap, or their centers are within half the narrower line width) —
+#     side-by-side text on the same line is never grouped.
+#
+# The merged box carries the union bbox of its members and the *minimum*
+# member OCR confidence (a merged label is only as trustworthy as its least
+# certain line).
+# ---------------------------------------------------------------------------
+
+# Vertical gap allowed between two stacked lines, as a multiple of the
+# line height (1.0 == one line height).
+GROUP_MAX_GAP_FACTOR = 1.25
+# Vertical overlap tolerated between two stacked lines, as a multiple of the
+# line height (0.5 == half a line may overlap).
+GROUP_MAX_OVERLAP_FACTOR = 0.5
+# Required x-overlap between two stacked lines, in px.
+GROUP_MIN_X_OVERLAP = 0.0
+
+
+def _line_height(box: TextBox) -> float:
+    return max(1.0, box.bbox[3] - box.bbox[1])
+
+
+def _line_width(box: TextBox) -> float:
+    return max(1.0, box.bbox[2] - box.bbox[0])
+
+
+def _is_stacked_line(above: TextBox, below: TextBox) -> bool:
+    """True when `below` reads as the next line of the same label as `above`."""
+    h = max(_line_height(above), _line_height(below))
+    gap = below.bbox[1] - above.bbox[3]  # >0: whitespace between the lines
+    if gap > GROUP_MAX_GAP_FACTOR * h:
+        return False
+    if gap < -GROUP_MAX_OVERLAP_FACTOR * h:
+        return False
+    overlap = min(above.bbox[2], below.bbox[2]) - max(above.bbox[0], below.bbox[0])
+    if overlap >= GROUP_MIN_X_OVERLAP:
+        return True
+    above_cx = (above.bbox[0] + above.bbox[2]) / 2.0
+    below_cx = (below.bbox[0] + below.bbox[2]) / 2.0
+    return abs(above_cx - below_cx) <= 0.5 * min(_line_width(above), _line_width(below))
+
+
+def _group_stacked_labels(
+    boxes: list[TextBox], polygons: list | None = None
+) -> list[list[TextBox]]:
+    """Group vertically stacked text boxes into multi-line label groups.
+
+    Purely geometric grouping (see the section comment above). Returns a list
+    of groups; every group holds its member boxes ordered top-to-bottom.
+    Groups are returned in the order of their first (topmost) member so the
+    caller keeps a stable, top-to-bottom label order.
+
+    When `polygons` (room polygons) are supplied, a candidate line is only
+    merged into a group when it does not sit strictly inside a *different*
+    polygon than the group: lines of one label share a room, lines of two
+    different rooms stay apart. A line that is inside no polygon (doorway,
+    hallway) never blocks a merge.
+    """
+
+    def enclosed_index(box: TextBox) -> int | None:
+        if not polygons:
+            return None
+        cx = (box.bbox[0] + box.bbox[2]) / 2.0
+        cy = (box.bbox[1] + box.bbox[3]) / 2.0
+        cands = [i for i, poly in enumerate(polygons) if point_in_polygon((cx, cy), poly)]
+        if not cands:
+            return None
+        return min(cands, key=lambda k: polygon_area_px2(polygons[k]))
+
+    groups: list[list[TextBox]] = []
+    indexed = list(enumerate(boxes))
+    # top-to-bottom sweep; ties broken by x so equal lines stay left-to-right
+    for _idx, box in sorted(indexed, key=lambda t: (t[1].bbox[1], t[1].bbox[0])):
+        best_group = None
+        best_gap = None
+        for g in groups:
+            prev = g[-1]
+            if not _is_stacked_line(prev, box):
+                continue
+            if polygons:
+                idx = enclosed_index(box)
+                if idx is not None:
+                    others = {enclosed_index(m) for m in g} - {None}
+                    if others and idx not in others:
+                        # the line belongs to a different room -> not the
+                        # same multi-line label
+                        continue
+            gap = box.bbox[1] - prev.bbox[3]
+            if best_gap is None or gap < best_gap:
+                best_group, best_gap = g, gap
+        if best_group is None:
+            groups.append([box])
+        else:
+            best_group.append(box)
+    # keep the original (top-to-bottom) group order
+    order = {id(b): i for i, b in enumerate(boxes)}
+    groups.sort(key=lambda g: min(order[id(b)] for b in g))
+    return groups
+
+
+def _parse_group_lines(lines: list[str]) -> tuple[str, str, float]:
+    """Parse the lines of a multi-line label into (name, number, confidence).
+
+    Primary rule: the lines joined top-to-bottom with spaces are parsed as one
+    string, so the canonical stack "OPEN" / "OFFICE" / "201" yields
+    ("OPEN OFFICE", "201").
+
+    Fallback rule: when the joined text does not yield a number but one of the
+    lines does (e.g. "OPEN" / "201" / "OFFICE"), the name parts are taken from
+    the lines that carry no number and joined top-to-bottom, and the number
+    from the line that carries it.
+
+    Parse confidence: the confidence of the parse that was used; for the
+    fallback rule the minimum confidence over the contributing lines.
+    """
+    joined = " ".join(lines)
+    name, number, conf = parse_room_label(joined)
+    if number:
+        return name, number, conf
+    # per-line fallback: one line carries the number, the others the name
+    names: list[str] = []
+    line_number = ""
+    confs: list[float] = []
+    for raw in lines:
+        n, num, c = parse_room_label(raw)
+        confs.append(c)
+        if num and not line_number:
+            line_number = num
+        elif n:
+            names.append(n)
+    if line_number and names:
+        return " ".join(names).strip(), line_number, min(confs) if confs else 1.0
+    return name, number, conf
+
+
+def _room_label_from_group(group: list[TextBox]) -> RoomLabel:
+    """Build one RoomLabel from a group of stacked text lines.
+
+    Text: the lines joined top-to-bottom with single spaces.
+    Bbox: the union of the member boxes.
+    OCR confidence: the *minimum* member confidence (stated rule: a merged
+    label is only as trustworthy as its least certain line).
+    Parse confidence: the minimum member parse confidence.
+    """
+    ordered = sorted(group, key=lambda b: (b.bbox[1], b.bbox[0]))
+    if len(ordered) == 1:
+        # single-line labels behave exactly as before
+        return to_room_label(ordered[0])
+    lines = [b.text.strip() for b in ordered if b.text.strip()]
+    text = " ".join(lines)
+    xtl = min(b.bbox[0] for b in ordered)
+    ytl = min(b.bbox[1] for b in ordered)
+    xbr = max(b.bbox[2] for b in ordered)
+    ybr = max(b.bbox[3] for b in ordered)
+    name, number, pconf = _parse_group_lines(lines)
+    return RoomLabel(
+        name=name,
+        number=number,
+        raw_text=text,
+        bbox=(xtl, ytl, xbr, ybr),
+        centroid=((xtl + xbr) / 2, (ytl + ybr) / 2),
+        ocr_confidence=min(b.confidence for b in ordered),
+        parse_confidence=pconf,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Geometry: point-in-polygon + nearest-polygon association
 # ---------------------------------------------------------------------------
 
@@ -358,7 +536,11 @@ def label_spaces_from_sheet(
     """Full pipeline: OCR a sheet image and label the given room polygons."""
     boxes = pre_detected if pre_detected is not None else detect_text(sheet_image, min_conf)
     boxes = [b for b in boxes if not looks_like_dimension(b.text)]
-    labels = [to_room_label(b) for b in boxes]
+    # line-grouping pass (before assignment): vertically stacked lines of one
+    # label ("OPEN" / "OFFICE" / "201") become a single RoomLabel.
+    polygons = [s.polygon_px for s in (spaces or []) if s.polygon_px]
+    groups = _group_stacked_labels(boxes, polygons)
+    labels = [_room_label_from_group(g) for g in groups]
     # keep only labels that look like room labels (have a number or a name)
     labels = [l for l in labels if l.name or l.number]
     return assign_labels(spaces or [], labels, max_nearest_px)
