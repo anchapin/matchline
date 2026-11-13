@@ -188,6 +188,29 @@ def _normalize(text: str) -> str:
     return t
 
 
+def _fix_name_confusables(name: str) -> str:
+    """Repair OCR letter/digit confusables inside a room *name*.
+
+    A digit zero standing in for the letter "O" is a common OCR slip
+    ("RESTRO0M", "0FFICE", "C0RRIDOR"). A token is repaired only when it
+    mixes letters with zeros and the substitution leaves a purely
+    alphabetic token; tokens that still carry other digits ("B2",
+    "W12X72") are left untouched.
+
+    Only the name is touched here -- the number part is never rewritten.
+    """
+    if not name:
+        return name
+    fixed = []
+    for token in name.split():
+        if "0" in token and any(ch.isalpha() for ch in token):
+            candidate = token.replace("0", "O")
+            if re.sub(r"[^A-Z0-9]", "", candidate).isalpha():
+                token = candidate
+        fixed.append(token)
+    return " ".join(fixed)
+
+
 def parse_room_label(text: str) -> tuple[str, str, float]:
     """Parse OCR text into (name, number, parse_confidence).
 
@@ -200,8 +223,18 @@ def parse_room_label(text: str) -> tuple[str, str, float]:
         m = pat.match(t)
         if m:
             name, number, conf = build(m)
-            return name.strip(), number.strip(), conf
-    return t, "", 0.5  # fallback: treat whole string as a name
+            return _fix_name_confusables(name.strip()), number.strip(), conf
+    # Nothing matched: the whole string is a name. Repair the OCR
+    # confusables in that name and retry, so a name that starts with a
+    # zero ("0FFICE 201") still splits into name and number.
+    repaired = _fix_name_confusables(t)
+    if repaired != t:
+        for pat, build in _PATTERNS:
+            m = pat.match(repaired)
+            if m:
+                name, number, conf = build(m)
+                return _fix_name_confusables(name.strip()), number.strip(), conf
+    return repaired, "", 0.5  # fallback: treat whole string as a name
 
 
 def to_room_label(tb: TextBox) -> RoomLabel:
