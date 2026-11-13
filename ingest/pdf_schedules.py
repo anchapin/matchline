@@ -768,9 +768,7 @@ def sizes_in_feet_inches(rows) -> bool:
     return any(_FT_IN.search(v) for vals in rows for v in vals)
 
 
-def thermal_fields(
-    headers: List[str], values: List[str], sizes_ft_in: bool = False
-) -> dict:
+def thermal_fields(headers: List[str], values: List[str], sizes_ft_in: bool = False) -> dict:
     """Stated U, SHGC and VT of one schedule row (#746, #1383).
 
     Header names are matched case-insensitively with ``_`` read as ``-``, so

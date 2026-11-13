@@ -465,11 +465,7 @@ def parse_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
             tag = normalize_tag(row["tag"])
             category = row.get("category", "").strip().lower() or "window"
             values = [(row.get(h) or "") for h in headers]
-            thermal = (
-                thermal_fields(headers, values)
-                if category != "lighting"
-                else {}
-            )
+            thermal = thermal_fields(headers, values) if category != "lighting" else {}
             sched[tag] = ScheduleEntry(
                 tag=tag,
                 category=category,
