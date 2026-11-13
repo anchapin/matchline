@@ -391,9 +391,7 @@ def _multipart_summary(res) -> dict:
         "part_budget": res.part_budget,
         "part_spent": res.part_spent,
         "rings": [[[float(x), float(y)] for x, y in r.ring] for r in res.parts],
-        "holes": [
-            [[[float(x), float(y)] for x, y in h.ring] for h in hs] for hs in res.holes
-        ],
+        "holes": [[[[float(x), float(y)] for x, y in h.ring] for h in hs] for hs in res.holes],
         "per_surface_mapping": res.per_surface_mapping,
     }
 

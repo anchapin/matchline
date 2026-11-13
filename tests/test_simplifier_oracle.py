@@ -131,8 +131,7 @@ def test_simplifier_matches_the_recorded_oracle(case) -> None:
     mismatches = _compare(EXPECTED[case.cid], actual, path=case.cid)
     assert not mismatches, (
         "the simplifier output changed for corpus case "
-        f"{case.cid} (rel_tol={REL_TOL}, abs_tol={ABS_TOL}):\n  "
-        + "\n  ".join(mismatches[:20])
+        f"{case.cid} (rel_tol={REL_TOL}, abs_tol={ABS_TOL}):\n  " + "\n  ".join(mismatches[:20])
     )
 
 
