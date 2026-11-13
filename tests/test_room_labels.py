@@ -46,6 +46,72 @@ class TestParseRoomLabel:
         assert conf == 0.5
 
 
+class TestNameOcrConfusables:
+    """#1386: a zero standing in for the letter O inside the *name* part of a
+    label is repaired ("RESTRO0M" -> "RESTROOM"); the number part and the
+    dimension-string guard are untouched."""
+
+    def test_name_part_zero_is_read_as_letter_o(self):
+        name, number, conf = parse_room_label("RESTRO0M 105")
+        assert name == "RESTROOM"
+        assert number == "105"
+        assert conf > 0.9
+
+    def test_leading_zero_name_is_repaired(self):
+        name, number, conf = parse_room_label("0FFICE 201")
+        assert name == "OFFICE"
+        assert number == "201"
+        assert conf > 0.9
+
+    def test_name_only_zero_is_repaired(self):
+        name, number, conf = parse_room_label("C0RRIDOR")
+        assert name == "CORRIDOR"
+        assert number == ""
+
+    def test_multiword_name_is_repaired(self):
+        name, number, _ = parse_room_label("OPEN 0FFICE 201")
+        assert name == "OPEN OFFICE"
+        assert number == "201"
+
+    def test_number_part_is_never_rewritten(self):
+        # the existing "O next to a digit is a zero" rule still holds
+        assert parse_room_label("2O5")[1] == "205"
+        # and plain numbers are untouched by the name repair
+        assert parse_room_label("201A")[1] == "201A"
+        assert parse_room_label("C1")[1] == "C1"
+        name, number, _ = parse_room_label("B-102")
+        assert (name, number) == ("B", "102")
+
+    def test_alphanumeric_tokens_are_left_alone(self):
+        # tokens that keep other digits stay exactly as parsed
+        assert parse_room_label("B2")[1] == "B2"
+        name, number, _ = parse_room_label("W12X72")
+        assert (name, number) == ("W12", "X72")
+
+    def test_corrected_names_classify_by_space_use(self):
+        from space_use_defaults import classify_space_type
+
+        assert classify_space_type(parse_room_label("RESTRO0M 105")[0])[0] == "restroom"
+        assert classify_space_type(parse_room_label("0FFICE 201")[0])[0] == "closed_office"
+        assert classify_space_type(parse_room_label("C0RRIDOR")[0])[0] == "corridor"
+        # the corrupted spellings match no rule and fall back
+        assert classify_space_type("RESTRO0M")[0] == "office_whole_building"
+        assert classify_space_type("0FFICE")[0] == "office_whole_building"
+
+    def test_dimension_detection_is_unaffected(self):
+        assert looks_like_dimension("5 X 5")
+        assert looks_like_dimension("W12X72")
+        assert not looks_like_dimension("RESTRO0M 105")
+        assert not looks_like_dimension("OPEN OFFICE 201")
+
+    def test_raw_ocr_text_is_kept_verbatim(self):
+        tb = TextBox(text="RESTRO0M 105", bbox=(10, 20, 100, 40), confidence=0.9)
+        rl = to_room_label(tb)
+        assert rl.raw_text == "RESTRO0M 105"
+        assert rl.name == "RESTROOM"
+        assert rl.number == "105"
+
+
 class TestLooksLikeDimension:
     def test_dimension_feet_notation(self):
         assert looks_like_dimension("17'-6")

@@ -168,7 +168,7 @@ git checkout develop         # develop is the working branch; main is reserved f
 python -m venv .venv         # keep deps out of your global/pyenv env; see note below
 source .venv/bin/activate    # on Windows: .venv\Scripts\activate
 pip install -e ".[test]"     # editable install; extras: [ocr] [detector]
-python -m pytest tests/ -q   # (4200 collected in CI; expected per ci.yml), hermetic
+python -m pytest tests/ -q   # (4209 collected in CI; expected per ci.yml), hermetic
 ```
 
 `pytest` auto-loads every installed `pytest11` entry-point plugin, so a plugin
