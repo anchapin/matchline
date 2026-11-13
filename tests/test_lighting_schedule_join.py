@@ -22,7 +22,7 @@ import io
 
 import pytest
 
-from datasets_adapter import Detection, DrawingScale, ScheduleEntry, parse_lighting_schedule_csv
+from datasets_adapter import Detection, DrawingScale, parse_lighting_schedule_csv
 from lighting import lighting_takeoff
 from link import build_model
 from link._schedules import _schedules
