@@ -39,6 +39,11 @@ area regions (`measure_takeoff`), which still needs `DrawingScale`.
   entry -- reported, never silently dropped).
 * `SymbolSample` -- classifier training crops (unchanged).
 * `Region` / `measure_takeoff` -- polygon path, retained for floor_area.
+  Per category, `measure_takeoff` measures the **union** of that
+  category's polygons before summing, so a wall covered by two annotation
+  polygons is measured once (#1382). Region counts stay one per region,
+  categories never overlap each other, and degenerate or self-intersecting
+  rings keep their best-effort shoelace area.
 
 ## Roadmap
 
@@ -72,10 +77,8 @@ Floor area via polygons: 109,428,470 px² (≈ 14,163 m² at reference scale).
    don't have them.
 2. **Schedule tables are redacted** in AEC-bench (title blocks removed), so
    the schedule path is validated with synthetic data only.
-3. **Overlapping wall polygons double-count** in the polygon path; needs
-   polygon union per category before summation.
-4. **Elevations not yet exercised** -- all current corpora are plan sets;
+3. **Elevations not yet exercised** -- all current corpora are plan sets;
    the contract already carries `drawing_type` per region/detection.
-5. Door/window "areas" are opening footprints (w×h from schedule); leaf and
+4. Door/window "areas" are opening footprints (w×h from schedule); leaf and
    glazing breakdowns need richer schedule columns (additive -- the
    `ScheduleEntry.note` field is the extension point).
