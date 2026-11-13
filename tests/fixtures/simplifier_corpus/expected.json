@@ -1,0 +1,2212 @@
+{
+  "cases": {
+    "multipart_courtyard": {
+      "area_delta_pct": 0.0,
+      "budget_area": 9.28,
+      "holes": [
+        [
+          [
+            [
+              6.0,
+              6.0
+            ],
+            [
+              14.0,
+              6.0
+            ],
+            [
+              14.0,
+              14.0
+            ],
+            [
+              6.0,
+              14.0
+            ]
+          ]
+        ]
+      ],
+      "kind": "multipart",
+      "method": "multipart_shared_budget",
+      "n_parts": 1,
+      "original_count": 12,
+      "part_budget": [
+        8.0,
+        9.28
+      ],
+      "part_spent": [
+        0.0,
+        0.0
+      ],
+      "per_surface_mapping": {
+        "part_0": [
+          {
+            "from": [
+              0
+            ],
+            "note": "unchanged",
+            "surface": 0
+          },
+          {
+            "from": [
+              1,
+              2,
+              3
+            ],
+            "note": "merged 3 source segments",
+            "surface": 1
+          },
+          {
+            "from": [
+              4
+            ],
+            "note": "unchanged",
+            "surface": 2
+          },
+          {
+            "from": [
+              5,
+              6,
+              7
+            ],
+            "note": "merged 3 source segments",
+            "surface": 3
+          }
+        ],
+        "part_0_hole_0": [
+          {
+            "from": [
+              0
+            ],
+            "note": "unchanged",
+            "surface": 0
+          },
+          {
+            "from": [
+              1
+            ],
+            "note": "unchanged",
+            "surface": 1
+          },
+          {
+            "from": [
+              2
+            ],
+            "note": "unchanged",
+            "surface": 2
+          },
+          {
+            "from": [
+              3
+            ],
+            "note": "unchanged",
+            "surface": 3
+          }
+        ]
+      },
+      "rings": [
+        [
+          [
+            20.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            20.0
+          ],
+          [
+            20.0,
+            20.0
+          ]
+        ]
+      ],
+      "simplified_count": 8,
+      "spent_area": 0.0,
+      "tol": 0.02,
+      "total_original_area": 464.0,
+      "total_simplified_area": 464.0,
+      "valid": true
+    },
+    "multipart_two_wings": {
+      "area_delta_pct": 0.0,
+      "budget_area": 7.6000000000000005,
+      "holes": [
+        [],
+        []
+      ],
+      "kind": "multipart",
+      "method": "multipart_shared_budget",
+      "n_parts": 2,
+      "original_count": 8,
+      "part_budget": [
+        4.0,
+        7.6
+      ],
+      "part_spent": [
+        0.0,
+        0.0
+      ],
+      "per_surface_mapping": {
+        "part_0": [
+          {
+            "from": [
+              0
+            ],
+            "note": "unchanged",
+            "surface": 0
+          },
+          {
+            "from": [
+              1
+            ],
+            "note": "unchanged",
+            "surface": 1
+          },
+          {
+            "from": [
+              2
+            ],
+            "note": "unchanged",
+            "surface": 2
+          },
+          {
+            "from": [
+              3
+            ],
+            "note": "unchanged",
+            "surface": 3
+          }
+        ],
+        "part_1": [
+          {
+            "from": [
+              0
+            ],
+            "note": "unchanged",
+            "surface": 0
+          },
+          {
+            "from": [
+              1
+            ],
+            "note": "unchanged",
+            "surface": 1
+          },
+          {
+            "from": [
+              2
+            ],
+            "note": "unchanged",
+            "surface": 2
+          },
+          {
+            "from": [
+              3
+            ],
+            "note": "unchanged",
+            "surface": 3
+          }
+        ]
+      },
+      "rings": [
+        [
+          [
+            0.0,
+            10.0
+          ],
+          [
+            20.0,
+            10.0
+          ],
+          [
+            20.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            25.0,
+            12.0
+          ],
+          [
+            40.0,
+            12.0
+          ],
+          [
+            40.0,
+            0.0
+          ],
+          [
+            25.0,
+            0.0
+          ]
+        ]
+      ],
+      "simplified_count": 8,
+      "spent_area": 0.0,
+      "tol": 0.02,
+      "total_original_area": 380.0,
+      "total_simplified_area": 380.0,
+      "valid": true
+    },
+    "ring_collinear_rect": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 100.0,
+      "original_count": 6,
+      "provenance": [
+        {
+          "from": [
+            0,
+            1
+          ],
+          "note": "merged 2 source segments",
+          "surface": 0
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            3,
+            4
+          ],
+          "note": "merged 2 source segments",
+          "surface": 2
+        },
+        {
+          "from": [
+            5
+          ],
+          "note": "unchanged",
+          "surface": 3
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0
+        ],
+        [
+          10.0,
+          10.0
+        ],
+        [
+          0.0,
+          10.0
+        ]
+      ],
+      "simplified_area": 100.0,
+      "simplified_count": 4,
+      "skipped": [],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_convex_ngon_64": {
+      "area_delta_pct": -1.9724327353478732,
+      "confidence": 0.013783632326063389,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 313.65484905437904,
+      "original_count": 64,
+      "provenance": [
+        {
+          "from": [
+            4,
+            5,
+            6
+          ],
+          "note": "merged 3 source segments",
+          "surface": 0
+        },
+        {
+          "from": [
+            7,
+            8
+          ],
+          "note": "merged 2 source segments",
+          "surface": 1
+        },
+        {
+          "from": [
+            9,
+            10,
+            11
+          ],
+          "note": "merged 3 source segments",
+          "surface": 2
+        },
+        {
+          "from": [
+            12,
+            13,
+            14
+          ],
+          "note": "merged 3 source segments",
+          "surface": 3
+        },
+        {
+          "from": [
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "note": "merged 5 source segments",
+          "surface": 4
+        },
+        {
+          "from": [
+            20,
+            21,
+            22
+          ],
+          "note": "merged 3 source segments",
+          "surface": 5
+        },
+        {
+          "from": [
+            23,
+            24
+          ],
+          "note": "merged 2 source segments",
+          "surface": 6
+        },
+        {
+          "from": [
+            25,
+            26,
+            27
+          ],
+          "note": "merged 3 source segments",
+          "surface": 7
+        },
+        {
+          "from": [
+            28,
+            29,
+            30
+          ],
+          "note": "merged 3 source segments",
+          "surface": 8
+        },
+        {
+          "from": [
+            31,
+            32,
+            33,
+            34,
+            35
+          ],
+          "note": "merged 5 source segments",
+          "surface": 9
+        },
+        {
+          "from": [
+            36,
+            37,
+            38
+          ],
+          "note": "merged 3 source segments",
+          "surface": 10
+        },
+        {
+          "from": [
+            39,
+            40
+          ],
+          "note": "merged 2 source segments",
+          "surface": 11
+        },
+        {
+          "from": [
+            41,
+            42,
+            43
+          ],
+          "note": "merged 3 source segments",
+          "surface": 12
+        },
+        {
+          "from": [
+            44,
+            45,
+            46
+          ],
+          "note": "merged 3 source segments",
+          "surface": 13
+        },
+        {
+          "from": [
+            47,
+            48,
+            49,
+            50,
+            51
+          ],
+          "note": "merged 5 source segments",
+          "surface": 14
+        },
+        {
+          "from": [
+            52,
+            53,
+            54
+          ],
+          "note": "merged 3 source segments",
+          "surface": 15
+        },
+        {
+          "from": [
+            55,
+            56
+          ],
+          "note": "merged 2 source segments",
+          "surface": 16
+        },
+        {
+          "from": [
+            57,
+            58,
+            59
+          ],
+          "note": "merged 3 source segments",
+          "surface": 17
+        },
+        {
+          "from": [
+            60,
+            61,
+            62
+          ],
+          "note": "merged 3 source segments",
+          "surface": 18
+        },
+        {
+          "from": [
+            63,
+            0,
+            1,
+            2,
+            3
+          ],
+          "note": "merged 5 source segments",
+          "surface": 19
+        }
+      ],
+      "ring": [
+        [
+          9.238795325,
+          3.826834324
+        ],
+        [
+          7.730104534,
+          6.343932842
+        ],
+        [
+          6.343932842,
+          7.730104534
+        ],
+        [
+          3.826834324,
+          9.238795325
+        ],
+        [
+          0.980171403,
+          9.951847267
+        ],
+        [
+          -3.826834324,
+          9.238795325
+        ],
+        [
+          -6.343932842,
+          7.730104534
+        ],
+        [
+          -7.730104534,
+          6.343932842
+        ],
+        [
+          -9.238795325,
+          3.826834324
+        ],
+        [
+          -9.951847267,
+          0.980171403
+        ],
+        [
+          -9.238795325,
+          -3.826834324
+        ],
+        [
+          -7.730104534,
+          -6.343932842
+        ],
+        [
+          -6.343932842,
+          -7.730104534
+        ],
+        [
+          -3.826834324,
+          -9.238795325
+        ],
+        [
+          -0.980171403,
+          -9.951847267
+        ],
+        [
+          3.826834324,
+          -9.238795325
+        ],
+        [
+          6.343932842,
+          -7.730104534
+        ],
+        [
+          7.730104534,
+          -6.343932842
+        ],
+        [
+          9.238795325,
+          -3.826834324
+        ],
+        [
+          9.951847267,
+          -0.980171403
+        ]
+      ],
+      "simplified_area": 307.4682181356245,
+      "simplified_count": 20,
+      "skipped": [
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 9: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 25: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 41: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 57: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 7: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 23: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 39: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 55: removal would breach tol 2.0% (cumulative 2.195%)"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 12: single-step area 1.25 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 28: single-step area 1.25 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 44: single-step area 1.25 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 60: single-step area 1.25 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 4: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 20: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 36: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 52: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 15: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 31: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 47: single-step area 2.729 exceeds per-step cap 0.7841"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 63: single-step area 2.729 exceeds per-step cap 0.7841"
+        }
+      ],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_curve_douglas_peucker": {
+      "area_delta_pct": -2.5113178856618807,
+      "confidence": 0.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 314.0331156972889,
+      "original_count": 128,
+      "provenance": [
+        {
+          "from": [
+            72,
+            73,
+            74,
+            75,
+            76,
+            77,
+            78,
+            79
+          ],
+          "note": "merged 8 source segments",
+          "surface": 0
+        },
+        {
+          "from": [
+            80,
+            81,
+            82,
+            83,
+            84,
+            85,
+            86,
+            87
+          ],
+          "note": "merged 8 source segments",
+          "surface": 1
+        },
+        {
+          "from": [
+            88,
+            89,
+            90,
+            91,
+            92,
+            93,
+            94,
+            95
+          ],
+          "note": "merged 8 source segments",
+          "surface": 2
+        },
+        {
+          "from": [
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103
+          ],
+          "note": "merged 8 source segments",
+          "surface": 3
+        },
+        {
+          "from": [
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111
+          ],
+          "note": "merged 8 source segments",
+          "surface": 4
+        },
+        {
+          "from": [
+            112,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119
+          ],
+          "note": "merged 8 source segments",
+          "surface": 5
+        },
+        {
+          "from": [
+            120,
+            121,
+            122,
+            123,
+            124,
+            125,
+            126,
+            127
+          ],
+          "note": "merged 8 source segments",
+          "surface": 6
+        },
+        {
+          "from": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "note": "merged 8 source segments",
+          "surface": 7
+        },
+        {
+          "from": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "note": "merged 8 source segments",
+          "surface": 8
+        },
+        {
+          "from": [
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "note": "merged 8 source segments",
+          "surface": 9
+        },
+        {
+          "from": [
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31
+          ],
+          "note": "merged 8 source segments",
+          "surface": 10
+        },
+        {
+          "from": [
+            32,
+            33,
+            34,
+            35,
+            36,
+            37,
+            38,
+            39
+          ],
+          "note": "merged 8 source segments",
+          "surface": 11
+        },
+        {
+          "from": [
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47
+          ],
+          "note": "merged 8 source segments",
+          "surface": 12
+        },
+        {
+          "from": [
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55
+          ],
+          "note": "merged 8 source segments",
+          "surface": 13
+        },
+        {
+          "from": [
+            56,
+            57,
+            58,
+            59,
+            60,
+            61,
+            62,
+            63
+          ],
+          "note": "merged 8 source segments",
+          "surface": 14
+        },
+        {
+          "from": [
+            64,
+            65,
+            66,
+            67,
+            68,
+            69,
+            70,
+            71
+          ],
+          "note": "merged 8 source segments",
+          "surface": 15
+        }
+      ],
+      "ring": [
+        [
+          -9.238795325,
+          -3.826834324
+        ],
+        [
+          -7.071067812,
+          -7.071067812
+        ],
+        [
+          -3.826834324,
+          -9.238795325
+        ],
+        [
+          -0.0,
+          -10.0
+        ],
+        [
+          3.826834324,
+          -9.238795325
+        ],
+        [
+          7.071067812,
+          -7.071067812
+        ],
+        [
+          9.238795325,
+          -3.826834324
+        ],
+        [
+          10.0,
+          0.0
+        ],
+        [
+          9.238795325,
+          3.826834324
+        ],
+        [
+          7.071067812,
+          7.071067812
+        ],
+        [
+          3.826834324,
+          9.238795325
+        ],
+        [
+          0.0,
+          10.0
+        ],
+        [
+          -3.826834324,
+          9.238795325
+        ],
+        [
+          -7.071067812,
+          7.071067812
+        ],
+        [
+          -9.238795325,
+          3.826834324
+        ],
+        [
+          -10.0,
+          0.0
+        ]
+      ],
+      "simplified_area": 306.1467458958816,
+      "simplified_count": 16,
+      "skipped": [
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 72: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 88: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 104: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 120: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 8: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 24: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 40: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 56: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 80: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 112: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 16: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 48: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 96: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 0: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 32: single-step area 2.913 exceeds per-step cap 0.7851"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 64: single-step area 2.913 exceeds per-step cap 0.7851"
+        }
+      ],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_empty": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 0.0,
+      "original_count": 0,
+      "provenance": [],
+      "ring": [],
+      "simplified_area": 0.0,
+      "simplified_count": 0,
+      "skipped": [],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_jagged_notches": {
+      "area_delta_pct": -1.2345679012345678,
+      "confidence": 0.7530864197530864,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 202.5,
+      "original_count": 13,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11
+          ],
+          "note": "merged 10 source segments",
+          "surface": 2
+        },
+        {
+          "from": [
+            12
+          ],
+          "note": "unchanged",
+          "surface": 3
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0
+        ],
+        [
+          20.0,
+          10.0
+        ],
+        [
+          0.0,
+          10.0
+        ]
+      ],
+      "simplified_area": 200.0,
+      "simplified_count": 4,
+      "skipped": [],
+      "tol": 0.05,
+      "valid": true
+    },
+    "ring_l_shape": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 80.0,
+      "original_count": 6,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged",
+          "surface": 2
+        },
+        {
+          "from": [
+            3
+          ],
+          "note": "unchanged",
+          "surface": 3
+        },
+        {
+          "from": [
+            4
+          ],
+          "note": "unchanged",
+          "surface": 4
+        },
+        {
+          "from": [
+            5
+          ],
+          "note": "unchanged",
+          "surface": 5
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0
+        ],
+        [
+          12.0,
+          5.0
+        ],
+        [
+          5.0,
+          5.0
+        ],
+        [
+          5.0,
+          9.0
+        ],
+        [
+          0.0,
+          9.0
+        ]
+      ],
+      "simplified_area": 80.0,
+      "simplified_count": 6,
+      "skipped": [
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 4: single-step area 10 exceeds per-step cap 0.2"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 3: single-step area 14 exceeds per-step cap 0.2"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 2: single-step area 17.5 exceeds per-step cap 0.2"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 5: single-step area 22.5 exceeds per-step cap 0.2"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 1: single-step area 30 exceeds per-step cap 0.2"
+        },
+        {
+          "op": "vertex_removal",
+          "reason": "vertex 0: single-step area 54 exceeds per-step cap 0.2"
+        }
+      ],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_square": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 100.0,
+      "original_count": 4,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged",
+          "surface": 2
+        },
+        {
+          "from": [
+            3
+          ],
+          "note": "unchanged",
+          "surface": 3
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0
+        ],
+        [
+          10.0,
+          10.0
+        ],
+        [
+          0.0,
+          10.0
+        ]
+      ],
+      "simplified_area": 100.0,
+      "simplified_count": 4,
+      "skipped": [],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_square_tight_tol": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 100.0,
+      "original_count": 4,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged",
+          "surface": 2
+        },
+        {
+          "from": [
+            3
+          ],
+          "note": "unchanged",
+          "surface": 3
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0
+        ],
+        [
+          10.0,
+          10.0
+        ],
+        [
+          0.0,
+          10.0
+        ]
+      ],
+      "simplified_area": 100.0,
+      "simplified_count": 4,
+      "skipped": [],
+      "tol": 0.001,
+      "valid": true
+    },
+    "ring_three_vertices": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 50.0,
+      "original_count": 3,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged (too few vertices)",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged (too few vertices)",
+          "surface": 1
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged (too few vertices)",
+          "surface": 2
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          10.0,
+          0.0
+        ],
+        [
+          0.0,
+          10.0
+        ]
+      ],
+      "simplified_area": 50.0,
+      "simplified_count": 3,
+      "skipped": [],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_two_identical_points": {
+      "error": "ValueError",
+      "kind": "ring",
+      "message": "A linearring requires at least 4 coordinates."
+    },
+    "ring_wall_height": {
+      "area_delta_pct": 0.0,
+      "confidence": 1.0,
+      "kind": "ring",
+      "method": "greedy_min_area_loss",
+      "original_area": 432.0,
+      "original_count": 4,
+      "provenance": [
+        {
+          "from": [
+            0
+          ],
+          "note": "unchanged",
+          "surface": 0
+        },
+        {
+          "from": [
+            1
+          ],
+          "note": "unchanged",
+          "surface": 1
+        },
+        {
+          "from": [
+            2
+          ],
+          "note": "unchanged",
+          "surface": 2
+        },
+        {
+          "from": [
+            3
+          ],
+          "note": "unchanged",
+          "surface": 3
+        }
+      ],
+      "ring": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          12.0,
+          0.0
+        ],
+        [
+          12.0,
+          12.0
+        ],
+        [
+          0.0,
+          12.0
+        ]
+      ],
+      "simplified_area": 432.0,
+      "simplified_count": 4,
+      "skipped": [],
+      "tol": 0.02,
+      "valid": true
+    },
+    "ring_zero_area": {
+      "error": "ValueError",
+      "kind": "ring",
+      "message": "degenerate ring: non-positive area"
+    },
+    "roof_area_budget_refusal": {
+      "aperture_delta_pct": 0.0,
+      "aperture_tol_pct": 50.0,
+      "area_delta_pct": 0.0,
+      "area_tol_pct": 0.0001,
+      "kind": "roof",
+      "merges": [],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 2,
+      "n_planes_before": 2,
+      "planes": [
+        {
+          "area_m2": 17.320508,
+          "azimuth_deg": 180.0,
+          "id": "A",
+          "tilt_deg": 30.0
+        },
+        {
+          "area_m2": 18.093269,
+          "azimuth_deg": 180.0,
+          "id": "B",
+          "tilt_deg": 34.0
+        }
+      ],
+      "skipped": [
+        {
+          "pair": [
+            "A",
+            "B"
+          ],
+          "reason": "area budget: area -0.061%, aperture -0.000%"
+        }
+      ],
+      "stats": {
+        "geometry_computations": 11,
+        "pair_scans": 1,
+        "passes": 1,
+        "plan_computations": 2
+      }
+    },
+    "roof_empty": {
+      "aperture_delta_pct": 0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": 0.0,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 0,
+      "n_planes_before": 0,
+      "planes": [],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 0,
+        "pair_scans": 0,
+        "passes": 0,
+        "plan_computations": 0
+      }
+    },
+    "roof_hip_with_dormer": {
+      "aperture_delta_pct": 0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": -0.0935,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [
+        {
+          "angle_deg": 15.0,
+          "aperture_delta_pct": 0.0,
+          "area_delta_pct": -0.0935,
+          "from": [
+            "D",
+            "S"
+          ],
+          "into": "S"
+        }
+      ],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 4,
+      "n_planes_before": 5,
+      "planes": [
+        {
+          "area_m2": 10.392305,
+          "azimuth_deg": 90.0,
+          "id": "E",
+          "tilt_deg": 30.0
+        },
+        {
+          "area_m2": 24.248711,
+          "azimuth_deg": 0.0,
+          "id": "N",
+          "tilt_deg": 30.0
+        },
+        {
+          "area_m2": 23.945308,
+          "azimuth_deg": 180.0,
+          "id": "S",
+          "tilt_deg": 28.7176
+        },
+        {
+          "area_m2": 10.392305,
+          "azimuth_deg": 270.0,
+          "id": "W",
+          "tilt_deg": 30.0
+        }
+      ],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 29,
+        "pair_scans": 11,
+        "passes": 1,
+        "plan_computations": 6
+      }
+    },
+    "roof_many_coplanar_tiles": {
+      "aperture_delta_pct": -0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": 0.0,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1"
+          ],
+          "into": "T0_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_2",
+            "T0_3"
+          ],
+          "into": "T0_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_4",
+            "T0_5"
+          ],
+          "into": "T0_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T1_0",
+            "T1_1"
+          ],
+          "into": "T1_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T1_2",
+            "T1_3"
+          ],
+          "into": "T1_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T1_4",
+            "T1_5"
+          ],
+          "into": "T1_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_0",
+            "T2_1"
+          ],
+          "into": "T2_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_2",
+            "T2_3"
+          ],
+          "into": "T2_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_4",
+            "T2_5"
+          ],
+          "into": "T2_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T3_0",
+            "T3_1"
+          ],
+          "into": "T3_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T3_2",
+            "T3_3"
+          ],
+          "into": "T3_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T3_4",
+            "T3_5"
+          ],
+          "into": "T3_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_0",
+            "T4_1"
+          ],
+          "into": "T4_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_2",
+            "T4_3"
+          ],
+          "into": "T4_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_4",
+            "T4_5"
+          ],
+          "into": "T4_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T5_0",
+            "T5_1"
+          ],
+          "into": "T5_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T5_2",
+            "T5_3"
+          ],
+          "into": "T5_2"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T5_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1",
+            "T0_2",
+            "T0_3"
+          ],
+          "into": "T0_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_4",
+            "T0_5",
+            "T1_4",
+            "T1_5"
+          ],
+          "into": "T0_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T1_0",
+            "T1_1",
+            "T1_2",
+            "T1_3"
+          ],
+          "into": "T1_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_0",
+            "T2_1",
+            "T2_2",
+            "T2_3"
+          ],
+          "into": "T2_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_4",
+            "T2_5",
+            "T3_4",
+            "T3_5"
+          ],
+          "into": "T2_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T3_0",
+            "T3_1",
+            "T3_2",
+            "T3_3"
+          ],
+          "into": "T3_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_0",
+            "T4_1",
+            "T4_2",
+            "T4_3"
+          ],
+          "into": "T4_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_4",
+            "T4_5",
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T4_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T5_0",
+            "T5_1",
+            "T5_2",
+            "T5_3"
+          ],
+          "into": "T5_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1",
+            "T0_2",
+            "T0_3",
+            "T0_4",
+            "T0_5",
+            "T1_4",
+            "T1_5"
+          ],
+          "into": "T0_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T1_0",
+            "T1_1",
+            "T1_2",
+            "T1_3",
+            "T2_0",
+            "T2_1",
+            "T2_2",
+            "T2_3"
+          ],
+          "into": "T1_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_4",
+            "T2_5",
+            "T3_0",
+            "T3_1",
+            "T3_2",
+            "T3_3",
+            "T3_4",
+            "T3_5"
+          ],
+          "into": "T2_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T4_0",
+            "T4_1",
+            "T4_2",
+            "T4_3",
+            "T4_4",
+            "T4_5",
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T4_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1",
+            "T0_2",
+            "T0_3",
+            "T0_4",
+            "T0_5",
+            "T1_0",
+            "T1_1",
+            "T1_2",
+            "T1_3",
+            "T1_4",
+            "T1_5",
+            "T2_0",
+            "T2_1",
+            "T2_2",
+            "T2_3"
+          ],
+          "into": "T0_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T2_4",
+            "T2_5",
+            "T3_0",
+            "T3_1",
+            "T3_2",
+            "T3_3",
+            "T3_4",
+            "T3_5",
+            "T4_0",
+            "T4_1",
+            "T4_2",
+            "T4_3",
+            "T4_4",
+            "T4_5",
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T2_4"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1",
+            "T0_2",
+            "T0_3",
+            "T0_4",
+            "T0_5",
+            "T1_0",
+            "T1_1",
+            "T1_2",
+            "T1_3",
+            "T1_4",
+            "T1_5",
+            "T2_0",
+            "T2_1",
+            "T2_2",
+            "T2_3",
+            "T2_4",
+            "T2_5",
+            "T3_0",
+            "T3_1",
+            "T3_2",
+            "T3_3",
+            "T3_4",
+            "T3_5",
+            "T4_0",
+            "T4_1",
+            "T4_2",
+            "T4_3",
+            "T4_4",
+            "T4_5",
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T0_0"
+        },
+        {
+          "angle_deg": 0.0,
+          "aperture_delta_pct": -0.0,
+          "area_delta_pct": 0.0,
+          "from": [
+            "T0_0",
+            "T0_1",
+            "T0_2",
+            "T0_3",
+            "T0_4",
+            "T0_5",
+            "T1_0",
+            "T1_1",
+            "T1_2",
+            "T1_3",
+            "T1_4",
+            "T1_5",
+            "T2_0",
+            "T2_1",
+            "T2_2",
+            "T2_3",
+            "T2_4",
+            "T2_5",
+            "T3_0",
+            "T3_1",
+            "T3_2",
+            "T3_3",
+            "T3_4",
+            "T3_5",
+            "T4_0",
+            "T4_1",
+            "T4_2",
+            "T4_3",
+            "T4_4",
+            "T4_5",
+            "T5_0",
+            "T5_1",
+            "T5_2",
+            "T5_3",
+            "T5_4",
+            "T5_5"
+          ],
+          "into": "T0_0"
+        }
+      ],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 1,
+      "n_planes_before": 36,
+      "planes": [
+        {
+          "area_m2": 900.0,
+          "azimuth_deg": null,
+          "id": "T0_0",
+          "tilt_deg": 0.0
+        }
+      ],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 603,
+        "pair_scans": 182,
+        "passes": 6,
+        "plan_computations": 71
+      }
+    },
+    "roof_pitch_break_merges": {
+      "aperture_delta_pct": -0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": -0.0152,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [
+        {
+          "angle_deg": 2.0,
+          "aperture_delta_pct": 0.0,
+          "area_delta_pct": -0.0152,
+          "from": [
+            "A",
+            "B"
+          ],
+          "into": "B"
+        }
+      ],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 1,
+      "n_planes_before": 2,
+      "planes": [
+        {
+          "area_m2": 35.002853,
+          "azimuth_deg": 180.0,
+          "id": "B",
+          "tilt_deg": 31.0105
+        }
+      ],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 15,
+        "pair_scans": 1,
+        "passes": 1,
+        "plan_computations": 3
+      }
+    },
+    "roof_single_plane": {
+      "aperture_delta_pct": 0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": 0.0,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 1,
+      "n_planes_before": 1,
+      "planes": [
+        {
+          "area_m2": 69.282032,
+          "azimuth_deg": 180.0,
+          "id": "A",
+          "tilt_deg": 30.0
+        }
+      ],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 2,
+        "pair_scans": 0,
+        "passes": 0,
+        "plan_computations": 1
+      }
+    },
+    "roof_two_levels": {
+      "aperture_delta_pct": 0.0,
+      "aperture_tol_pct": 2.0,
+      "area_delta_pct": 0.0,
+      "area_tol_pct": 2.0,
+      "kind": "roof",
+      "merges": [],
+      "method": "greedy_min_aperture_change",
+      "n_planes_after": 2,
+      "n_planes_before": 2,
+      "planes": [
+        {
+          "area_m2": 17.320508,
+          "azimuth_deg": 180.0,
+          "id": "A",
+          "tilt_deg": 30.0
+        },
+        {
+          "area_m2": 17.320508,
+          "azimuth_deg": 180.0,
+          "id": "B",
+          "tilt_deg": 30.0
+        }
+      ],
+      "skipped": [],
+      "stats": {
+        "geometry_computations": 4,
+        "pair_scans": 1,
+        "passes": 0,
+        "plan_computations": 2
+      }
+    }
+  },
+  "schema": 1
+}
