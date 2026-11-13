@@ -8,6 +8,7 @@ from building_model import (
     Provenance,
     SymbolLinkage,
 )
+from datasets_adapter import normalize_tag
 from registration import (
     Affine2D,
     PlanRegistration,
@@ -54,7 +55,10 @@ def _link_lighting(
     for fid, sid in assignment.items():
         f = by_id[fid]
         x_m, y_m = reg.to_meters(f["x_px"], f["y_px"])
-        entry = sched.get(f["tag"])
+        # Both sides of the join speak the normalised tag, as the window/door
+        # elevation join does: a fixture tag ``a-1`` finds the schedule row
+        # ``A-1``.
+        entry = sched.get(normalize_tag(f["tag"]))
         watts = entry.watts if entry else None
         if entry is None:
             model.flag_for_review(
