@@ -9,6 +9,7 @@ from building_model import (
     SpaceOpening,
     SymbolLinkage,
 )
+from datasets_adapter import normalize_tag
 from registration import (
     Facade,
     match_interval_to_segments,
@@ -193,7 +194,10 @@ def _link_elevation(
         # pipeline uses for its category_hint (elevation_windows.py).
         category = "door" if sill < DOOR_SILL_MAX_M else "window"
         seg, frac, ambiguous = match_interval_to_segments(s0, s1, segments)
-        entry = win_sched.get(wdet["tag"])
+        # Both sides of the join are normalised (``normalize_tag``), the same
+        # way the takeoff rollup joins detections to a schedule: a detection
+        # tagged ``w-1`` or ``W 1`` finds the schedule row ``W-1``.
+        entry = win_sched.get(normalize_tag(wdet["tag"]))
         # A schedule row whose category disagrees with the sill-derived one
         # does not describe this element: the link is kept (sill wins) but the
         # mismatch is recorded, never swallowed.
