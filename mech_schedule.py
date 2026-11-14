@@ -156,6 +156,10 @@ CAPACITY_UNITS = {
     "j": "J",
     "kj": "kJ",
     "mj": "MJ",
+    # The kJ/h family (#1398): a stated rate of heat (kJ/h) is a capacity
+    # like any other. Recorded as stated, never converted: the token is
+    # kept and the magnitude is not folded into kW or kJ.
+    "kj/h": "kJ/h",
     "btu": "BTU",
     "btu/h": "BTU/h",
     "mbh": "MBH",
