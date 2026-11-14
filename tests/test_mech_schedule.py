@@ -175,6 +175,48 @@ def test_capacity_parser_skips_dimensions_and_keeps_units_as_stated():
     assert cap["value"] == 5.0
 
 
+def test_capacity_parser_accepts_kj_per_hour_as_stated():
+    """#1398: kJ/h is a capacity rate unit, recorded as stated, never converted."""
+    cap = parse_capacity("cooling capacity 12000 kJ/h")
+    assert cap is not None
+    assert cap["value"] == 12000.0
+    assert cap["unit"] == "kJ/h"
+    # Range form keeps stated-range behaviour: value None, raw kept.
+    rng = parse_capacity("10000-12000 kJ/h")
+    assert rng is not None
+    assert rng["value"] is None
+    assert rng["unit"] == "kJ/h"
+    assert rng["raw"] == "10000-12000 kJ/h"
+
+
+def test_kj_per_hour_cobie_row_fills_capacity_slot(tmp_path):
+    """#1398: a COBie Type stating kJ/h capacity (ACCU-1 shape) fills the slot."""
+    original = _TYPE_ROWS[0]
+    _TYPE_ROWS[0] = (
+        "AC Unit Type 1",
+        "23-75 10 24 21 27: Unitary Air",
+        "Split system condensing unit, cooling capacity 12000 kJ/h",
+    )
+    try:
+        res = parse_cobie_workbook(_write_workbook(tmp_path))
+    finally:
+        _TYPE_ROWS[0] = original
+    accu = _row(res, "ACCU-1")
+    assert accu.capacity is not None
+    assert accu.capacity["value"] == 12000.0
+    assert accu.capacity["unit"] == "kJ/h"
+
+
+def test_kj_per_hour_maps_through_the_value_slot_path():
+    """#1398: the slot path (_map_value_slot, CAPACITY_UNITS at :430) accepts kJ/h."""
+    slot, unit, confidence, reason = _map_value_slot("unclassified", "kj/h", "kJ/h", "cooling")
+    assert (slot, unit, confidence, reason) == ("cooling_capacity", "kJ/h", "high", None)
+    # #1354 guardrail: kJ/h is NOT in the joule family scales, so the
+    # conflict detector keeps comparing kJ/h magnitudes raw.
+    assert _same_quantity(12000.0, "kJ/h", 12000.0, "kJ") is True
+    assert _same_quantity(12000.0, "kJ/h", 12001.0, "kJ") is False
+
+
 def test_no_evidence_excluded_from_schedule(result):
     tags = [r.tag for r in result.rows]
     types = [r.type_name for r in result.rows]
