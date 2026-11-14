@@ -10,6 +10,7 @@ from bem.bem_geometry import BEMModel
 from bem.bem_helpers import (
     _assign_wall_to_space,
     _distribute_openings,
+    _edge_facades,
     _edge_spaces,
     _place_openings_on_wall,
     _place_skylights_on_roof,
@@ -60,6 +61,80 @@ def _ensure_ifc():
 
 
 IDENTITY_PSET = "Matchline_Identity"  # #588; "Pset_" is reserved for buildingSMART sets
+
+
+# --- multi-part envelope helpers (#1396) ------------------------------------
+
+
+def _part_rings(model):
+    """Per-part envelope rings: ``[(ring, holes), ...]``; empty on one-ring models.
+
+    ``BEMModel.rings_m`` carries one entry per connected wing (#984); a
+    courtyard hole rides with its part wound CW. Empty on single-part models,
+    which keep the pre-#1396 single-ring path untouched.
+    """
+    parts = list(getattr(model, "rings_m", None) or [])
+    return [(list(p.get("ring") or []), list(p.get("holes") or [])) for p in parts]
+
+
+def _ring_area(ring):
+    """Absolute area of a ring (m2)."""
+    n = len(ring)
+    if n < 3:
+        return 0.0
+    a2 = sum(
+        ring[i][0] * ring[(i + 1) % n][1] - ring[(i + 1) % n][0] * ring[i][1] for i in range(n)
+    )
+    return abs(a2) / 2.0
+
+
+def _part_cover_pieces(ring, holes, spaces):
+    """Closed loops covering one footprint part, courtyard holes left open.
+
+    A part with a hole is covered by the spaces that tile it, so nothing is
+    written over the void (the gbXML writer's rule); a part the spaces do not
+    tile falls back to the part's own ring.
+    """
+    from bem.bem_space_split import covers_footprint
+    from room_labels import point_in_polygon as _pip
+
+    if holes:
+        sps = [sp for sp in spaces if _pip(_centroid(sp.polygon_m), ring)]
+        if covers_footprint(ring, sps, holes=holes):
+            return [list(sp.polygon_m) for sp in sps]
+    return [list(ring)]
+
+
+def _centroid(poly):
+    n = len(poly)
+    return (sum(p[0] for p in poly) / n, sum(p[1] for p in poly) / n)
+
+
+def _space_part_index(spaces, parts):
+    """Space id -> index of the footprint part it sits in."""
+    from room_labels import point_in_polygon as _pip
+
+    out = {}
+    for sp in spaces:
+        poly = getattr(sp, "polygon_m", None)
+        if not poly or len(poly) < 3:
+            continue
+        c = _centroid(poly)
+        for k, (ring, _holes) in enumerate(parts):
+            if _pip(c, ring):
+                out[sp.sid] = k
+                break
+    return out
+
+
+def _placement_in_poly(poly, placement):
+    """Does a skylight placement sit inside this outline?"""
+    from room_labels import point_in_polygon as _pip
+
+    rect = placement["rect"]
+    cx = sum(p[0] for p in rect) / len(rect)
+    cy = sum(p[1] for p in rect) / len(rect)
+    return _pip((cx, cy), poly)
 
 
 def _write_identity(f, products, ident):
@@ -205,6 +280,9 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     bldg = _R.create_entity(f, ifc_class="IfcBuilding", name=model.building_name)
     levels = sorted(getattr(model, "levels", None) or [], key=lambda lv: (lv.elevation_m, lv.id))
     multi = len(levels) > 1
+    # per-wing envelope rings (#1396): empty on single-part models, which keep
+    # the pre-#1396 single-ring path
+    parts = _part_rings(model) if not multi else []
     storey_of = {}  # level id -> (IfcBuildingStorey, its placement), multi-storey only
     if multi:
         # several storeys (#639): one IfcBuildingStorey per level at its
@@ -297,11 +375,25 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
             for lv, edges, assign, owner in level_walls(model, levels, space_level, level_notes)
         ]
     else:
-        edges = _wall_edges(model.ring_m)
+        if parts:
+            # #1396: every footprint part (each wing plus its courtyard holes)
+            # is an exterior wall, as in the gbXML writer. The edge list stays
+            # contiguous so the grade/opening maps stay keyed by index.
+            edges = []
+            facades = []
+            for ring, holes in parts:
+                edges.extend(_wall_edges(ring))
+                facades.extend(_edge_facades(ring))
+                for hole in holes:
+                    edges.extend(_wall_edges(hole))
+                    facades.extend(_edge_facades(hole))
+        else:
+            edges = _wall_edges(model.ring_m)
+            facades = getattr(model, "ring_facades", None)
         opening_assign = _distribute_openings(
             model.openings,
             edges,
-            getattr(model, "ring_facades", None),
+            facades,
             _edge_spaces(edges, model.spaces),
         )
         wall_groups = [(storey, storey_pl, h, edges, opening_assign, None, "", 0.0)]
@@ -487,27 +579,66 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
     slab_u = getattr(model, "slab_u_value_w_m2k", None)
     slab_u = float(slab_u) if slab_u is not None and slab_u > 0 else None
     if slab_u is not None and not multi:
-        ground = _R.create_entity(
-            f, ifc_class="IfcSlab", name="Ground slab", predefined_type="BASESLAB"
-        )
-        ground.ObjectPlacement = placement((0.0, 0.0, -GROUND_SLAB_THICKNESS_M), parent=storey_pl)
-        rep = _Gm.add_slab_representation(
-            f,
-            context=body,
-            depth=GROUND_SLAB_THICKNESS_M,
-            polyline=[(float(x), float(y)) for x, y in model.ring_m],
-        )
-        _Gm.assign_representation(f, product=ground, representation=rep)
-        _Sp.assign_container(f, products=[ground], relating_structure=storey)
-        try:
-            import ifcopenshell.api.pset as _Ps
+        if parts:
+            # #1396: one ground slab per footprint part, so every wing is
+            # floored. A part with a courtyard is covered by the spaces that
+            # tile it, so nothing is slabbed over the void.
+            n_slab = 0
+            for ring, holes in parts:
+                for piece in _part_cover_pieces(ring, holes, model.spaces):
+                    n_slab += 1
+                    ground = _R.create_entity(
+                        f,
+                        ifc_class="IfcSlab",
+                        name=f"Ground slab {n_slab}",
+                        predefined_type="BASESLAB",
+                    )
+                    ground.ObjectPlacement = placement(
+                        (0.0, 0.0, -GROUND_SLAB_THICKNESS_M), parent=storey_pl
+                    )
+                    rep = _Gm.add_slab_representation(
+                        f,
+                        context=body,
+                        depth=GROUND_SLAB_THICKNESS_M,
+                        polyline=[(float(x), float(y)) for x, y in piece],
+                    )
+                    _Gm.assign_representation(f, product=ground, representation=rep)
+                    _Sp.assign_container(f, products=[ground], relating_structure=storey)
+                    try:
+                        import ifcopenshell.api.pset as _Ps
 
-            pset = _Ps.add_pset(f, product=ground, name="Pset_SlabCommon")
-            _Ps.edit_pset(
-                f, pset=pset, properties={"ThermalTransmittance": slab_u, "IsExternal": True}
+                        pset = _Ps.add_pset(f, product=ground, name="Pset_SlabCommon")
+                        _Ps.edit_pset(
+                            f,
+                            pset=pset,
+                            properties={"ThermalTransmittance": slab_u, "IsExternal": True},
+                        )
+                    except (AttributeError, TypeError, ValueError, RuntimeError):
+                        pass  # thermal property is enrichment, not core validity
+        else:
+            ground = _R.create_entity(
+                f, ifc_class="IfcSlab", name="Ground slab", predefined_type="BASESLAB"
             )
-        except (AttributeError, TypeError, ValueError, RuntimeError):
-            pass  # thermal property is enrichment, not core validity
+            ground.ObjectPlacement = placement(
+                (0.0, 0.0, -GROUND_SLAB_THICKNESS_M), parent=storey_pl
+            )
+            rep = _Gm.add_slab_representation(
+                f,
+                context=body,
+                depth=GROUND_SLAB_THICKNESS_M,
+                polyline=[(float(x), float(y)) for x, y in model.ring_m],
+            )
+            _Gm.assign_representation(f, product=ground, representation=rep)
+            _Sp.assign_container(f, products=[ground], relating_structure=storey)
+            try:
+                import ifcopenshell.api.pset as _Ps
+
+                pset = _Ps.add_pset(f, product=ground, name="Pset_SlabCommon")
+                _Ps.edit_pset(
+                    f, pset=pset, properties={"ThermalTransmittance": slab_u, "IsExternal": True}
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError):
+                pass  # thermal property is enrichment, not core validity
 
     def _skylights(roof, placed, st):
         """Skylight openings voiding ``roof``, filled by IfcWindow SKYLIGHT, in ``st``."""
