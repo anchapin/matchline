@@ -88,8 +88,13 @@ def _schedules(bldg) -> tuple:
     light_sched = {}
     for row in bldg["lighting_schedule"]:
         # The lighting join (``link/_lighting.py``) looks its rows up by the
-        # raw fixture tag, so the lighting schedule keeps its raw keys; only
-        # the window/door rows of the elevation join are normalised.
+        # normalised tag, so the lighting schedule is keyed like the
+        # window/door one: an OCR read of ``a-1`` or ``A 1`` joins the
+        # schedule row ``A-1``. The entry keeps the tag as the row states it.
         e = _lighting_entry(row)
-        light_sched[e.tag] = e
+        key = normalize_tag(e.tag)
+        prev = light_sched.get(key)
+        if prev is not None:
+            e.note = _duplicate_note(key, prev, e)
+        light_sched[key] = e
     return win_sched, light_sched

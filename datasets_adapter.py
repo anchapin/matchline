@@ -487,6 +487,11 @@ def parse_lighting_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
     Category defaults to "lighting". This is the interchange format for the
     full table-parser (stage 2): whatever it extracts gets normalized here
     before the lighting rollup.
+
+    The schedule is keyed by the normalised tag (``normalize_tag``), exactly
+    as ``parse_schedule_csv`` keys the window/door schedule, so an OCR read
+    of ``a-1`` or ``A 1`` finds the row ``A-1``. The entry keeps the tag as
+    the schedule states it; only the lookup key is normalised.
     """
     if isinstance(path_or_rows, (str, Path)):
         f = open(path_or_rows, newline="")
@@ -498,7 +503,10 @@ def parse_lighting_schedule_csv(path_or_rows) -> dict[str, ScheduleEntry]:
         for row in csv.DictReader(f):
             tag = row["tag"].strip()
             watts = row.get("watts", "").strip()
-            sched[tag] = ScheduleEntry(
+            # The lookup key is normalised (as in ``parse_schedule_csv``); the
+            # entry keeps the tag as the schedule states it. The LAST row of
+            # a normalised key wins, as in the takeoff rollup.
+            sched[normalize_tag(tag)] = ScheduleEntry(
                 tag=tag,
                 category=row.get("category", "").strip().lower() or "lighting",
                 width_m=None,

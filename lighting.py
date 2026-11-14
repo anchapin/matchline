@@ -35,6 +35,7 @@ from datasets_adapter import (
     Detection,
     DrawingScale,
     ScheduleEntry,
+    normalize_tag,
     polygon_area_px2,
 )
 from room_labels import LabeledSpace, point_in_polygon
@@ -129,18 +130,25 @@ def lighting_takeoff(
 
     Watts come from the schedule, so totals need no drawing scale. LPD does:
     spaces with unknown area get watts and fixture counts but LPD None.
+
+    Both sides of the join are normalised with ``normalize_tag`` (as the
+    window/door takeoff rollup does), so a detection tag ``a-1`` joins the
+    schedule row ``A-1`` and ``A 1`` joins ``A1``.
     """
     res = LightingResult(drawing_type=drawing_type)
 
     # -- per-tag rollup (mirrors datasets_adapter.rollup_takeoff) ------------
+    # Both sides of the join speak the normalised tag: the schedule keys and
+    # the detection tags. The entry keeps the tag as the schedule states it.
+    sched = {normalize_tag(k): v for k, v in schedule.items()}
     by_tag: dict[str, list[Detection]] = {}
     for d in detections:
-        by_tag.setdefault(d.tag, []).append(d)
+        by_tag.setdefault(normalize_tag(d.tag), []).append(d)
 
     tag_watts: dict[str, float | None] = {}
     for tag in sorted(by_tag):
         ds = by_tag[tag]
-        entry = schedule.get(tag)
+        entry = sched.get(tag)
         if entry is None:
             res.unmatched.extend(ds)
             continue
@@ -162,13 +170,17 @@ def lighting_takeoff(
 
     # -- per-space assignment -------------------------------------------------
     assignment = assign_fixtures_to_spaces(
-        [d for ds in by_tag.values() for d in ds if d.tag in schedule], spaces
+        [d for ds in by_tag.values() for d in ds if normalize_tag(d.tag) in sched], spaces
     )
     res.unassigned = assignment.pop(-1, [])
 
     for i, s in enumerate(spaces):
         ds = assignment.get(i, [])
-        watts = sum(tag_watts.get(d.tag) or 0.0 for d in ds if tag_watts.get(d.tag) is not None)
+        watts = sum(
+            tag_watts.get(normalize_tag(d.tag)) or 0.0
+            for d in ds
+            if tag_watts.get(normalize_tag(d.tag)) is not None
+        )
         if space_areas_m2 is not None:
             area = space_areas_m2[i]
         elif scale.m_per_px:
