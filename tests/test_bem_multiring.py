@@ -116,3 +116,60 @@ def test_single_part_model_has_no_rings_m():
     """#984: a single-part footprint keeps the pre-#984 shape."""
     bem = _bem_for(_model([_space("L1-101", [(0, 0), (10, 0), (10, 4), (0, 4)], 40.0)]))
     assert bem.rings_m == []
+
+
+# --- IFC4 multi-part export (#1396, supervisor-added acceptance tests) ---
+
+
+def _ifc_walls(path):
+    import ifcopenshell
+
+    return ifcopenshell.open(str(path)).by_type("IfcWall")
+
+
+def test_ifc4_two_wing_exports_both_wings():
+    """#1396: IFC4 must export every footprint part, not only the largest
+    ring — the two-wing fixture gets 8 IfcWall spanning both wings."""
+    from bem.bem_ifc4 import write_ifc4
+
+    bem = _bem_for(_two_wing_model())
+    assert len(bem.rings_m) == 2
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "model.ifc"
+        write_ifc4(bem, path)
+        walls = _ifc_walls(path)
+    assert len(walls) == 8  # 4 per wing, matching the gbXML writer
+    xs = {
+        round(w.ObjectPlacement.RelativePlacement.Location.Coordinates[0], 1)
+        for w in walls
+    }
+    assert any(20.0 <= x <= 30.0 for x in xs)  # wing 2 exists in IFC4
+    assert any(0.0 <= x <= 10.0 for x in xs)  # wing 1 still there
+
+
+def test_ifc4_courtyard_exports_hole_walls():
+    """#1396: courtyard hole walls are exported in IFC4 as in gbXML."""
+    from bem.bem_ifc4 import write_ifc4
+
+    bem = _bem_for(_courtyard_model())
+    assert len(bem.rings_m[0]["holes"]) == 1
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "model.ifc"
+        write_ifc4(bem, path)
+        walls = _ifc_walls(path)
+    # 4 outer-ring walls + 4 courtyard-hole walls
+    assert len(walls) == 8
+
+
+def test_ifc4_single_part_unchanged_shape():
+    """#1396: single-part models (rings_m == []) keep the single-ring path:
+    one rectangular part exports exactly its 4 ring walls."""
+    from bem.bem_ifc4 import write_ifc4
+
+    bem = _bem_for(_model([_space("L1-101", [(0, 0), (10, 0), (10, 4), (0, 4)], 40.0)]))
+    assert bem.rings_m == []
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "model.ifc"
+        write_ifc4(bem, path)
+        walls = _ifc_walls(path)
+    assert len(walls) == 4
