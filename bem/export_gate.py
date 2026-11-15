@@ -163,8 +163,7 @@ def _planarity_deviation(points) -> float:
     cy = sum(p[1] for p in points) / len(points)
     cz = sum(p[2] for p in points) / len(points)
     return max(
-        abs((p[0] - cx) * unit[0] + (p[1] - cy) * unit[1] + (p[2] - cz) * unit[2])
-        for p in points
+        abs((p[0] - cx) * unit[0] + (p[1] - cy) * unit[1] + (p[2] - cz) * unit[2]) for p in points
     )
 
 
@@ -262,7 +261,6 @@ def _shell_edges(loops):
 
 
 def _check_shell_closure(shells, skipped) -> CheckResult:
-    edge_faces: dict[tuple, int] = {}
     total_edges = 0
     bad: list[str] = []
     for shell in shells:
@@ -288,9 +286,7 @@ def _check_shell_closure(shells, skipped) -> CheckResult:
         "edges_not_shared_by_two_faces": len(bad),
     }
     if bad:
-        return CheckResult(
-            "shell_closure", "fail", measurement, "; ".join(bad[:5])
-        )
+        return CheckResult("shell_closure", "fail", measurement, "; ".join(bad[:5]))
     return CheckResult("shell_closure", "pass", measurement)
 
 
@@ -390,8 +386,7 @@ def _check_degenerate_faces(faces) -> CheckResult:
         distinct = {_round_point(p) for p in face.points}
         if len(distinct) < 3:
             bad.append(
-                f"{face.owner}: only {len(distinct)} distinct vertices "
-                f"(a face needs at least 3)"
+                f"{face.owner}: only {len(distinct)} distinct vertices (a face needs at least 3)"
             )
             continue
         area = _face_area(face.points)
@@ -517,9 +512,7 @@ def _manifest_settings(model, extra: dict | None = None) -> dict:
     return settings
 
 
-def _manifest_outputs(
-    gb_staged: Path, ifc_staged: Path, gb_final: Path, ifc_final: Path
-) -> dict:
+def _manifest_outputs(gb_staged: Path, ifc_staged: Path, gb_final: Path, ifc_final: Path) -> dict:
     """The published files, hashed (gbXML by bytes, IFC4 semantically)."""
     return {
         "gbxml": {

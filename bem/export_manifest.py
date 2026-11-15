@@ -185,9 +185,7 @@ def _verify_output(name: str, spec: dict, drift: list[str], checked: list[str]) 
         digest = normalised_ifc_digest(p)
         recorded = spec.get("normalised_sha256")
         if digest != recorded:
-            drift.append(
-                f"output {name}: {p} normalised digest {digest} != recorded {recorded}"
-            )
+            drift.append(f"output {name}: {p} normalised digest {digest} != recorded {recorded}")
     else:
         digest = sha256_file(p)
         if digest != spec.get("sha256"):

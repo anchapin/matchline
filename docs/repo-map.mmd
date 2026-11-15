@@ -14,6 +14,8 @@ graph LR
     bem_bem_shading
     bem_bem_space_split
     bem_buildingsync_export
+    bem_export_gate
+    bem_export_manifest
     construction_library
     construction_library_data
     construction_library_prm_data
@@ -184,8 +186,13 @@ graph LR
   bem_bem_roof --> bem_bem_helpers
   bem_bem_shading --> bem_bem_geometry
   bem_buildingsync_export --> bem_bem_geometry
+  bem_export_gate --> bem_bem_export
+  bem_export_gate --> bem_bem_roof
+  bem_export_gate --> bem_export_manifest
+  bem_export_gate --> safe_xml
   building_model --> datasets_adapter
   cli --> atomic_io
+  cli --> bem_export_manifest
   cli --> building_model
   cli --> diff
   cli --> export_package
@@ -349,6 +356,8 @@ graph LR
   room_labels --> building_model
   room_labels --> datasets_adapter
   run_bem_export --> bem_bem_export
+  run_bem_export --> bem_export_gate
+  run_bem_export --> bem_export_manifest
   run_bem_export --> datasets_adapter
   run_bem_export --> geometry_geometry_simplify
   run_bem_export --> room_labels

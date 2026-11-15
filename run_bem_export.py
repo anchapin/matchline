@@ -127,8 +127,10 @@ def main(sheet_id: str = "sheet_007", gt_path: str | Path | None = None, out_dir
     """Export one sheet through the gate. Returns True when it published."""
     out = Path(out_dir) if out_dir is not None else OUT
     out.mkdir(parents=True, exist_ok=True)
-    gt_file = Path(gt_path) if gt_path is not None else (
-        REPO_ROOT / "synth" / "out" / "sheets" / f"{sheet_id}.gt.json"
+    gt_file = (
+        Path(gt_path)
+        if gt_path is not None
+        else (REPO_ROOT / "synth" / "out" / "sheets" / f"{sheet_id}.gt.json")
     )
     gt = json.load(open(gt_file))
     model, rep = _build_model(gt, sheet_id)
