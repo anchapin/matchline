@@ -26,6 +26,8 @@ Coordinate mapping (documented assumption):
 from __future__ import annotations
 
 import math
+import os
+import uuid
 import xml.etree.ElementTree as ET
 
 # bem_export — unified entry point for gbXML and IFC4 BEM export.
@@ -1000,6 +1002,100 @@ def _write_sloped_roofs(campus, model, roofs, sky_units, surf_count, open_count,
         kept.append(pl_)
     notes.extend(f"roof: {n}" for n in sky_notes)
     return surf_count, open_count, kept
+
+
+# ---- staged export transaction (#1404) ----
+#
+# An export is written to a staged file *in the target directory* first, so
+# the validators (gbXML XSD + semantic, IFC4 structural) and the geometric
+# checks can run against the files that are about to be published. Only a
+# run that passes every check publishes, with an atomic os.replace onto the
+# final path; a failed run leaves the previous good export untouched.
+
+
+def _staged_path(final: str | Path) -> Path:
+    """A staged temp path beside ``final`` (same directory => same
+    filesystem, so publishing is an atomic os.replace)."""
+    final = Path(final)
+    return final.with_name(f".{final.name}.staged-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+
+
+def _stage_gbxml(model: BEMModel, final: str | Path) -> Path:
+    """Write the gbXML export to a staged file beside ``final``.
+
+    Returns the staged path; the caller validates it and publishes it with
+    ``_commit_staged``.
+    """
+    staged = _staged_path(final)
+    write_gbxml(model, staged)
+    return staged
+
+
+def _stage_ifc4(model: BEMModel, final: str | Path) -> Path:
+    """Write the IFC4 export to a staged file beside ``final``."""
+    staged = _staged_path(final)
+    write_ifc4(model, staged)
+    return staged
+
+
+def _discard_staged(paths) -> None:
+    """Delete staged files (a failed run publishes nothing)."""
+    for p in paths:
+        try:
+            Path(p).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _commit_staged(items) -> None:
+    """Publish staged files onto their final paths, atomically.
+
+    ``items`` is a list of ``(staged, final)`` pairs. A final path that
+    already exists is moved to a backup first; if any replace fails
+    mid-commit, the backups are restored and the finals written so far are
+    removed, so the previous good exports survive untouched.
+    """
+    done: list[tuple[Path, Path | None]] = []
+    pending: tuple[Path, Path | None] | None = None
+    try:
+        for staged, final in items:
+            staged = Path(staged)
+            final = Path(final)
+            backup = None
+            if final.exists():
+                backup = final.with_name(
+                    f".{final.name}.backup-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+                )
+                os.replace(final, backup)
+            pending = (final, backup)
+            os.replace(staged, final)
+            pending = None
+            done.append((final, backup))
+    except Exception:
+        if pending is not None:
+            final, backup = pending
+            if backup is not None:
+                os.replace(backup, final)
+            else:
+                try:
+                    final.unlink()
+                except FileNotFoundError:
+                    pass
+        for final, backup in reversed(done):
+            if backup is not None:
+                os.replace(backup, final)
+            else:
+                try:
+                    final.unlink()
+                except FileNotFoundError:
+                    pass
+        raise
+    for _final, backup in done:
+        if backup is not None:
+            try:
+                backup.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def validate_gbxml(path: str | Path, xsd_path: str | Path = SCHEMA_PATH) -> tuple[bool, list]:

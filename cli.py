@@ -148,10 +148,30 @@ def cmd_validate(args: argparse.Namespace) -> None:
 
 
 def cmd_bem_export(args: argparse.Namespace) -> None:
-    """Synthetic sheet GT -> takeoffs -> gbXML + IFC4 export (validated)."""
+    """Synthetic sheet GT -> takeoffs -> gbXML + IFC4 export (validated).
+
+    With ``--verify`` the recorded export manifest is checked against the
+    files on disk (drift report); the export is not re-run.
+    """
     import run_bem_export
 
-    ok = run_bem_export.main(args.sheet_id)
+    verify = getattr(args, "verify", None)
+    if verify:
+        from bem.export_manifest import verify_manifest
+
+        report = verify_manifest(verify)
+        print(f"manifest: {report.manifest_path}")
+        for name in report.checked:
+            print(f"  checked {name}")
+        if report.ok:
+            print("no drift: inputs and outputs match the manifest")
+            return
+        print(f"drift: {len(report.drift)} difference(s)")
+        for line in report.drift:
+            print(f"  {line}")
+        raise SystemExit(1)
+
+    ok = run_bem_export.main(args.sheet_id, out_dir=getattr(args, "out_dir", None))
     if not ok:
         raise SystemExit(1)
 
@@ -788,6 +808,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("bem-export", help="gbXML + IFC4 export demo (synthetic)")
     p.add_argument("--sheet-id", default="sheet_007")
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        dest="out_dir",
+        help="output directory for the exports and the manifest (default: bem_out/)",
+    )
+    p.add_argument(
+        "--verify",
+        type=Path,
+        default=None,
+        metavar="EXPORT.JSON",
+        help=(
+            "verify an export manifest against the files on disk "
+            "(re-hashes the inputs, re-digests the outputs; no export is run)"
+        ),
+    )
     p.set_defaults(func=cmd_bem_export)
 
     p = sub.add_parser("elevation-windows", help="exact window placement + daylight demo")
