@@ -139,10 +139,7 @@ def test_ifc4_two_wing_exports_both_wings():
         write_ifc4(bem, path)
         walls = _ifc_walls(path)
     assert len(walls) == 8  # 4 per wing, matching the gbXML writer
-    xs = {
-        round(w.ObjectPlacement.RelativePlacement.Location.Coordinates[0], 1)
-        for w in walls
-    }
+    xs = {round(w.ObjectPlacement.RelativePlacement.Location.Coordinates[0], 1) for w in walls}
     assert any(20.0 <= x <= 30.0 for x in xs)  # wing 2 exists in IFC4
     assert any(0.0 <= x <= 10.0 for x in xs)  # wing 1 still there
 

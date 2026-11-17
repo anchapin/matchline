@@ -178,8 +178,10 @@ graph LR
   bem_bem_ifc4 --> bem_bem_loads
   bem_bem_ifc4 --> bem_bem_multistorey
   bem_bem_ifc4 --> bem_bem_roof
+  bem_bem_ifc4 --> bem_bem_space_split
   bem_bem_ifc4 --> geometry_grade
   bem_bem_ifc4 --> pipeline_exceptions
+  bem_bem_ifc4 --> room_labels
   bem_bem_layers --> bem_bem_helpers
   bem_bem_levels --> bem_bem_geometry
   bem_bem_levels --> geometry_below_grade
