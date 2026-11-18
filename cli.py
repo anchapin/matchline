@@ -174,7 +174,7 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
     ok = run_bem_export.main(
         args.sheet_id,
         out_dir=getattr(args, "out_dir", None),
-        repair_loop=getattr(args, "repair_loop", False),
+        repair_loop=getattr(args, "repair_loop", True),
     )
     if not ok:
         raise SystemExit(1)
@@ -831,11 +831,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--repair-loop",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "enable the deterministic repair loop (#1407, off by default): "
-            "repair R1/R2 geometric defects on the staged gbXML and "
-            "overlapping opening placements (R4) before the publish gate"
+            "run the deterministic repair loop (#1407, on by default at "
+            "this entry point): repair R1/R2 geometric defects on the "
+            "staged gbXML and overlapping opening placements (R4) before "
+            "the publish gate; --no-repair-loop turns it off"
         ),
     )
     p.set_defaults(func=cmd_bem_export)

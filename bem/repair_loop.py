@@ -2,8 +2,10 @@
 
 Phase 1 of the Solvaix-mined spike (#1406): the publish-nothing export
 gate (``bem/export_gate.py``, #1404) *measures* geometric defects and
-refuses to publish — it never repairs. This module is the separate,
-default-off step that sits between the staged export and that gate and
+refuses to publish — it never repairs. This module is the separate
+step that sits between the staged export and that gate (off by
+default at the library level; on by default at the ``bem-export``
+entry points since Alex's 2026-11-17 enablement decision) and
 repairs the small set of defect classes whose fix is unique,
 deterministic and conservation-preserving (Phase 0 of #1406 classified
 every candidate class by hand; the report is

@@ -1,9 +1,14 @@
 """The deterministic repair loop (#1407): R1/R2 staged-gbXML repairs and
 the R4 opening-placement detector + repair.
 
-Phase 1 of the Solvaix-mined spike (#1406). The loop is off by default;
-the publish-nothing gate (#1404) is unchanged and remains the final
-arbiter. Covered here:
+Phase 1 of the Solvaix-mined spike (#1406). The loop is off by default
+at the library level (``publish_exports`` / ``BEMModel``); the
+publish-nothing gate (#1404) is unchanged and remains the final
+arbiter. Since Alex's enablement decision (2026-11-17) it is ON by
+default at the user-facing entry points (``matchline bem-export`` and
+``run_bem_export.main``), with ``--no-repair-loop`` /
+``repair_loop=False`` as the opt-out — covered in the entry-layer
+section at the end of this file. Covered here:
 
   * R1: an inside-out shell and a uniquely flipped face are repaired;
     a shell with no unique single-loop fix is left byte-identical.
@@ -479,3 +484,86 @@ def test_r4_placement_function_is_unchanged_when_the_loop_is_off():
     placements, notes = _placements(units)
     assert placement_overlaps(placements)  # today's behaviour: overlap, unchecked
     assert not any("repair:R4" in n for n in notes)
+
+
+# ---- entry-layer enablement (Alex's decision, 2026-11-17) ------------------
+#
+# The loop is ON by default at the user-facing entry points only:
+# ``matchline bem-export`` and ``run_bem_export.main`` (the simplification
+# precedent — on by default, explicit opt-out). The library defaults
+# above (``publish_exports``, ``BEMModel.repair_loop``) stay off.
+
+
+def _entry_export(workdir: Path, defect=None, monkeypatch=None, **main_kw):
+    """One export through ``run_bem_export.main`` in ``workdir``."""
+    import run_bem_export
+    from synth.sheets import generate_sheet
+
+    if defect is not None:
+        _inject_writer(monkeypatch, defect)
+    workdir.mkdir(parents=True, exist_ok=True)
+    _img, gt = generate_sheet(0, px_per_m=50.0)
+    gt_path = workdir / f"{gt['sheet_id']}.gt.json"
+    gt_path.write_text(json.dumps(gt))
+    out = workdir / "out"
+    ok = run_bem_export.main(gt["sheet_id"], gt_path=gt_path, out_dir=out, **main_kw)
+    return ok, out
+
+
+def test_entry_default_repairs_seeded_r2_and_records_it_in_the_manifest(
+    tmp_path, monkeypatch, capsys
+):
+    """Enablement (a): no flag, no kwarg — the seeded duplicate-surface
+    export publishes through the entry layer, repairs in its manifest."""
+    ok, out = _entry_export(tmp_path, defect=_defect_duplicate_surface, monkeypatch=monkeypatch)
+    capsys.readouterr()
+    assert ok
+    assert (out / "sheet_000.xml").exists()
+    manifest = json.loads((out / "sheet_000.export.json").read_text())
+    repairs = manifest["validation"]["repairs"]
+    assert len(repairs) == 1
+    assert repairs[0]["method"] == "repair:R2"
+    assert repairs[0]["check"] == "duplicate_surfaces"
+
+
+def test_entry_opt_out_restores_the_publish_failure(tmp_path, monkeypatch, capsys):
+    """Enablement (b): ``repair_loop=False`` at the entry layer is the
+    old behaviour — the seeded defect refuses the export."""
+    ok, out = _entry_export(
+        tmp_path,
+        defect=_defect_duplicate_surface,
+        monkeypatch=monkeypatch,
+        repair_loop=False,
+    )
+    capsys.readouterr()
+    assert not ok
+    assert not (out / "sheet_000.xml").exists()
+
+
+def test_cli_bem_export_repair_loop_defaults_on_with_opt_out():
+    """The CLI mirrors the entry default: on, ``--no-repair-loop`` off,
+    and the old ``--repair-loop`` spelling still parses (as on)."""
+    from cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["bem-export"]).repair_loop is True
+    assert parser.parse_args(["bem-export", "--no-repair-loop"]).repair_loop is False
+    assert parser.parse_args(["bem-export", "--repair-loop"]).repair_loop is True
+
+
+def test_entry_clean_export_with_defaults_matches_the_opt_out(tmp_path, capsys):
+    """Enablement (c): a clean export through the entry layer with the
+    new default is unchanged from the opt-out export — gbXML
+    byte-identical, IFC4 semantically identical, and neither manifest
+    carries a repairs key when nothing was repaired."""
+    ok_on, out_on = _entry_export(tmp_path / "default")
+    ok_off, out_off = _entry_export(tmp_path / "optout", repair_loop=False)
+    capsys.readouterr()
+    assert ok_on and ok_off
+    assert (out_on / "sheet_000.xml").read_bytes() == (out_off / "sheet_000.xml").read_bytes()
+    assert _ifc_semantic_digest(out_on / "sheet_000.ifc") == _ifc_semantic_digest(
+        out_off / "sheet_000.ifc"
+    )
+    for out in (out_on, out_off):
+        manifest = json.loads((out / "sheet_000.export.json").read_text())
+        assert "repairs" not in manifest["validation"]

@@ -127,13 +127,18 @@ def main(
     sheet_id: str = "sheet_007",
     gt_path: str | Path | None = None,
     out_dir=None,
-    repair_loop: bool = False,
+    repair_loop: bool = True,
 ):
     """Export one sheet through the gate. Returns True when it published.
 
     ``repair_loop`` (#1407) enables the deterministic repair loop for
-    this export; it is off by default and the gated publish below
-    remains the final arbiter either way.
+    this export. It is ON by default at this user-facing entry point
+    (Alex's enablement decision, 2026-11-17 — the simplification
+    precedent: on by default, explicit opt-out); pass
+    ``repair_loop=False`` to opt out. The library-level defaults stay
+    off: ``publish_exports``' ``repair_loop=None`` still falls back to
+    ``BEMModel.repair_loop``, which defaults to False. The gated
+    publish below remains the final arbiter either way.
     """
     out = Path(out_dir) if out_dir is not None else OUT
     out.mkdir(parents=True, exist_ok=True)
@@ -181,7 +186,10 @@ def main(
         "area_delta_pct": float(rep["area_delta_pct"]),
         "area_delta_tolerance_pct": float(rep["tolerance_pct"]),
     }
-    if repair_loop:
+    if gate.repairs:
+        # Only an export that actually repaired carries the key: a clean
+        # export's manifest is identical to a loop-off export's (#1408
+        # bar (a) at the entry layer).
         validation["repairs"] = list(gate.repairs)
     manifest = build_manifest(
         sheet=sheet_id,
@@ -203,5 +211,8 @@ def main(
 
 
 if __name__ == "__main__":
-    sid = sys.argv[1] if len(sys.argv) > 1 else "sheet_007"
-    sys.exit(0 if main(sid) else 1)
+    argv = sys.argv[1:]
+    repair = "--no-repair-loop" not in argv
+    argv = [a for a in argv if a != "--no-repair-loop"]
+    sid = argv[0] if argv else "sheet_007"
+    sys.exit(0 if main(sid, repair_loop=repair) else 1)
