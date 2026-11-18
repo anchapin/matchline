@@ -392,6 +392,7 @@ graph LR
   run_pipeline --> bem_bem_helpers
   run_pipeline --> bem_bem_levels
   run_pipeline --> bem_bem_shading
+  run_pipeline --> bem_export_gate
   run_pipeline --> building_model
   run_pipeline --> construction_library
   run_pipeline --> constructions
