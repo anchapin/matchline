@@ -45,6 +45,7 @@ from bem.bem_geometry import (
     validate_simplify_tolerance,
 )
 from bem.bem_helpers import _edge_facades
+from bem.export_gate import geometric_checks
 from construction_library import apply_construction_library
 from datasets_adapter import (
     detections_from_yolo_json,
@@ -939,13 +940,42 @@ def _stage_6_bem_export(model, sres, wall_height, simplify_tol, out_dir: Path):
 
     gbxml_path = bem_dir / f"{model.name or 'building'}.xml"
     write_gbxml(bem_model, gbxml_path)
-    validate_gbxml(gbxml_path)
+    gbxml_ok, gbxml_errors = validate_gbxml(gbxml_path)
 
     ifc_path = bem_dir / f"{model.name or 'building'}.ifc"
     write_ifc4(bem_model, ifc_path)
-    validate_ifc4(ifc_path)
+    ifc4_ok, ifc4_errors = validate_ifc4(ifc_path)
+
+    # Visibility only (#1409): the geometric checks observe the export that
+    # was just written; they never block it and never change it. The gbXML
+    # and IFC4 validator verdicts are recorded next to them instead of
+    # being discarded. The report lands in the stage-06 output directory
+    # and is printed in the pipeline's console report.
+    checks = geometric_checks(gbxml_path, model=bem_model)
+    export_report = {
+        "schema": "matchline.stage_06_export_report/1",
+        "gbxml": {"ok": bool(gbxml_ok), "errors": list(gbxml_errors)},
+        "ifc4": {"ok": bool(ifc4_ok), "errors": list(ifc4_errors)},
+        "geometric_checks": [c.as_dict() for c in checks],
+        "failed_checks": [c.name for c in checks if c.status == "fail"],
+    }
+    write_json(bem_dir / "export_report.json", export_report)
+    _print_stage_6_export_report(export_report)
 
     return gbxml_path, ifc_path
+
+
+def _print_stage_6_export_report(export_report: dict) -> None:
+    """Console lines for the stage-6 export report (report only, never a gate)."""
+    print("  export report: stage_06_bem/export_report.json")
+    print(
+        f"  gbXML validation: {'PASS' if export_report['gbxml']['ok'] else 'FAIL'}"
+        f"  IFC4 validation: {'PASS' if export_report['ifc4']['ok'] else 'FAIL'}"
+    )
+    for check in export_report["geometric_checks"]:
+        print(f"  geometric check {check['name']}: {check['status']}")
+        if check["status"] != "pass" and check["detail"]:
+            print(f"    {check['detail']}")
 
 
 def _print_pipeline_complete(out_dir: Path, report):
