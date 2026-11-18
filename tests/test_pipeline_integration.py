@@ -290,8 +290,12 @@ def test_pipeline_calls_validate_after_export(tmp_path):
 
     with mock.patch.object(run_pipeline, "build_model", return_value=(m, dummy_report)):
         with mock.patch.object(run_pipeline, "generate_building", return_value=building):
-            with mock.patch.object(run_pipeline, "validate_gbxml") as mock_vg:
-                with mock.patch.object(run_pipeline, "validate_ifc4") as mock_vi:
+            with mock.patch.object(
+                run_pipeline, "validate_gbxml", return_value=(True, [])
+            ) as mock_vg:
+                with mock.patch.object(
+                    run_pipeline, "validate_ifc4", return_value=(True, [])
+                ) as mock_vi:
                     run_pipeline.main(ns)
 
                     assert mock_vg.call_count == 1, (
