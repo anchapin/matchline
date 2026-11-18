@@ -72,6 +72,7 @@ module's guide under `docs/`.
 - `cmd_symbols(args: argparse.Namespace)`
 - `cmd_takeoff_diff(args: argparse.Namespace)`
 - `cmd_validate(args: argparse.Namespace)`
+- `cmd_verify_smoke(args: argparse.Namespace)`
 - `cmd_viewer(args: argparse.Namespace)`
 - `cmd_viewer_apply(args: argparse.Namespace)`
 - `cmd_walls(args: argparse.Namespace)`

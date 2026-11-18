@@ -180,6 +180,23 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_verify_smoke(args: argparse.Namespace) -> None:
+    """E2E verify smoke (#1411): generate-if-missing + gated bem-export.
+
+    Generates the sheet's synthetic ground truth only when absent,
+    then runs the bem-export gate; a validation failure inside the
+    gate (gbXML XSD or IFC4 structural) exits non-zero.
+    """
+    import run_verify_smoke
+
+    ok = run_verify_smoke.verify_smoke(
+        args.sheet_id,
+        out_dir=getattr(args, "out_dir", None),
+    )
+    if not ok:
+        raise SystemExit(1)
+
+
 def cmd_elevation_windows(args: argparse.Namespace) -> None:
     """Generates SYNTHETIC window placement data for testing.
 
@@ -841,6 +858,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.set_defaults(func=cmd_bem_export)
+
+    p = sub.add_parser(
+        "verify-smoke",
+        help="E2E smoke: generate-if-missing + gated bem-export (#1411)",
+    )
+    p.add_argument("--sheet-id", default="sheet_007")
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        dest="out_dir",
+        help="output directory for the exports (default: bem_out/)",
+    )
+    p.set_defaults(func=cmd_verify_smoke)
 
     p = sub.add_parser("elevation-windows", help="exact window placement + daylight demo")
     p.set_defaults(func=cmd_elevation_windows)
