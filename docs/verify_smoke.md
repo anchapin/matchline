@@ -22,7 +22,10 @@ neither's semantics:
 2. **Gated export** — `run_bem_export.main` runs the #1404/#1405
    gated transaction: gbXML (8.01 XSD) and IFC4 (structural)
    validation inside the gate, atomic publish on success, nothing
-   published on failure.
+   published on failure. The wrapper passes no repair-loop
+   argument, so it inherits that entry point's current defaults
+   (repair loop on at the entry layer since #1412, exactly as
+   `matchline bem-export` runs it).
 
 Exit code is 0 iff the export published with both validations
 passing; any generation failure, validation failure, or gate
