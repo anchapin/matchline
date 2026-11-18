@@ -354,7 +354,9 @@ def write_ifc4(model: BEMModel, path: str | Path, wall_thickness_m: float = 0.2)
                     pass  # thermal property is enrichment, not core validity
 
             # openings hosted in this wall
-            placements, _ = _place_openings_on_wall(opening_assign[i], L, w_h)
+            placements, _ = _place_openings_on_wall(
+                opening_assign[i], L, w_h, repair_loop=getattr(model, "repair_loop", False)
+            )
             if terrain:
                 gb = _grade_boundary_pieces(terrain, p0, p1, L, w_z0, w_h, placements)
                 if gb is not None:

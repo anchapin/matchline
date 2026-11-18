@@ -312,7 +312,13 @@ def write_gbxml_levels(model, path: str | Path) -> Path:
                 continue
             wid = f"wall-{_nc(lv.id)}-{i + 1:03d}"
             bl, br, L, az = _wall_frame(p0, p1)
-            placements, pnotes = _place_openings_on_wall(assign[i], L, lv.height_m)
+            placements, pnotes = _place_openings_on_wall(
+                assign[i],
+                L,
+                lv.height_m,
+                repair_loop=getattr(model, "repair_loop", False),
+                repair_log=getattr(model, "repair_records", None),
+            )
             notes.extend(f"{wid}: {n}" for n in pnotes)
             ops = []
             for pl_ in placements:

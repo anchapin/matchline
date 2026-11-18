@@ -543,7 +543,13 @@ def write_gbxml(model: BEMModel, path: str | Path) -> Path:
             _top, _unc = wall_top(p0, p1, roofs, h)
             h_open = min([h] + [z for _, _, z in _top])
         # openings on this wall, placed along the whole wall (p0 frame)
-        placements, notes = _place_openings_on_wall(opening_assign[i], L, h_open)
+        placements, notes = _place_openings_on_wall(
+            opening_assign[i],
+            L,
+            h_open,
+            repair_loop=getattr(model, "repair_loop", False),
+            repair_log=getattr(model, "repair_records", None),
+        )
         for n in notes:
             placement_notes.append(f"wall-{i + 1:03d}: {n}")
         # one piece per space the wall encloses (#765); a cut never splits an opening
@@ -854,7 +860,9 @@ def _grade_plan(model, edges, opening_assign, roofs, sloped, h) -> dict:
             ring = [(s_of(*p0), 0.0), (s_of(*p1), 0.0)]
             ring += [(s_of(x, y), z) for x, y, z in reversed(top)]
             outline = Polygon(ring).buffer(0)
-        placements, _ = _place_openings_on_wall(opening_assign[i], L, h_open)
+        placements, _ = _place_openings_on_wall(
+            opening_assign[i], L, h_open, repair_loop=getattr(model, "repair_loop", False)
+        )
         ops = []
         for pl_ in placements:
             s0, s1 = pl_["s0"], pl_["s1"]

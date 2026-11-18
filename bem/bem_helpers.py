@@ -318,7 +318,7 @@ def _place_skylights_on_roof(units, ring, regions=None):
     return placements, notes
 
 
-def _place_openings_on_wall(units, L: float, h: float):
+def _place_openings_on_wall(units, L: float, h: float, repair_loop: bool = False, repair_log=None):
     placements, notes = [], []
 
     total_width = sum(u.width_m for u in units)
@@ -395,6 +395,48 @@ def _place_openings_on_wall(units, L: float, h: float):
                 f"{u.tag}: width clamped ({u.width_m:.2f} -> {s1 - s0:.2f} m, wall {L:.2f} m)"
             )
         placements.append({"unit": u, "s0": s0, "s1": s1, "sill": sill, "height": oh})
+
+    if repair_loop:
+        # #1407 R4: a source-stated centre does not advance the sequential
+        # cursor above, so a stated opening can overlap a sequential one
+        # and nothing checked. With the (default-off) repair loop on,
+        # detect the overlap and shift only the unstated openings clear;
+        # stated placements never move. An overlap with no legal shift
+        # (stated-vs-stated, or no room) is left exactly as placed and
+        # surfaced in the notes instead of passing silently.
+        from bem.repair_loop import (
+            RepairRecord,
+            placement_overlaps,
+            repair_placement_overlaps,
+        )
+
+        overlaps = placement_overlaps(placements)
+        if overlaps:
+            repaired, moves = repair_placement_overlaps(placements, L)
+            if repaired is not None:
+                placements = repaired
+                for mv in moves:
+                    notes.append(
+                        f"{mv['tag']}: shifted to {mv['new'][0]:.2f}-{mv['new'][1]:.2f} m "
+                        "to clear an overlapping opening (repair:R4)"
+                    )
+                if repair_log is not None:
+                    repair_log.append(
+                        RepairRecord(
+                            repair_class="R4",
+                            check="placement_overlap",
+                            iteration=1,
+                            before={"overlaps": overlaps},
+                            after={"overlaps": []},
+                            affected={"moves": moves, "wall_length_m": L},
+                        ).as_dict()
+                    )
+            else:
+                detail = "; ".join(
+                    f"{o['tag_a']} overlaps {o['tag_b']} by {o['overlap_m']:.2f} m"
+                    for o in overlaps
+                )
+                notes.append(f"opening placement overlap NOT repaired (repair:R4): {detail}")
 
     return placements, notes
 
