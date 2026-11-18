@@ -1,12 +1,16 @@
 # Repair Loop — `bem/repair_loop.py` (#1407)
 
-The deterministic repair loop: a default-off step between the staged
-BEM export and the publish-nothing export gate
+The deterministic repair loop: a step between the staged BEM export
+and the publish-nothing export gate
 ([`bem_export.md`](bem_export.md), #1404) that repairs the few
 geometric defect classes whose fix is unique, deterministic and
 conservation-preserving. It is Phase 1 of the Solvaix-mined spike
 (#1406); the class selection and every repair semantic were
-hand-verified in Phase 0 before any of this was built.
+hand-verified in Phase 0 before any of this was built. It shipped
+off by default in #1407 and was enabled by default at the user-facing
+entry points by Alex's decision (2026-11-17), following the
+simplification precedent (on by default, explicit opt-out); the
+library-level defaults remain off — see *How the loop runs*.
 
 ## What it repairs
 
@@ -25,11 +29,22 @@ placement notes instead of passing silently.
 
 ## How the loop runs
 
-- **Off by default.** Enable per publish with
-  `publish_exports(..., repair_loop=True)`, per model with
-  `model.repair_loop = True`, or per demo export with
-  `matchline bem-export --repair-loop`. With the loop off, behaviour
-  is byte-for-byte what it was before #1407.
+- **On by default at the user-facing entry points.** `matchline
+  bem-export` runs the loop unless `--no-repair-loop` is given (the
+  `--repair-loop` spelling is still accepted, as the redundant
+  explicit-on), and `run_bem_export.main(...)` defaults
+  `repair_loop=True` — pass `repair_loop=False`, or
+  `python run_bem_export.py --no-repair-loop`, to opt out. **The
+  library defaults are unchanged:** `publish_exports(...,
+  repair_loop=None)` still falls back to `model.repair_loop`, which
+  defaults to `False`, so programmatic callers enable it explicitly
+  per publish (`repair_loop=True`) or per model
+  (`model.repair_loop = True`) exactly as before. With the loop off,
+  behaviour is byte-for-byte what it was before #1407; with it on, a
+  clean export is likewise byte-for-byte unchanged — repairs only
+  ever touch a staged file that failed a check in the loop's
+  classes, and a clean entry-point export's manifest carries no
+  `repairs` key.
 - **Staged-only inner revalidation.** After a repair, only the
   geometric checks (R1/R2) or only the placement-overlap check (R4)
   re-runs. One class per iteration, **max 2 iterations**. A repair

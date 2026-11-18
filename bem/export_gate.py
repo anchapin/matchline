@@ -115,8 +115,9 @@ class GateResult:
     ifc4_ok: bool = False
     ifc4_errors: list[str] = field(default_factory=list)
     published: dict[str, Path] = field(default_factory=dict)
-    # Repairs applied by the default-off repair loop (#1407): one dict per
-    # applied repair (RepairRecord.as_dict()), empty when none ran.
+    # Repairs applied by the repair loop (#1407; library default off, on
+    # by default at the bem-export entry points): one dict per applied
+    # repair (RepairRecord.as_dict()), empty when none ran.
     repairs: list = field(default_factory=list)
 
     @property
