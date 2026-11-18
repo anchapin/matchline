@@ -123,8 +123,18 @@ def _manifest_outputs(gate, out_dir: Path, sheet_id: str) -> dict:
     }
 
 
-def main(sheet_id: str = "sheet_007", gt_path: str | Path | None = None, out_dir=None):
-    """Export one sheet through the gate. Returns True when it published."""
+def main(
+    sheet_id: str = "sheet_007",
+    gt_path: str | Path | None = None,
+    out_dir=None,
+    repair_loop: bool = False,
+):
+    """Export one sheet through the gate. Returns True when it published.
+
+    ``repair_loop`` (#1407) enables the deterministic repair loop for
+    this export; it is off by default and the gated publish below
+    remains the final arbiter either way.
+    """
     out = Path(out_dir) if out_dir is not None else OUT
     out.mkdir(parents=True, exist_ok=True)
     gt_file = (
@@ -134,10 +144,11 @@ def main(sheet_id: str = "sheet_007", gt_path: str | Path | None = None, out_dir
     )
     gt = json.load(open(gt_file))
     model, rep = _build_model(gt, sheet_id)
+    model.repair_loop = bool(repair_loop)
 
     # gated transaction: staged files -> validators + geometric checks ->
     # atomic publish (or nothing published at all)
-    gate = publish_exports(model, out, sheet_id)
+    gate = publish_exports(model, out, sheet_id, repair_loop=repair_loop)
     schedule_csv = sheet_schedule_csv(gt).getvalue()
 
     print(f"sheet: {sheet_id}")
@@ -163,6 +174,15 @@ def main(sheet_id: str = "sheet_007", gt_path: str | Path | None = None, out_dir
             print(f"    {e}")
         return False
 
+    validation = {
+        "gbxml": {"ok": bool(gate.gbxml_ok), "errors": list(gate.gbxml_errors)},
+        "ifc4": {"ok": bool(gate.ifc4_ok), "errors": list(gate.ifc4_errors)},
+        "geometric_checks": [c.as_dict() for c in gate.checks],
+        "area_delta_pct": float(rep["area_delta_pct"]),
+        "area_delta_tolerance_pct": float(rep["tolerance_pct"]),
+    }
+    if repair_loop:
+        validation["repairs"] = list(gate.repairs)
     manifest = build_manifest(
         sheet=sheet_id,
         settings={
@@ -172,13 +192,7 @@ def main(sheet_id: str = "sheet_007", gt_path: str | Path | None = None, out_dir
         },
         inputs=_manifest_inputs(gt_file, schedule_csv),
         outputs=_manifest_outputs(gate, out, sheet_id),
-        validation={
-            "gbxml": {"ok": bool(gate.gbxml_ok), "errors": list(gate.gbxml_errors)},
-            "ifc4": {"ok": bool(gate.ifc4_ok), "errors": list(gate.ifc4_errors)},
-            "geometric_checks": [c.as_dict() for c in gate.checks],
-            "area_delta_pct": float(rep["area_delta_pct"]),
-            "area_delta_tolerance_pct": float(rep["tolerance_pct"]),
-        },
+        validation=validation,
         replay_command=f"matchline bem-export --sheet-id {sheet_id}",
         repo_root=REPO_ROOT,
     )

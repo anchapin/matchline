@@ -24,6 +24,7 @@ graph LR
     bem_buildingsync_export
     bem_export_gate
     bem_export_manifest
+    bem_repair_loop
     construction_library
     construction_library_data
     construction_library_prm_data
@@ -168,6 +169,7 @@ graph LR
   bem_bem_export --> safe_xml
   bem_bem_geometry --> bem_bem_helpers
   bem_bem_geometry --> geometry_geometry_kernel
+  bem_bem_helpers --> bem_repair_loop
   bem_bem_helpers --> geometry_geometry_kernel
   bem_bem_helpers --> room_labels
   bem_bem_ifc4 --> bem_bem_geometry
@@ -197,7 +199,10 @@ graph LR
   bem_export_gate --> bem_bem_export
   bem_export_gate --> bem_bem_roof
   bem_export_gate --> bem_export_manifest
+  bem_export_gate --> bem_repair_loop
   bem_export_gate --> safe_xml
+  bem_repair_loop --> bem_export_gate
+  bem_repair_loop --> safe_xml
   building_model --> datasets_adapter
   cli --> atomic_io
   cli --> bem_export_manifest

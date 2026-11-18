@@ -232,6 +232,13 @@ class BEMModel:
     terrain: list = field(default_factory=list)
     provenance: Optional["Provenance"] = None
     history: List["Provenance"] = field(default_factory=list)
+    # deterministic repair loop (#1407): off by default. When on, the
+    # writers repair overlapping opening placements (R4) as they place
+    # them and the gated publish repairs the staged gbXML (R1/R2);
+    # repair_records collects the R4 RepairRecord dicts the writers
+    # applied so publish_exports can put them in the export manifest.
+    repair_loop: bool = False
+    repair_records: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

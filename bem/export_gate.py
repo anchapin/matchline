@@ -115,6 +115,9 @@ class GateResult:
     ifc4_ok: bool = False
     ifc4_errors: list[str] = field(default_factory=list)
     published: dict[str, Path] = field(default_factory=dict)
+    # Repairs applied by the default-off repair loop (#1407): one dict per
+    # applied repair (RepairRecord.as_dict()), empty when none ran.
+    repairs: list = field(default_factory=list)
 
     @property
     def failed_checks(self) -> list[str]:
@@ -554,6 +557,7 @@ def publish_exports(
     manifest_settings: dict | None = None,
     manifest_validation: dict | None = None,
     replay_command: str | None = None,
+    repair_loop: bool | None = None,
 ) -> GateResult:
     """Export, validate, check and publish - or publish nothing.
 
@@ -570,12 +574,28 @@ def publish_exports(
     ``manifest_inputs`` / ``manifest_settings`` / ``manifest_validation``
     let a caller (e.g. the CLI flow) add the inputs it owns - the source
     drawing and the schedule CSV - to the manifest this function writes.
+
+    ``repair_loop`` (#1407) enables the deterministic repair loop for
+    this publish: ``None`` (the default) takes the model's own
+    ``repair_loop`` attribute, which itself defaults to off. With the
+    loop off this function behaves exactly as it did before #1407. With
+    it on, the staged gbXML's geometric failures in the loop's classes
+    (R1 winding/volume, R2 duplicate surfaces) are repaired on the
+    *staged* file - revalidated staged-only, never by re-running the
+    validators - and the records are written to the manifest. The full
+    validation below then runs on the final staged files exactly as
+    before: the gate remains the only publish path and the final
+    arbiter, and a repaired file that fails any part of it is refused.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     gb_final = out_dir / (gbxml_name or f"{base}.xml")
     ifc_final = out_dir / (ifc_name or f"{base}.ifc")
     result = GateResult()
+    repairs_enabled = (
+        bool(getattr(model, "repair_loop", False)) if repair_loop is None else bool(repair_loop)
+    )
+    r4_record_count = len(getattr(model, "repair_records", None) or [])
 
     staged: list[Path] = []
     try:
@@ -587,6 +607,24 @@ def publish_exports(
         _discard_staged(staged)
         result.errors.append(f"export failed: {exc}")
         return result
+
+    if repairs_enabled:
+        # R4 repairs (opening placements) happen inside the writers
+        # while staging; their records ride on the model.
+        result.repairs.extend((getattr(model, "repair_records", None) or [])[r4_record_count:])
+        try:
+            staged_checks = geometric_checks(gb_staged, model=model)
+            if any(c.status == "fail" for c in staged_checks):
+                from bem.repair_loop import repair_staged_gbxml
+
+                xml_records, _staged_checks = repair_staged_gbxml(
+                    gb_staged, staged_checks, model=model
+                )
+                result.repairs.extend(r.as_dict() for r in xml_records)
+        except Exception as exc:
+            _discard_staged(staged)
+            result.errors.append(f"repair loop failed: {exc}")
+            return result
 
     try:
         result.gbxml_ok, result.gbxml_errors = validate_gbxml(gb_staged)
@@ -622,13 +660,18 @@ def publish_exports(
     # a published export always has its manifest and a refused export leaves
     # the previous manifest untouched.
     manifest_final = out_dir / f"{base}.export.json"
+    validation_extra = dict(manifest_validation or {})
+    if repairs_enabled:
+        # #1407: every applied repair is a manifest fact; a loop-enabled
+        # run with no repairs records the empty list, not a missing field.
+        validation_extra["repairs"] = list(result.repairs)
     try:
         manifest = build_manifest(
             sheet=base,
             settings=_manifest_settings(model, manifest_settings),
             inputs={**_model_source_inputs(model), **(manifest_inputs or {})},
             outputs=_manifest_outputs(gb_staged, ifc_staged, gb_final, ifc_final),
-            validation=_manifest_validation(model, result, manifest_validation),
+            validation=_manifest_validation(model, result, validation_extra or None),
             replay_command=replay_command or f"matchline bem-export --sheet-id {base}",
         )
         manifest_staged = _staged_path(manifest_final)

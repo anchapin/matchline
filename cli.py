@@ -171,7 +171,11 @@ def cmd_bem_export(args: argparse.Namespace) -> None:
             print(f"  {line}")
         raise SystemExit(1)
 
-    ok = run_bem_export.main(args.sheet_id, out_dir=getattr(args, "out_dir", None))
+    ok = run_bem_export.main(
+        args.sheet_id,
+        out_dir=getattr(args, "out_dir", None),
+        repair_loop=getattr(args, "repair_loop", False),
+    )
     if not ok:
         raise SystemExit(1)
 
@@ -823,6 +827,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "verify an export manifest against the files on disk "
             "(re-hashes the inputs, re-digests the outputs; no export is run)"
+        ),
+    )
+    p.add_argument(
+        "--repair-loop",
+        action="store_true",
+        help=(
+            "enable the deterministic repair loop (#1407, off by default): "
+            "repair R1/R2 geometric defects on the staged gbXML and "
+            "overlapping opening placements (R4) before the publish gate"
         ),
     )
     p.set_defaults(func=cmd_bem_export)

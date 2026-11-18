@@ -53,6 +53,7 @@ disclosed, not hidden.
 ## BEM and export
 
 | `bem_export.md` | gbXML 8.01 + IFC4 export paths and validation |
+| `repair_loop.md` | Deterministic repair loop for staged exports (#1407): R1/R2/R4 repairs, off by default |
 | `construction_library.md` | Cited construction library for envelope U-values (ASHRAE 90.1-2019, #747) |
 | `geometry_simplify.md` | Area-budgeted BEM surface reduction |
 | `lighting.md` | Fixture takeoffs, building watts, per-space LPD |
@@ -109,7 +110,7 @@ Working from the repo (a plain PyPI install is covered on the
 
 ```bash
 pip install -e ".[test]"        # (1) editable install with test extras
-python -m pytest tests/ -q      # (2) smoke test — (4291 collected in CI; expected per `ci.yml`)
+python -m pytest tests/ -q      # (2) smoke test — (4311 collected in CI; expected per `ci.yml`)
 matchline run --seed 0          # (3) minimal pipeline: generate + link + validate + export
 ```
 
