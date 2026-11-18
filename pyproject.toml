@@ -26,7 +26,11 @@ classifiers = [
 dependencies = [
     "numpy",
     "shapely",
-    "Pillow",
+    # >=13.0.0 clears the pillow 12.3.0 CVE set (incl. CVE-2026-128066 /
+    # CVE-2026-128067); 13.0.0 requires Python >=3.11, so the 3.10 support
+    # line keeps the unpinned resolution (12.3.0) until 3.10 is dropped.
+    "Pillow>=13.0.0; python_version >= '3.11'",
+    "Pillow; python_version < '3.11'",
     "scipy",
     "lxml>=4.9.0",
     "ifcopenshell>=0.9",
