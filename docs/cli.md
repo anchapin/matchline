@@ -130,6 +130,20 @@ matchline bem-export --sheet-id sheet_007
 `--sheet-id ID` (default: `sheet_007`)
 : Sheet identifier used in the synthetic model.
 
+## `matchline verify-smoke`
+
+E2E verify smoke (#1411): generates the sheet's synthetic ground
+truth only if missing, then runs the gated bem-export. Exits
+non-zero if gbXML or IFC4 validation fails. See
+[`verify_smoke.md`](verify_smoke.md).
+
+```bash
+matchline verify-smoke --sheet-id sheet_007
+```
+
+`--sheet-id ID` (default: `sheet_007`)
+: Sheet identifier used in the synthetic model.
+
 ---
 
 ## `matchline elevation-windows`

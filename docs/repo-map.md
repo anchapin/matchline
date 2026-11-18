@@ -128,6 +128,7 @@ graph LR
     run_room_labels
     run_symbols
     run_validation
+    run_verify_smoke
     safe_xml
     schedule_parse
     sim_smoke
@@ -232,6 +233,7 @@ graph LR
   cli --> run_room_labels
   cli --> run_symbols
   cli --> run_validation
+  cli --> run_verify_smoke
   cli --> takeoff_diff
   construction_library --> building_model
   construction_library --> construction_library_data
@@ -422,6 +424,7 @@ graph LR
   run_symbols --> symbols
   run_validation --> geometry_geometry_simplify
   run_validation --> synth_multidiscipline
+  run_verify_smoke --> run_bem_export
   schedule_parse --> building_model
   solar_aperture --> geometry_roof_geometry
   space_merge --> building_model

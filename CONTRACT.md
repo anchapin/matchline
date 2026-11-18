@@ -52,6 +52,44 @@ uv run --no-sync ruff format --check .
 ```
 (All four copied verbatim from AGENTS.md, Quick Rules.)
 
+E2E smoke for changes touching pipeline/export paths (#1411):
+
+```bash
+uv run --no-sync python -m cli verify-smoke --sheet-id sheet_007
+```
+
+One command (`run_verify_smoke.py`): generates the sheet's
+synthetic ground truth only if `synth/out/sheets/<sheet>.gt.json`
+is missing, then runs the gated bem-export (#1404/#1405 gate —
+gbXML XSD + IFC4 structural validation; a failure publishes
+nothing and exits non-zero). Expected wall time: ≤~35 s cold
+(dataset generation ~24 s + export ~9 s, measured in plan-coder
+#94 Phase 0; a single-sheet slice usually generates faster),
+≤~10 s warm (generation skipped, export only).
+
+## Feature map
+
+What the user-visible pipeline does, the check that exercises it,
+and the expected result. Assembled from ARCHITECTURE.md's pipeline
+and `scripts/synth_e2e_test.py`'s six-step check list; every row
+traces to one of those two sources.
+
+| Capability | Exercised by | Expected result |
+|---|---|---|
+| Symbol classification (GT crops → WiSARD classify) | e2e step 1 | 100% of symbols classified correctly (synthetic sheets) |
+| Schedule parsing (schedule → `parse_schedule_csv`) | e2e step 2 | Every GT schedule row parsed |
+| Schedule rollup takeoffs (`rollup_takeoff`) | e2e step 3 | Window/door areas within 1% of GT; no unmatched detections |
+| Floor-area measurement (`measure_takeoff`) | e2e step 4 | Floor area within 1% of GT |
+| Room labeling (`room_labels.assign`) | e2e step 5 | Names/numbers match GT; every space labeled |
+| Geometry simplification (`simplify_ring`, tol 2%) | e2e step 6 | Simplified footprint keeps area within the 2% budget |
+| Validation battery (49 checks; errors block export) | bem-export gate | No error-severity check fails on the golden sheet |
+| BEM export (gbXML 8.01 + IFC4) | `verify-smoke` (this contract's E2E entry) | gbXML XSD PASS and IFC4 structural PASS; failure publishes nothing |
+
+Not exercised by the smoke or the e2e steps (ARCHITECTURE.md
+pipeline stages with no synthetic end-to-end check): cross-sheet
+registration, cross-discipline linking into `BuildingModel`, HVAC
+zoning/duct tracing, and IFC import (Tier 0).
+
 ## Hard stops — flag, don't decide
 
 - No PyPI publish without explicit human approval. (AGENTS.md,
