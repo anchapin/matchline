@@ -54,6 +54,7 @@ disclosed, not hidden.
 
 | `bem_export.md` | gbXML 8.01 + IFC4 export paths and validation |
 | `repair_loop.md` | Deterministic repair loop for staged exports (#1407): R1/R2/R4 repairs, on by default at the bem-export entry points (library default off) |
+| `proposal_schema.md` | Native agent proposal schema (#1417): the proposal document shape, the pure validator contract, and the 10 mapper laws into the canonical BuildingModel |
 | `verify_smoke.md` | E2E verify smoke: generate-if-missing + gated bem-export (#1411) |
 | `construction_library.md` | Cited construction library for envelope U-values (ASHRAE 90.1-2019, #747) |
 | `geometry_simplify.md` | Area-budgeted BEM surface reduction |
