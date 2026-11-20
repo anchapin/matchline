@@ -225,6 +225,7 @@ packages = [
     "ifc",
     "bem",
     "link",
+    "proposal",
     "query",
     "sim",
     "synth",
