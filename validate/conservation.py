@@ -15,7 +15,7 @@ try:
 except Exception:
     polygon_area_px2 = None
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from validate.types import _HAS_SIMPLIFY, CheckResult
 
@@ -33,9 +33,61 @@ def _rel_err(actual: float, expected: float) -> float:
 
 
 try:
-    from geometry.geometry_simplify import footprint_from_regions, ring_perimeter
+    from geometry.geometry_simplify import footprint_multipart_from_regions, ring_perimeter
 except Exception:
-    pass
+    footprint_multipart_from_regions = None
+    ring_perimeter = None
+
+
+# ---------------------------------------------------------------------------
+# Level footprint derivation (#1417, decision 1)
+# ---------------------------------------------------------------------------
+
+
+class FootprintMeasures(NamedTuple):
+    """Footprint measures of a level, summed over EVERY connected part.
+
+    ``area``      total footprint area of all parts. Interior holes
+                  (courtyards) are void, not floor area, so they are not
+                  counted -- the multipart part area the export path uses.
+    ``perimeter`` total perimeter of all parts (the exterior rings).
+    ``rings``     the exterior ring of every part, for checks that need the
+                  ring itself (the wall-thickness offset candidates).
+    """
+
+    area: float
+    perimeter: float
+    rings: list
+
+
+def footprint_measures(polygons) -> FootprintMeasures:
+    """Derive the level footprint from ALL connected parts of the union.
+
+    ``footprint_from_regions`` keeps only the largest part of a disjoint
+    union, so in an authored model -- spaces drawn to inner faces, one
+    island per room -- every room but the largest vanished from the
+    derived footprint and the area/volume conservation laws fired on a
+    correct multi-room model (#1415). The multipart sibling
+    (``footprint_multipart_from_regions``, #1311) keeps every part and
+    drops nothing; areas and perimeters are summed here.
+
+    Overlapping rooms stay one union: the union is taken once, so a room
+    drawn over another is not counted twice. A courtyard (a hole in the
+    union) is void, not floor area: the part area leaves it out, where the
+    old single-ring derivation counted it and made the area law fire on a
+    correct model.
+    """
+    if footprint_multipart_from_regions is None:
+        return FootprintMeasures(0.0, 0.0, [])
+    parts = footprint_multipart_from_regions(list(polygons or []))
+    area = 0.0
+    perimeter = 0.0
+    rings = []
+    for part in parts:
+        area += float(part.footprint_area)
+        perimeter += float(ring_perimeter(part.ring)) if ring_perimeter else 0.0
+        rings.append(part.ring)
+    return FootprintMeasures(area, perimeter, rings)
 
 
 # ---------------------------------------------------------------------------
@@ -542,10 +594,14 @@ def validate_bem_conservation(
     return results
 
 
-def _centreline_perimeters(model, lid, ring, perim):
-    """Footprint perimeter, plus it offset by +-t/2 when IFC walls give a thickness t."""
+def _centreline_perimeters(model, lid, rings, perim):
+    """Footprint perimeter, plus it offset by +-t/2 when IFC walls give a thickness t.
+
+    ``rings`` is every connected part of the level footprint (#1417); the
+    offsets are computed per part and summed, like the perimeter itself.
+    """
     out = [perim]
-    if not ring or len(ring) < 3:
+    if not rings:
         return out
     thick = {
         e.global_id: e.thickness_m
@@ -567,13 +623,21 @@ def _centreline_perimeters(model, lid, ring, perim):
         from shapely.geometry import Polygon
     except ImportError:  # pragma: no cover
         return out
-    poly = Polygon(ring)
-    if not poly.is_valid or poly.area <= 0:
+    polys = []
+    for ring in rings:
+        poly = Polygon(ring)
+        if not poly.is_valid or poly.area <= 0:
+            continue
+        polys.append(poly)
+    if not polys:
         return out
     for d in (-t / 2, t / 2):
-        g = poly.buffer(d, join_style=2, mitre_limit=10.0)
-        if not g.is_empty and g.geom_type == "Polygon":
-            out.append(g.exterior.length)
+        total = 0.0
+        for poly in polys:
+            g = poly.buffer(d, join_style=2, mitre_limit=10.0)
+            if not g.is_empty and g.geom_type == "Polygon":
+                total += g.exterior.length
+        out.append(total)
     return out
 
 
@@ -599,16 +663,14 @@ def _check_envelope_area_matches_perimeter(ctx: _Ctx) -> CheckResult:
         )
     bad = []
     for lid in ctx.level_of:
-        ring = footprint_from_regions([sp.polygon_m for sp in ctx.level_of[lid]])
-        perim = (
-            sum(math.dist(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring)))
-            if ring
-            else 0.0
-        )
+        # every connected part of the level counts (#1417): the perimeter is
+        # the sum of the part perimeters.
+        measures = footprint_measures([sp.polygon_m for sp in ctx.level_of[lid]])
+        perim = measures.perimeter
         h = ctx.wall_height.get(lid, 0.0)
         got = sum(w.area_m2 or 0.0 for w in ctx.model.envelope if w.id.startswith(lid + "-"))
         exp = min(
-            (p * h for p in _centreline_perimeters(ctx.model, lid, ring, perim)),
+            (p * h for p in _centreline_perimeters(ctx.model, lid, measures.rings, perim)),
             key=lambda e: _rel_err(got, e),
         )
         if _rel_err(got, exp) > ctx.tol_envelope:
@@ -645,15 +707,18 @@ def _unclaimed_note(model) -> str:
 
 
 def _level_footprints(model) -> dict:
-    """Footprint area of each level's spaces (one entry for a single-level model)."""
+    """Footprint area of each level's spaces (one entry for a single-level model).
+
+    Every connected part of the level counts (#1417): disjoint room islands
+    are summed, not reduced to the largest one.
+    """
     by_level: dict = {}
     for sp in model.spaces.values():
         if sp.polygon_m:
             by_level.setdefault(sp.level_id, []).append(sp.polygon_m)
     out = {}
     for lid, polys in by_level.items():
-        ring = footprint_from_regions(polys)
-        out[lid] = abs(_shoelace(ring if isinstance(ring, list) else []))
+        out[lid] = footprint_measures(polys).area
     return out
 
 
@@ -960,8 +1025,9 @@ def _check_convention_bias(ctx: _Ctx) -> CheckResult:
     for lid, spaces in ctx.level_of.items():
         h = ctx.wall_height.get(lid, 0.0)
         fp_area = ctx.footprint_area.get(lid, 0.0)
-        ring = footprint_from_regions([sp.polygon_m for sp in spaces])
-        perim = ring_perimeter(ring) if ring else 0.0
+        # every connected part counts (#1417): the perimeter is the sum of
+        # the part perimeters.
+        perim = footprint_measures([sp.polygon_m for sp in spaces]).perimeter
         if fp_area <= 0 or h <= 0:
             continue
         interior_v = fp_area * h
