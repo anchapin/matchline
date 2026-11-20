@@ -301,11 +301,17 @@ jobs:
           MATCHLINE_BROWSER_TESTS: "1"  # a missing browser fails instead of skipping
         run: uv run --no-sync python -m pytest tests/test_review_page_browser.py -q -rs
 
-  quality:
-    name: ruff + format + pytest
+  lint:
+    # #1423: ruff + format left the `quality` job so lint feedback no
+    # longer waits behind the pytest run. This job is small and fast (a few
+    # seconds) and runs in parallel with the test shards, matching the
+    # existing small-checks pattern (detector-lint, repo-map).
+    # mypy and the license check stay in the test job: mypy is a type
+    # baseline for the shipped surface and the license check builds a wheel,
+    # so neither belongs on the fast lint path.
+    name: ruff + format
     runs-on: ubuntu-latest
-    # #1137: coverage tracing slows pytest; headroom raised 20 -> 30.
-    timeout-minutes: 30
+    timeout-minutes: 10
     needs: [no-empty-commits]
     if: needs.no-empty-commits.outputs.is_empty != 'true'
     steps:
@@ -328,21 +334,162 @@ jobs:
       - name: Run ruff format check
         run: uv run --no-sync ruff format --check .
 
+  quality:
+    # #1423: the pytest step is sharded 2 ways, balanced by the recorded
+    # per-test durations in .github/test-durations.json (measured locally
+    # with --durations=0), so the two shards run about the same wall time
+    # instead of splitting the files by count. The shards' file lists are
+    # published as artifacts and checked against the full suite by the
+    # `shard-union` job, so a file can never silently fall out of the run.
+    name: pytest (shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    # #1137: coverage tracing slows pytest; headroom raised 20 -> 30.
+    timeout-minutes: 30
+    needs: [no-empty-commits]
+    if: needs.no-empty-commits.outputs.is_empty != 'true'
+    strategy:
+      # A failing shard must not cancel its sibling: the union check needs
+      # both shards' file lists to prove the suite is fully covered.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.12"
+
+      - name: Sync the locked dev environment
+        run: uv sync --frozen --extra test --extra openstudio
+
       - name: Run mypy (scoped baseline, #1138)
+        # #1423: the job is a matrix now; mypy and the license check are
+        # whole-repo checks, so they run once (shard 1) instead of twice.
+        if: matrix.shard == 1
         run: uv run --no-sync python -m mypy
 
       - name: Check licenses (ledger, committed artifacts, built wheel)
         # #751: nothing trained on non-commercial or copyleft data may ship
+        if: matrix.shard == 1
         run: |
           uv build --wheel --out-dir "$RUNNER_TEMP/dist"
           uv run --no-sync python scripts/check_release_licenses.py "$RUNNER_TEMP"/dist/*.whl
 
-      - name: Run pytest
-        # pytest-xdist spreads the suite across the runner's cores; pytest was
+      - name: Compute the shard file list
+        # The split is driven by the committed durations file: every test
+        # file is weighed by the sum of its recorded test durations and the
+        # heaviest files go to the least loaded shard, so the shards run
+        # about the same wall time instead of splitting by file count.
+        run: >
+          uv run --no-sync python scripts/check_test_shards.py split
+          --shards 2 --out-dir shard-lists
+
+      - name: Run pytest (shard ${{ matrix.shard }})
+        # pytest-xdist spreads the shard across the runner's cores; pytest was
         # ~88% of this merge-gating job when it ran on one core.
         # #1137: coverage measures the shipped surface (pyproject
-        # [tool.coverage]); #1191 turns it into a gate via fail_under.
-        run: uv run --no-sync python -m pytest tests/ -q -n auto --cov --cov-report=term --cov-report=xml:coverage.xml
+        # [tool.coverage]); #1191 turns it into a gate via fail_under. A
+        # shard only sees part of the suite, so the gate itself runs in the
+        # `coverage` job once both shards' data files are combined.
+        run: >
+          uv run --no-sync python -m pytest
+          $(cat shard-lists/shard-${{ matrix.shard }}.txt)
+          -q -n auto --cov --cov-fail-under=0 --cov-report=
+
+      - name: Upload the shard file list
+        # The `shard-union` job compares the union of these lists with the
+        # full suite: a file that falls out of both shards fails the build.
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-files-${{ matrix.shard }}
+          path: shard-lists/shard-${{ matrix.shard }}.txt
+          if-no-files-found: error
+
+      - name: Stage the shard coverage data
+        # The data file is copied under a plain name so it survives the
+        # artifact upload whatever the hidden-file policy is.
+        if: always()
+        run: cp .coverage shard-coverage-data
+
+      - name: Upload the shard coverage data
+        # The shards cover disjoint files; the `coverage` job combines these
+        # data files and enforces the fail_under gate on the merged report.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-data-${{ matrix.shard }}
+          path: shard-coverage-data
+          if-no-files-found: warn
+
+      - name: Check test count
+        # The count is a whole-suite figure; one shard checks it (#1423).
+        if: matrix.shard == 1
+        run: |
+          EXPECTED_TEST_COUNT=4370  # +3 IFC4 multi-ring footprint tests (#1396) # +10 verify-smoke wrapper tests (#1411) # +4 repair-loop entry-layer enablement tests (#1407) # +20 repair loop tests (#1407) # +13 export gate/manifest tests (#1404) # +3 kJ/h capacity-unit tests (#1398) # +10 lighting tag-normalisation tests (#1397) # +24 simplifier differential-oracle tests (#1393) # +16 Hypothesis schedule-parser property tests (#1392) # +5 multi-line room-label grouping tests (#1384) # +9 elevation schedule-join tests (#1385) # +9 room-label OCR-confusable tests (#1386) # +2 schedule CSV thermal-column tests (#1383) # +16 measure_takeoff polygon-union tests (#1382) # +3 bench-truth conversion-unit tests (#1372) # +6 elevation door attach tests (#1373) # +6 conversion-based project-unit tests (#1371) # +6 benchmark simplify-tolerance percent tests (#1374) # +3 bench-truth Qto unit conversion tests (#1363) # +4 conversion-unit + space-type quantity tests (#1364/#1365) # +5 test-count drift guard tests (#1359) # +6 per-TABLE-entity schedule tests (#1308) # +2 wall Qto unit tests (#1360) # +6 IFC4X3 + Net quantity fallback tests (#1351) # +20 elevation door link tests (#1324) # +3 unit-blind conflict tests (#1354) # +7 takeoff stated sill/position tests (#1341) # +3 shared max-tolerance rule tests (#1340) # +12 _validate_out_path dedup tests (#1337) # +3 IFC space solids and fill dimensions tests (#1332) # +8 north facade window tests (#1310) # +13 multi-part footprint tests (#1311) # +3 confidence calibration tests (#1295) # +11 second-dataset scoreboard tests (#1296) # +16 hvac sizing wiring tests (#1292) # +6 multirow schedule tests (#1291) # +7 schematron CI gate tests (#1293) # +16 batch review triage tests (#1294) # +3 refusal-memory invariant tests (#1283) # +10 IFC ensure_ifcopenshell guard tests (#1339) # +14 shared geometry kernel tests (#1338) # +9 TempFit baseline defect tests (#1328) # +5 roof-simplify wiring tests (#1275) # +2 area-conservation unassigned tests (#1307) # +2 bench category cross-tab tests (#1291) # +5 Watt-family unit-token tests (#1290) # +5 Attribute-sheet requirement tests (#1286) # +3 refusal-memory follow-up tests (#1283) # +2 roof-simplify refusal-semantics tests (#1269) # +2 solar cos_sum public-helper tests (#1272) # +2 shared-edge endpoint probe tests (#1271) # +2 benchmark exit-code tests (#1268) # +1 staging path-resolution test (#1273) # +4 per-building staging tests (#1259) # +5 roof-simplify scale tests (#1265) # +3 storey-less structural IFC tests (#1262) # +3 ATT import minimum tests (#1254) # +22 stroke-width-invariant grille confirm tests (#1252) # +35 scan-degradation family tests (#1241) # +9 schedule-truth benchmark tests (#1240) # +5 BuildingSync use-case gate tests (#1239)  # +17 mechanical schedule value-slot tests (#1236)  # +8 BuildingSync 2.x writer tests (#1238)  # +15 unified equipment model tests (#1237)  # +2 declared-length-over-body-bbox wall tests (#1227)  # +3 curve-set footprint placement-chain tests (#1229)  # +3 pset-exterior lining guard + unclassified-envelope tests (#1226)  # +2 geometry-first window-area truth tests (#1220)  # +3 wall-axis/Qto length-fallback tests (#1219)  # +2 pset-exterior Tier 1 envelope tests (#1219)  # +2 mm-unit kernel-verts file-units tests (#1217)  # +1 bodyless-wall direct-fill regression test (#1214)  # +4 direct-fill window/door enumeration tests (#1206) # +2 wall-length body-geometry fallback tests (#1205) # +3 rect-profile / face-set space footprint tests (#1204) # +2 closet area-cap tests (#1209) # +6 mapped-item/CSG body unwrap tests (#1203) # +7 independent benchmark truth tests (#1165) # +1 repo-map bem-package scan test (#1179) # +1 API reference doc sync test (#1167) # +2 canonical-model and telemetry goldens + 3 model reader-policy tests (#1164) # +3 font-fallback tests (#1163) # +5 perf-budget benchmark mechanics tests (#1162) # +16 IFC robustness corpus tests (#1161) # +3 convention report emission + schema pin tests (#1166) # +1 wall-class ckpt load in detection provider (#1152) # +8 wall-class head tests (#1113)  # +2 train-state resume tests (#1116)  # +29 point-in-polygon contract pins (#1129)  # +40 direct unit tests for opening_identity/opening_attach/construction_library_prm_data (#1128)  # +4 golden artifact tests (#1127)  # +4 telemetry/feedback round-trip tests (#1126)  # +7 tile-boundary straddle dedup tests (#1125)  # +10 degenerate-input battery tests (#1124)  # +14 help coverage for the remaining subcommands + 9 CLI contract dispatch tests (#1123)  # +5 cleanup-sweep tests  # +8 AP50 metric tests (#1119)  # +7 schedule KR/EM/VF1 + noise tests (#1114)  # +8 schedule-score tests (#1112)  # +6 repo-map generator tests (#1096)  # +2 feedback-summary tests (#1080)  # +1 review-page provenance-method test (#1079)  # +4 run --baseline tests (#1077)  # +2 moved-pairs detail tests (#1078)  # +3 shared-html-page tests (#1044) # +6 moved-opening pairing tests (#1045) # +7 space-fingerprint reidentification tests (#1046) # +7 legend tag suggestion tests (#1047) # +7 takeoff-diff review-item tests (#1048)  # +1 takeoff-diff legacy legend-key fallback test (#1034)  # +2 cloud chain false-positive guards (#993)  # +18 revision tracking + takeoff diff tests (#993)  # +12 review queue filters, bulk and worst-first tests (#996)  # +17 in-viewer corrections tests (#1002)  # +20 review-viewer scene/page/CLI tests (#1001)  # +13 telemetry-spec tests (#1003) + 5 progressive-mode tests (#998)  # +6 export-package zip / share-back / contents tests (#999)  # +12 match-line pairing / enlarged-plan dedup tests (#994)  # +16 correction-history tests (#997)  # +5 single-dimension scale tests + 1 walls_for_sheets review-item test + 1 real-set fallback end-to-end test + 1 multi-part edge-count test + 1 duplicate-dimension-text test (#1019)  # +13 mech_schedule tests (#974) +7 area-definitions registry/report/battery tests (#975)  # +1 duplicate-room dedupe test (#1008)  # +1 empty-units short-wall early-return test (#1010)  # +1 too-short-wall opening skip test (#1010)  # +1 trust-report sign-off block test (#976)  # +1 zip basename-collision test (duck review, #988)  # +4 matchline-ui input-mode tests (#988)  # +7 drawing-set zip tests (#988)  # +2 run_pipeline --ifc tests (#988)  # +10 matchline-ui app tests (#982)  # +1 checked-in specialist config test (#743)  # +1 tiled-checkpoint ledger test (#743)  # +5 specialist labels tests (#743)  # +4 multi-scale sheet tests (#743)  # +2 tiled NMS IoU tests (#743)  # +2 raw-detection dump tests (#743)  # +4 synth stroke-weight regime tests (#743)  # +5 tile-based eval + conversion tests (#743)  # +4 scratch provider tests (#743)  # +5 consistent-frame loss + box bias-init tests (#743)  # +2 converter package-import regression tests (#743)  # +7 ScratchLoss/decode/NMS device tests (#743)  # +2 benchmark door-recall column tests (#743)  # +6 IFC4 export of semi-exterior/vestibule walls (#747)  # +13 5.5.2 vestibule sentence tests (#747)  # +2 IFC2X3 upgrade regression tests (#929)  # +3 simplify_budget simplified-area + ring-offset re-verification tests (#971)  # +2 benchmark surface-count column tests (#972)  # +3 multi-storey per-space wall-split tests (#986)  # +21 legend tag learning tests (#995) # +5 public API surface pin tests (#1159) # +3 wall-clock budget verdict tests (#1160) # +2 --acknowledge-review tests (#1160) # +37 proposal schema validator/mapper tests (#1417) # +3 battery multipart footprint tests (#1417)          # Count tests using --collect-only (fast path)
+          COLLECT_OUT=$(uv run --no-sync python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
+          ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
+          if [ -z "$ACTUAL_TEST_COUNT" ] || [ "$ACTUAL_TEST_COUNT" = "No" ]; then
+            echo "WARNING: pytest --collect-only returned no useful output; skipping count check"
+            echo "Run 'python -m pytest tests/ --collect-only -q' locally to verify test count."
+          else
+            echo "Expected: $EXPECTED_TEST_COUNT, Actual: $ACTUAL_TEST_COUNT"
+            if [ "$ACTUAL_TEST_COUNT" != "$EXPECTED_TEST_COUNT" ]; then
+              echo "ERROR: Test count changed from $EXPECTED_TEST_COUNT to $ACTUAL_TEST_COUNT"
+              echo "If this is intentional (e.g., removed obsolete tests), update EXPECTED_TEST_COUNT."
+              exit 1
+            fi
+          fi
+
+  coverage:
+    # #1423: the shards run disjoint halves of the suite, so each shard's
+    # coverage data covers only part of the shipped surface. The gate is
+    # unchanged (#1191): both shards' data files are combined and the merged
+    # report is checked against the same fail_under = 85 floor, so the gate
+    # sees the whole suite.
+    name: coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [quality]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.12"
+
+      - name: Sync the locked dev environment
+        run: uv sync --frozen --extra test --extra openstudio
+
+      - name: Download the shard coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-data-1
+          path: coverage-data/shard-1
+
+      - name: Download the second shard coverage data
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-data-2
+          path: coverage-data/shard-2
+
+      - name: Combine the shard coverage data and enforce the gate
+        # `coverage combine` merges the two shards' data files into one
+        # report; `coverage report` then applies the fail_under floor from
+        # pyproject [tool.coverage.report].
+        run: |
+          set -euo pipefail
+          mv coverage-data/shard-1/shard-coverage-data .coverage.shard-1
+          mv coverage-data/shard-2/shard-coverage-data .coverage.shard-2
+          uv run --no-sync python -m coverage combine .
+          uv run --no-sync python -m coverage report --skip-covered
+          uv run --no-sync python -m coverage xml
 
       - name: Coverage summary
         if: always()
@@ -362,22 +509,41 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
-      - name: Check test count
-        run: |
-          EXPECTED_TEST_COUNT=4370  # +3 IFC4 multi-ring footprint tests (#1396) # +10 verify-smoke wrapper tests (#1411) # +4 repair-loop entry-layer enablement tests (#1407) # +20 repair loop tests (#1407) # +13 export gate/manifest tests (#1404) # +3 kJ/h capacity-unit tests (#1398) # +10 lighting tag-normalisation tests (#1397) # +24 simplifier differential-oracle tests (#1393) # +16 Hypothesis schedule-parser property tests (#1392) # +5 multi-line room-label grouping tests (#1384) # +9 elevation schedule-join tests (#1385) # +9 room-label OCR-confusable tests (#1386) # +2 schedule CSV thermal-column tests (#1383) # +16 measure_takeoff polygon-union tests (#1382) # +3 bench-truth conversion-unit tests (#1372) # +6 elevation door attach tests (#1373) # +6 conversion-based project-unit tests (#1371) # +6 benchmark simplify-tolerance percent tests (#1374) # +3 bench-truth Qto unit conversion tests (#1363) # +4 conversion-unit + space-type quantity tests (#1364/#1365) # +5 test-count drift guard tests (#1359) # +6 per-TABLE-entity schedule tests (#1308) # +2 wall Qto unit tests (#1360) # +6 IFC4X3 + Net quantity fallback tests (#1351) # +20 elevation door link tests (#1324) # +3 unit-blind conflict tests (#1354) # +7 takeoff stated sill/position tests (#1341) # +3 shared max-tolerance rule tests (#1340) # +12 _validate_out_path dedup tests (#1337) # +3 IFC space solids and fill dimensions tests (#1332) # +8 north facade window tests (#1310) # +13 multi-part footprint tests (#1311) # +3 confidence calibration tests (#1295) # +11 second-dataset scoreboard tests (#1296) # +16 hvac sizing wiring tests (#1292) # +6 multirow schedule tests (#1291) # +7 schematron CI gate tests (#1293) # +16 batch review triage tests (#1294) # +3 refusal-memory invariant tests (#1283) # +10 IFC ensure_ifcopenshell guard tests (#1339) # +14 shared geometry kernel tests (#1338) # +9 TempFit baseline defect tests (#1328) # +5 roof-simplify wiring tests (#1275) # +2 area-conservation unassigned tests (#1307) # +2 bench category cross-tab tests (#1291) # +5 Watt-family unit-token tests (#1290) # +5 Attribute-sheet requirement tests (#1286) # +3 refusal-memory follow-up tests (#1283) # +2 roof-simplify refusal-semantics tests (#1269) # +2 solar cos_sum public-helper tests (#1272) # +2 shared-edge endpoint probe tests (#1271) # +2 benchmark exit-code tests (#1268) # +1 staging path-resolution test (#1273) # +4 per-building staging tests (#1259) # +5 roof-simplify scale tests (#1265) # +3 storey-less structural IFC tests (#1262) # +3 ATT import minimum tests (#1254) # +22 stroke-width-invariant grille confirm tests (#1252) # +35 scan-degradation family tests (#1241) # +9 schedule-truth benchmark tests (#1240) # +5 BuildingSync use-case gate tests (#1239)  # +17 mechanical schedule value-slot tests (#1236)  # +8 BuildingSync 2.x writer tests (#1238)  # +15 unified equipment model tests (#1237)  # +2 declared-length-over-body-bbox wall tests (#1227)  # +3 curve-set footprint placement-chain tests (#1229)  # +3 pset-exterior lining guard + unclassified-envelope tests (#1226)  # +2 geometry-first window-area truth tests (#1220)  # +3 wall-axis/Qto length-fallback tests (#1219)  # +2 pset-exterior Tier 1 envelope tests (#1219)  # +2 mm-unit kernel-verts file-units tests (#1217)  # +1 bodyless-wall direct-fill regression test (#1214)  # +4 direct-fill window/door enumeration tests (#1206) # +2 wall-length body-geometry fallback tests (#1205) # +3 rect-profile / face-set space footprint tests (#1204) # +2 closet area-cap tests (#1209) # +6 mapped-item/CSG body unwrap tests (#1203) # +7 independent benchmark truth tests (#1165) # +1 repo-map bem-package scan test (#1179) # +1 API reference doc sync test (#1167) # +2 canonical-model and telemetry goldens + 3 model reader-policy tests (#1164) # +3 font-fallback tests (#1163) # +5 perf-budget benchmark mechanics tests (#1162) # +16 IFC robustness corpus tests (#1161) # +3 convention report emission + schema pin tests (#1166) # +1 wall-class ckpt load in detection provider (#1152) # +8 wall-class head tests (#1113)  # +2 train-state resume tests (#1116)  # +29 point-in-polygon contract pins (#1129)  # +40 direct unit tests for opening_identity/opening_attach/construction_library_prm_data (#1128)  # +4 golden artifact tests (#1127)  # +4 telemetry/feedback round-trip tests (#1126)  # +7 tile-boundary straddle dedup tests (#1125)  # +10 degenerate-input battery tests (#1124)  # +14 help coverage for the remaining subcommands + 9 CLI contract dispatch tests (#1123)  # +5 cleanup-sweep tests  # +8 AP50 metric tests (#1119)  # +7 schedule KR/EM/VF1 + noise tests (#1114)  # +8 schedule-score tests (#1112)  # +6 repo-map generator tests (#1096)  # +2 feedback-summary tests (#1080)  # +1 review-page provenance-method test (#1079)  # +4 run --baseline tests (#1077)  # +2 moved-pairs detail tests (#1078)  # +3 shared-html-page tests (#1044) # +6 moved-opening pairing tests (#1045) # +7 space-fingerprint reidentification tests (#1046) # +7 legend tag suggestion tests (#1047) # +7 takeoff-diff review-item tests (#1048)  # +1 takeoff-diff legacy legend-key fallback test (#1034)  # +2 cloud chain false-positive guards (#993)  # +18 revision tracking + takeoff diff tests (#993)  # +12 review queue filters, bulk and worst-first tests (#996)  # +17 in-viewer corrections tests (#1002)  # +20 review-viewer scene/page/CLI tests (#1001)  # +13 telemetry-spec tests (#1003) + 5 progressive-mode tests (#998)  # +6 export-package zip / share-back / contents tests (#999)  # +12 match-line pairing / enlarged-plan dedup tests (#994)  # +16 correction-history tests (#997)  # +5 single-dimension scale tests + 1 walls_for_sheets review-item test + 1 real-set fallback end-to-end test + 1 multi-part edge-count test + 1 duplicate-dimension-text test (#1019)  # +13 mech_schedule tests (#974) +7 area-definitions registry/report/battery tests (#975)  # +1 duplicate-room dedupe test (#1008)  # +1 empty-units short-wall early-return test (#1010)  # +1 too-short-wall opening skip test (#1010)  # +1 trust-report sign-off block test (#976)  # +1 zip basename-collision test (duck review, #988)  # +4 matchline-ui input-mode tests (#988)  # +7 drawing-set zip tests (#988)  # +2 run_pipeline --ifc tests (#988)  # +10 matchline-ui app tests (#982)  # +1 checked-in specialist config test (#743)  # +1 tiled-checkpoint ledger test (#743)  # +5 specialist labels tests (#743)  # +4 multi-scale sheet tests (#743)  # +2 tiled NMS IoU tests (#743)  # +2 raw-detection dump tests (#743)  # +4 synth stroke-weight regime tests (#743)  # +5 tile-based eval + conversion tests (#743)  # +4 scratch provider tests (#743)  # +5 consistent-frame loss + box bias-init tests (#743)  # +2 converter package-import regression tests (#743)  # +7 ScratchLoss/decode/NMS device tests (#743)  # +2 benchmark door-recall column tests (#743)  # +6 IFC4 export of semi-exterior/vestibule walls (#747)  # +13 5.5.2 vestibule sentence tests (#747)  # +2 IFC2X3 upgrade regression tests (#929)  # +3 simplify_budget simplified-area + ring-offset re-verification tests (#971)  # +2 benchmark surface-count column tests (#972)  # +3 multi-storey per-space wall-split tests (#986)  # +21 legend tag learning tests (#995) # +5 public API surface pin tests (#1159) # +3 wall-clock budget verdict tests (#1160) # +2 --acknowledge-review tests (#1160) # +37 proposal schema validator/mapper tests (#1417) # +3 battery multipart footprint tests (#1417)          # Count tests using --collect-only (fast path)
-          COLLECT_OUT=$(uv run --no-sync python -m pytest tests/ --collect-only -q 2>/dev/null | tail -1)
-          ACTUAL_TEST_COUNT=$(echo "$COLLECT_OUT" | awk '{print $1}')
-          if [ -z "$ACTUAL_TEST_COUNT" ] || [ "$ACTUAL_TEST_COUNT" = "No" ]; then
-            echo "WARNING: pytest --collect-only returned no useful output; skipping count check"
-            echo "Run 'python -m pytest tests/ --collect-only -q' locally to verify test count."
-          else
-            echo "Expected: $EXPECTED_TEST_COUNT, Actual: $ACTUAL_TEST_COUNT"
-            if [ "$ACTUAL_TEST_COUNT" != "$EXPECTED_TEST_COUNT" ]; then
-              echo "ERROR: Test count changed from $EXPECTED_TEST_COUNT to $ACTUAL_TEST_COUNT"
-              echo "If this is intentional (e.g., removed obsolete tests), update EXPECTED_TEST_COUNT."
-              exit 1
-            fi
-          fi
+  shard-union:
+    # #1423: the two shards must together run every test file. This job
+    # collects the full suite, reads the file lists the shards published and
+    # fails unless their union is exactly the full set. A file that falls out
+    # of both shards fails the build here instead of silently reducing
+    # coverage of the suite.
+    name: shard union covers the suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [quality]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.12"
+
+      - name: Sync the locked dev environment
+        run: uv sync --frozen --extra test --extra openstudio
+
+      - name: Download the shard file lists
+        uses: actions/download-artifact@v7
+        with:
+          pattern: shard-files-*
+          merge-multiple: false
+          path: shard-lists
+
+      - name: The shards must cover every test file
+        run: >
+          uv run --no-sync python scripts/check_test_shards.py union
+          --shard-lists
+          shard-lists/shard-files-1/shard-1.txt
+          shard-lists/shard-files-2/shard-2.txt
 
   repo-map:
     # #1096: docs/repo-map.mmd is generated from the tree's imports; the map
