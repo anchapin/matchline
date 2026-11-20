@@ -17,7 +17,7 @@ Branching: `develop` is the working branch. `main` is reserved for releases.
 pip install matchline        # from PyPI; extras: [ocr] [mech] [ui] (see pyproject.toml)
 ```
 
-Python ≥ 3.10. The [Quickstart](#quickstart) below runs a full demo on the
+Python ≥ 3.11. The [Quickstart](#quickstart) below runs a full demo on the
 installed package. To work on the repo itself, see
 [Local development](#local-development).
 

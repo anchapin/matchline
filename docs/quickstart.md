@@ -4,7 +4,7 @@ This walkthrough takes one building from input to exported package:
 import, simplification, validation, review, and the gbXML + IFC4 exports.
 Every command below was run end to end on the sample project; the file
 names you see are the real outputs. Install first (`pip install matchline`,
-Python 3.10+; extras `[ocr] [mech] [ui]` in pyproject.toml).
+Python 3.11+; extras `[ocr] [mech] [ui]` in pyproject.toml).
 
 ## The 60-second path (no inputs)
 

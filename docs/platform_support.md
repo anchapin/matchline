@@ -8,13 +8,13 @@ relying on this page going stale.
 
 | Python | Status | CI coverage |
 |--------|--------|-------------|
-| 3.10 | Supported | wheel install + demo on Linux, every PR and push |
+| 3.10 | Dropped 2026-11-20 | none (dropped to clear the Pillow CVE set; Pillow 13 requires >=3.11) |
 | 3.11 | Supported | wheel install + demo on Linux, every PR and push |
 | 3.12 | Supported | full matrix: Linux, macOS, Windows |
 | 3.13 | Supported | wheel install + demo on Linux, every PR and push |
 | 3.14+ | Not supported yet | no CI job; revisit each October release |
 
-`requires-python` stays `>=3.10` with no upper pin. Unsupported versions are
+`requires-python` stays `>=3.11` with no upper pin. Unsupported versions are
 policy backed by CI, not a pip exclusion: on a newer Python, `pip install`
 still tries, and a gap surfaces as a missing wheel rather than a silent
 downgrade.
@@ -40,8 +40,9 @@ the trust and review reports checked.
   rendering hardcoded the Linux DejaVu font path and died on macOS/Windows
   ("cannot open resource"); font resolution is now per-platform
   (DejaVu on Linux, Arial/Helvetica on macOS/Windows, Pillow's bitmap font
-  as the last resort), Python 3.10 installs the `tomli` backport for
-  the stdlib `tomllib` it predates, and every text write in the shipped
+  as the last resort), Python 3.10 installed the `tomli` backport for
+  the stdlib `tomllib` it predates (3.10 support dropped 2026-11-20, the
+  backport and its fallback import are removed), and every text write in the shipped
   modules now passes an explicit `encoding="utf-8"` so Windows' cp1252
   locale cannot crash report writing on non-ASCII characters.
 - **openstudio extra**: Windows wheels exist for cp310-cp313 only; on 3.14+

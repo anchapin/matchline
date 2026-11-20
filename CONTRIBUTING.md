@@ -6,7 +6,7 @@ Thank you for contributing to Matchline! This guide covers everything you need t
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.11+
 - Git
 
 ### Initial Setup

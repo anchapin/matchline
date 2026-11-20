@@ -48,13 +48,9 @@ import json
 import logging
 import math
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10: stdlib tomllib landed in 3.11 (#1163)
-    import tomli as tomllib
 
 try:
     import cv2  # opencv-python
