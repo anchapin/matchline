@@ -8,7 +8,7 @@ version = "0.2.1"
 description = "Deterministic, auditable extraction of building energy modeling (BEM) inputs from architectural drawings and BIM"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Alex Chapin" }]
 keywords = ["bem", "bim", "ifc", "gbxml", "floor-plan", "energy-modeling"]
 classifiers = [
@@ -16,7 +16,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -27,10 +26,9 @@ dependencies = [
     "numpy",
     "shapely",
     # >=13.0.0 clears the pillow 12.3.0 CVE set (incl. CVE-2026-128066 /
-    # CVE-2026-128067); 13.0.0 requires Python >=3.11, so the 3.10 support
-    # line keeps the unpinned resolution (12.3.0) until 3.10 is dropped.
-    "Pillow>=13.0.0; python_version >= '3.11'",
-    "Pillow; python_version < '3.11'",
+    # CVE-2026-128067); 13.0.0 requires Python >=3.11. Python 3.10 support
+    # was dropped 2026-11-20 to clear the pillow Dependabot advisories.
+    "Pillow>=13.0.0",
     "scipy",
     "lxml>=4.9.0",
     "ifcopenshell>=0.9",
@@ -43,9 +41,6 @@ dependencies = [
     # through sklearn estimators, and run_review imports the classifier at
     # module top, so a real install needs it or `matchline review` dies
     "scikit-learn",
-    # stdlib tomllib landed in Python 3.11; the 3.10 support line needs the
-    # backport (#1163, found by the python-matrix install job)
-    "tomli>=2.0; python_version < '3.11'",
 ]
 
 # PyPI metadata links (#1193).
@@ -264,7 +259,7 @@ show_missing = false
 # of the tree stays out until then. follow_imports = "silent" means imported
 # repo modules are resolved but not checked, so widening the list is a
 # choice, never an accident.
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 follow_imports = "silent"
 files = [
@@ -287,7 +282,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100  # enforced (E501); geometry/XML literals opt out inline with `# noqa: E501`
-target-version = "py310"
+target-version = "py311"
 # detector/ is a separate track with its own venv (see detector/README.md)
 exclude = ["detector"]
 
