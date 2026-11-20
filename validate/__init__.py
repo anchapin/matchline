@@ -19,14 +19,14 @@ if TYPE_CHECKING:
     from building_model import BuildingModel
 
 try:
-    from geometry.geometry_simplify import footprint_from_regions
+    from geometry.geometry_simplify import footprint_multipart_from_regions  # noqa: F401  (probe)
 
     _HAS_SIMPLIFY = True
 except Exception:
     _HAS_SIMPLIFY = False
 
 try:
-    from datasets_adapter import polygon_area_px2
+    from datasets_adapter import polygon_area_px2  # noqa: F401  (re-exported)
 except Exception:
     polygon_area_px2 = None
 
@@ -60,6 +60,7 @@ from .conservation import (
     _check_wall_construction_coverage,
     area_closure,
     envelope_closure,
+    footprint_measures,
     validate_bem_conservation,
     volume_closure,
 )
@@ -135,8 +136,9 @@ def _build_ctx(model: BuildingModel, **kw) -> _Ctx:
         ctx.wall_height[lvl.id] = lvl.wall_height_m
     if _HAS_SIMPLIFY:
         for lid, spaces in ctx.level_of.items():
-            ring = footprint_from_regions([sp.polygon_m for sp in spaces])
-            ctx.footprint_area[lid] = polygon_area_px2(ring) if (ring and polygon_area_px2) else 0.0
+            # the level footprint is the sum of ALL its connected parts
+            # (#1417): disjoint room islands must not lose an area.
+            ctx.footprint_area[lid] = footprint_measures([sp.polygon_m for sp in spaces]).area
     return ctx
 
 
