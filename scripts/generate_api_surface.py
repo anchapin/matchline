@@ -71,6 +71,7 @@ PUBLIC_MODULES = [
     "space_merge",
     "space_use_defaults",
     "symbols",
+    "takeoff_estimate",
 ]
 PUBLIC_PACKAGES = ["link", "validate"]
 

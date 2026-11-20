@@ -1,0 +1,634 @@
+{
+ "model_version": "1.3",
+ "model": {
+  "name": "phase1-two-room",
+  "model_version": "1.3",
+  "auto_triage": null,
+  "levels": [
+   {
+    "id": "ground",
+    "name": "ground",
+    "elevation_z_m": 0.0,
+    "wall_height_m": 3.0,
+    "above_ground": null,
+    "above_ground_source": ""
+   }
+  ],
+  "spaces": {
+   "ground-101": {
+    "id": "ground-101",
+    "level_id": "ground",
+    "name": "Living",
+    "number": "101",
+    "polygon_m": [
+     [
+      0.1,
+      0.1
+     ],
+     [
+      4.95,
+      0.1
+     ],
+     [
+      4.95,
+      4.9
+     ],
+     [
+      0.1,
+      4.9
+     ]
+    ],
+    "area_m2": 23.280000000000005,
+    "volume_m3": 69.84000000000002,
+    "openings": [
+     {
+      "id": "living-window",
+      "tag": "",
+      "category": "window",
+      "width_m": 1.2,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "head_m": 2.1,
+      "host_facade": "north",
+      "host_interval_m": [
+       1.9,
+       3.0999999999999996
+      ],
+      "s_center_m": 2.5,
+      "area_m2": 1.44,
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element living-window"
+      },
+      "needs_review": false,
+      "history": [],
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "plan_center_m": null,
+      "source_provenance": [],
+      "adjacent_space_id": null,
+      "construction_id": ""
+     },
+     {
+      "id": "front-door",
+      "tag": "",
+      "category": "door",
+      "width_m": 0.9,
+      "height_m": 2.1,
+      "sill_m": 0.0,
+      "head_m": 2.1,
+      "host_facade": "south",
+      "host_interval_m": [
+       5.550000000000001,
+       6.450000000000001
+      ],
+      "s_center_m": 6.000000000000001,
+      "area_m2": 1.8900000000000001,
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element front-door"
+      },
+      "needs_review": false,
+      "history": [],
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "plan_center_m": null,
+      "source_provenance": [],
+      "adjacent_space_id": null,
+      "construction_id": ""
+     }
+    ],
+    "lighting": {
+     "fixtures": [],
+     "total_w": 0.0,
+     "lpd_w_m2": null,
+     "lpd_w_ft2": null,
+     "provenance": null,
+     "unmatched_tags": []
+    },
+    "hvac": {
+     "zone_ids": [],
+     "diffusers": [],
+     "sensors": [],
+     "terminal_units": [],
+     "provenance": null
+    },
+    "use": {
+     "space_type": "",
+     "people_per_m2": null,
+     "equipment_w_m2": null,
+     "lighting_schedule": "",
+     "occupancy_schedule": "",
+     "equipment_schedule": "",
+     "activity_w_per_person": null,
+     "provenance": null
+    },
+    "daylight": {
+     "primary": [],
+     "secondary": [],
+     "params_note": "",
+     "provenance": null,
+     "toplit": [],
+     "toplit_m2": 0.0,
+     "unplaced_skylights": []
+    },
+    "core_provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element living"
+    },
+    "label_confidence": 0.0,
+    "poly_type": "room",
+    "poly_type_confidence": null,
+    "is_vestibule": false,
+    "wall_u_value_w_m2k": null,
+    "floor_finishes": [],
+    "ceiling_height_m": null,
+    "plenum_depth_m": null,
+    "height_m": 3.0,
+    "merged_from": [],
+    "conditioning": null,
+    "history": []
+   },
+   "ground-102": {
+    "id": "ground-102",
+    "level_id": "ground",
+    "name": "Bedroom",
+    "number": "102",
+    "polygon_m": [
+     [
+      5.05,
+      0.1
+     ],
+     [
+      7.9,
+      0.1
+     ],
+     [
+      7.9,
+      4.9
+     ],
+     [
+      5.05,
+      4.9
+     ]
+    ],
+    "area_m2": 13.68000000000001,
+    "volume_m3": 41.040000000000035,
+    "openings": [
+     {
+      "id": "bedroom-window",
+      "tag": "",
+      "category": "window",
+      "width_m": 1.2,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "head_m": 2.1,
+      "host_facade": "east",
+      "host_interval_m": [
+       1.9000000000000004,
+       3.1000000000000005
+      ],
+      "s_center_m": 2.5000000000000004,
+      "area_m2": 1.44,
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element bedroom-window"
+      },
+      "needs_review": false,
+      "history": [],
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "plan_center_m": null,
+      "source_provenance": [],
+      "adjacent_space_id": null,
+      "construction_id": ""
+     }
+    ],
+    "lighting": {
+     "fixtures": [],
+     "total_w": 0.0,
+     "lpd_w_m2": null,
+     "lpd_w_ft2": null,
+     "provenance": null,
+     "unmatched_tags": []
+    },
+    "hvac": {
+     "zone_ids": [],
+     "diffusers": [],
+     "sensors": [],
+     "terminal_units": [],
+     "provenance": null
+    },
+    "use": {
+     "space_type": "",
+     "people_per_m2": null,
+     "equipment_w_m2": null,
+     "lighting_schedule": "",
+     "occupancy_schedule": "",
+     "equipment_schedule": "",
+     "activity_w_per_person": null,
+     "provenance": null
+    },
+    "daylight": {
+     "primary": [],
+     "secondary": [],
+     "params_note": "",
+     "provenance": null,
+     "toplit": [],
+     "toplit_m2": 0.0,
+     "unplaced_skylights": []
+    },
+    "core_provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element bedroom"
+    },
+    "label_confidence": 0.0,
+    "poly_type": "room",
+    "poly_type_confidence": null,
+    "is_vestibule": false,
+    "wall_u_value_w_m2k": null,
+    "floor_finishes": [],
+    "ceiling_height_m": null,
+    "plenum_depth_m": null,
+    "height_m": 3.0,
+    "merged_from": [],
+    "conditioning": null,
+    "history": []
+   }
+  },
+  "zones": {},
+  "air_loops": [],
+  "equipment": [],
+  "envelope": [
+   {
+    "id": "ground-outer-walls#0",
+    "facade": "north",
+    "from_m": [
+     0.0,
+     0.0
+    ],
+    "to_m": [
+     8.0,
+     0.0
+    ],
+    "length_m": 8.0,
+    "height_m": 3.0,
+    "area_m2": 24.0,
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "construction_id": "",
+    "space_id": "ground-101"
+   },
+   {
+    "id": "ground-outer-walls#1",
+    "facade": "east",
+    "from_m": [
+     8.0,
+     0.0
+    ],
+    "to_m": [
+     8.0,
+     5.0
+    ],
+    "length_m": 5.0,
+    "height_m": 3.0,
+    "area_m2": 15.0,
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "construction_id": "",
+    "space_id": "ground-102"
+   },
+   {
+    "id": "ground-outer-walls#2",
+    "facade": "south",
+    "from_m": [
+     8.0,
+     5.0
+    ],
+    "to_m": [
+     0.0,
+     5.0
+    ],
+    "length_m": 8.0,
+    "height_m": 3.0,
+    "area_m2": 24.0,
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "construction_id": "",
+    "space_id": "ground-101"
+   },
+   {
+    "id": "ground-outer-walls#3",
+    "facade": "west",
+    "from_m": [
+     0.0,
+     5.0
+    ],
+    "to_m": [
+     0.0,
+     0.0
+    ],
+    "length_m": 5.0,
+    "height_m": 3.0,
+    "area_m2": 15.0,
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "construction_id": "",
+    "space_id": "ground-101"
+   }
+  ],
+  "constructions": {},
+  "roof_construction_id": "",
+  "slab_construction_id": "",
+  "slab_heated_by": "",
+  "slab_heated_spaces": [],
+  "climate_zone": "",
+  "building_category": "",
+  "shading": [],
+  "space_adjacencies": [],
+  "semi_exterior": [],
+  "roof_planes": [],
+  "source_roof_planes": [],
+  "site_latitude_deg": null,
+  "terrain": [],
+  "bim_elements": [
+   {
+    "global_id": "outer-walls#0",
+    "ifc_class": "IfcWall",
+    "name": "outer-walls",
+    "level_id": "ground",
+    "length_m": 8.0,
+    "width_m": null,
+    "height_m": 3.0,
+    "thickness_m": 0.2,
+    "area_m2": null,
+    "volume_m3": null,
+    "material_layers": [],
+    "placement_m": null,
+    "openings": [
+     {
+      "id": "living-window",
+      "category": "window",
+      "tag": "",
+      "width_m": 1.2,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "s_center_m": 2.5,
+      "host_global_id": "outer-walls#0",
+      "fill_global_id": "living-window",
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element living-window"
+      },
+      "plan_center_m": null,
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "operation_type": null,
+      "leaf_count": null,
+      "hinge_side": null,
+      "glazing_area_fraction": null,
+      "glazed_area_m2": null,
+      "u_value_w_m2k": null,
+      "shgc": null,
+      "vt": null,
+      "thermal_reference": ""
+     }
+    ],
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "role": "",
+    "storey_method": ""
+   },
+   {
+    "global_id": "outer-walls#1",
+    "ifc_class": "IfcWall",
+    "name": "outer-walls",
+    "level_id": "ground",
+    "length_m": 5.0,
+    "width_m": null,
+    "height_m": 3.0,
+    "thickness_m": 0.2,
+    "area_m2": null,
+    "volume_m3": null,
+    "material_layers": [],
+    "placement_m": null,
+    "openings": [
+     {
+      "id": "bedroom-window",
+      "category": "window",
+      "tag": "",
+      "width_m": 1.2,
+      "height_m": 1.2,
+      "sill_m": 0.9,
+      "s_center_m": 2.5000000000000004,
+      "host_global_id": "outer-walls#1",
+      "fill_global_id": "bedroom-window",
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element bedroom-window"
+      },
+      "plan_center_m": null,
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "operation_type": null,
+      "leaf_count": null,
+      "hinge_side": null,
+      "glazing_area_fraction": null,
+      "glazed_area_m2": null,
+      "u_value_w_m2k": null,
+      "shgc": null,
+      "vt": null,
+      "thermal_reference": ""
+     }
+    ],
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "role": "",
+    "storey_method": ""
+   },
+   {
+    "global_id": "outer-walls#2",
+    "ifc_class": "IfcWall",
+    "name": "outer-walls",
+    "level_id": "ground",
+    "length_m": 8.0,
+    "width_m": null,
+    "height_m": 3.0,
+    "thickness_m": 0.2,
+    "area_m2": null,
+    "volume_m3": null,
+    "material_layers": [],
+    "placement_m": null,
+    "openings": [
+     {
+      "id": "front-door",
+      "category": "door",
+      "tag": "",
+      "width_m": 0.9,
+      "height_m": 2.1,
+      "sill_m": 0.0,
+      "s_center_m": 6.000000000000001,
+      "host_global_id": "outer-walls#2",
+      "fill_global_id": "front-door",
+      "provenance": {
+       "sheet_id": "floorkit:phase1-two-room",
+       "revision": 1,
+       "method": "floorkit_json_mapping",
+       "confidence": 1.0,
+       "bbox": null,
+       "note": "mapped from Floorkit element front-door"
+      },
+      "plan_center_m": null,
+      "tilt_deg": null,
+      "azimuth_deg": null,
+      "operation_type": null,
+      "leaf_count": null,
+      "hinge_side": null,
+      "glazing_area_fraction": null,
+      "glazed_area_m2": null,
+      "u_value_w_m2k": null,
+      "shgc": null,
+      "vt": null,
+      "thermal_reference": ""
+     }
+    ],
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "role": "",
+    "storey_method": ""
+   },
+   {
+    "global_id": "outer-walls#3",
+    "ifc_class": "IfcWall",
+    "name": "outer-walls",
+    "level_id": "ground",
+    "length_m": 5.0,
+    "width_m": null,
+    "height_m": 3.0,
+    "thickness_m": 0.2,
+    "area_m2": null,
+    "volume_m3": null,
+    "material_layers": [],
+    "placement_m": null,
+    "openings": [],
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element outer-walls"
+    },
+    "role": "",
+    "storey_method": ""
+   },
+   {
+    "global_id": "divider#0",
+    "ifc_class": "IfcWall",
+    "name": "divider",
+    "level_id": "ground",
+    "length_m": 5.0,
+    "width_m": null,
+    "height_m": 3.0,
+    "thickness_m": 0.1,
+    "area_m2": null,
+    "volume_m3": null,
+    "material_layers": [],
+    "placement_m": null,
+    "openings": [],
+    "provenance": {
+     "sheet_id": "floorkit:phase1-two-room",
+     "revision": 1,
+     "method": "floorkit_json_mapping",
+     "confidence": 1.0,
+     "bbox": null,
+     "note": "mapped from Floorkit element divider"
+    },
+    "role": "",
+    "storey_method": ""
+   }
+  ],
+  "schedules": {},
+  "revision_log": [],
+  "review_queue": [],
+  "symbol_linkages": [],
+  "opening_attachment_summary": {
+   "no_envelope_edge": 0,
+   "ambiguous_tie": 0,
+   "no_ref_direction": 0,
+   "outside_spaces": 0,
+   "ref_direction_fallback": 0,
+   "adjacency_ambiguous": 0
+  }
+ }
+}

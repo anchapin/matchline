@@ -210,6 +210,7 @@ py-modules = [
     "space_use_defaults_data",
     "symbols",
     "takeoff_diff",
+    "takeoff_estimate",
     "telemetry_emitter",
     "telemetry_spec",
     "thermal_zoning",
