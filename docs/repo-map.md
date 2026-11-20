@@ -143,6 +143,7 @@ graph LR
     synth_sheets
     synth_symbols
     takeoff_diff
+    takeoff_estimate
     telemetry_emitter
     telemetry_spec
     thermal_zoning
@@ -449,6 +450,9 @@ graph LR
   synth_multidiscipline --> synth_sheets
   synth_sheets --> synth_symbols
   synth_symbols --> datasets_adapter
+  takeoff_estimate --> building_model
+  takeoff_estimate --> geometry_geometry_kernel
+  takeoff_estimate --> geometry_geometry_simplify
   telemetry_emitter --> telemetry_spec
   thermal_zoning --> bem_bem_helpers
   thermal_zoning --> bem_bem_multistorey
