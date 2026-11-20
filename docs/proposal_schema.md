@@ -18,7 +18,7 @@ canonical model, and the validator needs nothing beyond the parsed document.
 ```python
 from proposal import validate_proposal, map_proposal, proposal_json_schema
 
-result = validate_proposal(doc)      # pure: no I/O, no mutation, no model
+result = validate_proposal(doc)  # pure: no I/O, no mutation, no model
 if result.ok:
     model, report = map_proposal(doc)  # raises ValueError on any error diagnostic
 ```
