@@ -1,0 +1,133 @@
+{
+  "header": {
+    "currency": "USD",
+    "kind": "FIXTURE prices - invented for this spike, NOT market data",
+    "price_book_version": "fixture-2.0",
+    "region": "FIXTURE",
+    "source": "fixture",
+    "source_date": "2026-11-20"
+  },
+  "items": [
+    {
+      "applies_to": {
+        "finish_id": "paint_interior"
+      },
+      "category": "paint",
+      "coats": 2,
+      "container_l": 5.0,
+      "coverage_m2_per_l": 10.0,
+      "description": "Interior paint, supplied and applied",
+      "item_id": "paint_interior",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 0.35,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 12.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": null,
+      "unit": "l",
+      "waste_pct": null
+    },
+    {
+      "applies_to": {
+        "finish_id": "flooring_laminate"
+      },
+      "category": "flooring",
+      "coats": null,
+      "container_l": null,
+      "coverage_m2_per_l": null,
+      "description": "Laminate flooring, supplied and laid",
+      "item_id": "flooring_laminate",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 0.6,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 40.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": 5.0,
+      "unit": "m2",
+      "waste_pct": 10.0
+    },
+    {
+      "applies_to": {
+        "category": "window",
+        "tag": "W1"
+      },
+      "category": "opening",
+      "coats": null,
+      "container_l": null,
+      "coverage_m2_per_l": null,
+      "description": "Window type W1, supplied and installed",
+      "item_id": "window_unit_w1",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 1.5,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 450.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": null,
+      "unit": "count",
+      "waste_pct": null
+    },
+    {
+      "applies_to": {
+        "category": "door"
+      },
+      "category": "opening",
+      "coats": null,
+      "container_l": null,
+      "coverage_m2_per_l": null,
+      "description": "Door unit, supplied and installed",
+      "item_id": "door_unit",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 2.0,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 700.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": null,
+      "unit": "count",
+      "waste_pct": null
+    },
+    {
+      "applies_to": {
+        "finish_id": "trim"
+      },
+      "category": "trim",
+      "coats": null,
+      "container_l": null,
+      "coverage_m2_per_l": null,
+      "description": "Baseboard trim, supplied and fitted",
+      "item_id": "trim_baseboard",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 0.15,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 6.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": null,
+      "unit": "m",
+      "waste_pct": null
+    },
+    {
+      "applies_to": {
+        "construction_id": "W-EXT-1"
+      },
+      "category": "wall_assembly",
+      "coats": null,
+      "container_l": null,
+      "coverage_m2_per_l": null,
+      "description": "Exterior wall assembly W-EXT-1, per net m2",
+      "item_id": "wall_assembly_ext",
+      "labour_basis": "priced_unit",
+      "labour_hours_per_unit": 1.2,
+      "labour_rate_per_hour": 65.0,
+      "material_unit_price": 85.0,
+      "source": "fixture",
+      "source_date": "2026-11-20",
+      "spare_pct": null,
+      "unit": "m2",
+      "waste_pct": null
+    }
+  ]
+}

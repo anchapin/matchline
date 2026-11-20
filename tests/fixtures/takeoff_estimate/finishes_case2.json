@@ -1,0 +1,54 @@
+{
+  "header": {
+    "finishes_version": "finishes-case2-1.0",
+    "source": "fixture",
+    "source_date": "2026-11-20"
+  },
+  "rows": [
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-101",
+      "surface": "wall"
+    },
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-101",
+      "surface": "ceiling"
+    },
+    {
+      "finish_id": "flooring_laminate",
+      "space_id": "L1-101",
+      "surface": "floor"
+    },
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-102",
+      "surface": "wall"
+    },
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-102",
+      "surface": "ceiling"
+    },
+    {
+      "finish_id": "flooring_laminate",
+      "space_id": "L1-102",
+      "surface": "floor"
+    },
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-103",
+      "surface": "wall"
+    },
+    {
+      "finish_id": "paint_interior",
+      "space_id": "L1-103",
+      "surface": "ceiling"
+    },
+    {
+      "finish_id": "flooring_laminate",
+      "space_id": "L1-103",
+      "surface": "floor"
+    }
+  ]
+}

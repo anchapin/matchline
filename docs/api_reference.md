@@ -513,6 +513,33 @@ module's guide under `docs/`.
 - `make_dataset(n_train: int, n_test: int, seed: int)`
 - `to28(img: np.ndarray)`
 
+## `takeoff_estimate`
+
+- `build_estimate(model: BuildingModel, book: PriceBook, finishes: FinishesSchedule, *, partition_basis: str='faces')`
+- `compute_quantities(model: BuildingModel)`
+- `finishes_from_dict(doc: dict)`
+- `load_finishes_schedule(path: str | Path)`
+- `load_price_book(path: str | Path)`
+- `price_book_from_dict(doc: dict)`
+- `validate_estimate_dict(d: dict)`
+- class `EnvelopeSegmentQuantity`
+- class `Estimate`
+- class `EstimateLine`
+- class `EstimateValidationError`
+- class `FinishRow`
+- class `FinishesError`
+- class `FinishesSchedule`
+- class `LineProvenance`
+- class `OpeningQuantity`
+- class `PartitionLevelStats`
+- class `PartitionQuantity`
+- class `PriceBook`
+- class `PriceBookError`
+- class `PriceBookItem`
+- class `RoofQuantity`
+- class `SpaceQuantity`
+- class `TakeoffQuantities`
+
 ## Package `link`
 
 

@@ -605,6 +605,36 @@
         "make_dataset": "n_train: int, n_test: int, seed: int",
         "to28": "img: np.ndarray"
       }
+    },
+    "takeoff_estimate": {
+      "classes": {
+        "EnvelopeSegmentQuantity": "",
+        "Estimate": "",
+        "EstimateLine": "",
+        "EstimateValidationError": "",
+        "FinishRow": "",
+        "FinishesError": "",
+        "FinishesSchedule": "",
+        "LineProvenance": "",
+        "OpeningQuantity": "",
+        "PartitionLevelStats": "",
+        "PartitionQuantity": "",
+        "PriceBook": "",
+        "PriceBookError": "",
+        "PriceBookItem": "",
+        "RoofQuantity": "",
+        "SpaceQuantity": "",
+        "TakeoffQuantities": ""
+      },
+      "functions": {
+        "build_estimate": "model: BuildingModel, book: PriceBook, finishes: FinishesSchedule, *, partition_basis: str='faces'",
+        "compute_quantities": "model: BuildingModel",
+        "finishes_from_dict": "doc: dict",
+        "load_finishes_schedule": "path: str | Path",
+        "load_price_book": "path: str | Path",
+        "price_book_from_dict": "doc: dict",
+        "validate_estimate_dict": "d: dict"
+      }
     }
   },
   "packages": {

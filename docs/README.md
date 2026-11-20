@@ -39,6 +39,7 @@ disclosed, not hidden.
 | `detector-robustness.md` | Synthetic-degradation robustness eval (`detector/degrade.py`, `detector/eval_robustness.py`) |
 | `elevation_windows.md` | Exact window placement from elevations + daylight zones |
 | `facade_takeoff.md` | Facade wall/glazing/door fractions (CMP Facade) + priors |
+| `takeoff_estimate.md` | Deterministic quantity takeoff -> priced estimate from the canonical model (#1419) |
 | `legend_learning.md` | Learned legend tags (#995) |
 | `symbols.md` | Programmatic GD&T symbol rendering for synthetic training data |
 | `synthetic_data.md` | Synthetic sheet/dataset generation |
