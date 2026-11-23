@@ -468,13 +468,13 @@ jobs:
         run: uv sync --frozen --extra test --extra openstudio
 
       - name: Download the shard coverage data
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage-data-1
           path: coverage-data/shard-1
 
       - name: Download the second shard coverage data
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage-data-2
           path: coverage-data/shard-2
@@ -532,7 +532,7 @@ jobs:
         run: uv sync --frozen --extra test --extra openstudio
 
       - name: Download the shard file lists
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: shard-files-*
           merge-multiple: false
