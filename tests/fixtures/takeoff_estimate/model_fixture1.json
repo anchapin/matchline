@@ -1,0 +1,202 @@
+{
+ "model": {
+  "constructions": {},
+  "envelope": [
+   {
+    "area_m2": 24.0,
+    "construction_id": "",
+    "facade": "north",
+    "from_m": [
+     0.0,
+     0.0
+    ],
+    "height_m": 3.0,
+    "id": "ground-outer-walls#0",
+    "length_m": 8.0,
+    "space_id": "ground-101",
+    "to_m": [
+     8.0,
+     0.0
+    ]
+   },
+   {
+    "area_m2": 15.0,
+    "construction_id": "",
+    "facade": "east",
+    "from_m": [
+     8.0,
+     0.0
+    ],
+    "height_m": 3.0,
+    "id": "ground-outer-walls#1",
+    "length_m": 5.0,
+    "space_id": "ground-102",
+    "to_m": [
+     8.0,
+     5.0
+    ]
+   },
+   {
+    "area_m2": 24.0,
+    "construction_id": "",
+    "facade": "south",
+    "from_m": [
+     8.0,
+     5.0
+    ],
+    "height_m": 3.0,
+    "id": "ground-outer-walls#2",
+    "length_m": 8.0,
+    "space_id": "ground-101",
+    "to_m": [
+     0.0,
+     5.0
+    ]
+   },
+   {
+    "area_m2": 15.0,
+    "construction_id": "",
+    "facade": "west",
+    "from_m": [
+     0.0,
+     5.0
+    ],
+    "height_m": 3.0,
+    "id": "ground-outer-walls#3",
+    "length_m": 5.0,
+    "space_id": "ground-101",
+    "to_m": [
+     0.0,
+     0.0
+    ]
+   }
+  ],
+  "levels": [
+   {
+    "above_ground": true,
+    "above_ground_source": "fixture",
+    "elevation_z_m": 0.0,
+    "id": "ground",
+    "name": "Ground",
+    "wall_height_m": 3.0
+   }
+  ],
+  "model_version": "1.3",
+  "name": "phase1-two-room",
+  "roof_planes": [],
+  "spaces": {
+   "ground-101": {
+    "area_m2": 23.28,
+    "ceiling_height_m": null,
+    "height_m": 3.0,
+    "id": "ground-101",
+    "level_id": "ground",
+    "name": "Living",
+    "number": "101",
+    "openings": [
+     {
+      "adjacent_space_id": null,
+      "area_m2": 1.44,
+      "category": "window",
+      "height_m": 1.2,
+      "host_facade": "north",
+      "host_interval_m": [
+       1.4,
+       2.6
+      ],
+      "id": "living-window",
+      "needs_review": false,
+      "s_center_m": 2.0,
+      "sill_m": 0.9,
+      "tag": "",
+      "width_m": 1.2
+     },
+     {
+      "adjacent_space_id": null,
+      "area_m2": 1.89,
+      "category": "door",
+      "height_m": 2.1,
+      "host_facade": "south",
+      "host_interval_m": [
+       6.0,
+       6.9
+      ],
+      "id": "front-door",
+      "needs_review": false,
+      "s_center_m": 6.45,
+      "sill_m": 0.0,
+      "tag": "",
+      "width_m": 0.9
+     }
+    ],
+    "polygon_m": [
+     [
+      0.1,
+      0.1
+     ],
+     [
+      4.95,
+      0.1
+     ],
+     [
+      4.95,
+      4.9
+     ],
+     [
+      0.1,
+      4.9
+     ]
+    ],
+    "volume_m3": 69.84
+   },
+   "ground-102": {
+    "area_m2": 13.68,
+    "ceiling_height_m": null,
+    "height_m": 3.0,
+    "id": "ground-102",
+    "level_id": "ground",
+    "name": "Bedroom",
+    "number": "102",
+    "openings": [
+     {
+      "adjacent_space_id": null,
+      "area_m2": 1.44,
+      "category": "window",
+      "height_m": 1.2,
+      "host_facade": "east",
+      "host_interval_m": [
+       1.4,
+       2.6
+      ],
+      "id": "bedroom-window",
+      "needs_review": false,
+      "s_center_m": 2.0,
+      "sill_m": 0.9,
+      "tag": "",
+      "width_m": 1.2
+     }
+    ],
+    "polygon_m": [
+     [
+      5.05,
+      0.1
+     ],
+     [
+      7.9,
+      0.1
+     ],
+     [
+      7.9,
+      4.9
+     ],
+     [
+      5.05,
+      4.9
+     ]
+    ],
+    "volume_m3": 41.04
+   }
+  }
+ },
+ "model_version": "1.3"
+}

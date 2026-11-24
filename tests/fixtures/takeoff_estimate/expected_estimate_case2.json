@@ -1,0 +1,948 @@
+{
+  "case_id": "case2",
+  "currency": "USD",
+  "finishes_version": "finishes-case2-1.0",
+  "lines": [
+    {
+      "basis": "finished_floor_area_plus_waste",
+      "category": "flooring",
+      "kind": "flooring",
+      "labour_cost": 514.8,
+      "labour_hours": 7.92,
+      "line_id": "case2:flooring:L1-101:floor",
+      "line_total": 1042.8,
+      "material_cost": 528.0,
+      "provenance": {
+        "element_ids": [
+          "L1-101"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "flooring_purchase"
+      },
+      "quantity": 13.2,
+      "quantity_detail": {
+        "finished_area_m2": 12.0,
+        "waste_pct": 10.0
+      },
+      "rule": "flooring_purchase",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "basis": "finished_floor_area_plus_waste",
+      "category": "flooring",
+      "kind": "flooring",
+      "labour_cost": 386.1,
+      "labour_hours": 5.94,
+      "line_id": "case2:flooring:L1-102:floor",
+      "line_total": 782.1,
+      "material_cost": 396.0,
+      "provenance": {
+        "element_ids": [
+          "L1-102"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "flooring_purchase"
+      },
+      "quantity": 9.9,
+      "quantity_detail": {
+        "finished_area_m2": 9.0,
+        "waste_pct": 10.0
+      },
+      "rule": "flooring_purchase",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "basis": "finished_floor_area_plus_waste",
+      "category": "flooring",
+      "kind": "flooring",
+      "labour_cost": 600.6,
+      "labour_hours": 9.24,
+      "line_id": "case2:flooring:L1-103:floor",
+      "line_total": 1216.6,
+      "material_cost": 616.0,
+      "provenance": {
+        "element_ids": [
+          "L1-103"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "flooring_purchase"
+      },
+      "quantity": 15.4,
+      "quantity_detail": {
+        "finished_area_m2": 14.0,
+        "waste_pct": 10.0
+      },
+      "rule": "flooring_purchase",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": 130.0,
+      "labour_hours": 2.0,
+      "line_id": "case2:opening:bath-hall-door",
+      "line_total": 830.0,
+      "material_cost": 700.0,
+      "opening_detail": {
+        "adjacent_space_id": "L1-103",
+        "category": "door",
+        "host_facade": "",
+        "space_id": "L1-102",
+        "tag": "D2"
+      },
+      "provenance": {
+        "element_ids": [
+          "bath-hall-door"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "door_unit",
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "rule": "opening_unit",
+      "status": "priced",
+      "unit": "count"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": 97.5,
+      "labour_hours": 1.5,
+      "line_id": "case2:opening:bath-window",
+      "line_total": 547.5,
+      "material_cost": 450.0,
+      "opening_detail": {
+        "adjacent_space_id": null,
+        "category": "window",
+        "host_facade": "east",
+        "space_id": "L1-102",
+        "tag": "W1"
+      },
+      "provenance": {
+        "element_ids": [
+          "bath-window"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "window_unit_w1",
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "rule": "opening_unit",
+      "status": "priced",
+      "unit": "count"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": 130.0,
+      "labour_hours": 2.0,
+      "line_id": "case2:opening:hall-entry-door",
+      "line_total": 830.0,
+      "material_cost": 700.0,
+      "opening_detail": {
+        "adjacent_space_id": null,
+        "category": "door",
+        "host_facade": "south",
+        "space_id": "L1-103",
+        "tag": "D1"
+      },
+      "provenance": {
+        "element_ids": [
+          "hall-entry-door"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "door_unit",
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "rule": "opening_unit",
+      "status": "priced",
+      "unit": "count"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": null,
+      "labour_hours": null,
+      "line_id": "case2:opening:hall-skylight",
+      "line_total": null,
+      "material_cost": null,
+      "provenance": {
+        "element_ids": [
+          "hall-skylight"
+        ],
+        "price_book_version": null,
+        "price_item_id": null,
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "reason": "no_price_item",
+      "rule": "opening_unit",
+      "status": "unpriced",
+      "unit": "count"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": 130.0,
+      "labour_hours": 2.0,
+      "line_id": "case2:opening:kitchen-hall-door",
+      "line_total": 830.0,
+      "material_cost": 700.0,
+      "opening_detail": {
+        "adjacent_space_id": "L1-103",
+        "category": "door",
+        "host_facade": "",
+        "space_id": "L1-101",
+        "tag": "D2"
+      },
+      "provenance": {
+        "element_ids": [
+          "kitchen-hall-door"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "door_unit",
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "rule": "opening_unit",
+      "status": "priced",
+      "unit": "count"
+    },
+    {
+      "category": "opening",
+      "kind": "opening_unit",
+      "labour_cost": 97.5,
+      "labour_hours": 1.5,
+      "line_id": "case2:opening:kitchen-window",
+      "line_total": 547.5,
+      "material_cost": 450.0,
+      "opening_detail": {
+        "adjacent_space_id": null,
+        "category": "window",
+        "host_facade": "north",
+        "space_id": "L1-101",
+        "tag": "W1"
+      },
+      "provenance": {
+        "element_ids": [
+          "kitchen-window"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "window_unit_w1",
+        "rule": "opening_unit"
+      },
+      "quantity": 1.0,
+      "rule": "opening_unit",
+      "status": "priced",
+      "unit": "count"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 113.75,
+      "labour_hours": 1.75,
+      "line_id": "case2:paint:L1-101:ceiling",
+      "line_total": 173.75,
+      "material_cost": 60.0,
+      "provenance": {
+        "element_ids": [
+          "L1-101"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 5.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 2.4,
+        "net_area_m2": 12.0
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 227.5,
+      "labour_hours": 3.5,
+      "line_id": "case2:paint:L1-101:wall",
+      "line_total": 347.5,
+      "material_cost": 120.0,
+      "provenance": {
+        "element_ids": [
+          "L1-101"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 10.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 7.144,
+        "net_area_m2": 35.72
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 113.75,
+      "labour_hours": 1.75,
+      "line_id": "case2:paint:L1-102:ceiling",
+      "line_total": 173.75,
+      "material_cost": 60.0,
+      "provenance": {
+        "element_ids": [
+          "L1-102"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 5.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 1.8,
+        "net_area_m2": 9.0
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 227.5,
+      "labour_hours": 3.5,
+      "line_id": "case2:paint:L1-102:wall",
+      "line_total": 347.5,
+      "material_cost": 120.0,
+      "provenance": {
+        "element_ids": [
+          "L1-102"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 10.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 6.168,
+        "net_area_m2": 30.84
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 113.75,
+      "labour_hours": 1.75,
+      "line_id": "case2:paint:L1-103:ceiling",
+      "line_total": 173.75,
+      "material_cost": 60.0,
+      "provenance": {
+        "element_ids": [
+          "L1-103"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 5.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 2.8,
+        "net_area_m2": 14.0
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "per_space_face",
+      "category": "paint",
+      "kind": "paint",
+      "labour_cost": 227.5,
+      "labour_hours": 3.5,
+      "line_id": "case2:paint:L1-103:wall",
+      "line_total": 347.5,
+      "material_cost": 120.0,
+      "provenance": {
+        "element_ids": [
+          "L1-103"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "paint_interior",
+        "rule": "paint_purchase"
+      },
+      "quantity": 10.0,
+      "quantity_detail": {
+        "container_l": 5.0,
+        "litres_exact": 8.988,
+        "net_area_m2": 44.94
+      },
+      "rule": "paint_purchase",
+      "status": "priced",
+      "unit": "l"
+    },
+    {
+      "basis": "finished_area_x_spare_pct_material_only",
+      "category": "spare",
+      "kind": "spare_stock",
+      "labour_cost": 0.0,
+      "labour_hours": 0.0,
+      "line_id": "case2:spare:L1-101:floor",
+      "line_total": 24.0,
+      "material_cost": 24.0,
+      "provenance": {
+        "element_ids": [
+          "L1-101"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "spare_stock"
+      },
+      "quantity": 0.6,
+      "rule": "spare_stock",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "basis": "finished_area_x_spare_pct_material_only",
+      "category": "spare",
+      "kind": "spare_stock",
+      "labour_cost": 0.0,
+      "labour_hours": 0.0,
+      "line_id": "case2:spare:L1-102:floor",
+      "line_total": 18.0,
+      "material_cost": 18.0,
+      "provenance": {
+        "element_ids": [
+          "L1-102"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "spare_stock"
+      },
+      "quantity": 0.45,
+      "rule": "spare_stock",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "basis": "finished_area_x_spare_pct_material_only",
+      "category": "spare",
+      "kind": "spare_stock",
+      "labour_cost": 0.0,
+      "labour_hours": 0.0,
+      "line_id": "case2:spare:L1-103:floor",
+      "line_total": 28.0,
+      "material_cost": 28.0,
+      "provenance": {
+        "element_ids": [
+          "L1-103"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "flooring_laminate",
+        "rule": "spare_stock"
+      },
+      "quantity": 0.7,
+      "rule": "spare_stock",
+      "status": "priced",
+      "unit": "m2"
+    },
+    {
+      "category": "trim",
+      "kind": "trim_length",
+      "labour_cost": 128.7,
+      "labour_hours": 1.98,
+      "line_id": "case2:trim:L1-101",
+      "line_total": 207.9,
+      "material_cost": 79.2,
+      "provenance": {
+        "element_ids": [
+          "L1-101"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "trim_baseboard",
+        "rule": "trim_length"
+      },
+      "quantity": 13.2,
+      "rule": "trim_length",
+      "status": "priced",
+      "unit": "m"
+    },
+    {
+      "category": "trim",
+      "kind": "trim_length",
+      "labour_cost": 109.2,
+      "labour_hours": 1.68,
+      "line_id": "case2:trim:L1-102",
+      "line_total": 176.4,
+      "material_cost": 67.2,
+      "provenance": {
+        "element_ids": [
+          "L1-102"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "trim_baseboard",
+        "rule": "trim_length"
+      },
+      "quantity": 11.2,
+      "rule": "trim_length",
+      "status": "priced",
+      "unit": "m"
+    },
+    {
+      "category": "trim",
+      "kind": "trim_length",
+      "labour_cost": 150.15,
+      "labour_hours": 2.31,
+      "line_id": "case2:trim:L1-103",
+      "line_total": 242.55,
+      "material_cost": 92.4,
+      "provenance": {
+        "element_ids": [
+          "L1-103"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "trim_baseboard",
+        "rule": "trim_length"
+      },
+      "quantity": 15.4,
+      "rule": "trim_length",
+      "status": "priced",
+      "unit": "m"
+    },
+    {
+      "basis": "envelope_net",
+      "category": "wall_assembly",
+      "kind": "wall_assembly",
+      "labour_cost": 4853.16,
+      "labour_hours": 74.664,
+      "line_id": "case2:wall_assembly:W-EXT-1",
+      "line_total": 10141.86,
+      "material_cost": 5288.7,
+      "provenance": {
+        "element_ids": [
+          "L1-north#0",
+          "L1-north#1",
+          "L1-east#0",
+          "L1-south#0",
+          "L1-west#0"
+        ],
+        "price_book_version": "fixture-2.0",
+        "price_item_id": "wall_assembly_ext",
+        "rule": "wall_assembly"
+      },
+      "quantity": 62.22,
+      "rule": "wall_assembly",
+      "status": "priced",
+      "unit": "m2"
+    }
+  ],
+  "model_name": "case2-tiling-hand-built",
+  "price_book_version": "fixture-2.0",
+  "quantities": {
+    "envelope_by_facade": {
+      "east": {
+        "gross_m2": 14.0,
+        "net_m2": 12.92
+      },
+      "north": {
+        "gross_m2": 19.6,
+        "net_m2": 17.8
+      },
+      "south": {
+        "gross_m2": 19.6,
+        "net_m2": 17.5
+      },
+      "west": {
+        "gross_m2": 14.0,
+        "net_m2": 14.0
+      }
+    },
+    "envelope_gross_total_m2": 67.2,
+    "envelope_net_total_m2": 62.22,
+    "envelope_segments": [
+      {
+        "construction_id": "W-EXT-1",
+        "facade": "north",
+        "gross_m2": 11.2,
+        "height_m": 2.8,
+        "hosted_opening_ids": [
+          "kitchen-window"
+        ],
+        "length_m": 4.0,
+        "net_m2": 9.4,
+        "segment_id": "L1-north#0",
+        "space_id": "L1-101"
+      },
+      {
+        "construction_id": "W-EXT-1",
+        "facade": "north",
+        "gross_m2": 8.4,
+        "height_m": 2.8,
+        "hosted_opening_ids": [],
+        "length_m": 3.0,
+        "net_m2": 8.4,
+        "segment_id": "L1-north#1",
+        "space_id": "L1-102"
+      },
+      {
+        "construction_id": "W-EXT-1",
+        "facade": "east",
+        "gross_m2": 14.0,
+        "height_m": 2.8,
+        "hosted_opening_ids": [
+          "bath-window"
+        ],
+        "length_m": 5.0,
+        "net_m2": 12.92,
+        "segment_id": "L1-east#0",
+        "space_id": "L1-102"
+      },
+      {
+        "construction_id": "W-EXT-1",
+        "facade": "south",
+        "gross_m2": 19.6,
+        "height_m": 2.8,
+        "hosted_opening_ids": [
+          "hall-entry-door"
+        ],
+        "length_m": 7.0,
+        "net_m2": 17.5,
+        "segment_id": "L1-south#0",
+        "space_id": "L1-103"
+      },
+      {
+        "construction_id": "W-EXT-1",
+        "facade": "west",
+        "gross_m2": 14.0,
+        "height_m": 2.8,
+        "hosted_opening_ids": [],
+        "length_m": 5.0,
+        "net_m2": 14.0,
+        "segment_id": "L1-west#0",
+        "space_id": "L1-101"
+      }
+    ],
+    "opening_rollup": [
+      {
+        "area_m2": 2.1,
+        "category": "door",
+        "count": 1,
+        "tag": "D1"
+      },
+      {
+        "area_m2": 3.36,
+        "category": "door",
+        "count": 2,
+        "tag": "D2"
+      },
+      {
+        "area_m2": 0.36,
+        "category": "skylight",
+        "count": 1,
+        "tag": "S1"
+      },
+      {
+        "area_m2": 2.88,
+        "category": "window",
+        "count": 2,
+        "tag": "W1"
+      }
+    ],
+    "openings": [
+      {
+        "adjacent_space_id": null,
+        "area_m2": 1.8,
+        "category": "window",
+        "height_m": 1.2,
+        "host_facade": "north",
+        "needs_review": false,
+        "opening_id": "kitchen-window",
+        "sill_m": 0.9,
+        "space_id": "L1-101",
+        "tag": "W1",
+        "width_m": 1.5
+      },
+      {
+        "adjacent_space_id": "L1-103",
+        "area_m2": 1.68,
+        "category": "door",
+        "height_m": 2.1,
+        "host_facade": "",
+        "needs_review": false,
+        "opening_id": "kitchen-hall-door",
+        "sill_m": 0.0,
+        "space_id": "L1-101",
+        "tag": "D2",
+        "width_m": 0.8
+      },
+      {
+        "adjacent_space_id": null,
+        "area_m2": 1.08,
+        "category": "window",
+        "height_m": 1.2,
+        "host_facade": "east",
+        "needs_review": false,
+        "opening_id": "bath-window",
+        "sill_m": 0.9,
+        "space_id": "L1-102",
+        "tag": "W1",
+        "width_m": 0.9
+      },
+      {
+        "adjacent_space_id": "L1-103",
+        "area_m2": 1.68,
+        "category": "door",
+        "height_m": 2.1,
+        "host_facade": "",
+        "needs_review": false,
+        "opening_id": "bath-hall-door",
+        "sill_m": 0.0,
+        "space_id": "L1-102",
+        "tag": "D2",
+        "width_m": 0.8
+      },
+      {
+        "adjacent_space_id": null,
+        "area_m2": 2.1,
+        "category": "door",
+        "height_m": 2.1,
+        "host_facade": "south",
+        "needs_review": false,
+        "opening_id": "hall-entry-door",
+        "sill_m": 0.0,
+        "space_id": "L1-103",
+        "tag": "D1",
+        "width_m": 1.0
+      },
+      {
+        "adjacent_space_id": null,
+        "area_m2": 0.36,
+        "category": "skylight",
+        "height_m": 0.6,
+        "host_facade": "roof",
+        "needs_review": false,
+        "opening_id": "hall-skylight",
+        "sill_m": null,
+        "space_id": "L1-103",
+        "tag": "S1",
+        "width_m": 0.6
+      }
+    ],
+    "partition_levels": {
+      "L1": {
+        "interior_edge_total_m": 20.0,
+        "unmatched_m": 0.0,
+        "unmatched_pct": 0.0
+      }
+    },
+    "partitions": [
+      {
+        "area_m2": 8.4,
+        "height_m": 2.8,
+        "length_m": 3.0,
+        "level_id": "L1",
+        "pairing": [
+          "exact"
+        ],
+        "space_a": "L1-101",
+        "space_b": "L1-102"
+      },
+      {
+        "area_m2": 11.2,
+        "height_m": 2.8,
+        "length_m": 4.0,
+        "level_id": "L1",
+        "pairing": [
+          "exact"
+        ],
+        "space_a": "L1-101",
+        "space_b": "L1-103"
+      },
+      {
+        "area_m2": 8.4,
+        "height_m": 2.8,
+        "length_m": 3.0,
+        "level_id": "L1",
+        "pairing": [
+          "exact"
+        ],
+        "space_a": "L1-102",
+        "space_b": "L1-103"
+      }
+    ],
+    "roof": {
+      "area_m2": 35.0,
+      "basis": "flat_roof_union_of_space_polygons"
+    },
+    "spaces": {
+      "L1-101": {
+        "ceiling_area_m2": 12.0,
+        "floor_area_drift_pct": 0.0,
+        "floor_area_recomputed_m2": 12.0,
+        "floor_area_stored_m2": 12.0,
+        "height_flags": [],
+        "height_m": 2.8,
+        "height_source": "space.ceiling_height_m",
+        "level_id": "L1",
+        "openings": [
+          {
+            "adjacent_space_id": null,
+            "area_m2": 1.8,
+            "category": "window",
+            "height_m": 1.2,
+            "host_facade": "north",
+            "needs_review": false,
+            "opening_id": "kitchen-window",
+            "sill_m": 0.9,
+            "space_id": "L1-101",
+            "tag": "W1",
+            "width_m": 1.5
+          },
+          {
+            "adjacent_space_id": "L1-103",
+            "area_m2": 1.68,
+            "category": "door",
+            "height_m": 2.1,
+            "host_facade": "",
+            "needs_review": false,
+            "opening_id": "kitchen-hall-door",
+            "sill_m": 0.0,
+            "space_id": "L1-101",
+            "tag": "D2",
+            "width_m": 0.8
+          }
+        ],
+        "perimeter_m": 14.0,
+        "trim_length_m": 13.2,
+        "volume_stored_m3": 33.6,
+        "wall_gross_m2": 39.2,
+        "wall_net_m2": 35.72
+      },
+      "L1-102": {
+        "ceiling_area_m2": 9.0,
+        "floor_area_drift_pct": 0.0,
+        "floor_area_recomputed_m2": 9.0,
+        "floor_area_stored_m2": 9.0,
+        "height_flags": [],
+        "height_m": 2.8,
+        "height_source": "space.ceiling_height_m",
+        "level_id": "L1",
+        "openings": [
+          {
+            "adjacent_space_id": null,
+            "area_m2": 1.08,
+            "category": "window",
+            "height_m": 1.2,
+            "host_facade": "east",
+            "needs_review": false,
+            "opening_id": "bath-window",
+            "sill_m": 0.9,
+            "space_id": "L1-102",
+            "tag": "W1",
+            "width_m": 0.9
+          },
+          {
+            "adjacent_space_id": "L1-103",
+            "area_m2": 1.68,
+            "category": "door",
+            "height_m": 2.1,
+            "host_facade": "",
+            "needs_review": false,
+            "opening_id": "bath-hall-door",
+            "sill_m": 0.0,
+            "space_id": "L1-102",
+            "tag": "D2",
+            "width_m": 0.8
+          }
+        ],
+        "perimeter_m": 12.0,
+        "trim_length_m": 11.2,
+        "volume_stored_m3": 25.2,
+        "wall_gross_m2": 33.6,
+        "wall_net_m2": 30.84
+      },
+      "L1-103": {
+        "ceiling_area_m2": 14.0,
+        "floor_area_drift_pct": 0.0,
+        "floor_area_recomputed_m2": 14.0,
+        "floor_area_stored_m2": 14.0,
+        "height_flags": [],
+        "height_m": 2.8,
+        "height_source": "space.ceiling_height_m",
+        "level_id": "L1",
+        "openings": [
+          {
+            "adjacent_space_id": null,
+            "area_m2": 2.1,
+            "category": "door",
+            "height_m": 2.1,
+            "host_facade": "south",
+            "needs_review": false,
+            "opening_id": "hall-entry-door",
+            "sill_m": 0.0,
+            "space_id": "L1-103",
+            "tag": "D1",
+            "width_m": 1.0
+          },
+          {
+            "adjacent_space_id": null,
+            "area_m2": 0.36,
+            "category": "skylight",
+            "height_m": 0.6,
+            "host_facade": "roof",
+            "needs_review": false,
+            "opening_id": "hall-skylight",
+            "sill_m": null,
+            "space_id": "L1-103",
+            "tag": "S1",
+            "width_m": 0.6
+          }
+        ],
+        "perimeter_m": 18.0,
+        "trim_length_m": 15.4,
+        "volume_stored_m3": 39.2,
+        "wall_gross_m2": 50.4,
+        "wall_net_m2": 44.94
+      }
+    },
+    "total_floor_area_m2": 35.0
+  },
+  "subtotals_by_category": {
+    "flooring": 3041.5,
+    "opening": 3585.0,
+    "paint": 1563.75,
+    "spare": 70.0,
+    "trim": 626.85,
+    "wall_assembly": 10141.86
+  },
+  "total": 19028.96,
+  "total_label": "priced_lines_only",
+  "unpriced_line_ids": [
+    "case2:opening:hall-skylight"
+  ]
+}
